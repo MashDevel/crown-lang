@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+binary=${1:?expected compiler path}
+if [ ! -e /etc/NIXOS ]; then
+    exit 0
+fi
+if ! command -v patchelf >/dev/null 2>&1; then
+    exec nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#patchelf --command sh "$0" "$binary"
+fi
+loader=$(awk '$6 ~ /^\/nix\/store\/.*\/lib\/ld-linux.*\.so\./ { print $6; exit }' /proc/self/maps)
+if [ -z "$loader" ] || [ ! -x "$loader" ]; then
+    printf '%s\n' 'error: cannot locate the native NixOS dynamic loader' >&2
+    exit 1
+fi
+if [ "$(patchelf --print-interpreter "$binary")" != "$loader" ]; then
+    patchelf --set-interpreter "$loader" --set-rpath "${loader%/*}" "$binary"
+fi

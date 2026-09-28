@@ -2,15 +2,18 @@ install_fixture() {
     fixture_number=$((fixture_number + 1))
     install_project="$scratch/install ' project $fixture_number"
     install_home="$scratch/install home $fixture_number"
-    mkdir -p "$install_project/bootstrap" "$install_home"
+    mkdir -p "$install_project/bootstrap" "$install_project/release" "$install_home"
     install_project=$(CDPATH= cd -- "$install_project" && pwd)
     cp "$root/bootstrap/install" "$install_project/bootstrap/install"
     printf '#!/bin/sh\nexit "${CROWN_TEST_FETCH_STATUS:-0}"\n' > "$install_project/bootstrap/fetch"
     printf '#!/bin/sh\nprintf "crown fixture\\n"\nexit "${CROWN_TEST_BUILD_STATUS:-0}"\n' > "$install_project/bootstrap/crown"
     chmod +x "$install_project/bootstrap/crown"
+    cp "$install_project/bootstrap/crown" "$install_project/release/crown"
+    printf '#!/bin/sh\nset -eu\ntest "${CROWN_TEST_FETCH_STATUS:-0}" = 0\nprintf "%%s\\n" "$(dirname -- "$0")/../release"\n' > "$install_project/bootstrap/fetch-release"
+    printf '#!/bin/sh\nexit 0\n' > "$install_project/bootstrap/prepare-native"
 }
 run_install() {
-    env HOME="$install_home" ZDOTDIR= SHELL="$1" sh "$install_project/bootstrap/install"
+    env CC=/unavailable HOME="$install_home" ZDOTDIR= SHELL="$1" sh "$install_project/bootstrap/install"
 }
 install_zsh() {
     install_fixture
@@ -20,7 +23,7 @@ install_zsh() {
     run_install /bin/zsh
     cmp "$install_home/.zshrc" "$install_home/original"
     env HOME="$install_home" PATH=/usr/bin:/bin sh -c '. "$HOME/.zshrc"; . "$HOME/.zshrc"; test "$CROWN_TEST_PRESERVED" = yes; test "$(crown --version)" = "crown fixture"; printf "%s\\n" "$PATH"' > "$install_home/path"
-    test "$(cat "$install_home/path")" = "$install_project/bootstrap:/usr/bin:/bin"
+    test "$(cat "$install_home/path")" = "$install_project/release:/usr/bin:/bin"
     env HOME="$install_home" ZDOTDIR="$install_home/config" SHELL=/bin/zsh sh "$install_project/bootstrap/install"
     test -s "$install_home/config/.zshrc"
 }
@@ -31,7 +34,7 @@ install_bash() {
     test ! -e "$install_home/.bash_profile"
     for profile in .bashrc .profile; do
         env HOME="$install_home" PATH=/usr/bin:/bin bash --noprofile --norc -c '. "$HOME/$1"; . "$HOME/$1"; test "$(crown --version)" = "crown fixture"; printf "%s\\n" "$PATH"' bash "$profile" > "$install_home/path"
-        test "$(cat "$install_home/path")" = "$install_project/bootstrap:/usr/bin:/bin"
+        test "$(cat "$install_home/path")" = "$install_project/release:/usr/bin:/bin"
     done
     cp "$install_home/.profile" "$install_home/original"
     run_install /bin/bash
@@ -58,4 +61,19 @@ install_failures() {
     install_project="$install_project:invalid"
     expect_failure run_install /bin/zsh
     test ! -e "$install_home/.zshrc"
+}
+install_modes() {
+    install_fixture
+    printf '#!/bin/sh\nexit 99\n' > "$install_project/bootstrap/crown"
+    run_install /bin/bash
+    test -s "$install_home/.bashrc"
+    install_fixture
+    env HOME="$install_home" SHELL=/bin/bash sh "$install_project/bootstrap/install" --source
+    actual=$(env HOME="$install_home" sh -c '. "$HOME/.bashrc"; command -v crown')
+    test "$actual" = "$install_project/bootstrap/crown"
+    install_fixture
+    cp "$install_project/release/crown" "$install_project/crown"
+    env HOME="$install_home" SHELL=/bin/bash CROWN_TEST_FETCH_STATUS=1 sh "$install_project/bootstrap/install"
+    actual=$(env HOME="$install_home" sh -c '. "$HOME/.bashrc"; command -v crown')
+    test "$actual" = "$install_project/crown"
 }

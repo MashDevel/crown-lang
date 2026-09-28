@@ -59,17 +59,25 @@ Ordinary builds encode machine code and link Mach-O or ELF executables entirely 
 
 ## Start
 
-On any implemented host above, install from a checkout you intend to keep:
+Install the current binary release on macOS or glibc Linux, on x86-64 or ARM64:
 
 ```sh
-sh bootstrap/install
+curl -fsSL https://raw.githubusercontent.com/MashDevel/crown-lang/main/install.sh | sh
 ```
 
-The installer fetches the verified seed, builds Crown, and adds this checkout's `bootstrap` directory to your shell's PATH. It supports zsh (`${ZDOTDIR:-$HOME}/.zshrc`) and bash (`~/.bashrc` and the first existing login profile, or `~/.bash_profile`). Existing settings are preserved, and rerunning the installer does not duplicate its PATH entry. Open a new shell afterward, or run the `export PATH=...` command printed by the installer, then run `crown --version`. The installer cannot change the environment of your current shell. No manual `CROWN_ROOT` setting is needed.
+The installer detects the host, downloads the matching compiler with its bundled library sources, verifies the release archive's SHA-256 checksum, and configures PATH. It does not build Crown or require a C compiler. NixOS loader setup is automatic: when needed, the installer obtains `patchelf` through Nix and adjusts the downloaded binary to the native loader. Other Linux distributions and macOS do not need this step.
 
-Keep the checkout in place: this installs access to its launcher and bundled sources, rather than copying a standalone executable. To uninstall, remove the PATH entry from the shell files reported by the installer. If you move the checkout, remove its old entry and rerun the installer from its new location.
+The default destination is `${XDG_DATA_HOME:-$HOME/.local/share}/crown`. Set `CROWN_INSTALL_DIR` to choose another directory or `CROWN_RELEASE` to select a published release tag. For offline installation, set `CROWN_RELEASE` and `CROWN_RELEASE_ASSETS` to a directory containing the host archive and `SHA256SUMS`. The compiler stays together with the library sources from its release; a source checkout is not required.
 
-For other shells, or to leave your shell configuration unchanged, use the manual setup:
+PATH setup supports zsh (`${ZDOTDIR:-$HOME}/.zshrc`) and bash (`~/.bashrc` and the first existing login profile, or `~/.bash_profile`). Existing settings are preserved, and repeated installation does not duplicate the entry. Open a new shell, or run the `export PATH=...` command printed by the installer, then run `crown --version`. No manual `CROWN_ROOT` setting is needed. To uninstall, remove the reported PATH entries and installation directory.
+
+You can also download and unpack a host archive from [Releases](https://github.com/MashDevel/crown-lang/releases), then run `sh bootstrap/install` inside it. This uses the archive's compiler directly. From a source checkout, the same command downloads the current binary release. To explicitly build the checkout from its assembly seed instead, with a system C compiler available:
+
+```sh
+sh bootstrap/install --source
+```
+
+For source development without changing your shell configuration:
 
 ```sh
 sh bootstrap/fetch
@@ -231,7 +239,7 @@ Each release contains `crown-<host>.tar.gz`, compressed bootstrap assembly, a pr
 
 To advance the seed pin, download all four hosts' assets from a successful release, verify `SHA256SUMS`, copy each `crown-bootstrap-<host>.lock.json` to `bootstrap/locks/<host>.json`, and put the release tag in `bootstrap/seed-release`. Commit those small files; assembly and compiler binaries stay in release assets. The initial `bootstrap-20260928` release supplies the verified compiler and assembly seeds for this source snapshot. Its compiler archives contain the executable and license; use them with a checkout of the source. Subsequent compiler releases include the full source tree as described above.
 
-For installer QA, run `sh bootstrap/tests/run` to verify startup-file preservation, repeated installation, shell selection, quoted checkout paths, and failure handling in temporary home directories. Run `sh bootstrap/install` in a fresh checkout, open a new terminal, and confirm `crown --version` and `crown run /absolute/path/to/hello.cwn` work outside the checkout without setting `CROWN_ROOT`.
+For installer QA, run `sh bootstrap/tests/run` to verify startup-file preservation, repeated installation, shell selection, quoted checkout paths, and failure handling in temporary home directories. Verify release checksum failures, all four host selections, packaged installation without downloads, and the explicit `--source` mode. On NixOS, install outside a development shell with no compiler or patcher on PATH and confirm automatic loader setup. Run the one-command installer with `CC=/unavailable`, open a new terminal, and confirm `crown --version` and `crown run /absolute/path/to/hello.cwn` work outside the checkout without setting `CROWN_ROOT`.
 
 For bootstrap and release QA, run `sh bootstrap/tests/run`, then fetch a seed into a fresh checkout and run `./bootstrap/crown bootstrap --force` and `./bootstrap/crown test`. Repeat the tests to exercise cache reuse, including after a test failure; every selected test must still execute. Corrupt a downloaded seed and confirm `bootstrap/fetch` rejects it. Verify that a failing matrix job prevents publication and that downloaded archives build and run `bootstrap/tests/fixtures/hello.cwn` without a system compiler. Archive entries must have numeric owner and group zero and contain only tracked source plus the compiler, revision, and host seed.
 

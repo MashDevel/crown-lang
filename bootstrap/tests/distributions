@@ -1,0 +1,54 @@
+distribution_fixture() {
+    fixture
+    for file in fetch-release prepare-native; do
+        cp "$root/bootstrap/$file" "$project/bootstrap/$file"
+    done
+    mkdir -p "$assets/crown-$host/components/library/src"
+    printf 'library\n' > "$assets/crown-$host/components/library/src/main.cwn"
+    printf '#!/bin/sh\nprintf "crown binary\\n"\n' > "$assets/crown-$host/crown"
+    chmod +x "$assets/crown-$host/crown"
+    printf 'fixture-revision\n' > "$assets/crown-$host/REVISION"
+    tar -czf "$assets/crown-$host.tar.gz" -C "$assets" "crown-$host"
+    printf '%s  crown-%s.tar.gz\n' "$(sh "$root/bootstrap/checksum" "$assets/crown-$host.tar.gz")" "$host" > "$assets/SHA256SUMS"
+}
+fetch_distribution() {
+    env CROWN_INSTALL_DIR="$project/target" CROWN_RELEASE=v0.1.0 CROWN_RELEASE_ASSETS="$assets" sh "$project/bootstrap/fetch-release"
+}
+distribution_downloads() {
+    distribution_fixture
+    installed=$(fetch_distribution)
+    test "$("$installed/crown" --version)" = 'crown binary'
+    cmp "$installed/components/library/src/main.cwn" "$assets/crown-$host/components/library/src/main.cwn"
+    test ! -e "$project/target/bootstrap"
+    repeated=$(fetch_distribution)
+    test "$installed" = "$repeated"
+    printf 'corrupt' >> "$installed/crown"
+    expect_failure fetch_distribution
+}
+distribution_failures() {
+    distribution_fixture
+    cp "$assets/SHA256SUMS" "$assets/valid-sums"
+    printf 'bad  crown-%s.tar.gz\n' "$host" > "$assets/SHA256SUMS"
+    expect_failure fetch_distribution
+    cat "$assets/valid-sums" "$assets/valid-sums" > "$assets/SHA256SUMS"
+    expect_failure fetch_distribution
+    cp "$assets/valid-sums" "$assets/SHA256SUMS"
+    printf 'corrupt' >> "$assets/crown-$host.tar.gz"
+    expect_failure fetch_distribution
+    test ! -e "$project/target/releases/v0.1.0/$host"
+    expect_failure env CROWN_RELEASE=../bad CROWN_RELEASE_ASSETS="$assets" sh "$project/bootstrap/fetch-release"
+    expect_failure env CROWN_RELEASE= CROWN_RELEASE_ASSETS="$assets" sh "$project/bootstrap/fetch-release"
+    distribution_fixture
+    mkdir -p "$project/target/releases/v0.1.0/$host.installing"
+    expect_failure fetch_distribution
+    test ! -e "$project/target/releases/v0.1.0/$host"
+}
+distribution_incomplete() {
+    distribution_fixture
+    mkdir "$assets/incomplete"
+    printf 'wrong contents\n' > "$assets/incomplete/README"
+    tar -czf "$assets/crown-$host.tar.gz" -C "$assets/incomplete" README
+    printf '%s  crown-%s.tar.gz\n' "$(sh "$root/bootstrap/checksum" "$assets/crown-$host.tar.gz")" "$host" > "$assets/SHA256SUMS"
+    expect_failure fetch_distribution
+    test ! -e "$project/target/releases/v0.1.0/$host"
+}

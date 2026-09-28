@@ -1,0 +1,48 @@
+installer_entry() {
+    distribution_fixture
+    project=$(CDPATH= cd -- "$project" && pwd)
+    mkdir -p "$assets/source/crown-lang-main/bootstrap" "$project/bin" "$project/home"
+    for file in install fetch-release download prepare-native host checksum repository; do
+        cp "$root/bootstrap/$file" "$assets/source/crown-lang-main/bootstrap/$file"
+    done
+    tar -czf "$assets/installer.tar.gz" -C "$assets/source" crown-lang-main
+    cat > "$project/bin/curl" <<'SH'
+#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = --output ]; then
+        cp "$CROWN_TEST_INSTALL_SOURCE" "$2"
+        exit
+    fi
+    shift
+done
+exit 1
+SH
+    chmod +x "$project/bin/curl"
+    env PATH="$project/bin:$PATH" CC=/unavailable HOME="$project/home" SHELL=/bin/bash CROWN_INSTALL_DIR="$project/native" CROWN_RELEASE=v0.1.0 CROWN_RELEASE_ASSETS="$assets" CROWN_TEST_INSTALL_SOURCE="$assets/installer.tar.gz" sh "$root/install.sh"
+    installed=$(env HOME="$project/home" sh -c '. "$HOME/.bashrc"; command -v crown')
+    test "$installed" = "$project/native/releases/v0.1.0/$host/crown"
+    test "$("$installed" --version)" = 'crown binary'
+    test ! -e "$project/target/bootstrap"
+    sh "$root/install.sh" --help
+    expect_failure sh "$root/install.sh" --source
+}
+release_selection() {
+    fixture
+    mkdir "$project/bin"
+    cat > "$project/bin/curl" <<'SH'
+#!/bin/sh
+printf '%s\n' "$CROWN_TEST_RELEASE_URL"
+SH
+    cat > "$project/bin/gh" <<'SH'
+#!/bin/sh
+printf '%s\n' v0.2.0
+SH
+    chmod +x "$project/bin/curl" "$project/bin/gh"
+    command='. "$1/bootstrap/download"; repository=MashDevel/crown-lang; latest_release'
+    found=$(env PATH="$project/bin:$PATH" GH_TOKEN= CROWN_TEST_RELEASE_URL=https://github.com/MashDevel/crown-lang/releases/tag/v0.1.0 sh -c "$command" sh "$project")
+    test "$found" = v0.1.0
+    found=$(env PATH="$project/bin:$PATH" GH_TOKEN=fixture sh -c "$command" sh "$project")
+    test "$found" = v0.2.0
+    expect_failure env PATH="$project/bin:$PATH" GH_TOKEN= CROWN_TEST_RELEASE_URL=https://github.com/MashDevel/crown-lang/releases/latest sh -c "$command" sh "$project"
+}

@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$root/bootstrap/download"
+asset_directory=${CROWN_BOOTSTRAP_ASSETS:-}
 host=${1:-$(sh "$root/bootstrap/host")}
 case "$host" in
     x86_64-macos|arm64-macos|x86_64-linux|arm64-linux) ;;
@@ -20,22 +22,12 @@ verify() {
     fi
 }
 download() {
-    if [ -n "${CROWN_BOOTSTRAP_ASSETS:-}" ]; then
-        cp "$CROWN_BOOTSTRAP_ASSETS/$1" "$stage/$1"
-    elif [ -n "${GH_TOKEN:-}" ]; then
-        gh release download "$release" --repo "$repository" --pattern "$1" --dir "$stage"
-    else
-        curl --fail --location --retry 3 --connect-timeout 20 --max-time 300 --proto '=https' --proto-redir '=https' --output "$stage/$1" "https://github.com/$repository/releases/download/$release/$1"
-    fi
+    download_asset "$1" "$stage/$1"
 }
 prepare_download() {
     if [ -z "${CROWN_BOOTSTRAP_ASSETS:-}" ]; then
         repository=${CROWN_BOOTSTRAP_REPOSITORY:-$(cat "$root/bootstrap/repository")}
-        case "$repository" in
-            ''|*[!a-zA-Z0-9._/-]*|/*|*/|*/*/*) printf '%s\n' 'error: invalid bootstrap repository' >&2; exit 1 ;;
-            */*) ;;
-            *) printf '%s\n' 'error: expected bootstrap owner/repository' >&2; exit 1 ;;
-        esac
+        validate_repository
     fi
     stage=$(mktemp -d "$root/bootstrap/download-XXXXXX")
     trap 'rm -rf "$stage"' EXIT HUP INT TERM

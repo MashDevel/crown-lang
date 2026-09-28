@@ -1,0 +1,32 @@
+validate_repository() {
+    case "$repository" in
+        ''|*[!a-zA-Z0-9._/-]*|/*|*/|*/*/*) printf '%s\n' 'error: invalid GitHub repository' >&2; return 1 ;;
+        */*) ;;
+        *) printf '%s\n' 'error: expected GitHub owner/repository' >&2; return 1 ;;
+    esac
+}
+validate_release() {
+    case "$release" in
+        ''|*[!a-zA-Z0-9._-]*) printf '%s\n' 'error: invalid release tag' >&2; return 1 ;;
+    esac
+}
+download_asset() {
+    if [ -n "$asset_directory" ]; then
+        cp "$asset_directory/$1" "$2"
+    elif [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+        gh release download "$release" --repo "$repository" --pattern "$1" --output "$2"
+    else
+        curl --fail --location --retry 3 --connect-timeout 20 --max-time 300 --proto '=https' --proto-redir '=https' --output "$2" "https://github.com/$repository/releases/download/$release/$1"
+    fi
+}
+latest_release() {
+    if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+        gh api "repos/$repository/releases/latest" --jq .tag_name
+    else
+        url=$(curl --fail --silent --show-error --location --retry 3 --connect-timeout 20 --max-time 60 --proto '=https' --proto-redir '=https' --output /dev/null --write-out '%{url_effective}' "https://github.com/$repository/releases/latest")
+        case "$url" in
+            "https://github.com/$repository/releases/tag/"*) printf '%s\n' "${url##*/}" ;;
+            *) printf '%s\n' 'error: no published version release is available' >&2; return 1 ;;
+        esac
+    fi
+}

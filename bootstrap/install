@@ -2,11 +2,16 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 if [ "${1:-}" = --help ] && [ "$#" -eq 1 ]; then
-    printf '%s\n' 'Usage: sh bootstrap/install' 'Fetch and build Crown, then configure PATH for zsh or bash.' 'Keep this checkout in place. Open a new shell after installation.'
+    printf '%s\n' 'Usage: sh bootstrap/install [--source]' 'Install the prebuilt Crown release and configure PATH for zsh or bash.' 'Use --source to build this checkout from its assembly seed.' 'Keep this checkout in place. Open a new shell after installation.'
     exit 0
 fi
+source_build=false
+if [ "${1:-}" = --source ]; then
+    source_build=true
+    shift
+fi
 if [ "$#" -ne 0 ]; then
-    printf '%s\n' 'error: install takes no arguments; use --help for usage' >&2
+    printf '%s\n' 'error: unexpected install argument; use --help for usage' >&2
     exit 1
 fi
 case "${SHELL:-}" in
@@ -31,7 +36,23 @@ case "$root" in
     *:*|*'
 '*) printf '%s\n' 'error: the checkout path cannot contain a colon or newline' >&2; exit 1 ;;
 esac
-launcher=$(quote "$root/bootstrap")
+if [ "$source_build" = true ]; then
+    sh "$root/bootstrap/fetch"
+    directory="$root/bootstrap"
+else
+    if [ -x "$root/crown" ]; then
+        directory="$root"
+    else
+        directory=$(sh "$root/bootstrap/fetch-release")
+    fi
+    sh "$root/bootstrap/prepare-native" "$directory/crown"
+fi
+directory=$(CDPATH= cd -- "$directory" && pwd)
+"$directory/crown" --version
+if [ -f "$directory/.archive-sha256" ]; then
+    sh "$root/bootstrap/checksum" "$directory/crown" > "$directory/.compiler-sha256"
+fi
+launcher=$(quote "$directory")
 entry="case \":\$PATH:\" in *:$launcher:*) ;; *) export PATH=$launcher:\"\$PATH\" ;; esac"
 configure() {
     mkdir -p "$(dirname -- "$1")"
@@ -41,8 +62,6 @@ configure() {
     printf '\n%s\n' "$entry" >> "$1"
     printf 'Configured PATH in %s\n' "$1"
 }
-sh "$root/bootstrap/fetch"
-"$root/bootstrap/crown" --version
 configure "$profile"
 case "$SHELL" in
     */bash) configure "$HOME/.bashrc" ;;
