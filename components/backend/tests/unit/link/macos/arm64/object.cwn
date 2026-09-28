@@ -1,0 +1,58 @@
+fn roundtrip() -> Result<void, Text> {
+    let original = arm_macho_address()?
+    let bytes = macho::object_file(original)?
+    testing::expect(link_binary::number(bytes, 4, 4)? == 16777228, "ARM64 Mach-O CPU")?
+    let object = macho::read_object(move bytes)?
+    testing::expect(object.architecture == object::ArchitectureArm64(), "ARM64 object architecture")?
+    testing::expect(object.relocations.length() == 2, "GOT relocation pair")?
+    testing::expect(object.relocations[0].kind == object::RelocationArmGotPage21(), "GOT page relocation")?
+    testing::expect(object.relocations[1].kind == object::RelocationArmGotLoadPageOffset12(), "GOT load relocation")?
+    return testing::expect(object.sections[1].data.length() == original.sections[1].data.length(), "code survives object roundtrip")
+}
+fn invalid_relocations() -> Result<void, Text> {
+    testing::error(macho::arm_input_relocation_kind(603979776, 0))?
+    testing::error(macho::arm_input_relocation_kind(1644167168, 0))?
+    testing::error(macho::arm_page_offset_kind(0))?
+    testing::expect(macho::signed_field(8388607, 24) == 8388607, "positive addend boundary")?
+    testing::expect(macho::signed_field(8388608, 24) == -8388608, "negative addend boundary")?
+    var bytes = macho::object_file(arm_macho_fixture()?)?
+    link_binary::put(bytes, 8, 2, 4)
+    return testing::error(macho::read_object(move bytes))
+}
+fn addend_roundtrip() -> Result<void, Text> {
+    var object = arm_macho_address()?
+    object.relocations[0].kind = object::RelocationArmPage21()
+    object.relocations[1].kind = object::RelocationArmLoadPageOffset12(3)
+    object.relocations[0].addend = -8388608
+    object.relocations[1].addend = 8388607
+    let decoded = macho::read_object(macho::object_file(object)?)?
+    testing::expect(decoded.relocations[0].addend == -8388608, "negative ADDEND roundtrip")?
+    testing::expect(decoded.relocations[1].addend == 8388607, "positive ADDEND roundtrip")?
+    object.relocations[0].addend = -8388609
+    return testing::error(macho::object_file(object))
+}
+fn branch_addend_roundtrip() -> Result<void, Text> {
+    var object = arm_macho_import()?
+    object.relocations[0].addend = 12
+    let decoded = macho::read_object(macho::object_file(object)?)?
+    testing::expect(decoded.relocations[0].kind == object::RelocationArmBranch26(), "branch relocation survives ADDEND pair")?
+    return testing::expect(decoded.relocations[0].addend == 12, "branch ADDEND roundtrip")
+}
+fn run() -> Result<void, Text> {
+    roundtrip()?
+    invalid_relocations()?
+    branch_addend_roundtrip()?
+    return addend_roundtrip()
+}
+fn main() -> u32 {
+    match run() {
+        Ok(value) => {
+            value;
+            42
+        },
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

@@ -1,0 +1,112 @@
+module frontend {
+    fn parser_program(parser: write Parser) -> Program {
+        var program = program_new()
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenEnd()) == false {
+            parser_program_item(parser, program)
+            parser_skip_breaks(parser)
+        }
+        return move program
+    }
+
+    fn parser_program_item(parser: write Parser, program: write Program) -> void {
+        if parser_at(parser, TokenModule()) {
+            parser_module(parser, program);
+            return
+        }
+        if parser_at(parser, TokenConst()) {
+            program.constants.push(parser_const(parser));
+            return
+        }
+        if parser_data_item(parser, program) {
+            return
+        }
+        parser_ownership_item(parser, program)
+    }
+
+    fn parser_data_item(parser: write Parser, program: write Program) -> bool {
+        if parser_at(parser, TokenCopy()) {
+            let next = parser_token_at(parser, parser.offset + 1)
+            if token_kind_equal(next.kind, TokenStruct()) {
+                program.structs.push(parser_struct(parser));
+                return true
+            }
+            if token_kind_equal(next.kind, TokenEnum()) {
+                program.enums.push(parser_enum(parser));
+                return true
+            }
+        }
+        if parser_view_struct(parser) || parser_at(parser, TokenStruct()) {
+            program.structs.push(parser_struct(parser));
+            return true
+        }
+        if parser_at(parser, TokenEnum()) {
+            program.enums.push(parser_enum(parser));
+            return true
+        }
+        return false
+    }
+
+    fn parser_ownership_item(parser: write Parser, program: write Program) -> void {
+        if parser_at(parser, TokenUnsafe()) && parser_transferable_resource(parser) {
+            program.resources.push(parser_resource(parser))
+            return
+        }
+        if parser_at(parser, TokenFn()) || parser_at(parser, TokenUnsafe()) {
+            program.functions.push(parser_function(parser))
+            return
+        }
+        if parser_at(parser, TokenOpaque()) || parser_at(parser, TokenResource()) {
+            program.resources.push(parser_resource(parser))
+            return
+        }
+        if parser_at(parser, TokenInterface()) {
+            program.interfaces.push(parser_interface(parser));
+            return
+        }
+        if parser_at(parser, TokenImpl()) {
+            program.implementations.push(parser_impl(parser));
+            return
+        }
+        if parser_at(parser, TokenExtern()) {
+            parser_foreign_block(parser, program);
+            return
+        }
+        parser_report(parser, UnexpectedToken())
+        parser_synchronize_item(parser)
+    }
+
+    fn parser_synchronize_item(parser: write Parser) -> void {
+        let starters = [TokenConst(), TokenCopy(), TokenStruct(), TokenEnum(), TokenFn(), TokenUnsafe(), TokenOpaque(), TokenResource(), TokenInterface(), TokenImpl(), TokenExtern()]
+        loan read starters as kinds {
+            while parser_at(parser, TokenEnd()) == false {
+                if parser_at_any(parser, kinds) {
+                    return
+                }
+                parser_advance(parser)
+            }
+        }
+    }
+
+    fn parser_const(parser: write Parser) -> ConstDecl {
+        let start = parser_expect(parser, TokenConst())
+        let name = parser_identifier(parser)
+        parser_expect(parser, TokenColon())
+        let value_type = parser_type(parser)
+        parser_expect(parser, TokenEqual())
+        let value = parser_expression(parser)
+        let span = span_through(start.span, value.span)
+        parser_line_end(parser)
+        return ConstDecl {
+            name: move name, value_type: move value_type, value: move value, span: span
+        }
+    }
+
+    fn parser_transferable_resource(parser: Parser) -> bool {
+        let next = parser_token_at(parser, parser.offset + 1)
+        let name = Name {
+            text: "", span: next.span
+        }
+        return parser_name_is(parser, name, "transferable")
+    }
+}

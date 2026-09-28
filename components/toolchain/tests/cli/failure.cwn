@@ -1,0 +1,63 @@
+fn help_commands(root: Text) -> Result<void, Text> {
+    let cases = std::text::split("--help;help|build;run|--help;--version", 59)
+    for index in 0..cases.length() {
+        let result = testing::invoke(testing::list(cases[index]), root)?
+        testing::expect(result.status == 0 && std::text::contains(result.stdout, "crown"), "help and version")?
+    }
+    testing::failed_call(root, "unknown")?
+    let empty = testing::invoke(Vec<Text>.new(), root)?
+    testing::expect(empty.status != 0, "missing command")?
+    testing::failed_call(root, "check|--|argument")?
+    return Ok(())
+}
+
+fn preserves_output(root: Text, source: Text) -> Result<void, Text> {
+    testing::failed_call(root, std::text::joined("build|", source))?
+    let binary = toolchain::path_join(root, "chosen output")
+    let command = std::text::joined(std::text::joined("build|", source), std::text::joined("|-o|", binary))
+    testing::clean_call(root, command)?
+    let checksum = toolchain::digest(binary)?
+    toolchain::write_text(source, "fn main() -> u32 { false }")?
+    let result = testing::failed_call(root, command)?
+    testing::expect(std::text::contains(result.stderr, "expected type 'u32'"), "type diagnostic")?
+    testing::expect(std::text::equal(checksum, toolchain::digest(binary)?), "failed build preserves output")?
+    toolchain::write_text(source, "fn main() -> u32 { 0 }")?
+    return Ok(())
+}
+
+fn missing_inputs(root: Text, source: Text) -> Result<void, Text> {
+    let prefix = std::text::joined("build|", root)
+    let missing = toolchain::path_join(root, "missing.o")
+    testing::failed_call(root, std::text::joined("check|", toolchain::path_join(root, "missing.cwn")))?
+    testing::failed_call(root, std::text::joined(prefix, std::text::joined("|--object|", missing)))?
+    testing::failed_call(root, std::text::joined(prefix, std::text::joined("|--object|", source)))?
+    testing::failed_call(root, std::text::joined(prefix, std::text::joined("|--clang|", missing)))?
+    testing::failed_call(root, "compile")?
+    testing::failed_call(root, std::text::joined(prefix, std::text::joined("|", source)))?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let source = testing::project_fixture(root)?
+    help_commands(root)?;
+    preserves_output(root, source)?;
+    missing_inputs(root, source)?
+    invalid_links(root, source)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn invalid_links(root: Text, source: Text) -> Result<void, Text> {
+    let prefix = std::text::joined(std::text::joined("build|", source), std::text::joined("|-o|", toolchain::path_join(root, "invalid-link-output")))
+    let options = testing::list("--framework|--library")
+    for index in 0..options.length() {
+        let command = std::text::joined(prefix, std::text::joined(std::text::joined("|", options[index]), "|AppKit.framework/../../payload"))
+        let result = testing::failed_call(root, command)?
+        testing::expect(std::text::contains(result.stderr, "link names must contain only"), "CLI rejects link path traversal")?
+    }
+    return Ok(())
+}

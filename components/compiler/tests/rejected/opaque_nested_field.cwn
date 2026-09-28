@@ -1,0 +1,25 @@
+opaque resource Secret {
+    code: u32
+
+    drop {
+    }
+}
+
+struct Container {
+    secret: Secret
+}
+
+fn secret_new() -> Secret {
+    unsafe {
+        return Secret {
+            code: 42
+        }
+    }
+}
+
+fn main() -> u32 {
+    let container = Container {
+        secret: secret_new()
+    }
+    return container.secret.code
+}

@@ -1,0 +1,30 @@
+module frontend {
+    copy struct Span {
+        source: usize
+        start: usize
+        end: usize
+        line: usize
+        column: usize
+    }
+
+    struct Name {
+        text: Text
+        span: Span
+    }
+
+    fn span_through(start: Span, end: Span) -> Span {
+        return Span {
+            source: start.source
+            start: start.start
+            end: end.end
+            line: start.line
+            column: start.column
+        }
+    }
+
+    fn name_copy(name: Name) -> Name {
+        return Name {
+            text: name.text.clone(), span: name.span
+        }
+    }
+}

@@ -1,0 +1,21 @@
+module ir {
+    fn exclusive_parameters_valid(function: Function) -> bool {
+        for index in 0..function.exclusive_parameters.length() {
+            let value = function.exclusive_parameters[index]
+            if value >= function.values.length() {
+                return false
+            }
+            if type_is_pointer(function.values[value]) == false {
+                return false
+            }
+            var found = false
+            for parameter in 0..function.parameters.length() {
+                found = found || function.parameters[parameter] == value
+            }
+            if found == false {
+                return false
+            }
+        }
+        return true
+    }
+}

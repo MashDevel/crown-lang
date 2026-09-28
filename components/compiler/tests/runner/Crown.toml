@@ -1,0 +1,3 @@
+[package]
+name = "crown-tests"
+sources = ["main.cwn", "../harness", "../campaigns", "../../../toolchain/src", "../../../library/src"]

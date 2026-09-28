@@ -1,0 +1,15 @@
+fn mutate(value: write u32) -> u32 {
+    value = 2;
+    return value
+}
+fn call(action: scoped fn() -> void, value: u32) -> void {
+    value;
+    action()
+}
+fn main() -> u32 {
+    var value = 0;
+    call(fn[read value]() {
+            print(value)
+        }, mutate(value));
+    return 0
+}

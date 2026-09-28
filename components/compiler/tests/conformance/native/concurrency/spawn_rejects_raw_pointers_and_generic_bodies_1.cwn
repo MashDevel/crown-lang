@@ -1,0 +1,9 @@
+fn main() -> u32 {
+    unsafe {
+        let pointer = RawPtr<u32>.from_address(0)
+        let thread = spawn move {
+            pointer.read_volatile()
+        }
+    }
+    return 0
+}

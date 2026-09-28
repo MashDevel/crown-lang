@@ -1,0 +1,16 @@
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+
+fn main() -> u32 {
+    if identity(21) != 21 {
+        return 1
+    }
+    let ordered: bool = identity(3) < 4
+    let equal: bool = identity(4) == 4
+    let logical = identity(true) && identity(false)
+    if ordered == false || equal == false || logical {
+        return 2
+    }
+    return 42
+}

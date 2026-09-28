@@ -1,0 +1,112 @@
+module x86 {
+    enum DataKind {
+        DataReadOnly
+        DataWritable
+        DataZeroFill
+    }
+
+    struct Function {
+        name: Text
+        exported: bool
+        instructions: Vec<Instruction>
+    }
+
+    struct DataReference {
+        offset: u64
+        symbol: Text
+        addend: i64
+    }
+
+    struct Data {
+        name: Text
+        exported: bool
+        bytes: Vec<u8>
+        alignment: u64
+        kind: DataKind
+        memory_size: u64
+        references: Vec<DataReference>
+    }
+
+    struct Import {
+        name: Text
+        kind: object::SymbolKind
+    }
+
+    struct Program {
+        entry: Option<Text>
+        functions: Vec<Function>
+        data: Vec<Data>
+        imports: Vec<Import>
+    }
+
+    fn function_new(name: take Text, instructions: take Vec<Instruction>) -> Function {
+        return Function {
+            name: move name, exported: false, instructions: normalize_instructions(move instructions)
+        }
+    }
+
+    fn function_export(function: write Function) -> void {
+        function.exported = true
+    }
+
+    fn data_initialized(name: take Text, bytes: take Vec<u8>, kind: take DataKind) -> Data {
+        let memory_size = u64.from(bytes.length())
+        return Data {
+            name: move name
+            exported: false
+            bytes: move bytes
+            alignment: 1
+            kind: move kind
+            memory_size: memory_size
+            references: Vec<DataReference>.new()
+        }
+    }
+
+    fn data_zero_fill(name: take Text, memory_size: u64) -> Data {
+        return Data {
+            name: move name
+            exported: false
+            bytes: Vec<u8>.new()
+            alignment: 1
+            kind: DataZeroFill()
+            memory_size: memory_size
+            references: Vec<DataReference>.new()
+        }
+    }
+
+    fn data_align(data: write Data, alignment: u64) -> void {
+        data.alignment = alignment
+    }
+
+    fn data_export(data: write Data) -> void {
+        data.exported = true
+    }
+
+    fn data_add_reference(data: write Data, reference: take DataReference) -> void {
+        data.references.push(move reference)
+    }
+
+    fn program_new(entry: take Text) -> Program {
+        return Program {
+            entry: Some(move entry)
+            functions: Vec<Function>.new()
+            data: Vec<Data>.new()
+            imports: Vec<Import>.new()
+        }
+    }
+
+    fn program_relocatable() -> Program {
+        return Program {
+            entry: None()
+            functions: Vec<Function>.new()
+            data: Vec<Data>.new()
+            imports: Vec<Import>.new()
+        }
+    }
+    fn import_clone(value: Import) -> Import {
+        return Import {
+            name: value.name.clone(), kind: value.kind
+        }
+    }
+
+}

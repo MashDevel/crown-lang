@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    unsafe {
+        let pointer = RawPtr<u32>.cast(1)
+    }
+    return 0
+}

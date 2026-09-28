@@ -1,0 +1,44 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn test_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) { Ok(value) => { return value } Err(error) => { error; return function.blocks.length() } }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var function = ir::function_new("cross", move signature, ir::LinkageLocal())
+    let entry = test_block(function)
+    let left = test_block(function)
+    let right = test_block(function)
+    let merge = test_block(function)
+    let slot = test_append(function, entry, ir::InstructionStackSlot(4, 4))
+    let forty_constant = ir::ConstantInteger(u64.from(40))
+    let forty_one_constant = ir::ConstantInteger(u64.from(41))
+    let forty_two_constant = ir::ConstantInteger(u64.from(42))
+    let forty = ir::function_constant(function, value_type, forty_constant)
+    let forty_one = ir::function_constant(function, value_type, forty_one_constant)
+    let forty_two = ir::function_constant(function, value_type, forty_two_constant)
+    let condition_type = ir::TypeInteger(ir::IntegerWidth1())
+    let condition_constant = ir::ConstantInteger(u64.from(1))
+    let condition = ir::function_constant(function, condition_type, condition_constant)
+    test_append(function, entry, ir::InstructionStore(slot, forty, 4, false))
+    test_append(function, left, ir::InstructionStore(slot, forty_one, 4, false))
+    test_append(function, right, ir::InstructionStore(slot, forty_two, 4, false))
+    let loaded = test_append(function, merge, ir::InstructionLoad(slot, value_type, 4, false))
+    match ir::function_terminate(function, entry, ir::TerminatorConditional(condition, left, right)) { Ok(value) => { value } Err(error) => { error; return 1 } }
+    match ir::function_terminate(function, left, ir::TerminatorBranch(merge)) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    match ir::function_terminate(function, right, ir::TerminatorBranch(merge)) { Ok(value) => { value } Err(error) => { error; return 3 } }
+    match ir::function_terminate(function, merge, ir::TerminatorReturn(Some(loaded))) { Ok(value) => { value } Err(error) => { error; return 4 } }
+    optimize::function(function)
+    if function.blocks.length() != 1 { return 5 }
+    if function.blocks[0].instructions.length() != 0 { return 6 }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    match ir::validate_program(program) { Ok(value) => { value; return 42 } Err(error) => { error; return 7 } }
+}

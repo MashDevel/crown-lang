@@ -1,0 +1,111 @@
+module x86 {
+    fn codegen_load_wide(program: ir::Program, compiler: write FunctionCompiler, input: take WideValueAccess) -> Result<void, CodegenError> {
+        loan read program.functions[compiler.id] as function {
+            match ir::function_constant_value(function, input.value) {
+                Some(constant) => {
+                    return codegen_load_wide_constant(compiler, constant, input.registers)
+                }
+                None => {
+                }
+            }
+        }
+        var offset: i32 = 0
+        match codegen_frame_slot(compiler.frame, input.value) {
+            Some(value) => {
+                offset = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        let high = codegen_wide_high_offset(compiler, offset)?
+        codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                    destination: input.registers.low, base: Rbp(), offset: offset, width: Qword(), extension: ZeroExtend()
+                }))
+        codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                    destination: input.registers.high, base: Rbp(), offset: high, width: Qword(), extension: ZeroExtend()
+                }))
+        return Ok(())
+    }
+
+    fn codegen_store_wide(compiler: write FunctionCompiler, value: usize, registers: take WideRegisters) -> Result<void, CodegenError> {
+        var offset: i32 = 0
+        match codegen_frame_slot(compiler.frame, value) {
+            Some(location) => {
+                offset = location
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        let high = codegen_wide_high_offset(compiler, offset)?
+        codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                    base: Rbp(), offset: offset, source: registers.low, width: Qword()
+                }))
+        codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                    base: Rbp(), offset: high, source: registers.high, width: Qword()
+                }))
+        return Ok(())
+    }
+
+    fn codegen_load_wide_constant(compiler: write FunctionCompiler, constant: ir::Constant, registers: WideRegisters) -> Result<void, CodegenError> {
+        var low: u64 = 0
+        var high: u64 = 0
+        match read constant {
+            ir::ConstantInteger(value) => {
+                low = value
+            }
+            ir::ConstantWideInteger(value) => {
+                low = value.low;
+                high = value.high
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedType(ir::TypeInteger(ir::IntegerWidth128()))))
+            }
+        }
+        codegen_emit(compiler, MoveImmediate(registers.low, i64.from_bits(low)))
+        codegen_emit(compiler, MoveImmediate(registers.high, i64.from_bits(high)))
+        return Ok(())
+    }
+
+    fn codegen_wide_high_offset(compiler: FunctionCompiler, offset: i32) -> Result<i32, CodegenError> {
+        if offset > 2147483639 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        return Ok(offset + 8)
+    }
+
+    fn codegen_wide_result(compiler: FunctionCompiler, result: Option<usize>) -> Result<usize, CodegenError> {
+        match read result {
+            Some(value) => {
+                return Ok(value)
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_wide_type(value_type: ir::Type) -> bool {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                return ir::integer_width_bits(width) == 128
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_value_is_wide(program: ir::Program, compiler: FunctionCompiler, value: usize) -> bool {
+        match codegen_value_type(program, compiler, value) {
+            Ok(value_type) => {
+                return codegen_wide_type(value_type)
+            }
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+    }
+}

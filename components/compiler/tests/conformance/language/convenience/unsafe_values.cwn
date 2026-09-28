@@ -1,0 +1,11 @@
+extern "c" { fn abs(value: i32) -> i32 }
+fn tail() -> i32 { unsafe { abs(-4) } }
+fn main() -> u32 {
+    let value = unsafe { abs(-7) }
+    let owned = unsafe { let text = "hello"; move text }
+    let nested = if true { unsafe { abs(-3) } } else { 0 }
+    if value != 7 || owned.length() != 5 || nested != 3 || tail() != 4 { return 1 }
+    let unit = unsafe {}
+    unit
+    return 0
+}

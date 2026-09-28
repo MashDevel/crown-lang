@@ -1,0 +1,22 @@
+fn main() -> u32 {
+    var output: u32 = 0
+    let choose = true
+    thread_scope {
+        if choose {
+            let first = spawn[write output] {
+                output = 1
+            }
+            first
+        } else {
+            let second = spawn[write output] {
+                output = 2
+            }
+            second
+        }
+    }
+    return if output == 1 {
+        0
+    } else {
+        1
+    }
+}

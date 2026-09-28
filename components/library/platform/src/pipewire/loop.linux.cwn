@@ -1,0 +1,85 @@
+module native::pipewire {
+    unsafe fn initialize(library: std::dylib::Library, argc: RawPtr<u8>, argv: RawPtr<u8>) -> void {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 0)).read()
+            return action(argc, argv)
+        }
+    }
+
+    unsafe fn main_loop_new(library: std::dylib::Library, props: RawPtr<u8>) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 1)).read()
+            return action(props)
+        }
+    }
+
+    unsafe fn main_loop_destroy(library: std::dylib::Library, loop: RawPtr<u8>) -> void {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 2)).read()
+            return action(loop)
+        }
+    }
+
+    unsafe fn main_loop_get_loop(library: std::dylib::Library, loop: RawPtr<u8>) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 3)).read()
+            return action(loop)
+        }
+    }
+
+    unsafe fn iterate(library: std::dylib::Library, loop: RawPtr<u8>, timeout: i32) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> i32>.cast(std::dylib::slot(library, 4)).read()
+            return action(loop, timeout)
+        }
+    }
+
+    unsafe fn properties_new(library: std::dylib::Library, properties: RawPtr<u8>) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 5)).read()
+            return action(properties)
+        }
+    }
+
+    unsafe fn properties_free(library: std::dylib::Library, properties: RawPtr<u8>) -> void {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 6)).read()
+            return action(properties)
+        }
+    }
+
+    copy struct StreamNew {
+        loop: RawPtr<u8>
+        name: RawPtr<u8>
+        properties: RawPtr<u8>
+        events: RawPtr<u8>
+        data: RawPtr<u8>
+    }
+
+    unsafe fn stream_new(library: std::dylib::Library, request: StreamNew) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>, read RawPtr<u8>, read RawPtr<u8>, read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 7)).read()
+            return action(request.loop, request.name, request.properties, request.events, request.data)
+        }
+    }
+    unsafe fn enter(library: std::dylib::Library, loop: RawPtr<u8>) -> void {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 13)).read()
+            action(loop)
+        }
+    }
+
+    unsafe fn leave(library: std::dylib::Library, loop: RawPtr<u8>) -> void {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 14)).read()
+            action(loop)
+        }
+    }
+
+    unsafe fn deinitialize(library: std::dylib::Library) -> void {
+        unsafe {
+            let action = RawPtr<fn() -> void>.cast(std::dylib::slot(library, 15)).read()
+            action()
+        }
+    }
+}

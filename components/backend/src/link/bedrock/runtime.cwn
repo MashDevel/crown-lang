@@ -1,0 +1,80 @@
+module bedrock {
+    struct Runtime {
+        bytes: Vec<u8>, text: Vec<u8>, data: Vec<u8>, base: u64, data_base: u64,
+        data_offset: usize, sections: usize, section_count: usize
+    }
+
+    fn runtime(bytes: take Vec<u8>) -> Result<Runtime, Text> {
+        validate_runtime_header(bytes)?
+        let headers = usize.from(link_binary::number(bytes, 32, 8)?)
+        let text_segment = runtime_segment(bytes, headers)?
+        let data_segment = runtime_segment(bytes, headers + 56)?
+        let text = link_binary::part(bytes, text_segment.offset, text_segment.size)?
+        let data = runtime_data(bytes, data_segment)?
+        let table = runtime_section_table(bytes)?
+        return Ok(Runtime {
+                bytes: move bytes, text: move text, data: move data, base: text_segment.address,
+                data_base: data_segment.address, data_offset: data_segment.offset,
+                sections: table.offset, section_count: table.count
+            })
+    }
+
+    fn runtime_symbols(runtime: Runtime) -> Result<Vec<Export>, Text> {
+        var output = Vec<Export>.new()
+        for index in 0..runtime.section_count {
+            let header = runtime.sections + index * 64
+            if link_binary::number(runtime.bytes, header + 4, 4)? == 2 {
+                read_symbols(runtime, header, output)?
+            }
+        }
+        if output.length() == 0 {
+            return Err("runtime has no exported symbols")
+        }
+        return Ok(move output)
+    }
+
+    struct Export {
+        name: Text, address: u64
+    }
+
+    fn read_symbols(runtime: Runtime, header: usize, output: write Vec<Export>) -> Result<void, Text> {
+        let table = runtime_symbol_table(runtime, header)?
+        for index in 0..table.count {
+            match runtime_symbol(runtime.bytes, table.offset + index * 24, table.names)? {
+                Some(value) => {
+                    output.push(move value)
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    struct SymbolTable {
+        offset: usize, count: usize, names: usize
+    }
+
+    fn runtime_symbol_table(runtime: Runtime, header: usize) -> Result<SymbolTable, Text> {
+        let strings = runtime.sections + usize.from(link_binary::number(runtime.bytes, header + 40, 4)?) * 64
+        let names = usize.from(link_binary::number(runtime.bytes, strings + 24, 8)?)
+        let offset = usize.from(link_binary::number(runtime.bytes, header + 24, 8)?)
+        let length = usize.from(link_binary::number(runtime.bytes, header + 32, 8)?)
+        if link_binary::number(runtime.bytes, header + 56, 8)? != 24 || length % 24 != 0 {
+            return Err("invalid runtime symbol table")
+        }
+        return Ok(SymbolTable {
+                offset: offset, count: length / 24, names: names
+            })
+    }
+
+    fn runtime_symbol(bytes: Vec<u8>, offset: usize, names: usize) -> Result<Option<Export>, Text> {
+        let name = usize.from(link_binary::number(bytes, offset, 4)?)
+        if link_binary::number(bytes, offset + 6, 2)? == 0 || name == 0 {
+            return Ok(None())
+        }
+        return Ok(Some(Export {
+                    name: link_binary::terminated(bytes, names + name)?, address: link_binary::number(bytes, offset + 8, 8)?
+                }))
+    }
+}

@@ -1,0 +1,12 @@
+module arm64 {
+    fn abi_result(value: AbiValue) -> Result<AbiArgument, Text> {
+        abi_validate(value)?
+        if value.kind == AbiKind::Aggregate() && value.size > 16 {
+            return Ok(AbiArgument {
+                    location: AbiLocation::General(8, 1), indirect: true
+                })
+        }
+        var state = abi_state(AbiVariant::Aapcs64())
+        return abi_argument(state, value, false)
+    }
+}

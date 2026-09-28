@@ -1,0 +1,118 @@
+module sema {
+    fn scopes_copy(values: Vec<Scope>) -> Vec<Scope> {
+        var output = Vec<Scope>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as scope {
+                output.push(scope_copy(scope))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn scope_copy(value: Scope) -> Scope {
+        var variables = Vec<Variable>.with_capacity(value.variables.length())
+        var index: usize = 0
+        while index < value.variables.length() {
+            loan read value.variables[index] as variable {
+                variables.push(variable_copy(variable))
+            }
+            index = index + 1
+        }
+        return Scope {
+            variables: move variables
+        }
+    }
+
+    fn variable_copy(variable: Variable) -> Variable {
+        return Variable {
+            name: frontend::name_copy(variable.name)
+            value_type: type_copy(variable.value_type)
+            copy_value: variable.copy_value
+            mutable_value: variable.mutable_value
+            state: variable.state
+            access: variable.access
+            state_span: variable.state_span
+            span: variable.span
+        }
+    }
+
+    fn scopes_equal(left: Vec<Scope>, right: Vec<Scope>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        var scope: usize = 0
+        while scope < left.length() {
+            if left[scope].variables.length() != right[scope].variables.length() {
+                return false
+            }
+            var index: usize = 0
+            while index < left[scope].variables.length() {
+                var left_state = Available()
+                var right_state = Available()
+                loan read left[scope].variables[index] as variable {
+                    left_state = variable.state
+                }
+                loan read right[scope].variables[index] as variable {
+                    right_state = variable.state
+                }
+                if variable_states_equal(left_state, right_state) == false {
+                    return false
+                }
+                index = index + 1
+            }
+            scope = scope + 1
+        }
+        return true
+    }
+
+    fn variable_states_equal(left: VariableState, right: VariableState) -> bool {
+        match read left {
+            Available => {
+                match read right {
+                    Available => {
+                        return true
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            ReadLoaned(count) => {
+                return read_loan_count(right, count)
+            }
+            WriteLoaned => {
+                match read right {
+                    WriteLoaned => {
+                        return true
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            Moved => {
+                match read right {
+                    Moved => {
+                        return true
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    fn read_loan_count(value: VariableState, expected: usize) -> bool {
+        match read value {
+            ReadLoaned(count) => {
+                return count == expected
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

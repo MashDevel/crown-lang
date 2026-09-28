@@ -1,0 +1,139 @@
+module x86 {
+    enum PrivilegedInstruction {
+        ReadControl(ControlRegister, Register)
+        WriteControl(ControlRegister, Register)
+        InvalidatePage(Register)
+        MemoryFence
+        InputPort(PortWidth)
+        OutputPort(PortWidth)
+        ReadFlags(Register)
+        EnableInterrupts
+        DisableInterrupts
+        Halt
+        ReadTimestamp
+        ReadTimestampProcessor
+        LoadGdt(Register)
+        LoadIdt(Register)
+        LoadTaskRegister(Register)
+        WriteBackInvalidate
+        InitializeFloat
+        LoadMxcsr(Register)
+        StoreMxcsr(Register)
+        ReadMsr
+        WriteMsr
+        ReloadSegments
+    }
+
+    enum Instruction {
+        Add(Register, Register)
+        AddSized(Register, Register, Width)
+        AddCarry(Register, Register)
+        AddImmediate(Register, i32)
+        And(Register, Register)
+        AndSized(Register, Register, Width)
+        Call(Text)
+        CallRegister(Register)
+        Compare(Register, Register)
+        ConditionalMove(Condition, Register, Register)
+        CompareExchangeMemory(CompareExchangeMemoryArgs)
+        CompareImmediate(Register, i32)
+        Cpuid
+        ClearDirection
+        DivideSigned(Register)
+        DivideUnsigned(Register)
+        ExchangeMemory(CompareExchangeMemoryArgs)
+        FloatBinary(FloatBinaryArgs)
+        FloatBinaryMemory(FloatBinaryMemoryArgs)
+        FloatCompare(FloatWidth, FloatRegister, FloatRegister)
+        FloatCompareMemory(FloatCompareMemoryArgs)
+        ConvertFloat(ConvertFloatArgs)
+        FloatToSigned(FloatToSignedArgs)
+        FloatUnary(FloatUnaryArgs)
+        FloatStackAtan2
+        FloatStackPower
+        FloatStackRemainder
+        FloatStackPop
+        FloatStackUnary(FloatStackUnaryOperator)
+        LoadDoubleStack(Register, i32)
+        LoadFloatStack(Register, i32)
+        LoadFloatMemory(LoadFloatMemoryArgs)
+        Jump(LocalLabel)
+        JumpRegister(Register)
+        JumpIf(Condition, LocalLabel)
+        JumpTableEntry(LocalLabel)
+        Iret
+        Interrupt(u8)
+        Immediate(ImmediateArgs)
+        Label(LocalLabel)
+        Load(Register, Register, i32)
+        LoadAddress(Register, Register, i32)
+        LoadLabelAddress(Register, LocalLabel)
+        LoadSymbolAddress(Register, Text)
+        LoadSized(LoadSizedArgs)
+        LoadIndexed(LoadIndexedArgs)
+        MemoryBinary(MemoryBinaryArgs)
+        Move(Register, Register)
+        MoveSized(MoveSizedArgs)
+        MoveBytes
+        SetBytes
+        MoveImmediate(Register, i64)
+        MoveFloat(FloatWidth, FloatRegister, FloatRegister)
+        PackedFloatBinary(FloatBinaryArgs)
+        PackedIntegerBinary(PackedIntegerArgs)
+        MovePacked(FloatRegister, FloatRegister)
+        ShufflePacked(FloatRegister, u8)
+        LoadPackedFloat(LoadFloatMemoryArgs)
+        StorePackedFloat(StoreFloatMemoryArgs)
+        MoveFromFloat(FloatWidth, Register, FloatRegister)
+        MoveToFloat(FloatWidth, FloatRegister, Register)
+        Multiply(Register, Register)
+        MultiplySized(Register, Register, Width)
+        MultiplyImmediate(Register, i32)
+        MultiplyImmediateSized(Register, i32, Width)
+        MultiplyWideUnsigned(Register)
+        Negate(Register)
+        Not(Register)
+        Or(Register, Register)
+        OrSized(Register, Register, Width)
+        Pop(Register)
+        PopFlags
+        Privileged(PrivilegedInstruction)
+        Push(Register)
+        PushFlags
+        PushImmediate(i32)
+        PushMemory(Register, i32)
+        Return
+        Set(Condition, Register)
+        SignExtendRax
+        SignedToFloat(SignedToFloatArgs)
+        ShiftLeft(Register)
+        ShiftLeftSized(Register, Width)
+        ShiftLeftImmediate(Register, u8)
+        ShiftLeftImmediateSized(Register, u8, Width)
+        ShiftRightArithmetic(Register)
+        ShiftRightArithmeticSized(Register, Width)
+        ShiftRightArithmeticImmediate(Register, u8)
+        ShiftRightArithmeticImmediateSized(Register, u8, Width)
+        ShiftRightLogical(Register)
+        ShiftRightLogicalSized(Register, Width)
+        ShiftRightLogicalImmediate(Register, u8)
+        ShiftRightLogicalImmediateSized(Register, u8, Width)
+        Store(Register, i32, Register)
+        StoreFloatMemory(StoreFloatMemoryArgs)
+        StoreDoubleStack(Register, i32)
+        StoreFloatStack(Register, i32)
+        StoreSized(StoreSizedArgs)
+        StoreIndexed(StoreIndexedArgs)
+        SaveFloatState(Register, i32)
+        RestoreFloatState(Register, i32)
+        Subtract(Register, Register)
+        SubtractSized(Register, Register, Width)
+        SubtractBorrow(Register, Register)
+        SubtractImmediate(Register, i32)
+        Syscall
+        Test(Register, Register)
+        Trap
+        Xor(Register, Register)
+        XorSized(Register, Register, Width)
+    }
+}

@@ -1,0 +1,135 @@
+module frontend {
+    fn namespace_collect(resolver: write NamespaceResolver, program: Program) -> void {
+        namespace_collect_structs(resolver, program.structs)
+        namespace_collect_enums(resolver, program.enums)
+        namespace_collect_resources(resolver, program.resources)
+        namespace_collect_interfaces(resolver, program.interfaces)
+        namespace_collect_functions(resolver, program.functions)
+        namespace_collect_foreign_functions(resolver, program.foreign_functions)
+        namespace_collect_constants(resolver, program.constants)
+    }
+
+    fn namespace_collect_structs(resolver: write NamespaceResolver, items: Vec<StructDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: true
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_enums(resolver: write NamespaceResolver, items: Vec<EnumDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: true
+                    })
+                namespace_collect_variants(resolver, item, name)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_resources(resolver: write NamespaceResolver, items: Vec<ResourceDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: true
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_interfaces(resolver: write NamespaceResolver, items: Vec<InterfaceDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: true
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_functions(resolver: write NamespaceResolver, items: Vec<Function>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: false
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_foreign_functions(resolver: write NamespaceResolver, items: Vec<ForeignFunction>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: false
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_constants(resolver: write NamespaceResolver, items: Vec<ConstDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan read items[index] as item {
+                namespace_set_module(resolver, item.span)
+                let raw = sema::name_text(resolver.source, item.name)
+                let name = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: name.clone(), target: name.clone(), type_value: false
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_collect_variants(resolver: write NamespaceResolver, item: EnumDecl, owner: Text) -> void {
+        var index: usize = 0
+        while index < item.variants.length() {
+            loan read item.variants[index] as variant {
+                let raw = sema::name_text(resolver.source, variant.name)
+                let canonical = namespace_qualify(owner, raw)
+                let local = namespace_qualify(resolver.module_name, raw)
+                namespace_add(resolver, NamespaceEntry {
+                        name: canonical.clone(), target: canonical.clone(), type_value: false
+                    })
+                namespace_add(resolver, NamespaceEntry {
+                        name: move local, target: move canonical, type_value: false
+                    })
+            }
+            index = index + 1
+        }
+    }
+}

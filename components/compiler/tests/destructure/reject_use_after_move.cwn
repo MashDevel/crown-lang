@@ -1,0 +1,14 @@
+struct Owner {
+    value: Vec<u8>
+}
+fn invalid(owner: take Owner) -> void {
+    let {
+        value
+    } = move owner
+    let again = move owner
+    value;
+    again
+}
+fn main() -> u32 {
+    return 0
+}

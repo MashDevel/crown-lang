@@ -1,0 +1,217 @@
+module optimize {
+    fn promote(function: write ir::Function) -> usize {
+        var analysis = promotion_candidates(function)
+        inspect_promotions(function, analysis)
+        var promotions = promote_local(function, analysis)
+        let predecessors = ir::predecessors(function)
+        var index: usize = 0
+        while index < analysis.candidates.length() {
+            loan read analysis.candidates[index] as candidate {
+                if candidate.valid && candidate.accesses.length() > 1 {
+                    match promote_cross(function, candidate, predecessors) {
+                        Some(promotion) => {
+                            promotions.push(move promotion)
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        apply_promotion_conversions(function, promotions)
+        let replacements = resolved_promotion_replacements(function.values.length(), promotions)
+        replace_promotion_uses(function, replacements)
+        remove_promoted_memory(function, promotions, replacements)
+        return promotions.length()
+    }
+
+    fn apply_promotion_conversions(function: write ir::Function, promotions: Vec<Promotion>) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                var instruction_result: Option<usize> = None()
+                loan read function.blocks[block].instructions[index] as instruction {
+                    instruction_result = instruction.result
+                }
+                match instruction_result {
+                    Some(result) => {
+                        match find_promotion_conversion(promotions, result) {
+                            Some(conversion) => {
+                                function.blocks[block].instructions[index].kind = ir::InstructionCast(
+                                    conversion.operator,
+                                    conversion.value,
+                                    conversion.target
+                                )
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn find_promotion_conversion(promotions: Vec<Promotion>, result: usize) -> Option<Conversion> {
+        var promotion: usize = 0
+        while promotion < promotions.length() {
+            var index: usize = 0
+            while index < promotions[promotion].rewrite.conversions.length() {
+                loan read promotions[promotion].rewrite.conversions[index] as value {
+                    if value.result == result {
+                        return Some(Conversion {
+                                result: value.result
+                                value: value.value
+                                operator: value.operator
+                                target: value.target
+                            })
+                    }
+                }
+                index = index + 1
+            }
+            promotion = promotion + 1
+        }
+        return None()
+    }
+
+    fn resolved_promotion_replacements(length: usize, promotions: Vec<Promotion>) -> Vec<Option<usize>> {
+        var output = none_usize(length)
+        var promotion: usize = 0
+        while promotion < promotions.length() {
+            var index: usize = 0
+            while index < promotions[promotion].rewrite.replacements.length() {
+                loan read promotions[promotion].rewrite.replacements[index] as rewrite {
+                    output[rewrite.result] = Some(rewrite.replacement)
+                }
+                index = index + 1
+            }
+            promotion = promotion + 1
+        }
+        var value: usize = 0
+        while value < output.length() {
+            output[value] = resolve_replacement(value, output)
+            value = value + 1
+        }
+        return move output
+    }
+
+    fn resolve_replacement(value: usize, replacements: Vec<Option<usize>>) -> Option<usize> {
+        var current = value
+        var count: usize = 0
+        while count < replacements.length() {
+            match read replacements[current] {
+                Some(next) => {
+                    current = next
+                }
+                None => {
+                    if current == value {
+                        return None()
+                    }
+                    return Some(current)
+                }
+            }
+            count = count + 1
+        }
+        return None()
+    }
+
+    fn replace_promotion_uses(function: write ir::Function, replacements: Vec<Option<usize>>) -> void {
+        ir::function_replace_uses_many(function, replacements)
+    }
+
+    fn remove_promoted_memory(function: write ir::Function, promotions: Vec<Promotion>, replacements: Vec<Option<usize>>) -> void {
+        var promoted = false_values(function.values.length())
+        var index: usize = 0
+        while index < promotions.length() {
+            promoted[promotions[index].slot] = true
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var output = Vec<ir::Instruction>.new()
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    if keep_promoted_instruction(instruction, promoted, replacements) {
+                        output.push(ir::instruction_copy(instruction))
+                    }
+                }
+                index = index + 1
+            }
+            function.blocks[block].instructions = move output
+            block = block + 1
+        }
+    }
+
+    fn keep_promoted_instruction(instruction: ir::Instruction, promoted: Vec<bool>, replacements: Vec<Option<usize>>) -> bool {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryStackSlot(size, alignment) => {
+                        size;
+                        alignment
+                        match read instruction.result {
+                            Some(result) => {
+                                return promoted[result] == false
+                            }
+                            None => {
+                                return true
+                            }
+                        }
+                    }
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        if promoted[address] == false {
+                            return true
+                        }
+                        match read instruction.result {
+                            Some(result) => {
+                                var replacement: Option<usize> = None()
+                                loan read replacements[result] as value {
+                                    replacement = value
+                                }
+                                return replacement_missing(replacement)
+                            }
+                            None => {
+                                return false
+                            }
+                        }
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        value;
+                        alignment;
+                        volatile
+                        return promoted[address] == false
+                    }
+                    _ => {
+                        return true
+                    }
+                }
+            }
+
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn replacement_missing(value: Option<usize>) -> bool {
+        match read value {
+            Some(item) => {
+                item;
+                return false
+            }
+            None => {
+                return true
+            }
+        }
+    }
+}

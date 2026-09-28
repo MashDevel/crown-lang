@@ -1,0 +1,99 @@
+module coverage {
+    fn layout(length: usize, nodes: Vec<inspect::Node>) -> lowering::CoverageLayout {
+        var output = lowering::CoverageLayout {
+            points: Vec<lowering::CoveragePoint>.new(), lines: zero_indices(length + 1), branches: zero_indices(length + 1)
+        }
+        for index in 0..nodes.length() {
+            register_node(output, nodes[index])
+        }
+        return move output
+    }
+
+    fn zero_indices(length: usize) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(length)
+        for index in 0..length {
+            index;
+            output.push(0)
+        }
+        return move output
+    }
+
+    fn register_node(layout: write lowering::CoverageLayout, node: inspect::Node) -> void {
+        match node.kind {
+            inspect::Kind::Function | inspect::Kind::Statement | inspect::Kind::Expression => {
+                if layout.lines[node.span.start] != 0 {
+                    return
+                }
+                layout.lines[node.span.start] = append_point(layout, node.span, lowering::CoverageKind::Line()) + 1
+            }
+            inspect::Kind::Decision => {
+                if lowering::coverage_index(layout, node.span, true) != 0 {
+                    return
+                }
+                layout.branches[node.span.start] = append_point(layout, node.span, lowering::CoverageKind::Taken()) + 1
+                append_point(layout, node.span, lowering::CoverageKind::NotTaken())
+            }
+            inspect::Kind::Arm => {
+                layout.branches[node.span.start] = append_point(layout, node.span, lowering::CoverageKind::Arm()) + 1
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn append_point(layout: write lowering::CoverageLayout, span: frontend::Span, kind: lowering::CoverageKind) -> usize {
+        let index = layout.points.length()
+        layout.points.push(lowering::CoveragePoint {
+                span: span, kind: kind, next: layout.branches[span.start]
+            })
+        return index
+    }
+
+    fn bitset_size(layout: lowering::CoverageLayout) -> usize {
+        return (layout.points.length() + 63) / 64 * 8
+    }
+
+    fn metadata(bundle: frontend::SourceBundle, layout: lowering::CoverageLayout) -> Result<Text, Text> {
+        var output = "{\"version\":2,\"source\":"
+        loan read bundle.source as bytes {
+            std::text::append(output, toolchain::json_quoted(toolchain::checksum(bytes)))
+        }
+        std::text::append(output, ",\"bytes\":")
+        std::text::append(output, std::text::decimal(u64.from(bitset_size(layout))))
+        std::text::append(output, ",\"files\":")
+        std::text::append(output, source_metadata(bundle)?)
+        std::text::append(output, ",\"points\":[")
+        for index in 0..layout.points.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, point_json(bundle, layout.points[index]))
+        }
+        std::text::append(output, "]}\n")
+        return Ok(move output)
+    }
+
+    fn point_json(bundle: frontend::SourceBundle, point: lowering::CoveragePoint) -> Text {
+        let location = frontend::diagnostic_location(bundle, point.span)
+        var output = std::text::joined("{\"file\":", toolchain::json_quoted(bundle.files[location.file].path))
+        inspect::number_field(output, "line", location.line)
+        inspect::number_field(output, "column", location.column)
+        var kind: usize = 0
+        match point.kind {
+            Line => {
+            },
+            Taken => {
+                kind = 1
+            },
+            NotTaken => {
+                kind = 2
+            },
+            Arm => {
+                kind = 3
+            }
+        }
+        inspect::number_field(output, "kind", kind)
+        output.push('}')
+        return move output
+    }
+}

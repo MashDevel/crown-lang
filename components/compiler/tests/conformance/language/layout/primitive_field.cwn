@@ -1,0 +1,3 @@
+fn main() -> usize {
+    return u64.offset_of("value")
+}

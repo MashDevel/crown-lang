@@ -1,0 +1,46 @@
+fn build(root: Text, project: Text) -> Result<Text, Text> {
+    let binary = toolchain::path_join(root, "program")
+    let source = toolchain::path_join(toolchain::repository_root()?, project)
+    var arguments = testing::list("build")
+    arguments.push(source.clone())
+    arguments.push("-o")
+    arguments.push(binary.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(result), std::text::joined(result.stdout, result.stderr))?
+    return Ok(move binary)
+}
+
+fn execute(root: Text, project: Text, expected: Text, inputs: take Vec<Text>) -> Result<void, Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push(build(root, project)?)
+    for index in 0..inputs.length() {
+        arguments.push(inputs[index].clone())
+    }
+    let result = toolchain::capture(toolchain::command(move arguments), root)?
+    testing::expect(result.status == 0, std::text::joined(project, result.stderr))?
+    return testing::expect(std::text::equal(result.stdout, expected), std::text::joined("unexpected output: ", project))
+}
+
+fn check_platform(root: Text) -> Result<void, Text> {
+    let source = toolchain::path_join(toolchain::repository_root()?, "components/library/platform/tests")
+    var arguments = testing::list("check")
+    arguments.push(move source)
+    arguments.push("--target")
+    arguments.push("x86_64-linux")
+    let result = testing::invoke(move arguments, root)?
+    return testing::expect(toolchain::clean_result(result), std::text::joined(result.stdout, result.stderr))
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    var arguments = Vec<Text>.new()
+    arguments.push(toolchain::path_join(root, "roundtrip.bin"))
+    execute(root, "components/library/tests", "", move arguments)?
+    execute(root, "components/library/integrations/tests", "", Vec<Text>.new())?
+    return check_platform(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

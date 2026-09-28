@@ -1,0 +1,7 @@
+fn calculate() -> u32 {
+    1
+}
+const BAD: u32 = calculate()
+fn main() -> u32 {
+    0
+}

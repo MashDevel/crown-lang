@@ -1,0 +1,47 @@
+module lowering {
+    fn static_lock(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference
+                if arguments.length() != 1 || sema::name_is(analysis.checker.symbols.source, method, "new") == false {
+                    return Err(348)
+                }
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                return new_lock_value(compiler, analysis, move value_type, arguments[0])
+            }
+            _ => {
+                return Err(349)
+            }
+        }
+    }
+
+    fn new_lock_value(compiler: write FunctionCompiler, analysis: sema::Analysis, value_type: take sema::Type, argument: frontend::Expression) -> Result<Value, u32> {
+        let value = function_expression(compiler, analysis, argument)?
+        if expression_terminated(compiler) {
+            return Ok(VoidValue())
+        }
+        let payload = lock_payload(value_type)?
+        let lock = allocate_lock(compiler, payload.mutex)?
+        let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+        function_store_pointer(compiler, address, lock)?
+        let layout = layout(analysis.checker.symbols, payload.value_type)?
+        let target = function_offset(compiler, address, align_to(8, layout.alignment))?
+        function_copy(compiler, analysis.checker.symbols, CopyRequest {
+                destination: target, value: move value
+            })?
+        return Ok(AddressValue(address, move value_type))
+    }
+
+    fn allocate_lock(compiler: write FunctionCompiler, mutex: bool) -> Result<usize, u32> {
+        var size: u64 = 256
+        var name = "pthread_rwlock_init"
+        if mutex {
+            size = 64;
+            name = "pthread_mutex_init"
+        }
+        let amount = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), size)
+        let lock = function_allocate(compiler, amount)?
+        initialize_named_lock(compiler, move name, lock)?
+        return Ok(lock)
+    }
+}

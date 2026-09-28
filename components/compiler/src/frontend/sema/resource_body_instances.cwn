@@ -1,0 +1,42 @@
+module sema {
+    fn expand_resource_body(checker: write Checker, state: write InstanceState, request: ResourceExpansion) -> void {
+        check_resource_spawns(checker, request)
+        check_resource_roots(checker, request)
+        for index in 0..checker.expressions.length() {
+            var value = Invalid()
+            loan read checker.expressions[index] as expression {
+                if resource_owner_matches(expression.resource_owner, request.symbol) {
+                    value = substitute(expression.value_type, request.arguments)
+                }
+            }
+            include_resource_type(checker, state, value)
+        }
+        for index in 0..checker.generic_calls.length() {
+            var candidate: Option<FunctionInstance> = None()
+            loan read checker.generic_calls[index] as call {
+                if resource_owner_matches(call.resource_owner, request.symbol) {
+                    candidate = Some(FunctionInstance {
+                            function: call.function, arguments: substitute_types(call.arguments, request.arguments)
+                        })
+                }
+            }
+            match move candidate {
+                Some(value) => {
+                    add_instance(checker, state, move value)
+                },
+                None => {
+                }
+            }
+        }
+    }
+    fn resource_owner_matches(owner: Option<usize>, expected: usize) -> bool {
+        match owner {
+            Some(value) => {
+                return value == expected
+            },
+            None => {
+                return false
+            }
+        }
+    }
+}

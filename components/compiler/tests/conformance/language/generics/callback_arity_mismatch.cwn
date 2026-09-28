@@ -1,0 +1,9 @@
+fn apply<T, R>(action: fn(read T) -> R, value: T) -> R {
+    return action(value)
+}
+fn action(left: u32, right: u32) -> u32 {
+    return left + right
+}
+fn main() -> u32 {
+    return apply(action, 1)
+}

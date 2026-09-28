@@ -1,0 +1,37 @@
+module lowering {
+    fn enum_constructor(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionCall(name, arguments) => {
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                let layout = layout_variant(analysis.checker.symbols, value_type, name)?
+                if layout.fields.length() != arguments.length() {
+                    return Err(121)
+                }
+                let address = function_zeroed_stack(compiler, analysis.checker.symbols, value_type)?
+                let tag_type = ir::TypeInteger(ir::IntegerWidth32())
+                let tag = function_integer(compiler, tag_type, layout.tag)
+                let tag_value_type = sema::builtin_leaf(sema::U32())
+                let store = StoreRequest {
+                    address: address, value: tag, value_type: move tag_value_type
+                }
+                function_store(compiler, analysis.checker.symbols, store)?
+                initialize_enum_fields(compiler, analysis, address, layout.fields, arguments)?
+                return Ok(AddressValue(address, move value_type))
+            }
+            _ => {
+                return Err(122)
+            }
+        }
+    }
+    fn initialize_enum_fields(compiler: write FunctionCompiler, analysis: sema::Analysis, address: usize, fields: Vec<FieldLayout>, arguments: Vec<frontend::Expression>) -> Result<void, u32> {
+        var index: usize = 0
+        while index < arguments.length() {
+            let target = function_offset(compiler, address, fields[index].offset)?
+            initialize_owned_place(compiler, analysis, arguments[index], Place {
+                    address: target, value_type: sema::type_copy(fields[index].value_type)
+                })?
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

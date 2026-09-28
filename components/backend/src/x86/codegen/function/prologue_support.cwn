@@ -1,0 +1,116 @@
+module x86 {
+    fn codegen_argument_location_copy(location: ArgumentLocation) -> ArgumentLocation {
+        match read location {
+            ArgumentInteger(register) => {
+                return ArgumentInteger(register)
+            }
+            ArgumentFloat(register) => {
+                return ArgumentFloat(register)
+            }
+            ArgumentStack(slot) => {
+                return ArgumentStack(slot)
+            }
+            ArgumentMemory(slot, slots, size) => {
+                return ArgumentMemory(slot, slots, size)
+            }
+            ArgumentOmitted => {
+                return ArgumentOmitted()
+            }
+            ArgumentRegisters(components) => {
+                var output = Vec<AbiComponentLocation>.with_capacity(components.length())
+                var index: usize = 0
+                while index < components.length() {
+                    loan read components[index] as component {
+                        output.push(AbiComponentLocation {
+                                component: ir::abi_component_copy(component.component)
+                                location: codegen_scalar_location_copy(component.location)
+                            })
+                    }
+                    index = index + 1
+                }
+                return ArgumentRegisters(move output)
+            }
+        }
+    }
+
+    fn codegen_scalar_location_copy(location: ScalarLocation) -> ScalarLocation {
+        match read location {
+            ScalarInteger(register) => {
+                return ScalarInteger(register)
+            }
+            ScalarFloat(register) => {
+                return ScalarFloat(register)
+            }
+        }
+    }
+
+    fn codegen_capture_stack_parameter(program: ir::Program, compiler: write FunctionCompiler, input: StackParameter) -> Result<void, CodegenError> {
+        if input.slot > 268435453 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        let offset = i32.from(input.slot * 8 + 16)
+        codegen_emit(compiler, Load(Rax(), Rbp(), offset))
+        return codegen_store_value(program, compiler, ValueAccess {
+                value: input.value, register: Rax()
+            })
+    }
+
+    fn codegen_capture_aggregate_memory(compiler: write FunctionCompiler, input: take AggregateCapture) -> Result<void, CodegenError> {
+        if input.slot > 268435453 || input.size > 2147483647 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        var destination: i32 = 0
+        match codegen_parameter_offset(compiler, input.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(offset) => {
+                destination = offset
+            }
+        }
+        let source = i32.from(input.slot * 8 + 16)
+        return codegen_copy_exact(compiler, MemoryCopyAddress {
+                base: Rbp(), offset: source
+            }, MemoryCopyAddress {
+                base: Rbp(), offset: destination
+            }, input.size)
+    }
+
+    fn codegen_parameter_offset(compiler: FunctionCompiler, value: usize) -> Result<i32, CodegenError> {
+        match codegen_frame_location(compiler.frame, value) {
+            Some(location) => {
+                match read location {
+                    ValueStackAddress(offset) => {
+                        return Ok(offset)
+                    }
+                    _ => {
+                        return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                    }
+                }
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_epilogue(compiler: write FunctionCompiler) -> void {
+        if compiler.frame.size != 0 {
+            codegen_emit(compiler, AddImmediate(Rsp(), compiler.frame.size))
+        }
+        if codegen_frame_saved_padding(compiler.frame) {
+            codegen_emit(compiler, AddImmediate(Rsp(), 8))
+        }
+        var cursor = compiler.frame.saved_registers.length()
+        while cursor > 0 {
+            cursor = cursor - 1
+            var register = Rax()
+            loan read compiler.frame.saved_registers[cursor] as source {
+                register = source
+            }
+            codegen_emit(compiler, Pop(register))
+        }
+        codegen_emit(compiler, Pop(Rbp()))
+        codegen_emit(compiler, Return())
+    }
+}

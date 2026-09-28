@@ -1,0 +1,14 @@
+fn main() -> u32 {
+    unsafe {
+        if ir::parallel_parse_jobs("1\0".as_raw()) != 1 { return 1 }
+        if ir::parallel_parse_jobs("2\0".as_raw()) != 2 { return 2 }
+        if ir::parallel_parse_jobs("+3\0".as_raw()) != 3 { return 3 }
+        if ir::parallel_parse_jobs("100\0".as_raw()) != 4 { return 4 }
+        if ir::parallel_parse_jobs("0\0".as_raw()) != 4 { return 5 }
+        if ir::parallel_parse_jobs("\0".as_raw()) != 4 { return 6 }
+        if ir::parallel_parse_jobs("-1\0".as_raw()) != 4 { return 7 }
+        if ir::parallel_parse_jobs("2x\0".as_raw()) != 4 { return 8 }
+    }
+    if ir::parallel_workers(0) != 1 || ir::parallel_workers(1) != 1 { return 9 }
+    return 42
+}

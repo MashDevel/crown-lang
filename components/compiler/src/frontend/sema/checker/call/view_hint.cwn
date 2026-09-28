@@ -1,0 +1,40 @@
+module sema {
+    fn view_argument_hint(symbols: write Symbols, expression: frontend::Expression, expected: Type) -> Type {
+        return view_argument_kind_hint(symbols, expression.kind, expected)
+    }
+
+    fn view_argument_kind_hint(symbols: write Symbols, kind: frontend::ExpressionKind, expected: Type) -> Type {
+        match read kind {
+            frontend::ExpressionText(span) => {
+                span;
+                return type_copy(expected)
+            }
+            frontend::ExpressionArray(values) => {
+                return view_array_hint(expected, values.length())
+            }
+            frontend::ExpressionArrayRepeat(value, length) => {
+                value;
+                return view_array_hint(expected, resolve_array_length(symbols, length))
+            }
+            _ => {
+                if type_builtin(expected) == TextView() {
+                    return builtin_leaf(Text())
+                }
+                return type_copy(expected)
+            }
+        }
+    }
+
+    fn view_array_hint(expected: Type, length: usize) -> Type {
+        match read expected {
+            BuiltinType(builtin, arguments) => {
+                if builtin == Slice() && arguments.length() == 1 && type_is_concrete(arguments[0]) {
+                    return ArrayType(Box.new(type_copy(arguments[0])), length)
+                }
+            }
+            _ => {
+            }
+        }
+        return type_copy(expected)
+    }
+}

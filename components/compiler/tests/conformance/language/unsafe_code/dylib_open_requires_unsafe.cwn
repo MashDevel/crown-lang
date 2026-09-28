@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    std::dylib::open("untrusted.dylib", Vec<Text>.new())
+    return 0
+}

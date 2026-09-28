@@ -1,0 +1,44 @@
+module sema {
+    fn items_unique<T>(source: Shared<Vec<u8>>, items: Vec<T>, equal: fn(Shared<Vec<u8>>, T, T) -> bool) -> bool {
+        var index: usize = 0
+        while index < items.length() {
+            var other = index + 1
+            while other < items.length() {
+                if equal(source, items[index], items[other]) {
+                    return false
+                }
+                other = other + 1
+            }
+            index = index + 1
+        }
+        true
+    }
+
+    fn names_unique(source: Shared<Vec<u8>>, names: Vec<frontend::Name>) -> bool {
+        items_unique(source, names, names_equal)
+    }
+
+    fn field_names_unique(source: Shared<Vec<u8>>, fields: Vec<Field>) -> bool {
+        items_unique(source, fields, field_names_equal)
+    }
+
+    fn variant_names_unique(source: Shared<Vec<u8>>, variants: Vec<Variant>) -> bool {
+        items_unique(source, variants, variant_names_equal)
+    }
+
+    fn parameter_names_unique(source: Shared<Vec<u8>>, parameters: Vec<NamedParameter>) -> bool {
+        items_unique(source, parameters, parameter_names_equal)
+    }
+
+    fn field_names_equal(source: Shared<Vec<u8>>, left: Field, right: Field) -> bool {
+        names_equal(source, left.name, right.name)
+    }
+
+    fn variant_names_equal(source: Shared<Vec<u8>>, left: Variant, right: Variant) -> bool {
+        names_equal(source, left.name, right.name)
+    }
+
+    fn parameter_names_equal(source: Shared<Vec<u8>>, left: NamedParameter, right: NamedParameter) -> bool {
+        names_equal(source, left.name, right.name)
+    }
+}

@@ -1,0 +1,155 @@
+fn request(root: Text, directory: Text, force: bool) -> toolchain::BootstrapRequest {
+    return toolchain::BootstrapRequest {
+        root: root.clone(), compiler: toolchain::path_join(root, "unavailable-compiler"), directory: toolchain::path_join(root, directory), force: force, verify: true
+    }
+}
+
+fn prepare(root: Text) -> Result<Text, Text> {
+    testing_launcher::cached_project(root)?
+    testing_launcher::matching_seed_manifest(root)?
+    toolchain::bootstrap(request(root, "first", false))?
+    let seed = toolchain::verify_seed(root)?
+    let input = toolchain::bootstrap_fingerprint(seed, toolchain::compiler_sources(root)?, true)?
+    let cached = toolchain::bootstrap_cache(root, input)
+    testing::expect(toolchain::fresh(cached, input), "successful bootstrap publishes a verified shared compiler")?
+    let manifest = std::text::joined(std::text::joined("{\"assembly_sha256\":", toolchain::json_quoted(toolchain::digest(seed)?)), "}")
+    testing::write_file(root, toolchain::seed_relative("manifest.json"), manifest)?
+    return Ok(move cached)
+}
+
+fn reused(root: Text, directory: Text) -> Result<Text, Text> {
+    let binary = toolchain::bootstrap(request(root, directory, false))?
+    let result = toolchain::capture(toolchain::command(testing::list(binary)), root)?
+    testing::expect(result.status == 23, "shared compiler cache preserves executable contents and permissions")?
+    let seed = toolchain::verify_seed(root)?
+    let input = toolchain::bootstrap_fingerprint(seed, toolchain::compiler_sources(root)?, true)?
+    testing::expect(toolchain::fresh(binary, input), "installed compiler has a verified build record")?
+    return Ok(move binary)
+}
+
+fn destinations(root: Text) -> Result<void, Text> {
+    let binary = reused(root, "second")?
+    toolchain::write_text(binary, "corrupted destination")?
+    reused(root, "second")?
+    toolchain::remove_file(binary)?
+    reused(root, "second")?
+    testing::error(toolchain::bootstrap(request(root, "forced", true)))?
+    return Ok(())
+}
+
+fn changed_sources(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "components/compiler/src/main.cwn")
+    let original = toolchain::read_text(path)?
+    toolchain::write_text(path, "fn main() -> u32 { 19 }")?
+    testing::error(toolchain::bootstrap(request(root, "changed", false)))?
+    testing::expect(toolchain::exists(toolchain::path_join(root, "changed/crown")) == false, "failed rebuild does not publish a compiler")?
+    toolchain::write_text(path, original)?
+    reused(root, "restored")?
+    return Ok(())
+}
+
+fn available_compiler(root: Text, cached: Text) -> Result<void, Text> {
+    toolchain::remove_file(cached)?
+    toolchain::remove_file(std::text::joined(cached, ".crown-build"))?
+    var build = request(root, "available", false)
+    build.compiler = toolchain::path_join(root, "first/crown")
+    toolchain::bootstrap(build)?
+    reused(root, "from-available")?
+    let seed = toolchain::verify_seed(root)?
+    let input = toolchain::bootstrap_fingerprint(seed, toolchain::compiler_sources(root)?, true)?
+    return testing::expect(toolchain::fresh(cached, input), "verified available compiler populates the shared cache")
+}
+
+fn damaged_entries(root: Text, cached: Text) -> Result<void, Text> {
+    let original = toolchain::read_bytes(cached)?
+    toolchain::write_text(cached, "corrupted shared compiler")?
+    testing::error(toolchain::bootstrap(request(root, "damaged", false)))?
+    toolchain::write_bytes(cached, original)?
+    reused(root, "repaired")?
+    return damaged_records(root, cached)
+}
+
+fn damaged_records(root: Text, cached: Text) -> Result<void, Text> {
+    let path = std::text::joined(cached, ".crown-build")
+    let record = toolchain::read_text(path)?
+    toolchain::write_text(path, "invalid record")?
+    testing::error(toolchain::bootstrap(request(root, "invalid-record", false)))?
+    toolchain::write_text(path, record)?
+    toolchain::remove_file(cached)?
+    testing::error(toolchain::bootstrap(request(root, "missing", false)))?
+    return Ok(())
+}
+
+fn changed_install(root: Text, cached: Text) -> Result<void, Text> {
+    let original = toolchain::read_bytes(cached)?
+    let seed = toolchain::verify_seed(root)?
+    let input = toolchain::bootstrap_fingerprint(seed, toolchain::compiler_sources(root)?, true)?
+    toolchain::write_text(cached, "changed after verification")?
+    let output = toolchain::path_join(root, "unpublished")
+    testing::error(toolchain::install_bootstrap(cached, output, seed, request(root, "unused", false), input))?
+    testing::expect(toolchain::exists(output) == false, "changed compiler is not installed")?
+    return toolchain::write_bytes(cached, original)
+}
+
+fn native_compiler(root: Text) -> Result<Text, Text> {
+    testing_launcher::cached_project(root)?
+    testing_launcher::matching_seed_manifest(root)?
+    let compiler = testing::write_file(root, "native-compiler", "#!/bin/sh\nset -eu\ntest \"$1\" = _executable\ntest \"$2\" = -o\nprintf '#!/bin/sh\\nexit 37\\n' > \"$3\"\nchmod +x \"$3\"\nprintf 'built\\n' >> \"$0.calls\"\n")?
+    toolchain::executable(compiler)?
+    return Ok(move compiler)
+}
+
+fn single_build(root: Text) -> Result<void, Text> {
+    let compiler = native_compiler(root)?
+    var build = request(root, "single", false)
+    build.compiler = compiler.clone()
+    build.verify = false
+    let binary = toolchain::bootstrap(build)?
+    let result = toolchain::capture(toolchain::command(testing::list(binary)), root)?
+    testing::expect(result.status == 37, "development bootstrap builds the checkout once through the native backend")?
+    toolchain::bootstrap(build)?
+    toolchain::write_text(binary, "corrupted development compiler")?
+    toolchain::bootstrap(build)?
+    testing::expect(std::text::equal(toolchain::read_text(std::text::joined(compiler, ".calls"))?, "built\n"), "development bootstrap reuses the checked compiler")?
+    return development_cache_separation(build, binary)
+}
+
+fn development_cache_separation(initial: toolchain::BootstrapRequest, binary: Text) -> Result<void, Text> {
+    let seed = toolchain::verify_seed(initial.root)?
+    let sources = toolchain::compiler_sources(initial.root)?
+    let verified = toolchain::bootstrap_fingerprint(seed, sources, true)?
+    let native = toolchain::bootstrap_fingerprint(seed, sources, false)?
+    testing::expect(toolchain::fresh(binary, native) && toolchain::fresh(binary, verified) == false, "a development build cannot satisfy verified bootstrap freshness")?
+    var validation = request(initial.root, "single", true)
+    validation.compiler = initial.compiler.clone()
+    testing::error(toolchain::bootstrap(validation))?
+    return testing::expect(toolchain::fresh(binary, native), "failed fixed-point verification preserves the development compiler")
+}
+
+fn reuse_verified_compiler(root: Text) -> Result<void, Text> {
+    let cached = prepare(root)?
+    var build = request(root, "development", false)
+    build.compiler = cached.clone()
+    build.verify = false
+    let binary = toolchain::bootstrap(build)?
+    testing::expect(std::text::equal(toolchain::digest(binary)?, toolchain::digest(cached)?), "development launch reuses an already verified compiler without rebuilding")?
+    let input = toolchain::bootstrap_fingerprint(toolchain::verify_seed(root)?, toolchain::compiler_sources(root)?, true)?
+    return testing::expect(toolchain::fresh(cached, input), "adopting a verified compiler preserves its verification record")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let cached = prepare(root)?
+    destinations(root)?
+    changed_sources(root)?
+    available_compiler(root, cached)?
+    changed_install(root, cached)?
+    damaged_entries(root, cached)?
+    single_build(toolchain::path_join(root, "development"))?
+    return reuse_verified_compiler(toolchain::path_join(root, "verified-development"))
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

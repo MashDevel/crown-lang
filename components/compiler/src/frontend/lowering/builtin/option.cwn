@@ -1,0 +1,34 @@
+module lowering {
+    fn option_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments
+                if sema::name_is(analysis.checker.symbols.source, method, "take") == false {
+                    return Err(183)
+                }
+                var source: usize = 0
+                var value_type = sema::Invalid()
+                loan read receiver as value {
+                    source = expression_place(compiler, analysis, value)?
+                    value_type = function_expression_type(compiler, analysis, value)?
+                }
+                let result = function_stack(compiler, analysis.checker.symbols, value_type)?
+                let value = AddressValue(source, sema::type_copy(value_type))
+                let transfer = CopyRequest {
+                    destination: result, value: move value
+                }
+                function_copy(compiler, analysis.checker.symbols, transfer)?
+                let tag_type = ir::TypeInteger(ir::IntegerWidth32())
+                let none = function_integer(compiler, tag_type, 0)
+                let store = StoreRequest {
+                    address: source, value: none, value_type: sema::builtin_leaf(sema::U32())
+                }
+                function_store(compiler, analysis.checker.symbols, store)?
+                return Ok(AddressValue(result, move value_type))
+            }
+            _ => {
+                return Err(184)
+            }
+        }
+    }
+}

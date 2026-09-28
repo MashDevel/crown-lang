@@ -1,0 +1,24 @@
+struct Pair<T> {
+    value: T
+}
+fn identity<T>(value: take T) -> T {
+    let result: T = move value
+    return move result
+}
+fn package<T>(value: take T) -> Pair<T> {
+    let result: Pair<T> = Pair<T> {
+        value: move value
+    }
+    return move result
+}
+fn empty<T>(value: read T) -> Vec<T> {
+    value
+    return Vec<T>.new()
+}
+fn main() -> u32 {
+    let seed = 1
+    let unused = empty(seed)
+    unused.length()
+    let result = package(identity(7))
+    return result.value
+}

@@ -1,0 +1,18 @@
+resource Token {
+    count: Shared<Mutex<u32>>
+    drop { count.lock write as value { value = value + 1 } }
+}
+fn forward<T>(site: SourceSite, value: take T) -> T {
+    site;
+    return move value
+}
+fn retained(count: Shared<Mutex<u32>>) -> void {
+    let token = Token { count: count.share() }
+    let captured = source_call(forward, move token)
+    captured;
+}
+fn main() -> u32 {
+    let count = Shared.new(Mutex.new(0))
+    retained(count)
+    count.lock write as value { return if value == 1 { 0 } else { 1 } }
+}

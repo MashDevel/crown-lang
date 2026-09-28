@@ -1,0 +1,133 @@
+module arm64 {
+    fn abi_type(value_type: ir::Type) -> Result<AbiValue, Text> {
+        let size = value_size(value_type)?
+        let kind = match value_type {
+            ir::TypeFloat(width) => {
+                width;
+                AbiKind::Float()
+            }
+            ir::TypeVector(lane) => {
+                lane;
+                AbiKind::Vector()
+            }
+            ir::TypeAggregate(bytes, alignment) => {
+                bytes;
+                alignment;
+                AbiKind::Aggregate()
+            }
+            _ => AbiKind::Integer()
+        }
+        return Ok(AbiValue {
+                size: u64.from(size), alignment: size, kind: kind
+            })
+    }
+    fn aggregate_type(aggregate: ir::AggregateAbi) -> AbiValue {
+        match read aggregate {
+            ir::AggregateMemory(size, alignment) => AbiValue {
+                size: size, alignment: alignment, kind: AbiKind::Aggregate()
+            }
+            ir::AggregateRegisters(size, alignment, components) => {
+                AbiValue {
+                    size: size, alignment: alignment, kind: aggregate_kind(size, components)
+                }
+            }
+        }
+    }
+    fn parameter_location(signature: ir::Signature, index: usize, state: write AbiState) -> Result<AbiArgument, Text> {
+        match read signature.parameter_abi[index] {
+            ir::ParameterDirect => abi_argument(state, abi_type(signature.parameters[index])?, ir::signature_variadic(signature, index))
+            ir::ParameterAggregate(aggregate) => abi_argument(state, aggregate_type(aggregate), ir::signature_variadic(signature, index))
+            ir::ParameterReturn(aggregate) => {
+                let result = abi_result(aggregate_type(aggregate))?
+                if result.indirect {
+                    return Ok(result)
+                }
+                return Ok(AbiArgument {
+                        location: AbiLocation::Omitted(), indirect: false
+                    })
+            }
+        }
+    }
+    fn reserve_parameters(function: ir::Function, compiler: write Compiler) -> Result<void, Text> {
+        for index in 0..function.parameters.length() {
+            match read function.signature.parameter_abi[index] {
+                ir::ParameterAggregate(aggregate) | ir::ParameterReturn(aggregate) => {
+                    let value = aggregate_type(aggregate)
+                    let offset = frame_reserve(compiler.frame, abi_align(value.size, 16)?, value.alignment)?
+                    compiler.frame.allocations[function.parameters[index]] = offset
+                }
+                _ => {
+                }
+            }
+        }
+        compiler.frame.size = abi_align(compiler.frame.size, 16)?
+        return Ok(())
+    }
+    fn capture_parameters(function: ir::Function, compiler: write Compiler) -> Result<void, Text> {
+        var state = abi_state(compiler.variant)
+        for index in 0..function.parameters.length() {
+            let argument = parameter_location(function.signature, index, state)?
+            capture_parameter(function, compiler, index, argument)?
+        }
+        return Ok(())
+    }
+    fn capture_parameter(function: ir::Function, compiler: write Compiler, index: usize, argument: AbiArgument) -> Result<void, Text> {
+        let value = function.parameters[index]
+        let aggregate = compiler.frame.allocations[value] != 18446744073709551615
+        if aggregate && argument.indirect == false {
+            let offset = compiler.frame.allocations[value]
+            frame_address(compiler, 9, offset)
+            value_store(compiler, value, 9)
+            return capture_location(function, compiler, index, argument.location, offset)
+        }
+        if frame_register(compiler.frame, value) != REGISTER_SPILLED {
+            return capture_register_parameter(function, compiler, index, argument.location)
+        }
+        return capture_location(function, compiler, index, argument.location, frame_value(compiler.frame, value)?)
+    }
+    fn capture_location(function: ir::Function, compiler: write Compiler, index: usize, location: AbiLocation, offset: u64) -> Result<void, Text> {
+        let value = function.parameters[index]
+        match location {
+            AbiLocation::General(start, count) => {
+                for lane in 0..usize.from(count) {
+                    normalize(compiler, function.values[value], start + u32.from(lane), false)
+                    frame_access(compiler, start + u32.from(lane), offset + u64.from(lane) * 8, 8, false)
+                }
+            }
+            AbiLocation::Simd(start, count) => {
+                let shape = parameter_type(function.signature, index)?
+                frame_address(compiler, 17, offset)
+                simd_access(compiler, 17, SimdAccess {
+                        start: start, count: count, size: u32.from(shape.size), load: false
+                    })?
+            }
+            AbiLocation::Stack(source, size) => {
+                capture_stack(compiler, offset, source, size)?
+                normalize_parameter(function, compiler, value)
+            }
+            AbiLocation::Omitted => {
+            }
+        }
+        return Ok(())
+    }
+    fn normalize_parameter(function: ir::Function, compiler: write Compiler, value: usize) -> void {
+        if compiler.frame.allocations[value] != 18446744073709551615 {
+            return
+        }
+        value_load(compiler, value, 9)
+        normalize(compiler, function.values[value], 9, false)
+        value_store(compiler, value, 9)
+    }
+
+    fn capture_stack(compiler: write Compiler, offset: u64, source: u64, size: u64) -> Result<void, Text> {
+        var byte: u64 = 0
+        while byte < size {
+            frame_address(compiler, 16, compiler.frame.size + 32 + source)
+            load_partial(compiler, 9, 16, byte, size)?
+            frame_access(compiler, 9, offset + byte, 8, false)
+            byte = byte + 8
+        }
+        return Ok(())
+    }
+
+}

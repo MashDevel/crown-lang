@@ -1,0 +1,83 @@
+fn main() -> u32 {
+    match run_tests() {
+        Ok(value) => {
+            value;
+            print(13);
+            return 0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
+}
+
+fn run_tests() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let directory = toolchain::temporary_path(temporary)
+    verify_executables(directory)?
+    verify_undefined()?
+    missing_library()?
+    executable_text_relocation()?
+    framework_imports()?
+    return Ok(())
+}
+
+fn verify_executables(directory: Text) -> Result<void, Text> {
+    verify_program(sample_object(), directory)?
+    verify_program(import_object(), directory)?
+    verify_program(initialized_object(), directory)?
+    verify_program(exported_program()?, directory)?
+    let encoded = macho::object_file(import_object())?
+    var decoded = macho::read_object(move encoded)?
+    decoded.entry = Some(0)
+    verify_program(move decoded, directory)?
+    return Ok(())
+}
+
+fn verify_program(object: take object::CompilerObject, directory: Text) -> Result<void, Text> {
+    let libraries = std::text::split("/usr/lib/libSystem.B.dylib", 124)
+    let bytes = macho::executable(object, libraries)?
+    let path = toolchain::path_join(directory, "program")
+    toolchain::write_bytes(path, bytes)?
+    toolchain::executable(path)?
+    verify_dyld_opcodes(path.clone(), directory)?
+    var arguments = Vec<Text>.new()
+    arguments.push(path.clone())
+    let result = toolchain::capture(toolchain::command(move arguments), directory)?
+    if result.status != 42 || result.stdout.length() != 0 || result.stderr.length() != 0 {
+        return Err(std::text::joined("native executable failed: ", result.stderr))
+    }
+    return Ok(())
+}
+
+fn verify_dyld_opcodes(path: Text, directory: Text) -> Result<void, Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push("/usr/bin/dyld_info")
+    arguments.push("-opcodes")
+    arguments.push(path.clone())
+    let result = toolchain::capture(toolchain::command(move arguments), directory)?
+    if result.status != 0 || std::text::contains(result.stdout, "bind opcodes:") == false {
+        let status = std::text::signed_decimal(i64.from(result.status))
+        return Err(std::text::joined(std::text::joined(std::text::joined("invalid Mach-O opcodes (", status), "): "), std::text::joined(result.stdout, result.stderr)))
+    }
+    return Ok(())
+}
+
+fn verify_undefined() -> Result<void, Text> {
+    var object = import_object()
+    object.symbols[1].name = "crown_nonexistent_native_linker_symbol"
+    let libraries = std::text::split("/usr/lib/libSystem.B.dylib", 124)
+    match macho::executable(object, libraries) {
+        Err(error) => {
+            if std::text::starts(error, "undefined symbol: ") {
+                return Ok(())
+            }
+            return Err(move error)
+        }
+        Ok(value) => {
+            value;
+            return Err("accepted undefined symbol")
+        }
+    }
+}

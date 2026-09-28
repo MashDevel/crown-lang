@@ -1,0 +1,4 @@
+const BAD: u64 = 0xffff_ffff_ffff_ffff * 2
+fn main() -> u32 {
+    0
+}

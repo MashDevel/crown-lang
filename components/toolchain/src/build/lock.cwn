@@ -1,0 +1,34 @@
+module toolchain {
+    extern "c" {
+        fn raw_close(descriptor: i32) -> i32 = "close"
+        fn raw_flock(descriptor: i32, operation: i32) -> i32 = "flock"
+    }
+
+    opaque resource FileLock {
+        private descriptor: i32
+        drop {
+            unsafe {
+                raw_flock(descriptor, 8);
+                raw_close(descriptor)
+            }
+        }
+    }
+
+    fn lock_file(path: Text) -> Result<FileLock, Text> {
+        make_directory(parent_path(path))?
+        let encoded = cstring(path)?
+        unsafe {
+            let descriptor = raw_open(std::cstr::as_raw(encoded), LOCK_OPEN_FLAGS, 384)
+            if descriptor < 0 {
+                return Err(std::text::joined("could not open lock: ", path))
+            }
+            let locked = FileLock {
+                descriptor: descriptor
+            }
+            if raw_flock(descriptor, 2) != 0 {
+                return Err(std::text::joined("could not acquire lock: ", path))
+            }
+            return Ok(move locked)
+        }
+    }
+}

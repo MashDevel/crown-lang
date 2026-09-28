@@ -1,0 +1,77 @@
+module guest {
+    fn request(command: Text, arguments: Text, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<toolchain::Json, Text> {
+        var message = std::text::joined("{\"execute\":", toolchain::json_quoted(command))
+        std::text::append(message, std::text::joined(",\"arguments\":", std::text::joined(arguments, "}\n")))
+        let response = exchange(message)?
+        var document = toolchain::json(response.clone())?
+        match toolchain::json_field(document, document.root, "error") {
+            Some(index) => {
+                index;
+                return Err(std::text::joined("guest agent error: ", response))
+            }
+            None => {
+            }
+        }
+        document.root = toolchain::json_required(document, document.root, "return")?
+        return Ok(move document)
+    }
+
+    fn number(document: toolchain::Json, key: Text) -> Result<u64, Text> {
+        return toolchain::json_integer(document, toolchain::json_required(document, document.root, key)?)
+    }
+
+    fn exited(document: toolchain::Json) -> Result<bool, Text> {
+        match toolchain::json_field(document, document.root, "exited") {
+            None => {
+                return Ok(false)
+            }
+            Some(index) => {
+                match read document.values[index] {
+                    JsonBool(value) => {
+                        return Ok(value)
+                    }
+                    _ => {
+                        return Err("invalid guest exited flag")
+                    }
+                }
+            }
+        }
+    }
+
+    fn execute(command: Text, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<u64, Text> {
+        let arguments = std::text::joined("{\"path\":\"/bin/sh\",\"arg\":[\"-c\",", std::text::joined(toolchain::json_quoted(command), "],\"capture-output\":true}"))
+        let response = request("guest-exec", arguments, exchange)?
+        return number(response, "pid")
+    }
+
+    fn wait(pid: u64, timeout: u64, exchange: scoped fn(read Text) -> Result<Text, Text>, clock: scoped fn() -> u64, pause: scoped fn() -> void) -> Result<toolchain::Json, Text> {
+        let start = clock()
+        let arguments = std::text::joined("{\"pid\":", std::text::joined(std::text::decimal(pid), "}"))
+        while clock() - start < timeout {
+            let response = request("guest-exec-status", arguments, exchange)?
+            if exited(response)? {
+                return Ok(move response)
+            }
+            pause()
+        }
+        return Err("guest command exceeded its deadline")
+    }
+
+    fn status(document: toolchain::Json) -> Result<u32, Text> {
+        match toolchain::json_field(document, document.root, "exitcode") {
+            Some(index) => {
+                return Ok(u32.from(toolchain::json_integer(document, index)?))
+            }
+            None => {
+            }
+        }
+        match toolchain::json_field(document, document.root, "signal") {
+            Some(index) => {
+                return Ok(128 + u32.from(toolchain::json_integer(document, index)?))
+            }
+            None => {
+                return Ok(128)
+            }
+        }
+    }
+}

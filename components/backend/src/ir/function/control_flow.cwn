@@ -1,0 +1,146 @@
+module ir {
+    struct ValueRewrite {
+        result: usize
+        replacement: usize
+    }
+
+    fn function_prune_unreachable(function: write Function) -> usize {
+        let predecessors = predecessors(function)
+        let reachable = reachable_blocks(predecessors)
+        let removed = count_false(reachable)
+        if removed == 0 {
+            return 0
+        }
+        let mapping = block_mapping(reachable)
+        var blocks = Vec<BasicBlock>.with_capacity(function.blocks.length() - removed)
+        var index: usize = 0
+        while index < function.blocks.length() {
+            if reachable[index] {
+                loan read function.blocks[index] as block {
+                    blocks.push(remap_block(block, mapping))
+                }
+            }
+            index = index + 1
+        }
+        function.blocks = move blocks
+        return removed
+    }
+
+    fn count_false(values: Vec<bool>) -> usize {
+        var output: usize = 0
+        var index: usize = 0
+        while index < values.length() {
+            if values[index] == false {
+                output = output + 1
+            }
+            index = index + 1
+        }
+        return output
+    }
+
+    fn block_mapping(reachable: Vec<bool>) -> Vec<Option<usize>> {
+        var output = Vec<Option<usize>>.with_capacity(reachable.length())
+        var next: usize = 0
+        var index: usize = 0
+        while index < reachable.length() {
+            if reachable[index] {
+                output.push(Some(next))
+                next = next + 1
+            } else {
+                output.push(None())
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn remap_block(block: BasicBlock, mapping: Vec<Option<usize>>) -> BasicBlock {
+        var output = basic_block_copy(block)
+        var index: usize = 0
+        while index < output.instructions.length() {
+            loan write output.instructions[index].kind as kind {
+                remap_phi(kind, mapping)
+            }
+            index = index + 1
+        }
+        match write output.terminator {
+            Some(terminator) => {
+                remap_terminator(terminator, mapping)
+            }
+            None => {
+            }
+        }
+        return move output
+    }
+
+    fn remap_phi(kind: write InstructionKind, mapping: Vec<Option<usize>>) -> void {
+        match write kind {
+            InstructionPhi(value_type, incoming) => {
+                value_type
+                var output = Vec<PhiIncoming>.new()
+                var index: usize = 0
+                while index < incoming.length() {
+                    match read mapping[incoming[index].block] {
+                        Some(block) => {
+                            output.push(PhiIncoming {
+                                    block: block, value: incoming[index].value
+                                })
+                        }
+                        None => {
+                        }
+                    }
+                    index = index + 1
+                }
+                incoming = move output
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn remap_terminator(terminator: write Terminator, mapping: Vec<Option<usize>>) -> void {
+        match write terminator {
+            TerminatorBranch(target) => {
+                target = mapped_block(target, mapping)
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                condition
+                then_block = mapped_block(then_block, mapping)
+                else_block = mapped_block(else_block, mapping)
+            }
+            TerminatorSwitch(value, cases, default) => {
+                value
+                var index: usize = 0
+                while index < cases.length() {
+                    cases[index].block = mapped_block(cases[index].block, mapping)
+                    index = index + 1
+                }
+                default = mapped_block(default, mapping)
+            }
+            TerminatorReturn(value) => {
+                value
+            }
+            TerminatorUnreachable => {
+            }
+        }
+    }
+
+    fn mapped_block(block: usize, mapping: Vec<Option<usize>>) -> usize {
+        match read mapping[block] {
+            Some(value) => {
+                return value
+            }
+            None => {
+                return 0
+            }
+        }
+    }
+
+    fn apply_value_rewrites(function: write Function, rewrites: Vec<ValueRewrite>) -> void {
+        var index: usize = 0
+        while index < rewrites.length() {
+            function_replace_uses(function, rewrites[index].result, rewrites[index].replacement)
+            index = index + 1
+        }
+    }
+}

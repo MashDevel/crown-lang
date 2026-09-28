@@ -1,0 +1,31 @@
+opaque resource Secret {
+    code: u32
+    drop {
+        print(code)
+    }
+}
+fn make_secret(code: read u32) -> Secret {
+    unsafe {
+        return Secret {
+            code: code
+        }
+    }
+}
+fn reveal(secret: read Secret) -> u32 {
+    unsafe {
+        return secret.code
+    }
+}
+fn main() -> u32 {
+    var secret = make_secret(7)
+    if reveal(secret) != 7 {
+        return 1
+    }
+    unsafe {
+        secret.code = 8
+    }
+    if reveal(secret) != 8 {
+        return 2
+    }
+    return 0
+}

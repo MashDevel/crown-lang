@@ -1,0 +1,96 @@
+fn relocation_reader() -> macho::ObjectReader {
+    var output = sample_object()
+    output.sections[0].data = std::bytes::filled(16, 0)
+    output.sections[0].memory_size = 16
+    var addresses = Vec<u64>.new()
+    addresses.push(100)
+    var offsets = Vec<usize>.new()
+    offsets.push(0)
+    var counts = Vec<usize>.new()
+    counts.push(1)
+    return macho::ObjectReader {
+        bytes: std::bytes::filled(16, 0), output: move output, addresses: move addresses,
+        relocation_offsets: move offsets, relocation_counts: move counts,
+        symbol_offset: 0, symbol_count: 1, strings: 0, string_size: 0
+    }
+}
+
+fn relocation_symbols() -> Result<void, Text> {
+    var reader = relocation_reader()
+    if macho::relocation_symbol(reader, 134217728)? != 0 {
+        return Err("external relocation symbol")
+    }
+    rejected(macho::relocation_symbol(reader, 134217729))?
+    rejected(macho::relocation_symbol(reader, 0))?
+    rejected(macho::relocation_symbol(reader, 2))?
+    let local = macho::relocation_symbol(reader, 1)?
+    if local != 1 || reader.output.symbols.length() != 2 {
+        return Err("local relocation symbol")
+    }
+    return Ok(())
+}
+
+fn relocation_addends() -> Result<void, Text> {
+    let reader = relocation_reader()
+    if macho::relocation_addend(reader, 0, 0, 201326592)? != 0 {
+        return Err("external relocation addend")
+    }
+    if macho::relocation_addend(reader, 0, 0, 67108865)? != -100 {
+        return Err("local relocation addend")
+    }
+    if macho::relocation_addend(reader, 0, 0, 83886081)? != 0 {
+        return Err("relative local relocation addend")
+    }
+    if macho::relocation_addend(reader, 0, 0, 1828716544)? != -5 {
+        return Err("adjusted relocation addend")
+    }
+    rejected(macho::relocation_addend(reader, 0, 0, 67108866))?
+    return Ok(())
+}
+
+fn relocation_records() -> Result<void, Text> {
+    var reader = relocation_reader()
+    link_binary::put(reader.bytes, 4, 754974720, 4)
+    macho::read_relocation(reader, 0, 0)?
+    if reader.output.relocations.length() != 1 || reader.output.relocations[0].kind != object::RelocationPcRelativeCall32() {
+        return Err("parsed relocation record")
+    }
+    link_binary::put(reader.bytes, 0, 2147483648, 4)
+    rejected(macho::read_relocation(reader, 0, 0))?
+    link_binary::put(reader.bytes, 0, 0, 4)
+    link_binary::put(reader.bytes, 4, 1342177280, 4)
+    return rejected(macho::read_section_relocations_table(reader, 0))
+}
+
+fn difference_pairs() -> Result<void, Text> {
+    var bytes = std::bytes::filled(16, 0)
+    macho::validate_difference_pair(bytes, 0)?
+    link_binary::put(bytes, 8, 1, 4)
+    rejected(macho::validate_difference_pair(bytes, 0))?
+    link_binary::put(bytes, 8, 0, 4)
+    link_binary::put(bytes, 12, 268435456, 4)
+    rejected(macho::validate_difference_pair(bytes, 0))?
+    link_binary::put(bytes, 12, 0, 4)
+    link_binary::put(bytes, 4, 16777216, 4)
+    return rejected(macho::validate_difference_pair(bytes, 0))
+}
+
+fn run() -> Result<void, Text> {
+    relocation_symbols()?
+    relocation_addends()?
+    relocation_records()?
+    return difference_pairs()
+}
+
+fn main() -> u32 {
+    match run() {
+        Ok(value) => {
+            value
+            return 42
+        }
+        Err(error) => {
+            toolchain::failure(error)
+            return 1
+        }
+    }
+}

@@ -1,0 +1,14 @@
+fn choose(flag: bool) -> u32 {
+    if flag {
+        42
+    } else {
+        if false {
+            1
+        } else {
+            42
+        }
+    }
+}
+fn main() -> u32 {
+    choose(true) + choose(false) - 42
+}

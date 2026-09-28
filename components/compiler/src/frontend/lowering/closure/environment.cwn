@@ -1,0 +1,77 @@
+module lowering {
+    fn closure_captures(analysis: sema::Analysis, span: frontend::Span) -> Result<Vec<sema::ScopedCapture>, u32> {
+        for index in 0..analysis.checker.closures.length() {
+            loan read analysis.checker.closures[index] as record {
+                if spans_equal(record.span, span) {
+                    return Ok(sema::scoped_captures_copy(record.captures))
+                }
+            }
+        }
+        return Err(330)
+    }
+
+    fn closure_environment(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        let captures = closure_captures(analysis, expression.span)?
+        let size = u64.from(captures.length() + 1) * 8
+        let environment = function_append_value(compiler, ir::InstructionStackSlot(size, 8))?
+        for index in 0..captures.length() {
+            let binding = indirect_binding(compiler, analysis.checker.symbols.source, captures[index].name)?
+            let slot = function_offset(compiler, environment, u64.from(index) * 8)?
+            function_store_pointer(compiler, slot, binding.address)?
+        }
+        return Ok(environment)
+    }
+
+    fn bind_closure_captures(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let captures = closure_captures(analysis, expression.span)?
+        let slot = closure_environment_slot(analysis.checker.symbols, compiler.result)?
+        if slot >= compiler.ir.parameters.length() {
+            return Err(331)
+        }
+        let environment = compiler.ir.parameters[slot]
+        for index in 0..captures.length() {
+            loan read captures[index] as capture {
+                let position = function_offset(compiler, environment, u64.from(index) * 8)?
+                let address = function_load_pointer(compiler, position)?
+                function_add_binding(compiler, Binding {
+                        name: frontend::name_copy(capture.name)
+                        value_type: sema::substitute(capture.value_type, compiler.substitutions)
+                        address: address
+                        owned: false
+                        available: true
+                        depth: compiler.scope_depth
+                    })
+            }
+        }
+        return Ok(())
+    }
+
+    fn scoped_descriptor(compiler: write FunctionCompiler, function: usize, environment: usize) -> Result<usize, u32> {
+        let descriptor = function_append_value(compiler, ir::InstructionStackSlot(16, 8))?
+        function_store_pointer(compiler, descriptor, function)?
+        let slot = function_offset(compiler, descriptor, 8)?
+        function_store_pointer(compiler, slot, environment)?
+        return Ok(descriptor)
+    }
+
+    fn pass_scoped_argument(compiler: write FunctionCompiler, analysis: sema::Analysis, expected: sema::Type, expression: frontend::Expression) -> Result<usize, u32> {
+        let actual = function_expression_type(compiler, analysis, expression)?
+        if sema::type_is_scoped_function(actual) {
+            let value = function_expression(compiler, analysis, expression)?
+            return value_address(compiler, analysis.checker.symbols, move value)
+        }
+        let name = scoped_adapter_name(sema::callable_type(expected))
+        var function: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(332)
+            }
+        }
+        let target = scalar_expression(compiler, analysis, expression)?
+        let adapter = function_append_value(compiler, ir::InstructionFunctionAddress(function))?
+        return scoped_descriptor(compiler, adapter, target)
+    }
+}

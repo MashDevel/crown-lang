@@ -1,0 +1,24 @@
+enum Item {
+    Value(u32), Empty
+}
+fn increment(item: write Item) -> void {
+    match write item {
+        Value(value) => {
+            value = value + 1
+        }
+        Empty => {
+        }
+    }
+}
+fn main() -> u32 {
+    var item = Value(41)
+    increment(item)
+    match move item {
+        Value(value) => {
+            return value
+        }
+        Empty => {
+            return 0
+        }
+    }
+}

@@ -1,0 +1,29 @@
+module x86 {
+    fn codegen_emit_dense_switch(compiler: write FunctionCompiler, dense: take DenseSwitch, default: LocalLabel) -> void {
+        if dense.minimum != 0 {
+            let signed = i64.from_bits(dense.minimum)
+            if signed >= -2147483648 && signed <= 2147483647 {
+                codegen_emit(compiler, SubtractImmediate(Rax(), i32.from(signed)))
+            } else {
+                codegen_emit(compiler, MoveImmediate(R10(), signed))
+                codegen_emit(compiler, Subtract(Rax(), R10()))
+            }
+        }
+        let maximum = dense.targets.length() - 1
+        codegen_emit(compiler, CompareImmediate(Rax(), i32.from(maximum)))
+        codegen_emit(compiler, JumpIf(Above(), local_label_copy(default)))
+        codegen_emit(compiler, MultiplyImmediate(Rax(), 5))
+        let table = codegen_internal_label(compiler)
+        codegen_emit(compiler, LoadLabelAddress(R10(), local_label_copy(table)))
+        codegen_emit(compiler, Add(R10(), Rax()))
+        codegen_emit(compiler, JumpRegister(R10()))
+        codegen_emit(compiler, Label(move table))
+        var index: usize = 0
+        while index < dense.targets.length() {
+            loan read dense.targets[index] as target {
+                codegen_emit(compiler, JumpTableEntry(local_label_copy(target)))
+            }
+            index = index + 1
+        }
+    }
+}

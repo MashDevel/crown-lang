@@ -1,0 +1,21 @@
+module x86 {
+    fn codegen_branch_to(program: ir::Program, compiler: write FunctionCompiler, target: usize) -> Result<void, CodegenError> {
+        match codegen_phi_copies(program, compiler, target) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(copies) => {
+                match codegen_copy_phis(program, compiler, move copies) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+        }
+        codegen_emit(compiler, Jump(codegen_label(target)))
+        return Ok(())
+    }
+}

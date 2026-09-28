@@ -1,0 +1,29 @@
+module lowering {
+    fn pass_view_argument(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        if sema::expression_is_slice(expression) {
+            let view = slice_loan(compiler, analysis, expression)?
+            return Ok(view.address)
+        }
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        if sema::view_argument_owner(value_type) == false {
+            let value = function_expression(compiler, analysis, expression)?
+            return argument_address(compiler, analysis.checker.symbols, move value)
+        }
+        return pass_owner_view(compiler, analysis, expression, value_type)
+    }
+
+    fn pass_owner_view(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, value_type: sema::Type) -> Result<usize, u32> {
+        let value = borrowed_projection(compiler, analysis, expression)?
+        let address = value_address(compiler, analysis.checker.symbols, move value)?
+        if expression_is_owned(compiler, analysis, expression) && sema::type_is_copy_with_symbols(analysis.checker.symbols, value_type) == false {
+            compiler.temporaries.push(Temporary {
+                    address: address, value_type: sema::type_copy(value_type), transfer: false, depth: compiler.scope_depth
+                })
+        }
+        let place = Place {
+            address: address, value_type: sema::type_copy(value_type)
+        }
+        let view = loan_place(compiler, analysis.checker.symbols, place)?
+        return Ok(view.address)
+    }
+}

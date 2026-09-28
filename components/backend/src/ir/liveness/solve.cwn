@@ -1,0 +1,68 @@
+module ir {
+    fn solve_liveness(function: ir::Function, blocks: write Vec<BlockLiveness>) -> void {
+        let order = ir::all_reverse_postorder(function)
+        var changed = true
+        while changed {
+            changed = false
+            var cursor = order.length()
+            while cursor > 0 {
+                cursor = cursor - 1
+                let current = order[cursor]
+                let live_out = liveness_edge_liveness(function, blocks, current)
+                var live_in = ir::bitset_new(0)
+                var differs = false
+                loan read blocks[current] as block {
+                    live_in = liveness_live_in(block, live_out)
+                    if ir::bitset_equal(live_in, block.live_in) == false {
+                        differs = true
+                    }
+                    if ir::bitset_equal(live_out, block.live_out) == false {
+                        differs = true
+                    }
+                }
+                if differs {
+                    changed = true
+                }
+                blocks[current].live_in = move live_in
+                blocks[current].live_out = move live_out
+            }
+        }
+    }
+
+    fn liveness_edge_liveness(function: ir::Function, blocks: Vec<BlockLiveness>, source: usize) -> ir::BitSet {
+        var output = ir::bitset_new(function.values.length())
+        match read function.blocks[source].terminator {
+            Some(terminator) => {
+                let targets = ir::terminator_targets(terminator)
+                var index: usize = 0
+                while index < targets.length() {
+                    let target = targets[index]
+                    loan read blocks[target] as block {
+                        ir::bitset_extend_without(output, block.live_in, block.phi_definitions)
+                        liveness_add_phi_edge(output, block.phi_inputs, source)
+                    }
+                    index = index + 1
+                }
+            }
+            None => {
+            }
+        }
+        return move output
+    }
+
+    fn liveness_add_phi_edge(output: write ir::BitSet, inputs: Vec<PhiInput>, source: usize) -> void {
+        var index: usize = 0
+        while index < inputs.length() {
+            if inputs[index].block == source {
+                ir::bitset_insert(output, inputs[index].value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn liveness_live_in(block: BlockLiveness, live_out: ir::BitSet) -> ir::BitSet {
+        var output = ir::bitset_copy(block.uses)
+        ir::bitset_extend_without(output, live_out, block.definitions)
+        return move output
+    }
+}

@@ -1,0 +1,19 @@
+module lowering {
+    fn declare_resource_closures(compiler: write Compiler, analysis: sema::Analysis, record: sema::ClosureRecord) -> Result<void, u32> {
+        for index in 0..analysis.checker.resource_instances.length() {
+            loan read analysis.checker.resource_instances[index] as instance {
+                match read instance {
+                    sema::NamedType(symbol, arguments) => {
+                        if sema::resource_owner_matches(record.resource_owner, symbol) {
+                            let values = sema::parameter_values(analysis.checker.symbols.types[symbol].type_parameters, arguments)
+                            declare_closure_instance(compiler, analysis.checker.symbols, record, values)?
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+}

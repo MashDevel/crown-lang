@@ -1,0 +1,70 @@
+module harness {
+    struct UnitSources {
+        key: Text, paths: Vec<Text>
+    }
+
+    fn unit_sources(cases: Vec<Case>, members: Vec<usize>, root: Text) -> Result<UnitSources, Text> {
+        var texts = Vec<Text>.new()
+        var identity = unit_roots(cases[members[0]])
+        for index in 0..members.length() {
+            let path = toolchain::path_join(root, cases[members[index]].source)
+            let body = toolchain::read_text(path)?
+            let name = std::text::decimal(u64.from(index))
+            texts.push(std::text::joined(std::text::joined("module crown_unit_", name), std::text::joined(" {\n", std::text::joined(body, "\n}\n"))))
+            toolchain::fingerprint_part(identity, path)
+        }
+        texts.push(unit_dispatch(cases, members))
+        for index in 0..texts.length() {
+            toolchain::fingerprint_part(identity, texts[index])
+        }
+        let key = toolchain::digest_text(identity)?
+        let paths = write_unit_sources(root, key, texts)?
+        return Ok(UnitSources {
+                key: move key, paths: move paths
+            })
+    }
+
+    fn unit_dispatch(cases: Vec<Case>, members: Vec<usize>) -> Text {
+        var output = "fn main(arguments: Arguments) -> u32 {\nif arguments.length() != 2 { return 255 }\n"
+        for index in 0..members.length() {
+            std::text::append(output, "if std::text::equal(arguments[1], ")
+            std::text::append(output, toolchain::json_quoted(cases[members[index]].name))
+            std::text::append(output, ") { return crown_unit_")
+            std::text::append(output, std::text::decimal(u64.from(index)))
+            std::text::append(output, "::main() }\n")
+        }
+        std::text::append(output, "return 255\n}\n")
+        return move output
+    }
+
+    fn write_unit_sources(root: Text, key: Text, texts: Vec<Text>) -> Result<Vec<Text>, Text> {
+        let directory = toolchain::path_join(root, toolchain::path_join("target/test-cache/sources", key))
+        let lock = toolchain::lock_file(toolchain::path_join(directory, "source.lock"))?
+        let tests = toolchain::path_join(directory, "tests")
+        toolchain::make_directory(tests)?
+        var output = Vec<Text>.new()
+        for index in 0..texts.length() {
+            let name = std::text::joined(std::text::decimal(u64.from(index)), ".cwn")
+            let path = toolchain::path_join(tests, name)
+            write_unit_source(path, texts[index])?
+            output.push(path.clone())
+        }
+        lock;
+        return Ok(move output)
+    }
+
+    fn write_unit_source(path: Text, source: Text) -> Result<void, Text> {
+        if toolchain::exists(path) && std::text::equal(toolchain::read_text(path)?, source) {
+            return Ok(())
+        }
+        return toolchain::write_text(path, source)
+    }
+
+    fn append_unit_roots(paths: write Vec<Text>, value: Case, root: Text) -> Result<void, Text> {
+        for index in 0..value.roots.length() {
+            toolchain::append_frontend_path(paths, toolchain::path_join(root, value.roots[index]), toolchain::host_target())?
+        }
+        std::text::sort_list(paths)
+        return Ok(())
+    }
+}

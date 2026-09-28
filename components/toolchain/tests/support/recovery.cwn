@@ -1,0 +1,20 @@
+module testing_recovery {
+    fn launcher(root: Text, cache: Text) -> Result<toolchain::ProcessResult, Text> {
+        let repository = toolchain::repository_root()?
+        var arguments = Vec<Text>.new()
+        arguments.push("/usr/bin/env")
+        arguments.push("CROWN_JOBS=4")
+        arguments.push(std::text::joined("CROWN_BOOTSTRAP_DIR=", cache))
+        arguments.push(toolchain::path_join(repository, "bootstrap/crown"));
+        arguments.push("--version")
+        return testing::capture_compiler(move arguments, root)
+    }
+
+    fn current_digest(root: Text) -> Result<Text, Text> {
+        let cache = toolchain::path_join(root, "reference-bootstrap")
+        let current = launcher(root, cache)?
+        testing::expect(current.status == 0, "current checkout compiler")?
+        return toolchain::digest(toolchain::path_join(cache, "crown"))
+    }
+
+}

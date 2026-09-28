@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    var text = "a"
+    loan read text as view {
+        text.push('b')
+    }
+    return 0
+}

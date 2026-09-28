@@ -1,0 +1,226 @@
+module frontend {
+    fn lexer_identifier(lexer: write Lexer, mark: LexerMark) -> void {
+        while lexer.offset < lexer.length {
+            if lexer_is_alphanumeric(lexer_peek_or_zero(lexer)) {
+                lexer_advance(lexer);
+                continue
+            }
+            if lexer_qualified_separator(lexer) {
+                lexer_advance(lexer);
+                lexer_advance(lexer);
+                continue
+            }
+            break
+        }
+        match lexer_keyword(lexer, mark.offset) {
+            Some(kind) => {
+                lexer_push(lexer, LexerTokenInput {
+                        kind: kind, mark: LexerMark {
+                            offset: mark.offset, line: mark.line, column: mark.column
+                        }, integer: 0
+                    })
+            }
+            None => {
+                lexer_push(lexer, LexerTokenInput {
+                        kind: TokenIdentifier(), mark: LexerMark {
+                            offset: mark.offset, line: mark.line, column: mark.column
+                        }, integer: 0
+                    })
+            }
+        }
+    }
+
+    fn lexer_word_is(lexer: Lexer, start: usize, expected: take Text) -> bool {
+        if lexer.offset - start != expected.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < expected.length() {
+            if source_byte(lexer.source, start + index) != text_byte(expected, index) {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn lexer_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        match lexer_type_keyword(lexer, start) {
+            Some(kind) => {
+                return Some(kind)
+            }
+            None => {
+            }
+        }
+        match lexer_implementation_keyword(lexer, start) {
+            Some(kind) => {
+                return Some(kind)
+            }
+            None => {
+            }
+        }
+        match lexer_ownership_keyword(lexer, start) {
+            Some(kind) => {
+                return Some(kind)
+            }
+            None => {
+            }
+        }
+        match lexer_loop_keyword(lexer, start) {
+            Some(kind) => {
+                return Some(kind)
+            }
+            None => {
+            }
+        }
+        return lexer_control_keyword(lexer, start)
+    }
+
+    fn lexer_type_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        if lexer_word_is(lexer, start, "const") {
+            return Some(TokenConst())
+        }
+        if lexer_word_is(lexer, start, "copy") {
+            return Some(TokenCopy())
+        }
+        if lexer_word_is(lexer, start, "struct") {
+            return Some(TokenStruct())
+        }
+        if lexer_word_is(lexer, start, "enum") {
+            return Some(TokenEnum())
+        }
+        if lexer_word_is(lexer, start, "opaque") {
+            return Some(TokenOpaque())
+        }
+        if lexer_word_is(lexer, start, "resource") {
+            return Some(TokenResource())
+        }
+        if lexer_word_is(lexer, start, "drop") {
+            return Some(TokenDrop())
+        }
+        if lexer_word_is(lexer, start, "interface") {
+            return Some(TokenInterface())
+        }
+        return lexer_visibility_keyword(lexer, start)
+    }
+
+    fn lexer_implementation_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        if lexer_word_is(lexer, start, "unsafe") {
+            return Some(TokenUnsafe())
+        }
+        if lexer_word_is(lexer, start, "thread_scope") {
+            return Some(TokenThreadScope())
+        }
+        if lexer_word_is(lexer, start, "spawn") {
+            return Some(TokenSpawn())
+        }
+        if lexer_word_is(lexer, start, "impl") {
+            return Some(TokenImpl())
+        }
+        if lexer_word_is(lexer, start, "for") {
+            return Some(TokenFor())
+        }
+        if lexer_word_is(lexer, start, "fn") {
+            return Some(TokenFn())
+        }
+        if lexer_word_is(lexer, start, "let") {
+            return Some(TokenLet())
+        }
+        if lexer_word_is(lexer, start, "var") {
+            return Some(TokenVar())
+        }
+        return None()
+    }
+
+    fn lexer_ownership_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        if lexer_word_is(lexer, start, "in") {
+            return Some(TokenIn())
+        }
+        if lexer_word_is(lexer, start, "move") {
+            return Some(TokenMove())
+        }
+        if lexer_word_is(lexer, start, "read") {
+            return Some(TokenRead())
+        }
+        if lexer_word_is(lexer, start, "write") {
+            return Some(TokenWrite())
+        }
+        if lexer_word_is(lexer, start, "take") {
+            return Some(TokenTake())
+        }
+        return None()
+    }
+
+    fn lexer_control_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        if lexer_word_is(lexer, start, "loan") {
+            return Some(TokenLoan())
+        }
+        if lexer_word_is(lexer, start, "as") {
+            return Some(TokenAs())
+        }
+        if lexer_word_is(lexer, start, "return") {
+            return Some(TokenReturn())
+        }
+        if lexer_word_is(lexer, start, "if") {
+            return Some(TokenIf())
+        }
+        if lexer_word_is(lexer, start, "else") {
+            return Some(TokenElse())
+        }
+        if lexer_word_is(lexer, start, "true") {
+            return Some(TokenTrue())
+        }
+        if lexer_word_is(lexer, start, "false") {
+            return Some(TokenFalse())
+        }
+        if lexer_word_is(lexer, start, "print") {
+            return Some(TokenPrint())
+        }
+        if lexer_word_is(lexer, start, "match") {
+            return Some(TokenMatch())
+        }
+        return None()
+    }
+
+    fn lexer_qualified_separator(lexer: Lexer) -> bool {
+        if lexer.offset + 2 >= lexer.length {
+            return false
+        }
+        if source_byte(lexer.source, lexer.offset) != 58 {
+            return false
+        }
+        if source_byte(lexer.source, lexer.offset + 1) != 58 {
+            return false
+        }
+        return lexer_is_alphanumeric(source_byte(lexer.source, lexer.offset + 2))
+    }
+
+    fn lexer_visibility_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        if lexer_word_is(lexer, start, "module") {
+            return Some(TokenModule())
+        }
+        if lexer_word_is(lexer, start, "private") {
+            return Some(TokenPrivate())
+        }
+        if lexer_word_is(lexer, start, "dynamic") {
+            return Some(TokenDynamic())
+        }
+        if lexer_word_is(lexer, start, "extern") {
+            return Some(TokenExtern())
+        }
+        return None()
+    }
+
+    fn lexer_loop_keyword(lexer: Lexer, start: usize) -> Option<TokenKind> {
+        if lexer_word_is(lexer, start, "while") {
+            return Some(TokenWhile())
+        }
+        if lexer_word_is(lexer, start, "break") {
+            return Some(TokenBreak())
+        }
+        if lexer_word_is(lexer, start, "continue") {
+            return Some(TokenContinue())
+        }
+        None()
+    }
+}

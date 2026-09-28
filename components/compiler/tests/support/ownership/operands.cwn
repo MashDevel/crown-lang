@@ -1,0 +1,48 @@
+fn consume_values(values: take Vec<u32>) -> usize {
+    return values.length() - 1
+}
+
+fn empty_values(values: write Vec<u32>) -> usize {
+    values = Vec<u32>.new()
+    return 0
+}
+
+fn consume_arena(values: take Arena<u32>, key: Handle<u32>) -> Handle<u32> {
+    values
+    return key
+}
+
+fn empty_arena(values: write Arena<u32>, key: Handle<u32>) -> Handle<u32> {
+    values = Arena<u32>.new()
+    return key
+}
+
+struct OperandOwner {
+    values: Vec<u32>
+    arena: Arena<u32>
+}
+
+fn consume_owner(owner: take OperandOwner) -> usize {
+    return owner.values.length() - 1
+}
+
+fn consume_owner_key(owner: take OperandOwner, key: Handle<u32>) -> Handle<u32> {
+    owner
+    return key
+}
+
+fn consume_nested(values: take Vec<Vec<u32>>) -> usize {
+    return values.length() - 1
+}
+
+fn operand_values() -> Vec<u32> {
+    var values = Vec<u32>.new()
+    values.push(7)
+    return move values
+}
+
+fn operand_owner() -> OperandOwner {
+    return OperandOwner {
+        values: operand_values(), arena: Arena<u32>.new()
+    }
+}

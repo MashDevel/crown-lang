@@ -1,0 +1,61 @@
+module ir {
+    fn instruction_copy(instruction: Instruction) -> Instruction {
+        return Instruction {
+            result: instruction.result, kind: instruction_kind_copy(instruction.kind)
+        }
+    }
+
+    fn instruction_kind_copy(kind: InstructionKind) -> InstructionKind {
+        match read kind {
+            InstructionVectorSplat(value, target) => InstructionVectorSplat(value, target)
+            InstructionBinary(operator, left, right) => {
+                return InstructionBinary(operator, left, right)
+            }
+            InstructionUnary(operator, value) => {
+                return InstructionUnary(operator, value)
+            }
+            InstructionCompare(operator, left, right) => {
+                return InstructionCompare(operator, left, right)
+            }
+            InstructionCast(operator, value, target) => {
+                return InstructionCast(operator, value, target)
+            }
+            InstructionMemory(instruction_memory_kind) => InstructionMemory(memory_instruction_copy(instruction_memory_kind))
+
+            InstructionCall(function, arguments, result) => {
+                return InstructionCall(function, usize_values_copy(arguments), result)
+            }
+            InstructionCallIndirect(function, signature, arguments) => {
+                return InstructionCallIndirect(function, signature_copy(signature), usize_values_copy(arguments))
+            }
+            InstructionPhi(value_type, incoming) => {
+                return InstructionPhi(value_type, phi_incoming_copy(incoming))
+            }
+            InstructionSelect(condition, then_value, else_value) => {
+                return InstructionSelect(condition, then_value, else_value)
+            }
+        }
+    }
+
+    fn usize_values_copy(values: Vec<usize>) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn phi_incoming_copy(values: Vec<PhiIncoming>) -> Vec<PhiIncoming> {
+        var output = Vec<PhiIncoming>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(PhiIncoming {
+                    block: values[index].block, value: values[index].value
+                })
+            index = index + 1
+        }
+        return move output
+    }
+}

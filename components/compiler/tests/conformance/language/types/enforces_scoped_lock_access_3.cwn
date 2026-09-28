@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    let value = 1
+    value.lock write as item {
+        print(item)
+    }
+    return 0
+}

@@ -1,0 +1,86 @@
+fn float_bounds_case(bits: u64, signed: bool, expected: ir::WideInteger, narrow: bool) -> Result<void, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let input = if narrow {
+        ir::function_constant(function, ir::TypeFloat(ir::FloatWidth32()), ir::ConstantFloat32(u32.from(bits)))
+    } else {
+        ir::function_constant(function, ir::TypeFloat(ir::FloatWidth64()), ir::ConstantFloat64(bits))
+    }
+    let value_type = ir::TypeInteger(ir::IntegerWidth128())
+    let operator = if signed {
+        ir::CastFloatToSignedInteger()
+    } else {
+        ir::CastFloatToUnsignedInteger()
+    }
+    let value = safety_append(function, block, ir::InstructionCast(operator, input, value_type))?
+    let bound = ir::function_constant(function, value_type, ir::ConstantWideInteger(expected))
+    safety_return_equal(function, block, value, bound)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return safety_execute(move program)
+}
+
+fn float_bounds_cases() -> Vec<FloatBoundCase> {
+    var cases = Vec<FloatBoundCase>.new()
+    let zero = ir::WideInteger {
+        low: 0, high: 0
+    }
+    let minimum = ir::WideInteger {
+        low: 0, high: 9223372036854775808
+    }
+    let maximum = ir::WideInteger {
+        low: 18446744073709551615, high: 9223372036854775807
+    }
+    let unsigned_maximum = ir::WideInteger {
+        low: 18446744073709551615, high: 18446744073709551615
+    }
+    float_bounds_add(cases, 9218868437227405312, true, maximum, false)
+    float_bounds_add(cases, 18442240474082181120, true, minimum, false)
+    float_bounds_add(cases, 9218868437227405312, false, unsigned_maximum, false)
+    float_bounds_add(cases, 18442240474082181120, false, zero, false)
+    float_bounds_add(cases, 5179139571476070400, true, maximum, false)
+    float_bounds_add(cases, 5183643171103440896, false, unsigned_maximum, false)
+    for signed in 0..2 {
+        float_bounds_add(cases, 9221120237041090560, signed == 1, zero, false)
+        float_bounds_add(cases, 0, signed == 1, zero, false)
+        float_bounds_add(cases, 4631107791820423168, signed == 1, ir::WideInteger {
+                low: 42, high: 0
+            }, false)
+    }
+    float_bounds_add(cases, 13854479828675198976, true, ir::WideInteger {
+            low: 18446744073709551574, high: 18446744073709551615
+        }, false)
+    float_bounds_add(cases, 2139095040, true, maximum, true)
+    float_bounds_add(cases, 4286578688, true, minimum, true)
+    float_bounds_add(cases, 2139095040, false, unsigned_maximum, true)
+    float_bounds_add(cases, 4286578688, false, zero, true)
+    float_bounds_add(cases, 2130706432, true, maximum, true)
+    float_bounds_add(cases, 4278190080, true, minimum, true)
+    float_bounds_add(cases, 2143289344, true, zero, true)
+    float_bounds_add(cases, 1109917696, true, ir::WideInteger {
+            low: 42, high: 0
+        }, true)
+    return move cases
+}
+
+fn main() -> u32 {
+    return safety_status(float_bounds())
+}
+
+struct FloatBoundCase {
+    bits: u64, signed: bool, expected: ir::WideInteger, narrow: bool
+}
+fn float_bounds_add(cases: write Vec<FloatBoundCase>, bits: u64, signed: bool, expected: ir::WideInteger, narrow: bool) -> void {
+    cases.push(FloatBoundCase {
+            bits: bits, signed: signed, expected: expected, narrow: narrow
+        })
+}
+fn float_bounds() -> Result<void, u32> {
+    let cases = float_bounds_cases()
+    for index in 0..cases.length() {
+        loan read cases[index] as item {
+            float_bounds_case(item.bits, item.signed, item.expected, item.narrow)?
+        }
+    }
+    return Ok(())
+}

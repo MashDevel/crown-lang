@@ -1,0 +1,52 @@
+module x86 {
+    struct ObjectSymbolName {
+        name: Text
+        symbol: usize
+    }
+
+    struct DataPlacement {
+        data: usize
+        section: usize
+        offset: u64
+    }
+
+    struct ObjectState {
+        text_section: usize
+        symbols: Vec<ObjectSymbolName>
+        placements: Vec<DataPlacement>
+        pending: Vec<PendingDataPlacement>
+        pending_first: usize
+        active_section: usize
+        selected_data_kind: u8
+    }
+
+    struct PendingDataPlacement {
+        data: usize
+        offset: u64
+    }
+
+    fn object_state(text_section: usize) -> ObjectState {
+        return ObjectState {
+            text_section: text_section
+            symbols: Vec<ObjectSymbolName>.new()
+            placements: Vec<DataPlacement>.new()
+            pending: Vec<PendingDataPlacement>.new()
+            pending_first: 0
+            active_section: 0
+            selected_data_kind: 0
+        }
+    }
+
+    fn object_symbol(state: ObjectState, name: Text) -> Option<usize> {
+        var index: usize = 0
+        while index < state.symbols.length() {
+            loan read state.symbols[index] as entry {
+                if std::text::equal(entry.name, name) {
+                    return Some(entry.symbol)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+}

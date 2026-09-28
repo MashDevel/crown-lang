@@ -1,0 +1,41 @@
+module toolchain {
+    fn execute_project_tests(compiler: Text, options: Options) -> Result<u32, Text> {
+        if options.paths.length() != 1 {
+            return Err("test accepts one project directory")
+        }
+        let root = absolute(options.paths[0])?
+        if is_directory(root) == false {
+            return Err("test requires a project directory")
+        }
+        let tests = path_join(root, "tests")
+        let manifest = path_join(tests, "Crown.toml")
+        if exists(manifest) == false {
+            return Err("project tests require tests/Crown.toml")
+        }
+        let project = load_project(tests, host_target())?
+        let output = project.output.clone()
+        let request = BuildRequest {
+            compiler: compiler.clone(), project: move project, output: move output,
+            objects: Vec<Text>.new(), links: Vec<Text>.new(), max_instances: 128,
+            coverage: "", optimization: optimization_options(), target: host_target()
+        }
+        let binary = build_project(request)?
+        var arguments = Vec<Text>.new()
+        arguments.push(move binary)
+        arguments.push(compiler.clone())
+        arguments.push(root.clone())
+        arguments.push(test_output(root, options))
+        arguments.push(options.filter.clone())
+        arguments.push(options.coverage.clone())
+        arguments.push(std::text::decimal(u64.from(options.jobs)))
+        replace_process(arguments)?
+        return Ok(0)
+    }
+
+    fn test_output(root: Text, options: Options) -> Text {
+        if options.output.length() != 0 {
+            return options.output.clone()
+        }
+        return path_join(root, "target/test")
+    }
+}

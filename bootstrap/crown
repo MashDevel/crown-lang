@@ -1,0 +1,59 @@
+#!/bin/sh
+set -eu
+CROWN_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export CROWN_ROOT
+case "$(uname -s):$(uname -m)" in
+    Darwin:x86_64) host=x86_64-macos ;;
+    Darwin:arm64) host=arm64-macos ;;
+    Linux:x86_64) host=x86_64-linux ;;
+    Linux:aarch64) host=arm64-linux ;;
+    *) printf '%s\n' 'error: Crown requires a 64-bit ARM or x86 macOS or Linux host' >&2; exit 1 ;;
+esac
+read_digest() {
+    awk -v field="$2" -f "$CROWN_ROOT/bootstrap/digest.awk" "$1" 2>/dev/null
+}
+verify_digest() {
+    [ -f "$1" ] || return 1
+    case "$host" in
+        *-macos) actual=$(shasum -a 256 < "$1") || return 1 ;;
+        *-linux) actual=$(sha256sum < "$1") || return 1 ;;
+    esac
+    [ "${actual%% *}" = "$2" ]
+}
+verify_compiler() {
+    [ -x "$1" ] && read_digest "$1.crown-build" input > /dev/null && output_digest=$(read_digest "$1.crown-build" output) && cached_seed=$(read_digest "$1.crown-build" seed) && [ "$cached_seed" = "$seed_digest" ] && verify_digest "$1" "$output_digest"
+}
+launch() {
+    binary=$1
+    shift
+    if [ "${1:-}" = bootstrap ]; then
+        exec "$binary" "$@"
+    fi
+    exec "$binary" _launch "$@"
+}
+seed="$CROWN_ROOT/bootstrap/$host/compiler.s"
+if ! seed_digest=$(read_digest "$CROWN_ROOT/bootstrap/$host/manifest.json" assembly_sha256) || ! verify_digest "$seed" "$seed_digest"; then
+    printf '%s\n' 'error: bootstrap assembly checksum mismatch or missing seed' >&2
+    exit 1
+fi
+directory=${CROWN_BOOTSTRAP_DIR:-"$CROWN_ROOT/target/bootstrap"}
+mkdir -p "$directory"
+directory=$(CDPATH= cd -- "$directory" && pwd)
+compiler="$directory/crown"
+if verify_compiler "$compiler"; then
+    launch "$compiler" "$@"
+fi
+available="$CROWN_ROOT/target/bootstrap/crown"
+if verify_compiler "$available"; then
+    launch "$available" "$@"
+fi
+build=$(mktemp -d "$directory/seed-XXXXXX")
+trap 'rm -rf "$build"' EXIT HUP INT TERM
+case "$host" in
+    *-macos) "${CC:-clang}" "$seed" -arch "${host%-macos}" -Wl,-fatal_warnings -Wl,-dead_strip -Wl,-x -o "$build/compiler" ;;
+    *-linux) "${CC:-cc}" "$seed" -no-pie -Wl,--fatal-warnings -Wl,--build-id=none -Wl,--discard-all -Wl,-z,noexecstack -lm -pthread -ldl -o "$build/compiler" ;;
+esac
+mv "$build/compiler" "$directory/seed"
+rmdir "$build"
+trap - EXIT HUP INT TERM
+launch "$directory/seed" "$@"

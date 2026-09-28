@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value = None()
+    return 0
+}

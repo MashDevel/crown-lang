@@ -1,0 +1,34 @@
+fn scaled(value: f64) -> f64 {
+    return value *(18_014_398_509_481_984.0)
+}
+
+fn narrow(value: f32) -> f32 {
+    let fraction: f32 = (((0.5)))
+    return value * fraction
+}
+
+fn signed_zero() -> bool {
+    let zero: f64 = ((-0.0))
+    return 1.0 / zero < 0.0
+}
+
+fn main() -> u32 {
+    if scaled(1.0) != 18_014_398_509_481_984.0 {
+        return 1
+    }
+    if narrow(84.0) != 42.0 {
+        return 2
+    }
+    if signed_zero() == false {
+        return 3
+    }
+    let tiny: f64 = (((2.2250738585072014e-308)))
+    if tiny <= 0.0 {
+        return 4
+    }
+    let scientific: f64 = ((1.25e+3))
+    if scientific != 1250.0 {
+        return 5
+    }
+    return 42
+}

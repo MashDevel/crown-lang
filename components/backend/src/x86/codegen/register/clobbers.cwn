@@ -1,0 +1,152 @@
+module x86 {
+    fn codegen_instruction_clobbers(function: ir::Function, instruction: ir::Instruction) -> u16 {
+        if codegen_instruction_is_wide(function, instruction) {
+            return codegen_caller_mask()
+        }
+        var output = codegen_basic_clobbers(instruction.kind)
+        if codegen_instruction_is_float(function, instruction) {
+            output = output | codegen_code_bit(0) | codegen_code_bit(2)
+        }
+        return output
+    }
+
+    fn codegen_basic_clobbers(kind: ir::InstructionKind) -> u16 {
+        match read kind {
+            ir::InstructionVectorSplat(value, target) => {
+                value;
+                target;
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+            ir::InstructionMemory(memory) => codegen_memory_instruction_clobbers(memory)
+
+            ir::InstructionCall(function, arguments, result) => {
+                function;
+                arguments;
+                result;
+                return codegen_caller_mask()
+            }
+            ir::InstructionCallIndirect(function, signature, arguments) => {
+                function;
+                signature;
+                arguments;
+                return codegen_caller_mask()
+            }
+            ir::InstructionBinary(operator, left, right) => {
+                left;
+                right;
+                return codegen_binary_clobbers(operator)
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right
+                return codegen_code_bit(0)
+            }
+
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                condition;
+                then_value;
+                else_value
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn codegen_binary_clobbers(operator: ir::BinaryOperator) -> u16 {
+        match read operator {
+            ir::BinarySignedDivide => {
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+            ir::BinaryUnsignedDivide => {
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+            ir::BinarySignedRemainder => {
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+            ir::BinaryUnsignedRemainder => {
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+            ir::BinaryShiftLeft => {
+                return codegen_code_bit(0)
+            }
+            ir::BinaryShiftRightSigned => {
+                return codegen_code_bit(0)
+            }
+            ir::BinaryShiftRightUnsigned => {
+                return codegen_code_bit(0)
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn codegen_terminator_clobbers(terminator: ir::Terminator) -> u16 {
+        match read terminator {
+            ir::TerminatorSwitch(value, cases, default) => {
+                value;
+                cases;
+                default
+                return codegen_code_bit(0) | codegen_code_bit(2) | codegen_code_bit(10)
+            }
+            ir::TerminatorReturn(value) => {
+                value;
+                return 0
+            }
+            ir::TerminatorUnreachable => {
+                return 0
+            }
+            _ => {
+                return codegen_code_bit(0) | codegen_code_bit(2)
+            }
+        }
+    }
+
+    fn codegen_memory_clobbers() -> u16 {
+        var mask = codegen_code_bit(0) | codegen_code_bit(1)
+        return mask | codegen_code_bit(7) | codegen_code_bit(6)
+    }
+
+    fn codegen_repeat_clobbers() -> u16 {
+        var mask = codegen_code_bit(7) | codegen_code_bit(6)
+        mask = mask | codegen_code_bit(8) | codegen_code_bit(9)
+        return mask | codegen_code_bit(10)
+    }
+
+    fn codegen_memory_instruction_clobbers(memory: ir::MemoryInstruction) -> u16 {
+        match read memory {
+            ir::MemoryCopy(destination, source, size) => {
+                destination;
+                source;
+                size
+                return codegen_memory_clobbers()
+            }
+            ir::MemorySet(destination, value, size) => {
+                destination;
+                value;
+                size
+                return codegen_memory_clobbers()
+            }
+            ir::MemoryRepeat(destination, source, size, count) => {
+                destination;
+                source;
+                size;
+                count
+                return codegen_repeat_clobbers()
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                address;
+                value;
+                alignment;
+                volatile
+                return codegen_code_bit(2)
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+}

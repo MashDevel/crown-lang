@@ -1,0 +1,75 @@
+resource MapGuard {
+    id: u32
+    drops: Shared<Mutex<u32>>
+    drop {
+        drops.lock write as count {
+            count = count + 1
+        }
+    }
+}
+
+fn map_guard(id: u32, drops: Shared<Mutex<u32>>) -> MapGuard {
+    return MapGuard {
+        id: id, drops: drops.share()
+    }
+}
+
+fn map_guard_hash(key: MapGuard) -> usize {
+    return usize.from(key.id)
+}
+fn map_guard_equal(left: MapGuard, right: MapGuard) -> bool {
+    return left.id == right.id
+}
+
+fn map_drop_count(drops: Shared<Mutex<u32>>) -> u32 {
+    drops.lock write as count {
+        return count
+    }
+}
+
+fn test_map_owned() -> u32 {
+    let drops = Shared.new(Mutex.new(u32.from(0)))
+    let result = test_map_owned_scope(drops)
+    if result != 0 {
+        return result
+    }
+    if map_drop_count(drops) != 83 {
+        return 6
+    }
+    return 0
+}
+
+fn test_map_owned_scope(drops: Shared<Mutex<u32>>) -> u32 {
+    var map: std::map::Map<MapGuard, MapGuard> = std::map::new(map_guard_hash, map_guard_equal)
+    for index in 0..40 {
+        std::map::insert(map, map_guard(u32.from(index), drops), map_guard(u32.from(index), drops))
+    }
+    if map_drop_count(drops) != 0 {
+        return 1
+    }
+    match std::map::insert(map, map_guard(20, drops), map_guard(200, drops)) {
+        Some(old) => {
+            if old.id != 20 {
+                return 2
+            }
+        }
+        None => {
+            return 3
+        }
+    }
+    if map_drop_count(drops) != 2 {
+        return 4
+    }
+    let key = map_guard(20, drops)
+    match std::map::remove(map, key) {
+        Some(value) => {
+            if value.id != 200 {
+                return 5
+            }
+        }
+        None => {
+            return 7
+        }
+    }
+    return 0
+}

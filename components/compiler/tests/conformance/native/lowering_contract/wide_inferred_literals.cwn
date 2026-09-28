@@ -1,0 +1,30 @@
+fn valid_context(context: usize) -> bool {
+    return context <= usize.from(0xffffffffffffffff) - 15
+}
+fn main() -> u32 {
+    let inferred = 0x1_0000_0000
+    let wide = u64.from(inferred)
+    if wide != 4294967296 {
+        return 1
+    }
+    if usize.from(0xffffffffffffffff) != 18446744073709551615 {
+        return 2
+    }
+    if u64.from(0x8000000000000000) != 9223372036854775808 {
+        return 3
+    }
+    if valid_context(0x100000000) == false {
+        return 4
+    }
+    if valid_context(18446744073709551600) == false {
+        return 5
+    }
+    if valid_context(18446744073709551601) {
+        return 6
+    }
+    let narrow: u32 = 4294967295
+    if u64.from(narrow) != 4294967295 {
+        return 7
+    }
+    return 42
+}

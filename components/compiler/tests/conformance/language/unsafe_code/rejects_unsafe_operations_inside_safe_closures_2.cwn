@@ -1,0 +1,12 @@
+fn safe() -> u32 {
+    return 0
+}
+fn main() -> u32 {
+    var action: fn() -> u32 = safe
+    unsafe {
+        action = fn() {
+            return RawPtr<u32>.from_address(0).read()
+        }
+    }
+    return action()
+}

@@ -1,0 +1,180 @@
+module sema {
+    fn checker_resolution(checker: Checker) -> Resolution {
+        var owner: Option<usize> = None()
+        match read checker.current_function {
+            Some(index) => {
+                match read checker.symbols.functions[index].kind {
+                    ImplementationFunction(symbol, interface_symbol) => {
+                        interface_symbol;
+                        owner = Some(symbol)
+                    }
+                    InterfaceFunction(symbol) => {
+                        owner = Some(symbol)
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        return Resolution {
+            parameters: names_copy(checker.type_parameters), self_symbol: owner
+        }
+    }
+
+    fn checker_resolve_type(checker: write Checker, reference: frontend::TypeRef) -> Type {
+        let context = checker_resolution(checker)
+        return resolve_type(checker.symbols, context, reference)
+    }
+
+    fn type_is_unit(value_type: Type) -> bool {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                return builtin == Unit() && arguments.length() == 0
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_bool(value_type: Type) -> bool {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                return builtin == Bool() && arguments.length() == 0
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_signed(value_type: Type) -> bool {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                arguments
+                let kind = builtin
+                return builtin_is_signed(kind)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_arguments(value_type: Type) -> Vec<Type> {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                builtin;
+                return types_copy(arguments)
+            }
+            NamedType(symbol, arguments) => {
+                symbol;
+                return types_copy(arguments)
+            }
+            _ => {
+                return Vec<Type>.new()
+            }
+        }
+    }
+
+    fn type_named_symbol(value_type: Type) -> Option<usize> {
+        match read value_type {
+            NamedType(symbol, arguments) => {
+                arguments;
+                return Some(symbol)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn parameter_values(parameters: Vec<frontend::Name>, arguments: Vec<Type>) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(parameters.length())
+        var index: usize = 0
+        while index < parameters.length() {
+            if index < arguments.length() {
+                loan read arguments[index] as argument {
+                    output.push(type_copy(argument))
+                }
+            } else {
+                output.push(Infer())
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn checker_field_type(checker: write Checker, root: Type, name: frontend::Name) -> Option<Type> {
+        match type_named_symbol(root) {
+            None => {
+                checker_error(checker, "unknown, inaccessible, or invalid field type");
+                return None()
+            }
+            Some(symbol) => {
+                let arguments = type_arguments(root)
+                let request = FieldRequest {
+                    symbol: symbol, arguments: move arguments, name: frontend::name_copy(name)
+                }
+                return symbol_field_type(checker, move request)
+            }
+        }
+    }
+
+    fn symbol_field_type(checker: write Checker, request: take FieldRequest) -> Option<Type> {
+        if private_field_allowed(checker, request.symbol, request.name) == false {
+            checker_error(checker, "unknown, inaccessible, or invalid field type");
+            return None()
+        }
+        var parameters = Vec<frontend::Name>.new()
+        loan read checker.symbols.types[request.symbol] as declaration {
+            parameters = names_copy(declaration.type_parameters)
+        }
+        let values = parameter_values(parameters, request.arguments)
+        var index: usize = 0
+        while index < checker.symbols.types[request.symbol].fields.length() {
+            loan read checker.symbols.types[request.symbol].fields[index] as field {
+                if names_equal(checker.symbols.source, field.name, request.name) {
+                    return Some(substitute(field.value_type, values))
+                }
+            }
+            index = index + 1
+        }
+        checker_error(checker, "unknown, inaccessible, or invalid field type")
+        return None()
+    }
+
+    fn checker_require_field_access(checker: write Checker, value_type: Type) -> bool {
+        if checker.unsafe_depth != 0 {
+            return true
+        }
+        match type_named_symbol(value_type) {
+            None => {
+                return true
+            }
+            Some(symbol) => {
+                var restricted = false
+                match read checker.symbols.types[symbol].kind {
+                    Resource(opaque_value, transferable) => {
+                        transferable;
+                        restricted = opaque_value
+                    }
+                    _ => {
+                    }
+                }
+                if restricted {
+                    checker_error(checker, "unknown, inaccessible, or invalid field type");
+                    return false
+                }
+            }
+        }
+        return true
+    }
+    struct FieldRequest {
+        symbol: usize
+        arguments: Vec<Type>
+        name: frontend::Name
+    }
+}

@@ -1,0 +1,211 @@
+module std {
+    module map {
+        enum Entry<K, V> {
+            Pair(K, V)
+        }
+
+        struct Map<K, V> {
+            private buckets: Vec<Vec<Entry<K, V>>>
+            private count: usize
+            private hash: fn(read K) -> usize
+            private equal: fn(read K, read K) -> bool
+        }
+
+        copy struct Position {
+            bucket: usize, entry: usize
+        }
+
+        fn new<K, V>(hash: fn(read K) -> usize, equal: fn(read K, read K) -> bool) -> Map<K, V> {
+            return Map<K, V> {
+                buckets: new_buckets(8), count: 0, hash: hash, equal: equal
+            }
+        }
+
+        fn new_buckets<K, V>(count: usize) -> Vec<Vec<Entry<K, V>>> {
+            var buckets = Vec<Vec<Entry<K, V>>>.with_capacity(count)
+            for index in 0..count {
+                index;
+                buckets.push(Vec<Entry<K, V>>.new())
+            }
+            return move buckets
+        }
+
+        fn length<K, V>(map: Map<K, V>) -> usize {
+            return map.count
+        }
+
+        fn find<K, V>(map: Map<K, V>, key: K) -> Option<Position> {
+            let hash = map.hash
+            let equal = map.equal
+            let bucket = hash(key) % map.buckets.length()
+            for index in 0..map.buckets[bucket].length() {
+                match read map.buckets[bucket][index] {
+                    Pair(stored, value) => {
+                        value
+                        if equal(stored, key) {
+                            return Some(Position {
+                                    bucket: bucket, entry: index
+                                })
+                        }
+                    }
+                }
+            }
+            return None()
+        }
+
+        fn contains<K, V>(map: Map<K, V>, key: K) -> bool {
+            match find(map, key) {
+                Some(position) => {
+                    position;
+                    return true
+                }
+                None => {
+                    return false
+                }
+            }
+        }
+
+        fn insert<K, V>(map: write Map<K, V>, key: take K, value: take V) -> Option<V> {
+            match find(map, key) {
+                Some(position) => {
+                    match write map.buckets[position.bucket][position.entry] {
+                        Pair(stored, current) => {
+                            stored;
+                            return Some(replace(current, move value))
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            if map.count == map.buckets.length() {
+                grow(map)
+            }
+            let hash = map.hash
+            let bucket = hash(key) % map.buckets.length()
+            map.buckets[bucket].push(Pair(move key, move value))
+            map.count = map.count + 1
+            return None()
+        }
+
+        fn grow<K, V>(map: write Map<K, V>) -> void {
+            var buckets: Vec<Vec<Entry<K, V>>> = new_buckets(map.buckets.length() * 2)
+            let hash = map.hash
+            for index in 0..map.buckets.length() {
+                redistribute(map.buckets[index], buckets, hash)
+            }
+            map.buckets = move buckets
+        }
+
+        fn redistribute<K, V>(source: write Vec<Entry<K, V>>, buckets: write Vec<Vec<Entry<K, V>>>, hash: fn(read K) -> usize) -> void {
+            while source.length() != 0 {
+                match source.pop() {
+                    Some(entry) => {
+                        var target: usize = 0
+                        match read entry {
+                            Pair(key, value) => {
+                                value;
+                                target = hash(key) % buckets.length()
+                            }
+                        }
+                        buckets[target].push(move entry)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+
+        fn remove<K, V>(map: write Map<K, V>, key: K) -> Option<V> {
+            return remove_at(map, find(map, key))
+        }
+
+        fn remove_at<K, V>(map: write Map<K, V>, found: Option<Position>) -> Option<V> {
+            match found {
+                None => {
+                    return None()
+                }
+                Some(position) => {
+                    let removed = remove_entry(map.buckets[position.bucket], position.entry)
+                    map.count = map.count - 1
+                    match move removed {
+                        Some(entry) => {
+                            match move entry {
+                                Pair(stored, value) => {
+                                    stored;
+                                    return Some(move value)
+                                }
+                            }
+                        }
+                        None => {
+                            return None()
+                        }
+                    }
+                }
+            }
+        }
+
+        fn remove_entry<K, V>(bucket: write Vec<Entry<K, V>>, index: usize) -> Option<Entry<K, V>> {
+            let last = bucket.length() - 1
+            swap(bucket[index], bucket[last])
+            return bucket.pop()
+        }
+
+        fn with_value<K, V, R>(map: Map<K, V>, key: K, action: scoped fn(read V) -> R) -> Option<R> {
+            return value_at(map, find(map, key), action)
+        }
+
+        fn value_at<K, V, R>(map: Map<K, V>, position: Option<Position>, action: scoped fn(read V) -> R) -> Option<R> {
+            match position {
+                None => {
+                    return None()
+                }
+                Some(found) => {
+                    match read map.buckets[found.bucket][found.entry] {
+                        Pair(stored, value) => {
+                            stored;
+                            return Some(action(value))
+                        }
+                    }
+                }
+            }
+        }
+
+        fn with_value_mut<K, V, R>(map: write Map<K, V>, key: K, action: scoped fn(write V) -> R) -> Option<R> {
+            return value_at_mut(map, find(map, key), action)
+        }
+
+        fn value_at_mut<K, V, R>(map: write Map<K, V>, found: Option<Position>, action: scoped fn(write V) -> R) -> Option<R> {
+            match found {
+                None => {
+                    return None()
+                }
+                Some(position) => {
+                    match write map.buckets[position.bucket][position.entry] {
+                        Pair(stored, value) => {
+                            stored;
+                            return Some(action(value))
+                        }
+                    }
+                }
+            }
+        }
+
+        fn for_each<K, V>(map: Map<K, V>, action: scoped fn(read K, read V) -> void) -> void {
+            for bucket in 0..map.buckets.length() {
+                for index in 0..map.buckets[bucket].length() {
+                    match read map.buckets[bucket][index] {
+                        Pair(key, value) => {
+                            action(key, value)
+                        }
+                    }
+                }
+            }
+        }
+
+        fn clear<K, V>(map: write Map<K, V>) -> void {
+            map.buckets = new_buckets(8)
+            map.count = 0
+        }
+    }
+}

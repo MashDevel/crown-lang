@@ -1,0 +1,177 @@
+module optimize {
+    fn thread_find(function: ir::Function) -> Option<ThreadPlan> {
+        var through: usize = 0
+        while through < function.blocks.length() {
+            match thread_find_block(function, through) {
+                Some(plan) => {
+                    return Some(move plan)
+                }
+                None => {
+                }
+            }
+            through = through + 1
+        }
+        None()
+    }
+
+    fn thread_find_block(function: ir::Function, through: usize) -> Option<ThreadPlan> {
+        var condition: usize = 0
+        var then_block: usize = 0
+        var else_block: usize = 0
+        if thread_conditional(function, through, condition, then_block, else_block) == false {
+            return None()
+        }
+        let incoming = match thread_condition_phi(function, through, condition) {
+            Some(values) => move values
+            None => {
+                return None()
+            }
+        }
+        var index: usize = 0
+        while index < incoming.length() {
+            let edge = ThreadEdge {
+                source: incoming[index].block, through: through, then_block: then_block, else_block: else_block
+            }
+            match thread_find_edge(function, edge, incoming[index].value) {
+                Some(plan) => {
+                    return Some(move plan)
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        None()
+    }
+
+    fn thread_find_edge(function: ir::Function, edge: ThreadEdge, value: usize) -> Option<ThreadPlan> {
+        if thread_branches_to(function, edge.source, edge.through) == false {
+            return None()
+        }
+        match thread_terminator(function, edge.source, value, edge.then_block, edge.else_block) {
+            Some(terminator) => thread_create_plan(function, edge, move terminator)
+            None => None()
+        }
+    }
+
+    fn thread_conditional(function: ir::Function, block: usize, condition: write usize, then_block: write usize, else_block: write usize) -> bool {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            loan read function.blocks[block].instructions[index].kind as kind {
+                if ir::instruction_is_phi(kind) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        match read function.blocks[block].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorConditional(value, then_target, else_target) => {
+                        condition = value
+                        then_block = then_target
+                        else_block = else_target
+                        return true
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn thread_condition_phi(function: ir::Function, block: usize, condition: usize) -> Option<Vec<ir::PhiIncoming>> {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            match read function.blocks[block].instructions[index].result {
+                Some(result) => {
+                    if result == condition {
+                        match read function.blocks[block].instructions[index].kind {
+                            ir::InstructionPhi(value_type, incoming) => {
+                                value_type;
+                                return Some(ir::phi_incoming_copy(incoming))
+                            }
+                            _ => {
+                                return None()
+                            }
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn thread_terminator(function: ir::Function, source: usize, value: usize, then_block: usize, else_block: usize) -> Option<ir::Terminator> {
+        match integer_constant(function, value) {
+            Some(constant) => {
+                if constant == 0 {
+                    return Some(ir::TerminatorBranch(else_block))
+                };
+                return Some(ir::TerminatorBranch(then_block))
+            }
+            None => {
+                if thread_comparison_condition(function, source, value) {
+                    return Some(ir::TerminatorConditional(value, then_block, else_block))
+                }
+                return None()
+            }
+        }
+    }
+
+    fn thread_comparison_condition(function: ir::Function, source: usize, value: usize) -> bool {
+        if source >= function.blocks.length() || function.blocks[source].instructions.length() == 0 {
+            return false
+        }
+        let index = function.blocks[source].instructions.length() - 1
+        match read function.blocks[source].instructions[index].result {
+            Some(result) => {
+                if result != value {
+                    return false
+                }
+            }
+            None => {
+                return false
+            }
+        }
+        match read function.blocks[source].instructions[index].kind {
+            ir::InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn thread_branches_to(function: ir::Function, source: usize, target: usize) -> bool {
+        if source >= function.blocks.length() {
+            return false
+        }
+        match read function.blocks[source].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorBranch(candidate) => {
+                        return candidate == target
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}

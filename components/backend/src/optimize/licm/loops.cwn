@@ -1,0 +1,177 @@
+module optimize {
+    fn find_loops(function: ir::Function) -> Vec<NaturalLoop> {
+        var analysis = LoopAnalysis {
+            predecessors: ir::predecessors(function)
+            dominators: ir::dominators(function)
+            by_header: loop_headers(function.blocks.length())
+        }
+        collect_loop_backedges(function, analysis)
+        var output = Vec<NaturalLoop>.new()
+        var header: usize = 0
+        while header < function.blocks.length() {
+            match loop_preheader(function, analysis, header) {
+                Some(preheader) => {
+                    var blocks = Vec<bool>.new()
+                    loan read analysis.by_header[header] as row {
+                        blocks = loop_row_slice_copy(row)
+                    }
+                    output.push(NaturalLoop {
+                            preheader: preheader, count: count_true(blocks), blocks: move blocks
+                        })
+                }
+                None => {
+                }
+            }
+            header = header + 1
+        }
+        sort_loops(output)
+        return move output
+    }
+
+    fn collect_loop_backedges(function: ir::Function, analysis: write LoopAnalysis) -> void {
+        var source: usize = 0
+        while source < function.blocks.length() {
+            match read function.blocks[source].terminator {
+                Some(terminator) => {
+                    let targets = ir::terminator_targets(terminator)
+                    var index: usize = 0
+                    while index < targets.length() {
+                        let header = targets[index]
+                        if ir::dominates(analysis.dominators, source, header) {
+                            collect_loop_blocks(LoopEdge {
+                                    header: header, tail: source
+                                }, analysis)
+                        }
+                        index = index + 1
+                    }
+                }
+                None => {
+                }
+            }
+            source = source + 1
+        }
+    }
+
+    fn collect_loop_blocks(edge: take LoopEdge, analysis: write LoopAnalysis) -> void {
+        if analysis.by_header[edge.header].length() == 0 {
+            analysis.by_header[edge.header] = false_values(analysis.predecessors.length())
+        }
+        analysis.by_header[edge.header][edge.header] = true
+        analysis.by_header[edge.header][edge.tail] = true
+        var pending = Vec<usize>.new()
+        pending.push(edge.tail)
+        while pending.length() > 0 {
+            match pending.pop() {
+                None => {
+                }
+                Some(block) => {
+                    collect_loop_predecessors(edge.header, block, analysis, pending)
+                }
+            }
+        }
+    }
+
+    fn collect_loop_predecessors(header: usize, block: usize, analysis: write LoopAnalysis, pending: write Vec<usize>) -> void {
+        var index: usize = 0
+        while index < analysis.predecessors[block].length() {
+            let predecessor = analysis.predecessors[block][index]
+            if predecessor != header && ir::dominates(analysis.dominators, predecessor, header) && analysis.by_header[header][predecessor] == false {
+                analysis.by_header[header][predecessor] = true
+                pending.push(predecessor)
+            }
+            index = index + 1
+        }
+    }
+
+    fn loop_preheader(function: ir::Function, analysis: LoopAnalysis, header: usize) -> Option<usize> {
+        var block_count: usize = 0
+        loan read analysis.by_header[header] as blocks {
+            block_count = loop_count_true(blocks)
+        }
+        if block_count == 0 {
+            return None()
+        }
+        var candidate: usize = 0
+        var count: usize = 0
+        var index: usize = 0
+        while index < analysis.predecessors[header].length() {
+            let block = analysis.predecessors[header][index]
+            if analysis.by_header[header][block] == false {
+                candidate = block;
+                count = count + 1
+            }
+            index = index + 1
+        }
+        if count != 1 {
+            return None()
+        }
+        match read function.blocks[candidate].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorBranch(target) => {
+                        if target == header {
+                            return Some(candidate)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+
+    fn loop_headers(length: usize) -> Vec<Vec<bool>> {
+        var output = Vec<Vec<bool>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(Vec<bool>.new());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn loop_row_copy(values: Vec<bool>) -> Vec<bool> {
+        loan read values as view {
+            return loop_row_slice_copy(view)
+        }
+    }
+
+    fn loop_row_slice_copy(values: Slice<bool>) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn loop_count_true(values: Slice<bool>) -> usize {
+        var output: usize = 0
+        var index: usize = 0
+        while index < values.length() {
+            if values[index] {
+                output = output + 1
+            };
+            index = index + 1
+        }
+        return output
+    }
+
+    fn sort_loops(values: write Vec<NaturalLoop>) -> void {
+        var end = values.length()
+        while end > 1 {
+            var index: usize = 1
+            while index < end {
+                if values[index].count < values[index - 1].count {
+                    swap(values[index - 1], values[index])
+                }
+                index = index + 1
+            }
+            end = end - 1
+        }
+    }
+}

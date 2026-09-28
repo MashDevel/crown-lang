@@ -1,0 +1,69 @@
+module x86 {
+    struct DirectMemoryCopy {
+        destination: usize
+        source: usize
+        size: u64
+    }
+
+    struct DirectMemorySet {
+        destination: usize
+        value: u64
+        size: u64
+    }
+
+    fn codegen_direct_memory_size(program: ir::Program, function: usize, value: usize) -> Option<u64> {
+        match codegen_integer_constant(program.functions[function], value) {
+            Some(size) => {
+                if size <= 24 {
+                    return Some(size)
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+
+    fn codegen_direct_memory_copy(program: ir::Program, compiler: write FunctionCompiler, input: take DirectMemoryCopy) -> Result<void, CodegenError> {
+        if input.size == 0 {
+            return Ok(())
+        }
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.destination, register: Rdi()
+            })?
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.source, register: Rsi()
+            })?
+        return codegen_copy_exact(compiler, MemoryCopyAddress {
+                base: Rsi(), offset: 0
+            }, MemoryCopyAddress {
+                base: Rdi(), offset: 0
+            }, input.size)
+    }
+
+    fn codegen_direct_memory_set(program: ir::Program, compiler: write FunctionCompiler, input: take DirectMemorySet) -> Result<void, CodegenError> {
+        if input.size == 0 {
+            return Ok(())
+        }
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.destination, register: Rdi()
+            })?
+        let repeated = input.value.wrapping_mul(72340172838076673)
+        codegen_emit(compiler, MoveImmediate(Rax(), i64.from_bits(repeated)))
+        codegen_memory_set_chunks(compiler, input.size)
+        return Ok(())
+    }
+
+    fn codegen_memory_set_chunks(compiler: write FunctionCompiler, size: u64) -> void {
+        var offset: u64 = 0
+        while offset < size {
+            let width = codegen_memory_chunk_width(size - offset)
+            codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                        base: Rdi(), offset: i32.from(offset), source: Rax()
+                        width: width
+                    }))
+            offset = offset +(u64.from(1) << u64.from(width_code(width)))
+        }
+    }
+
+}

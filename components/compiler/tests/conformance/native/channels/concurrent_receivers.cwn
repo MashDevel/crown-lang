@@ -1,0 +1,77 @@
+struct Received {
+    seen: Vec<bool>, failed: bool
+}
+
+fn record_received(state: Shared<Mutex<Received>>, value: u32) -> void {
+    state.lock write as result {
+        if value >= 400 {
+            result.failed = true;
+            return
+        }
+        if result.seen[usize.from(value)] {
+            result.failed = true
+        }
+        result.seen[usize.from(value)] = true
+    }
+}
+
+fn receive_batch(channel: Channel<u32>, state: Shared<Mutex<Received>>) -> void {
+    for index in 0..100 {
+        index
+        match channel.try_receive() {
+            Some(value) => {
+                record_received(state, value)
+            }
+            None => {
+                state.lock write as result {
+                    result.failed = true
+                }
+            }
+        }
+    }
+}
+
+fn main() -> u32 {
+    let channel = Channel<u32>.new()
+    var seen = Vec<bool>.new()
+    for index in 0..400 {
+        seen.push(false);
+        channel.send(u32.from(index))
+    }
+    let state = Shared.new(Mutex.new(Received {
+                seen: move seen, failed: false
+            }))
+    var threads = Vec<Thread>.new()
+    for index in 0..4 {
+        index
+        let receiver = channel.share()
+        let result = state.share()
+        threads.push(spawn move {
+                receive_batch(receiver, result)
+            })
+    }
+    for index in 0..threads.length() {
+        loan write threads[index] as worker {
+            worker.join()
+        }
+    }
+    state.lock write as result {
+        if result.failed {
+            return 1
+        }
+        for index in 0..400 {
+            if result.seen[index] == false {
+                return 2
+            }
+        }
+    }
+    match channel.try_receive() {
+        Some(value) => {
+            value;
+            return 3
+        }
+        None => {
+        }
+    }
+    return 0
+}

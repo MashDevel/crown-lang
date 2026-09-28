@@ -1,0 +1,41 @@
+copy struct Padded {
+    byte: u8, word: u64, tail: u16
+}
+struct Wrapper<T> {
+    value: T, tail: u8
+}
+copy enum Tag {
+    Empty, Value(u64)
+}
+fn generic_size<T>(value: T) -> usize {
+    value
+    return T.size_of()
+}
+fn main() -> u32 {
+    if u8.size_of() != 1 || u64.align_of() != 8 {
+        return 1
+    }
+    if Padded.size_of() != 24 || Padded.align_of() != 8 {
+        return 2
+    }
+    if Padded.offset_of("byte") != 0 || Padded.offset_of("word") != 8 {
+        return 3
+    }
+    if Padded.offset_of("tail") != 16 {
+        return 4
+    }
+    if Wrapper<u64>.size_of() != 16 || Wrapper<u64>.offset_of("tail") != 8 {
+        return 5
+    }
+    if Option<u64>.size_of() != 16 || Tag.size_of() != 16 {
+        return 6
+    }
+    let values: [u16; 3] = [1, 2, 3]
+    if generic_size(values) != 6 {
+        return 7
+    }
+    if generic_size(7) != 4 {
+        return 8
+    }
+    return 0
+}

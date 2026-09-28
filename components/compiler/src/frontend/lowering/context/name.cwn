@@ -1,0 +1,303 @@
+module lowering {
+    fn source_function_name(source: Shared<Vec<u8>>, name: frontend::Name) -> Text {
+        var output = "crown_source_"
+        frontend::text_push_usize(output, sema::name_length(name))
+        output.push('_')
+        var index: usize = 0
+        while index < sema::name_length(name) {
+            text_push_hex_byte(output, sema::name_byte(source, name, index))
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn instance_function_name(symbols: sema::Symbols, function: sema::Function, arguments: Vec<sema::Type>) -> Text {
+        var output = "crown_instance_"
+        let function_name = sema::name_text(symbols.source, function.name)
+        text_append_encoded(output, move function_name)
+        var index: usize = 0
+        while index < arguments.length() {
+            output.push('_')
+            loan read arguments[index] as value_type {
+                let type_name = sema::type_name(value_type, symbols)
+                text_append_encoded(output, move type_name)
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn implementation_function_name(symbols: sema::Symbols, function: sema::Function) -> Text {
+        var output = "crown_implementation_"
+        match read function.kind {
+            sema::ImplementationFunction(owner, interface_symbol) => {
+                let interface_name = sema::symbol_name(symbols, interface_symbol)
+                text_append_encoded(output, move interface_name)
+                output.push('_')
+                let target = implementation_target(symbols, owner, interface_symbol)
+                let target_name = sema::type_name(target, symbols)
+                text_append_encoded(output, move target_name)
+                output.push('_')
+            }
+            _ => {
+            }
+        }
+        let method_name = sema::name_text(symbols.source, function.name)
+        text_append_encoded(output, move method_name)
+        return move output
+    }
+
+    fn implementation_target(symbols: sema::Symbols, owner: usize, interface_symbol: usize) -> sema::Type {
+        var index: usize = 0
+        while index < symbols.implementations.length() {
+            loan read symbols.implementations[index] as implementation {
+                let query = sema::MethodOwner {
+                    owner: Some(owner), interface_symbol: Some(interface_symbol)
+                }
+                if implementation_target_matches(symbols, implementation, query) {
+                    return sema::type_copy(implementation.target)
+                }
+            }
+            index = index + 1
+        }
+        return sema::Invalid()
+    }
+
+    fn implementation_target_matches(symbols: sema::Symbols, implementation: sema::Implementation, query: sema::MethodOwner) -> bool {
+        if sema::option_usize_is(query.interface_symbol, implementation.interface_symbol) == false {
+            return false
+        }
+        match sema::implementation_owner(symbols, implementation.target) {
+            Some(owner) => {
+                return sema::option_usize_is(query.owner, owner)
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn text_from_span(source: Shared<Vec<u8>>, span: frontend::Span) -> Text {
+        var output = Text.new()
+        var index = span.start
+        while index < span.end {
+            output.push(ascii_character(frontend::source_byte(source, index)))
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn symbol_text(source: Shared<Vec<u8>>, span: frontend::Span) -> Text {
+        var selected = span
+        if selected.end > selected.start && frontend::source_byte(source, selected.start) == 34 {
+            selected.start = selected.start + 1
+            selected.end = selected.end - 1
+        }
+        return text_from_span(source, selected)
+    }
+
+    fn text_push_name(output: write Text, source: Shared<Vec<u8>>, name: frontend::Name) -> void {
+        frontend::text_push_usize(output, sema::name_length(name))
+        output.push('_')
+        var index: usize = 0
+        while index < sema::name_length(name) {
+            text_push_hex_byte(output, sema::name_byte(source, name, index))
+            index = index + 1
+        }
+    }
+
+    fn text_push_type(output: write Text, value_type: sema::Type) -> void {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                output.push('b')
+                let name = sema::builtin_type_name(builtin)
+                text_append_encoded(output, move name)
+                text_push_types(output, arguments)
+            }
+            sema::NamedType(symbol, arguments) => {
+                output.push('n')
+                frontend::text_push_usize(output, symbol)
+                text_push_types(output, arguments)
+            }
+            sema::ArrayType(element, length) => {
+                output.push('a')
+                frontend::text_push_usize(output, length)
+                loan read element as value {
+                    text_push_type(output, value)
+                }
+            }
+            sema::ScopedFunction(inner) => {
+                output.push('s');
+                loan read inner as value {
+                    text_push_type(output, value)
+                }
+            }
+            sema::FunctionType(parameters, result) => {
+                output.push('f')
+                frontend::text_push_usize(output, parameters.length())
+                for index in 0..parameters.length() {
+                    output.push('_')
+                    frontend::text_push_usize(output, usize.from(mode_rank(parameters[index].mode)))
+                    text_push_type(output, parameters[index].value_type)
+                }
+                output.push('_')
+                loan read result as value {
+                    text_push_type(output, value)
+                }
+            }
+            sema::DynamicType(interface_symbol) => {
+                output.push('d');
+                frontend::text_push_usize(output, interface_symbol)
+            }
+            sema::ParameterType(parameter) => {
+                output.push('p');
+                frontend::text_push_usize(output, parameter)
+            }
+            _ => {
+                output.push('x')
+            }
+        }
+    }
+
+    fn text_push_types(output: write Text, values: Vec<sema::Type>) -> void {
+        output.push('l')
+        frontend::text_push_usize(output, values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push('_')
+            loan read values[index] as value {
+                text_push_type(output, value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn text_push_hex_byte(output: write Text, value: u8) -> void {
+        output.push(hex_character(value >> 4))
+        output.push(hex_character(value & 15))
+    }
+
+    fn hex_character(value: u8) -> char {
+        if value < 10 {
+            return decimal_character(value)
+        }
+        if value == 10 {
+            return 'a'
+        }
+        if value == 11 {
+            return 'b'
+        }
+        if value == 12 {
+            return 'c'
+        }
+        if value == 13 {
+            return 'd'
+        }
+        if value == 14 {
+            return 'e'
+        }
+        return 'f'
+    }
+
+    fn decimal_character(value: u8) -> char {
+        if value == 0 {
+            return '0'
+        }
+        if value == 1 {
+            return '1'
+        }
+        if value == 2 {
+            return '2'
+        }
+        if value == 3 {
+            return '3'
+        }
+        if value == 4 {
+            return '4'
+        }
+        if value == 5 {
+            return '5'
+        }
+        if value == 6 {
+            return '6'
+        }
+        if value == 7 {
+            return '7'
+        }
+        if value == 8 {
+            return '8'
+        }
+        return '9'
+    }
+
+    fn ascii_character(value: u8) -> char {
+        return char.from(u32.from(value))
+    }
+
+    fn drop_function_key(value_type: sema::Type) -> Text {
+        var output = "crown_drop_"
+        text_push_type(output, value_type)
+        return move output
+    }
+
+    fn drop_function_name(value_type: sema::Type, symbols: sema::Symbols) -> Text {
+        var output = "crown_drop_"
+        let type_name = sema::type_name(value_type, symbols)
+        text_append_encoded(output, move type_name)
+        return move output
+    }
+
+    fn spawn_function_name(span: frontend::Span, arguments: Vec<sema::Type>) -> Text {
+        var output = "crown_spawn_"
+        frontend::text_push_usize(output, span.source)
+        output.push('_')
+        frontend::text_push_usize(output, span.start)
+        text_push_types(output, arguments)
+        return move output
+    }
+
+    fn closure_function_name(span: frontend::Span, arguments: Vec<sema::Type>) -> Text {
+        var output = "crown_closure_"
+        frontend::text_push_usize(output, span.source)
+        output.push('_')
+        frontend::text_push_usize(output, span.start)
+        text_push_types(output, arguments)
+        return move output
+    }
+
+    fn implementation_table_key(interface_symbol: usize, target: sema::Type) -> Text {
+        var output = "implementation_table_"
+        frontend::text_push_usize(output, interface_symbol)
+        output.push('_')
+        text_push_type(output, target)
+        return move output
+    }
+
+    fn implementation_table_name(symbols: sema::Symbols, interface_symbol: usize, target: sema::Type) -> Text {
+        var output = "implementation_table_"
+        let interface_name = sema::symbol_name(symbols, interface_symbol)
+        text_append_encoded(output, move interface_name)
+        output.push('_')
+        let target_name = sema::type_name(target, symbols)
+        text_append_encoded(output, move target_name)
+        return move output
+    }
+
+    fn implementation_drop_key(interface_symbol: usize, target: sema::Type) -> Text {
+        var output = "crown_implementation_drop_"
+        frontend::text_push_usize(output, interface_symbol)
+        output.push('_')
+        text_push_type(output, target)
+        return move output
+    }
+
+    fn implementation_drop_name(symbols: sema::Symbols, interface_symbol: usize, target: sema::Type) -> Text {
+        var output = "crown_implementation_drop_"
+        let interface_name = sema::symbol_name(symbols, interface_symbol)
+        text_append_encoded(output, move interface_name)
+        output.push('_')
+        let target_name = sema::type_name(target, symbols)
+        text_append_encoded(output, move target_name)
+        return move output
+    }
+}

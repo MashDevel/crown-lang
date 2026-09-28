@@ -1,0 +1,208 @@
+module lowering {
+    struct CallState {
+        function: usize
+        arguments: Vec<sema::Type>
+        parameters: Vec<sema::ParameterType>
+        result: sema::Type
+        target: usize
+    }
+
+    fn call_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionCall(name, arguments) => {
+                if sema::is_exchange(analysis.checker.symbols.source, name) {
+                    return exchange_expression(compiler, analysis, expression.kind)
+                }
+                arguments
+                return named_call_expression(compiler, analysis, expression, name)
+            }
+            _ => {
+                return Err(85)
+            }
+        }
+    }
+
+    fn has_callable_binding(compiler: FunctionCompiler, source: Shared<Vec<u8>>, name: frontend::Name) -> bool {
+        match function_binding_index(compiler, source, name) {
+            Some(value) => {
+                value;
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn resolved_call_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionCall(name, arguments) => {
+                var function: usize = 0
+                match sema::find_function(analysis.checker.symbols, name) {
+                    Some(value) => {
+                        function = value
+                    }
+                    None => {
+                        return Err(85)
+                    }
+                }
+                let state_request = CallStateRequest {
+                    function: function, span: name.span
+                }
+                let state = call_state(compiler, analysis, state_request)?
+                var values = Vec<usize>.new()
+                let result_address = prepare_call_result(compiler, analysis.checker.symbols, state.result, values)?
+                if state.parameters.length() != arguments.length() {
+                    return Err(88)
+                }
+                append_call_arguments(compiler, analysis, state.parameters, arguments, values)?
+                let output_type = call_result_type(analysis.checker.symbols, state.result)?
+                let call = function_append(compiler, ir::InstructionCall(state.target, move values, output_type))?
+                return call_value(call, result_address, state.result)
+            }
+            _ => {
+                return Err(85)
+            }
+        }
+    }
+
+    fn call_state(compiler: FunctionCompiler, analysis: sema::Analysis, request: CallStateRequest) -> Result<CallState, u32> {
+        let arguments = generic_arguments(compiler, analysis, request)
+        var parameters = Vec<sema::ParameterType>.new()
+        var result = sema::Invalid()
+        loan read analysis.checker.symbols.functions[request.function] as signature {
+            var index: usize = 0
+            while index < signature.parameters.length() {
+                loan read signature.parameters[index] as parameter {
+                    parameters.push(sema::ParameterType {
+                            mode: parameter.mode, value_type: sema::substitute(parameter.value_type, arguments)
+                        })
+                }
+                index = index + 1
+            }
+            result = sema::substitute(signature.result, arguments)
+        }
+        match find_function_in_values(compiler.tables.functions, request.function, arguments) {
+            None => {
+                return Err(87)
+            }
+            Some(binding) => {
+                return Ok(CallState {
+                        function: request.function
+                        arguments: move arguments
+                        parameters: move parameters
+                        result: move result
+                        target: binding.function
+                    })
+            }
+        }
+    }
+
+    fn generic_arguments(compiler: FunctionCompiler, analysis: sema::Analysis, request: CallStateRequest) -> Vec<sema::Type> {
+        var index: usize = 0
+        while index < analysis.checker.generic_calls.length() {
+            loan read analysis.checker.generic_calls[index] as call {
+                if call.function == request.function && spans_equal(call.span, request.span) {
+                    return sema::substitute_types(call.arguments, compiler.substitutions)
+                }
+            }
+            index = index + 1
+        }
+        return Vec<sema::Type>.new()
+    }
+
+    fn scalar_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        match borrowed_scalar_value(compiler, analysis, expression)? {
+            ScalarValue(value, value_type) => {
+                value_type;
+                return Ok(value)
+            }
+            AddressValue(address, value_type) => {
+                let request = Place {
+                    address: address, value_type: sema::type_copy(value_type)
+                }
+                return function_load(compiler, analysis.checker.symbols, request)
+            }
+            VoidValue => {
+                return Err(93)
+            }
+        }
+    }
+
+    fn value_address(compiler: write FunctionCompiler, symbols: sema::Symbols, value: take Value) -> Result<usize, u32> {
+        match move value {
+            AddressValue(address, value_type) => {
+                value_type;
+                return Ok(address)
+            }
+            ScalarValue(scalar, value_type) => {
+                let address = function_stack(compiler, symbols, value_type)?
+                let store = StoreRequest {
+                    address: address, value: scalar, value_type: sema::type_copy(value_type)
+                }
+                function_store(compiler, symbols, store)?
+                return Ok(address)
+            }
+            VoidValue => {
+                return Err(94)
+            }
+        }
+    }
+
+    fn call_result_type(symbols: sema::Symbols, result: sema::Type) -> Result<ir::Type, u32> {
+        match type_is_direct(symbols, result) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(direct) => {
+                if direct {
+                    return ir_type(symbols, result)
+                }
+            }
+        }
+        return Ok(ir::TypeVoid())
+    }
+
+    fn call_value(call: take Option<usize>, address: take Option<usize>, result: sema::Type) -> Result<Value, u32> {
+        match call {
+            Some(value) => {
+                return Ok(ScalarValue(value, sema::type_copy(result)))
+            }
+            None => {
+            }
+        }
+        match address {
+            Some(value) => {
+                return Ok(AddressValue(value, sema::type_copy(result)))
+            }
+            None => {
+            }
+        }
+        if sema::type_is_unit(result) {
+            return Ok(VoidValue())
+        }
+        return Err(95)
+    }
+
+    struct CallStateRequest {
+        function: usize
+        span: frontend::Span
+    }
+
+    fn named_call_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, name: frontend::Name) -> Result<Value, u32> {
+        match sema::find_function(analysis.checker.symbols, name) {
+            None => {
+                if has_callable_binding(compiler, analysis.checker.symbols.source, name) {
+                    return indirect_call_expression(compiler, analysis, expression)
+                }
+                return enum_constructor(compiler, analysis, expression)
+            }
+            Some(function) => {
+                if analysis.checker.symbols.functions[function].foreign {
+                    return foreign_call_expression(compiler, analysis, expression)
+                }
+                return resolved_call_expression(compiler, analysis, expression)
+            }
+        }
+    }
+}

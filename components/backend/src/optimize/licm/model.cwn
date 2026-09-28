@@ -1,0 +1,23 @@
+module optimize {
+    struct NaturalLoop {
+        preheader: usize
+        blocks: Vec<bool>
+        count: usize
+    }
+
+    struct LoopAnalysis {
+        predecessors: Vec<Vec<usize>>
+        dominators: ir::Dominators
+        by_header: Vec<Vec<bool>>
+    }
+
+    struct LoopEdge {
+        header: usize
+        tail: usize
+    }
+
+    struct LicmPosition {
+        block: usize
+        instruction: usize
+    }
+}

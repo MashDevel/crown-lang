@@ -1,0 +1,147 @@
+module sema {
+    fn checker_static_call(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                if layout_query_name(checker.symbols.source, method) {
+                    return checker_layout_query(checker, kind)
+                }
+                match read reference.kind {
+                    frontend::TypeNamed(name, type_arguments) => {
+                        match builtin(checker.symbols.source, name) {
+                            None => {
+                                checker_error(checker, "invalid conversion or static call");
+                                return None()
+                            }
+                            Some(builtin) => {
+                                return checker_builtin_static(checker, kind, builtin)
+                            }
+                        }
+                    }
+                    _ => {
+                        checker_error(checker, "invalid conversion or static call");
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid conversion or static call");
+                return None()
+            }
+        }
+    }
+
+    fn checker_builtin_static(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                arguments
+                if name_is(checker.symbols.source, method, "from") &&(builtin_is_numeric(builtin) || builtin == Char()) {
+                    return checker_numeric_conversion(checker, kind, builtin)
+                }
+                if name_is(checker.symbols.source, method, "from_bits") {
+                    if builtin_is_float(builtin) {
+                        return checker_float_from_bits(checker, kind, builtin)
+                    }
+                    if builtin_is_integer(builtin) {
+                        return checker_bit_conversion(checker, kind, builtin)
+                    }
+                }
+                return checker_named_static(checker, kind, builtin)
+            }
+            _ => {
+                checker_error(checker, "invalid conversion or static call");
+                return None()
+            }
+        }
+    }
+
+    fn checker_numeric_conversion(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method
+                if arguments.length() != 1 {
+                    checker_error(checker, "invalid conversion or static call");
+                    return None()
+                }
+                loan read arguments[0] as argument {
+                    match checker_expression(checker, argument) {
+                        None => {
+                            return None()
+                        }
+                        Some(info) => {
+                            if type_is_numeric(info.value_type) == false && type_builtin(info.value_type) != Char() {
+                                checker_error(checker, "invalid conversion or static call");
+                                return None()
+                            }
+                        }
+                    }
+                }
+                return Some(copy_info(BuiltinType(builtin, Vec<Type>.new())))
+            }
+            _ => {
+                checker_error(checker, "invalid conversion or static call");
+                return None()
+            }
+        }
+    }
+
+    fn checker_bit_conversion(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method
+                if arguments.length() != 1 {
+                    checker_error(checker, "invalid conversion or static call");
+                    return None()
+                }
+                let expected = opposite_integer(builtin)
+                loan read arguments[0] as argument {
+                    checker_value(checker, argument, expected)
+                }
+                return Some(copy_info(BuiltinType(builtin, Vec<Type>.new())))
+            }
+            _ => {
+                checker_error(checker, "invalid conversion or static call");
+                return None()
+            }
+        }
+    }
+
+    fn opposite_integer(builtin: Builtin) -> Type {
+        let width = builtin_width(builtin)
+        let opposite = if builtin_is_signed(builtin) {
+            if builtin == ISize() {
+                USize()
+            } else {
+                unsigned_integer(width)
+            }
+        } else {
+            if builtin == USize() {
+                ISize()
+            } else {
+                signed_integer(width)
+            }
+        }
+        builtin_leaf(opposite)
+    }
+
+    fn unsigned_integer(width: u32) -> Builtin {
+        match width {
+            8 => U8()
+            16 => U16()
+            32 => U32()
+            _ => U64()
+        }
+    }
+
+    fn signed_integer(width: u32) -> Builtin {
+        match width {
+            8 => I8()
+            16 => I16()
+            32 => I32()
+            _ => I64()
+        }
+    }
+
+}

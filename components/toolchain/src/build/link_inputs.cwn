@@ -1,0 +1,21 @@
+module toolchain {
+    fn compiler_link_inputs(request: BuildRequest) -> Result<Vec<Text>, Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(request.compiler.clone())
+        arguments.push("_link_inputs")
+        arguments.push("--target")
+        arguments.push(target_name(request.target))
+        append_native_links(arguments, project_links(request))?
+        let result = capture(command(move arguments), temporary_directory())?
+        if result.status != 0 || result.stderr.length() != 0 {
+            return Err(std::text::joined("could not resolve native link inputs: ", result.stderr))
+        }
+        let document = json(result.stdout.clone())?
+        let entries = json_array_values(document, document.root)?
+        var paths = Vec<Text>.new()
+        for index in 0..entries.length() {
+            paths.push(json_text(document, entries[index])?)
+        }
+        return Ok(move paths)
+    }
+}

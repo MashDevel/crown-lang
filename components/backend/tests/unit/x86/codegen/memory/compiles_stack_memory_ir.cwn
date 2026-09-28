@@ -1,0 +1,59 @@
+fn run() -> Result<u32, u32> {
+    let output = Some(x86::R13())
+    let base = Some(x86::Rdi())
+    let offset = Some(x86::R13())
+    let destination = x86::codegen_offset_destination(output, base, offset)
+    if x86::register_code(destination) != 11 {
+        return Ok(10)
+    }
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var function = ir::function_new("memory", move signature, ir::LinkageLocal())
+    let constant_value = ir::ConstantInteger(u64.from(42))
+    let constant = ir::function_constant(function, value_type, constant_value)
+    let block = backend_test::checked(ir::function_add_block(function), 1)?
+    let slot = backend_test::value(ir::function_append(function, block, ir::InstructionStackSlot(8, 8)), 2, 3)?
+    backend_test::checked(ir::function_append(function, block, ir::InstructionStore(slot, constant, 8, false)), 4)?
+    let loaded = backend_test::value(ir::function_append(function, block, ir::InstructionLoad(slot, value_type, 8, false)), 5, 6)?
+    backend_test::checked(ir::function_terminate(function, block, ir::TerminatorReturn(Some(loaded))), 7)?
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Ok(8)
+        }
+        Ok(instructions) => {
+            return Ok(check_generated_instructions(instructions))
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var store = false
+    var load = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::StoreSized(values) => {
+                values.offset;
+                store = true
+            }
+            x86::LoadSized(values) => {
+                values.offset;
+                load = true
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if store == false || load == false {
+        return 9
+    }
+    42
+}
+
+fn main() -> u32 {
+    backend_test::finished(run())
+}

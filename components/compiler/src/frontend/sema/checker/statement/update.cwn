@@ -1,0 +1,16 @@
+module sema {
+    fn checker_update(checker: write Checker, target: frontend::Expression, operator: frontend::BinaryOperator, value: frontend::Expression) -> void {
+        match checker_assignment_type(checker, target) {
+            None => {
+            }
+            Some(expected) => {
+                if type_is_numeric(expected) == false || binary_returns_operand(operator, expected) == false {
+                    checker_error(checker, "compound assignment requires a supported primitive numeric operation")
+                    return
+                }
+                checker_value(checker, value, expected)
+                checker_place(checker, target, WritePath())
+            }
+        }
+    }
+}

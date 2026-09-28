@@ -1,0 +1,6 @@
+interface Read {
+    fn get(value: read Self) -> u32
+}
+fn main() -> u32 {
+    return 0
+}

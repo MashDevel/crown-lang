@@ -1,0 +1,23 @@
+module lowering {
+    fn join_native_thread(compiler: write FunctionCompiler, handle: usize) -> Result<void, u32> {
+        let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        parameters.push(ir::TypePointer())
+        var arguments = Vec<usize>.new()
+        arguments.push(handle)
+        arguments.push(null)
+        let result = function_imported_call(compiler, ImportedCall {
+                name: "pthread_join", signature: ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32())), arguments: move arguments
+            })?
+        let status = match result {
+            Some(value) => value,
+            None => {
+                return Err(310)
+            }
+        }
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth32()), 0)
+        let joined = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), status, zero))?
+        return function_guard_with(compiler, joined, "thread_join_failed")
+    }
+}

@@ -1,0 +1,4 @@
+fn main(arguments: read Arguments) -> u32 {
+    arguments[arguments.length()].length()
+    return 0
+}

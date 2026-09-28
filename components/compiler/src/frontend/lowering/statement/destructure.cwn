@@ -1,0 +1,51 @@
+module lowering {
+    fn destructure_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementDestructure(mutable_value, bindings, expression) => {
+                mutable_value
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                let value = function_expression(compiler, analysis, expression)?
+                let address = match read value {
+                    AddressValue(address, kind) => {
+                        kind;
+                        address
+                    }
+                    _ => {
+                        return Err(530)
+                    }
+                }
+                let source = Place {
+                    address: address, value_type: sema::type_copy(value_type)
+                }
+                for index in 0..bindings.length() {
+                    destructure_field(compiler, analysis.checker.symbols, DestructureField {
+                            source: Place {
+                                address: source.address, value_type: sema::type_copy(source.value_type)
+                            },
+                            field: frontend::name_copy(bindings[index].field), name: frontend::name_copy(bindings[index].binding)
+                        })?
+                }
+                return Ok(())
+            }
+            _ => {
+                return Err(531)
+            }
+        }
+    }
+    struct DestructureField {
+        source: Place, field: frontend::Name, name: frontend::Name
+    }
+    fn destructure_field(compiler: write FunctionCompiler, symbols: sema::Symbols, request: take DestructureField) -> Result<void, u32> {
+        let field = layout_field(symbols, request.source.value_type, request.field)?
+        let source = function_offset(compiler, request.source.address, field.offset)?
+        let target = function_stack(compiler, symbols, field.value_type)?
+        function_copy(compiler, symbols, CopyRequest {
+                destination: target, value: AddressValue(source, sema::type_copy(field.value_type))
+            })?
+        function_add_binding(compiler, Binding {
+                name: frontend::name_copy(request.name), value_type: sema::type_copy(field.value_type), address: target,
+                owned: true, available: true, depth: compiler.scope_depth
+            })
+        return Ok(())
+    }
+}

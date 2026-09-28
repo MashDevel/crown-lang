@@ -1,0 +1,54 @@
+module lowering {
+    copy struct ArrayRepeatLoop {
+        index_address: usize, header: usize, body: usize, exit: usize
+    }
+
+    fn array_repeat_loop(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ArrayRepeat, size: u64, length: usize) -> Result<void, u32> {
+        let flow = array_repeat_setup(compiler, symbols)?
+        let index = function_load(compiler, symbols, Place {
+                address: flow.index_address, value_type: sema::builtin_leaf(sema::USize())
+            })?
+        let count = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), u64.from(length))
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), index, count))?
+        function_finish(compiler, ir::TerminatorConditional(valid, flow.body, flow.exit))?
+        function_select_block(compiler, flow.body)
+        array_repeat_body(compiler, request, size, index)?
+        array_repeat_advance(compiler, symbols, flow, index)?
+        function_select_block(compiler, flow.exit)
+        return Ok(())
+    }
+
+    fn array_repeat_setup(compiler: write FunctionCompiler, symbols: sema::Symbols) -> Result<ArrayRepeatLoop, u32> {
+        let count_type = sema::builtin_leaf(sema::USize())
+        let index_address = function_stack(compiler, symbols, count_type)?
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 0)
+        function_store(compiler, symbols, StoreRequest {
+                address: index_address, value: zero, value_type: move count_type
+            })?
+        let header = function_new_block(compiler)?
+        let body = function_new_block(compiler)?
+        let exit = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorBranch(header))?
+        function_select_block(compiler, header)
+        return Ok(ArrayRepeatLoop {
+                index_address: index_address, header: header, body: body, exit: exit
+            })
+    }
+
+    fn array_repeat_body(compiler: write FunctionCompiler, request: ArrayRepeat, size: u64, index: usize) -> Result<void, u32> {
+        let bytes = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), size)
+        let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), index, bytes))?
+        let destination = function_append_value(compiler, ir::InstructionOffset(request.destination, offset))?
+        function_append(compiler, ir::InstructionMemoryCopy(destination, request.source, bytes))?
+        return Ok(())
+    }
+
+    fn array_repeat_advance(compiler: write FunctionCompiler, symbols: sema::Symbols, flow: ArrayRepeatLoop, index: usize) -> Result<void, u32> {
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), index, one))?
+        function_store(compiler, symbols, StoreRequest {
+                address: flow.index_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+            })?
+        return function_finish(compiler, ir::TerminatorBranch(flow.header))
+    }
+}

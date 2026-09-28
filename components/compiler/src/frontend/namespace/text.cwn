@@ -1,0 +1,23 @@
+module frontend {
+    fn namespace_qualify(module_name: TextView, name: TextView) -> Text {
+        var output = ""
+        std::text::append(output, module_name)
+        if output.length() != 0 {
+            std::text::append(output, "::")
+        }
+        std::text::append(output, name)
+        return move output
+    }
+
+    fn namespace_parent(name: TextView) -> Text {
+        var end: usize = 0
+        var index: usize = 0
+        while index + 1 < name.length() {
+            if name[index] == 58 && name[index + 1] == 58 {
+                end = index
+            }
+            index += 1
+        }
+        return std::text::slice(name, 0, end)
+    }
+}

@@ -1,0 +1,27 @@
+fn test_discard() -> u32 {
+    let drops = Shared.new(Mutex.new(u32.from(0)))
+    let result = test_discard_scope(drops)
+    if result != 0 {
+        return result
+    }
+    if map_drop_count(drops) != 2 {
+        return 3
+    }
+    return 0
+}
+
+fn test_discard_scope(drops: Shared<Mutex<u32>>) -> u32 {
+    let value = map_guard(1, drops)
+    std::discard(move value)
+    if map_drop_count(drops) != 1 {
+        return 1
+    }
+    let owned: Option<MapGuard> = Some(map_guard(2, drops))
+    std::discard(move owned)
+    if map_drop_count(drops) != 2 {
+        return 2
+    }
+    let empty: Option<u32> = None()
+    std::discard(empty)
+    return 0
+}

@@ -1,0 +1,62 @@
+module x86 {
+    fn add_data_relocations(program: Program, object: write object::CompilerObject, state: ObjectState) -> Result<void, EncodeError> {
+        var index: usize = 0
+        while index < state.placements.length() {
+            let data = state.placements[index].data
+            add_placed_data_relocations(object, state, state.placements[index], program.data[data])?
+            index = index + 1
+        }
+        Ok(())
+    }
+
+    fn add_placed_data_relocations(object: write object::CompilerObject, state: ObjectState, placement: DataPlacement, data: Data) -> Result<void, EncodeError> {
+        var index: usize = 0
+        while index < data.references.length() {
+            loan read data.references[index] as reference {
+                add_data_relocation(object, state, DataRelocationInput {
+                        placement: DataPlacement {
+                            data: placement.data, section: placement.section, offset: placement.offset
+                        }
+                        data_size: data.memory_size
+                        zero_fill: data_kind_code(data.kind) == 2
+                        reference: DataReference {
+                            offset: reference.offset, symbol: reference.symbol.clone(), addend: reference.addend
+                        }
+                    })?
+            }
+            index = index + 1
+        }
+        Ok(())
+    }
+
+    struct DataRelocationInput {
+        placement: DataPlacement
+        data_size: u64
+        zero_fill: bool
+        reference: DataReference
+    }
+
+    fn add_data_relocation(object: write object::CompilerObject, state: ObjectState, input: take DataRelocationInput) -> Result<void, EncodeError> {
+        if input.zero_fill || input.reference.offset > 18446744073709551607 || input.reference.offset + 8 > input.data_size {
+            return Err(named_error(InvalidDataReference(), input.reference.symbol.clone()))
+        }
+        var symbol: usize = 0
+        match object_symbol(state, input.reference.symbol) {
+            Some(value) => {
+                symbol = value
+            }
+            None => {
+                return Err(named_error(UnknownSymbol(), input.reference.symbol.clone()))
+            }
+        }
+        object::add_relocation(object, object::Relocation {
+                section: input.placement.section
+                offset: input.placement.offset + input.reference.offset
+                kind: object::RelocationAbsolute64()
+                symbol: symbol
+                subtract: None()
+                addend: input.reference.addend
+            })
+        return Ok(())
+    }
+}

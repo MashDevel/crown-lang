@@ -1,0 +1,12 @@
+module frontend {
+    fn namespace_array_length(resolver: NamespaceResolver, length: write ArrayLength) -> void {
+        match write length {
+            LiteralLength(value) => {
+                value;
+            }
+            NamedLength(name) => {
+                namespace_value_name(resolver, name)
+            }
+        }
+    }
+}

@@ -1,0 +1,108 @@
+module sema {
+    copy enum SymbolKind {
+        Struct
+        Enum
+        Resource(bool, bool)
+        Interface
+    }
+
+    struct Symbol {
+        view_value: bool
+        name: frontend::Name
+        kind: SymbolKind
+        copy_value: bool
+        type_parameters: Vec<frontend::Name>
+        fields: Vec<Field>
+        variants: Vec<Variant>
+    }
+
+    copy enum FunctionKind {
+        FreeFunction
+        ImplementationFunction(usize, usize)
+        InterfaceFunction(usize)
+    }
+
+    struct Function {
+        variadic_start: Option<usize>
+        name: frontend::Name
+        type_parameters: Vec<frontend::Name>
+        parameters: Vec<NamedParameter>
+        result: Type
+        kind: FunctionKind
+        unsafe_value: bool
+        foreign: bool
+        symbol: frontend::Span
+    }
+
+    struct NamedParameter {
+        name: frontend::Name
+        mode: frontend::Mode
+        value_type: Type
+    }
+
+    struct Constant {
+        name: frontend::Name
+        value_type: Type
+        value: ConstantState
+        elements: Vec<ConstantScalar>
+    }
+
+    struct Symbols {
+        constant_depth: u32
+        modules: Vec<frontend::NamespaceModule>
+        source: Shared<Vec<u8>>
+        types: Vec<Symbol>
+        constants: Vec<Constant>
+        functions: Vec<Function>
+        implementations: Vec<Implementation>
+        errors: u32
+        current_span: frontend::Span
+        diagnostics: Vec<Diagnostic>
+    }
+
+    struct Implementation {
+        interface_symbol: usize
+        target: Type
+    }
+
+    struct Resolution {
+        parameters: Vec<frontend::Name>
+        self_symbol: Option<usize>
+    }
+
+    struct SymbolSeed {
+        view_value: bool
+        name: frontend::Name
+        kind: SymbolKind
+        copy_value: bool
+        parameters: Vec<frontend::Name>
+    }
+
+    struct FunctionContext {
+        resolution: Resolution
+        kind: FunctionKind
+        foreign: bool
+        symbol: frontend::Span
+    }
+
+    fn symbols_new(source: take Shared<Vec<u8>>) -> Symbols {
+        return Symbols {
+            constant_depth: 0
+            modules: Vec<frontend::NamespaceModule>.new()
+            source: move source
+            types: Vec<Symbol>.new()
+            constants: Vec<Constant>.new()
+            functions: Vec<Function>.new()
+            implementations: Vec<Implementation>.new()
+            errors: 0
+            current_span: empty_span()
+            diagnostics: Vec<Diagnostic>.new()
+        }
+    }
+
+    fn resolution_new() -> Resolution {
+        return Resolution {
+            parameters: Vec<frontend::Name>.new(), self_symbol: None()
+        }
+    }
+}

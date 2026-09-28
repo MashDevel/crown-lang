@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let value = 1
+    let next = move value
+    return next
+}

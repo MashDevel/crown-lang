@@ -1,0 +1,73 @@
+fn narrow_scale_program(width: ir::IntegerWidth, index: u64, shared: bool, negative: bool, constant: bool) -> Result<ir::Program, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let storage = scale_storage(function, block)?
+    let input = safety_integer(function, width, index)
+    let scale = safety_integer(function, width, 8)
+    let scaled = if constant {
+        input
+    } else {
+        safety_append(function, block, ir::InstructionBinary(ir::BinaryMultiply(), input, scale))?
+    }
+    let address = safety_append(function, block, ir::InstructionOffset(if negative {
+                storage.next
+            } else {
+                storage.base
+            }, scaled))?
+    scale_read(function, block, address, storage.expected, shared)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn narrow_scale() -> Result<void, u32> {
+    let widths = [ir::IntegerWidth8(), ir::IntegerWidth16(), ir::IntegerWidth32(), ir::IntegerWidth64()]
+    let indices: [u64; 4] = [32, 8192, 536870912, 1]
+    for index in 0..4 {
+        for shared in 0..2 {
+            narrow_scale_cases(widths[index], indices[index], shared == 1)?
+        }
+    }
+    for shared in 0..2 {
+        let wide = narrow_scale_program(ir::IntegerWidth128(), 18446744073709551608, shared == 1, true, true)?
+        safety_execute(move wide)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(narrow_scale())
+}
+
+struct ScaleStorage {
+    base: usize, next: usize, expected: usize
+}
+fn scale_storage(function: write ir::Function, block: usize) -> Result<ScaleStorage, u32> {
+    let slot = safety_append(function, block, ir::InstructionStackSlot(16, 8))?
+    let expected = safety_integer(function, ir::IntegerWidth64(), 42)
+    safety_append(function, block, ir::InstructionStore(slot, expected, 8, false))?
+    let eight = safety_integer(function, ir::IntegerWidth64(), 8)
+    let next = safety_append(function, block, ir::InstructionOffset(slot, eight))?
+    safety_append(function, block, ir::InstructionStore(next, expected, 8, false))?
+    return Ok(ScaleStorage {
+            base: slot, next: next, expected: expected
+        })
+}
+fn scale_read(function: write ir::Function, block: usize, address: usize, expected: usize, shared: bool) -> Result<void, u32> {
+    let value = safety_append(function, block, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    if shared {
+        safety_append(function, block, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, true))?
+    }
+    return safety_return_equal(function, block, value, expected)
+}
+fn narrow_scale_cases(width: ir::IntegerWidth, input: u64, shared: bool) -> Result<void, u32> {
+    let program = narrow_scale_program(width, input, shared, false, false)?
+    safety_require(safety_status(safety_execute(move program)) == 42, 10)?
+    let backwards = narrow_scale_program(width, 18446744073709551615, shared, true, false)?
+    safety_require(safety_status(safety_execute(move backwards)) == 42, 11)?
+    let direct = narrow_scale_program(width, 18446744073709551608, shared, true, true)?
+    safety_require(safety_status(safety_execute(move direct)) == 42, 12)?
+    let zero = narrow_scale_program(width, 0, shared, false, false)?
+    safety_require(safety_status(safety_execute(move zero)) == 42, 13)?
+    return Ok(())
+}

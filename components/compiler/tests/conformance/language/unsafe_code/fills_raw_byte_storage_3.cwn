@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    unsafe {
+        RawPtr<u16>.from_address(0).fill(1, 1)
+    }
+    return 0
+}

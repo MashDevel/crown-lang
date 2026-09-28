@@ -1,0 +1,10 @@
+enum Stored<T> {
+    StoredValue(T)
+}
+fn main() -> u32 {
+    let values = [1, 2]
+    loan read values as view {
+        let saved = StoredValue(view)
+    }
+    return 0
+}

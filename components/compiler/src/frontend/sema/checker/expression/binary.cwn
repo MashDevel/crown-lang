@@ -1,0 +1,285 @@
+module sema {
+    fn checker_binary(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                var left_info: Option<ExpressionInfo> = None()
+                let hint = binary_operand_hint(operator, expected)
+                loan read left as value {
+                    left_info = checker_expression_expected(checker, value, hint)
+                }
+                match move left_info {
+                    None => {
+                        return None()
+                    }
+                    Some(info) => {
+                        return checker_binary_right(checker, kind, move info)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "operator is not defined for these operand types");
+                return None()
+            }
+        }
+    }
+
+    fn binary_operand_hint(operator: frontend::BinaryOperator, expected: Type) -> Type {
+        if binary_is_logical(operator) {
+            return builtin_leaf(Bool())
+        }
+        match operator {
+            frontend::BinaryEqual => {
+                return Infer()
+            }
+            frontend::BinaryNotEqual => {
+                return Infer()
+            }
+            frontend::BinaryLess => {
+                return Infer()
+            }
+            frontend::BinaryLessEqual => {
+                return Infer()
+            }
+            frontend::BinaryGreater => {
+                return Infer()
+            }
+            frontend::BinaryGreaterEqual => {
+                return Infer()
+            }
+            _ => {
+                return type_copy(expected)
+            }
+        }
+    }
+
+    fn checker_binary_right(checker: write Checker, kind: frontend::ExpressionKind, left: take ExpressionInfo) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionBinary(left_value, operator, right) => {
+                left_value
+                let right_info = checker_binary_operand(checker, right, operator, left.value_type)
+                match move right_info {
+                    None => {
+                        return None()
+                    }
+                    Some(info) => {
+                        if types_equal(left.value_type, info.value_type) == false {
+                            checker_type_error(checker, left.value_type, info.value_type)
+                            return None()
+                        }
+                        return binary_result(checker, operator, left.value_type)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "operator is not defined for these operand types");
+                return None()
+            }
+        }
+    }
+
+    fn checker_binary_operand(checker: write Checker, right: Box<frontend::Expression>, operator: frontend::BinaryOperator, expected: Type) -> Option<ExpressionInfo> {
+        if binary_is_logical(operator) {
+            let before = scopes_copy(checker.scopes)
+            let region_before = thread_regions_copy(checker.thread_regions)
+            var result: Option<ExpressionInfo> = None()
+            loan read right as value {
+                result = checker_expression_expected(checker, value, expected)
+            }
+            let bypass = scopes_copy(before)
+            let merge = BranchMerge {
+                before: move before, then_state: move bypass, region_then: move region_before,
+                then_continuing: true, else_continuing: checker.continuing
+            }
+            checker_apply_branch_merge(checker, move merge)
+            return move result
+        }
+        loan read right as value {
+            return checker_expression_expected(checker, value, expected)
+        }
+    }
+
+    fn binary_result(checker: write Checker, operator: frontend::BinaryOperator, operand: Type) -> Option<ExpressionInfo> {
+        if type_supports_equality(checker.symbols, operand) && binary_is_equality(operator) {
+            return Some(copy_info(builtin_leaf(Bool())))
+        }
+        if binary_returns_operand(operator, operand) {
+            return Some(copy_info(type_copy(operand)))
+        }
+        if binary_returns_bool(operator, operand) {
+            return Some(copy_info(builtin_leaf(Bool())))
+        }
+        checker_error(checker, "operator is not defined for these operand types")
+        return None()
+    }
+
+    fn binary_is_equality(operator: frontend::BinaryOperator) -> bool {
+        match operator {
+            frontend::BinaryEqual => true,
+            frontend::BinaryNotEqual => true,
+            _ => false
+        }
+    }
+
+    fn binary_returns_operand(operator: frontend::BinaryOperator, operand: Type) -> bool {
+        if binary_is_logical(operator) {
+            return type_is_bool(operand)
+        }
+        if binary_is_arithmetic(operator) {
+            return type_is_numeric(operand)
+        }
+        match read operator {
+            frontend::BinaryRemainder => {
+                return type_is_integer(operand)
+            }
+            frontend::BinaryBitwiseAnd => {
+                return type_is_integer(operand)
+            }
+            frontend::BinaryBitwiseOr => {
+                return type_is_integer(operand)
+            }
+            frontend::BinaryBitwiseXor => {
+                return type_is_integer(operand)
+            }
+            frontend::BinaryShiftLeft => {
+                return type_is_integer(operand)
+            }
+            frontend::BinaryShiftRight => {
+                return type_is_integer(operand)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_returns_bool(operator: frontend::BinaryOperator, operand: Type) -> bool {
+        match read operator {
+            frontend::BinaryLess => {
+                return type_is_numeric(operand)
+            }
+            frontend::BinaryLessEqual => {
+                return type_is_numeric(operand)
+            }
+            frontend::BinaryGreater => {
+                return type_is_numeric(operand)
+            }
+            frontend::BinaryGreaterEqual => {
+                return type_is_numeric(operand)
+            }
+            frontend::BinaryEqual => {
+                return type_is_copy(operand) && type_is_unit(operand) == false
+            }
+            frontend::BinaryNotEqual => {
+                return type_is_copy(operand) && type_is_unit(operand) == false
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_is_logical(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryLogicalAnd => {
+                return true
+            }
+            frontend::BinaryLogicalOr => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn checker_negate(checker: write Checker, value: Box<frontend::Expression>, expected: Type) -> Option<ExpressionInfo> {
+        var hint = builtin_leaf(I32())
+        if type_is_signed(expected) || type_is_float(expected) {
+            hint = type_copy(expected)
+        }
+        loan read value as item {
+            match read item.kind {
+                frontend::ExpressionInteger(magnitude) => {
+                    if negative_literal_fits(hint, magnitude) {
+                        let info = copy_info(type_copy(hint))
+                        checker_record(checker, item, info)
+                        return Some(move info)
+                    }
+                    checker_error(checker, "negative integer literal does not fit the expected type")
+                    return None()
+                }
+                _ => {
+                }
+            }
+            match checker_expression_expected(checker, item, hint) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    if type_is_signed(info.value_type) || type_is_float(info.value_type) {
+                        return Some(copy_info(type_copy(info.value_type)))
+                    }
+                }
+            }
+        }
+        checker_error(checker, "operator is not defined for these operand types")
+        return None()
+    }
+
+    fn negative_literal_fits(value_type: Type, value: u64) -> bool {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                if arguments.length() != 0 {
+                    return false
+                }
+                let kind = builtin
+                if kind == I8() {
+                    return value <= 128
+                }
+                if kind == I16() {
+                    return value <= 32768
+                }
+                if kind == I32() {
+                    return value <= 2147483648
+                }
+                if kind == I64() || kind == ISize() {
+                    return value <= 9223372036854775808
+                }
+            }
+            _ => {
+            }
+        }
+        return false
+    }
+
+    fn checker_bitwise_not(checker: write Checker, value: Box<frontend::Expression>, expected: Type) -> Option<ExpressionInfo> {
+        var hint = builtin_leaf(U32())
+        if type_is_integer(expected) {
+            hint = type_copy(expected)
+        }
+        loan read value as item {
+            match checker_expression_expected(checker, item, hint) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    if type_is_integer(info.value_type) {
+                        return Some(copy_info(type_copy(info.value_type)))
+                    }
+                }
+            }
+        }
+        checker_error(checker, "operator is not defined for these operand types")
+        return None()
+    }
+
+    fn binary_is_arithmetic(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryAdd => true
+            frontend::BinarySubtract => true
+            frontend::BinaryMultiply => true
+            frontend::BinaryDivide => true
+            _ => false
+        }
+    }
+}

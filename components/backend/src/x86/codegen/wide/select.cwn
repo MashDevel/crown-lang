@@ -1,0 +1,27 @@
+module x86 {
+    fn codegen_wide_select(program: ir::Program, compiler: write FunctionCompiler, input: take SelectInput) -> Result<void, CodegenError> {
+        let alternate = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.condition, register: Rax()
+            })?
+        codegen_emit(compiler, Test(Rax(), Rax()))
+        codegen_emit(compiler, JumpIf(Equal(), local_label_copy(alternate)))
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.then_value, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move alternate))
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.else_value, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_emit(compiler, Label(move done))
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+}

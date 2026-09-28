@@ -1,0 +1,17 @@
+interface Read {
+    fn get(self: read Self) -> u32
+}
+struct Value {
+    item: u32
+}
+impl Read for Value {
+    fn get(self: read Value) -> u32 {
+        return self.item
+    }
+}
+fn main() -> u32 {
+    var value: dynamic Read = Value {
+        item: 1
+    }
+    return value.missing()
+}

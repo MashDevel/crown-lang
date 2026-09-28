@@ -1,0 +1,102 @@
+module arm64 {
+    fn emit_immediate(bytes: write Vec<u8>, register: u32, value: u64) -> Result<void, Text> {
+        append_word(bytes, move_wide(register, u16.from(value & 65535), 0, false)?)
+        for lane in 1..4 {
+            let part = u16.from((value >>(u64.from(lane) * 16)) & 65535)
+            if part != 0 {
+                append_word(bytes, move_wide(register, part, u32.from(lane), true)?)
+            }
+        }
+        return Ok(())
+    }
+
+    fn emit_stack_adjust(bytes: write Vec<u8>, size: u64, subtract: bool) -> Result<void, Text> {
+        if size % 16 != 0 || size > FRAME_LIMIT {
+            return Err("ARM64 stack adjustment must be a supported multiple of 16")
+        }
+        var remaining = size
+        while remaining != 0 {
+            let units: u64 = if remaining >= 4096 {
+                4096
+            } else {
+                1
+            }
+            let available = remaining / units
+            let immediate: u64 = if available > 4095 {
+                4095
+            } else {
+                available
+            }
+            let step = immediate * units
+            let encoded = add_immediate(31, 31, u32.from(immediate), subtract)?
+            append_word(bytes, encoded | if units == 4096 {
+                    4194304
+                } else {
+                    0
+                })
+            remaining = remaining - step
+        }
+        return Ok(())
+    }
+
+    fn emit_frame_address(bytes: write Vec<u8>, register: u32, offset: u64) -> Result<void, Text> {
+        if offset > FRAME_LIMIT {
+            return Err("ARM64 frame address exceeds the supported size")
+        }
+        if offset <= 4095 {
+            append_word(bytes, add_immediate(register, 28, u32.from(offset), false)?)
+        } else {
+            emit_immediate(bytes, register, offset)?
+            append_word(bytes, integer_word(IntegerOperation::Add(), Registers {
+                        destination: register, left: 28, right: register
+                    })?)
+        }
+        return Ok(())
+    }
+
+    fn emit_frame_access(bytes: write Vec<u8>, register: u32, offset: u64, width: u32, load: bool) -> Result<void, Text> {
+        if register == 17 {
+            return Err("ARM64 frame access reserves register 17 for addresses")
+        }
+        if offset <= FRAME_LIMIT && width != 0 && offset % u64.from(width) == 0 && offset / u64.from(width) <= 4095 {
+            append_word(bytes, memory_word(register, 28, u32.from(offset), width, load)?)
+            return Ok(())
+        }
+        emit_frame_address(bytes, 17, offset)?
+        append_word(bytes, memory_word(register, 17, 0, width, load)?)
+        return Ok(())
+    }
+
+    fn emit_prologue(bytes: write Vec<u8>, frame: Frame) -> Result<void, Text> {
+        append_word(bytes, pair_word(Registers {
+                    destination: 29, left: 31, right: 30
+                }, -32, PairIndex::Pre(), false)?)
+        append_word(bytes, memory_word(28, 31, 16, 8, false)?)
+        append_word(bytes, add_immediate(29, 31, 0, false)?)
+        emit_stack_adjust(bytes, frame.size, true)?
+        append_word(bytes, add_immediate(28, 31, 0, false)?)
+        emit_saved_registers(bytes, frame, false)?
+        return Ok(())
+    }
+
+    fn emit_epilogue(bytes: write Vec<u8>, frame: Frame) -> Result<void, Text> {
+        emit_saved_registers(bytes, frame, true)?
+        append_word(bytes, add_immediate(31, 29, 0, false)?)
+        append_word(bytes, memory_word(28, 31, 16, 8, true)?)
+        append_word(bytes, pair_word(Registers {
+                    destination: 29, left: 31, right: 30
+                }, 32, PairIndex::Post(), true)?)
+        append_word(bytes, 3596551104)
+        return Ok(())
+    }
+
+    fn emit_saved_registers(bytes: write Vec<u8>, frame: Frame, load: bool) -> Result<void, Text> {
+        for index in 0..frame.saved.length() {
+            let offset = frame.saved[index]
+            if offset != 18446744073709551615 {
+                emit_frame_access(bytes, REGISTER_FIRST + u32.from(index), offset, 8, load)?
+            }
+        }
+        return Ok(())
+    }
+}

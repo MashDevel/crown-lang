@@ -1,0 +1,16 @@
+module sema {
+    fn checker_record_text_span(checker: write Checker, expression: frontend::Expression, info: ExpressionInfo) -> void {
+        match read expression.kind {
+            frontend::ExpressionText(span) => {
+                if span.start != expression.span.start {
+                    checker.expressions.push(ExpressionRecord {
+                            function: checker.current_function, resource_owner: checker.current_resource,
+                            span: span, value_type: type_copy(info.value_type), value: info.value
+                        })
+                }
+            }
+            _ => {
+            }
+        }
+    }
+}

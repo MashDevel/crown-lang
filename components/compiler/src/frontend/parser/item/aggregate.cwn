@@ -1,0 +1,94 @@
+module frontend {
+    fn parser_struct(parser: write Parser) -> StructDecl {
+        let view_value = parser_view_struct(parser)
+        if view_value {
+            parser_advance(parser)
+        }
+        let copy_value = parser_consumed(parser, TokenCopy())
+        let start = parser_expect(parser, TokenStruct())
+        let name = parser_identifier(parser)
+        let parameters = parser_type_parameters(parser)
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var fields = Vec<Field>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            fields.push(parser_field(parser))
+            parser_field_end(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        return StructDecl {
+            view_value: view_value, name: move name, copy_value: copy_value, parameters: move parameters, fields: move fields, span: span_through(start.span, end.span)
+        }
+    }
+
+    fn parser_enum(parser: write Parser) -> EnumDecl {
+        let copy_value = parser_consumed(parser, TokenCopy())
+        let start = parser_expect(parser, TokenEnum())
+        let name = parser_identifier(parser)
+        let parameters = parser_type_parameters(parser)
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var variants = Vec<Variant>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            variants.push(parser_variant(parser))
+            parser_field_end(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        return EnumDecl {
+            name: move name, copy_value: copy_value, parameters: move parameters, variants: move variants, span: span_through(start.span, end.span)
+        }
+    }
+
+    fn parser_variant(parser: write Parser) -> Variant {
+        let name = parser_identifier(parser)
+        let start = name.span
+        var fields = Vec<TypeRef>.new()
+        if parser_consumed(parser, TokenLeftParen()) {
+            parser_skip_breaks(parser)
+            while parser_at(parser, TokenRightParen()) == false && parser_at(parser, TokenEnd()) == false {
+                fields.push(parser_type(parser))
+                parser_skip_breaks(parser)
+                if parser_consumed(parser, TokenComma()) == false {
+                    break
+                }
+                parser_skip_breaks(parser)
+            }
+            parser_expect(parser, TokenRightParen())
+        }
+        let end = parser_previous_span(parser)
+        return Variant {
+            name: move name, fields: move fields, span: span_through(start, end)
+        }
+    }
+
+    fn parser_field(parser: write Parser) -> Field {
+        let private_value = parser_consumed(parser, TokenPrivate())
+        let name = parser_identifier(parser)
+        let start = name.span
+        parser_expect(parser, TokenColon())
+        let value_type = parser_type(parser)
+        let span = span_through(start, value_type.span)
+        return Field {
+            private_value: private_value, name: move name, value_type: move value_type, span: span
+        }
+    }
+
+    fn parser_field_end(parser: write Parser) -> void {
+        if parser_consumed(parser, TokenComma()) == false {
+            if parser_at(parser, TokenNewline()) == false && parser_at(parser, TokenRightBrace()) == false {
+                parser_report(parser, MissingToken())
+            }
+        }
+        parser_skip_breaks(parser)
+    }
+
+    fn parser_view_struct(parser: Parser) -> bool {
+        let current = parser_token_at(parser, parser.offset)
+        let name = parser_name_from_token(current)
+        if parser_name_is(parser, name, "view") == false {
+            return false
+        }
+        let next = parser_token_at(parser, parser.offset + 1)
+        return token_kind_equal(next.kind, TokenStruct())
+    }
+}

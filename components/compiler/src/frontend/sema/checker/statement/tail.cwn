@@ -1,0 +1,16 @@
+module sema {
+    fn checker_return_node(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementReturn(value, implicit) => {
+                if implicit && type_is_unit(checker.result) {
+                    checker_discarded_expression(checker, value);
+                    return
+                }
+                checker_return(checker, value)
+            }
+            _ => {
+                checker_error(checker, "invalid return statement")
+            }
+        }
+    }
+}

@@ -1,0 +1,16 @@
+extern "c" {
+    fn answer(value: u32) -> u32 = "crown_external_answer"
+    fn absolute(value: i32) -> i32 = "crown_external_absolute"
+}
+
+fn main() -> u32 {
+    unsafe {
+        if answer(21) != 42 {
+            return 1
+        }
+        if absolute(-42) != 42 {
+            return 2
+        }
+    }
+    return 42
+}

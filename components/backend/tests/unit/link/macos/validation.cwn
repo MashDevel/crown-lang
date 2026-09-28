@@ -1,0 +1,143 @@
+fn rejected<T>(result: take Result<T, Text>) -> Result<void, Text> {
+    match move result {
+        Err(error) => {
+            error;
+            return Ok(())
+        }
+        Ok(value) => {
+            value;
+            return Err("invalid linker input was accepted")
+        }
+    }
+}
+
+fn malformed_headers() -> Result<void, Text> {
+    let offsets: [usize; 9] = [0, 4, 12, 20, 36, 96, 156, 204, 168]
+    let values: [u64; 9] = [0, 0, 2, 4294967295, 7, 4294967295, 13, 4294967295, 9]
+    for index in 0..9 {
+        var bytes = macho::object_file(sample_object())?
+        link_binary::put(bytes, offsets[index], values[index], 4)
+        rejected(macho::read_object(move bytes))?
+    }
+    return Ok(())
+}
+
+fn malformed_symbols() -> Result<void, Text> {
+    for index in 0..3 {
+        var bytes = macho::object_file(sample_object())?
+        let symbol = usize.from(link_binary::number(bytes, 192, 4)?)
+        let offset = if index == 0 {
+            symbol
+        } else {
+            symbol + 4 + index - 1
+        }
+        let value: u64 = if index == 0 {
+            255
+        } else {
+            if index == 1 {
+                2
+            } else {
+                0
+            }
+        }
+        link_binary::put(bytes, offset, value, 1)
+        rejected(macho::read_object(move bytes))?
+    }
+    return Ok(())
+}
+
+fn relocation_boundaries() -> Result<void, Text> {
+    macho::require_signed32(-2147483648)?
+    macho::require_signed32(2147483647)?
+    rejected(macho::require_signed32(-2147483649))?
+    rejected(macho::require_signed32(2147483648))?
+    macho::require_unsigned32(4294967295)?
+    rejected(macho::require_unsigned32(-1))?
+    rejected(link_binary::signed_add(9223372036854775807, 1))?
+    rejected(link_binary::signed_subtract(-9223372036854775808, 1))?
+    return Ok(())
+}
+
+fn expect_relocation(raw: u64, expected: object::RelocationKind) -> Result<void, Text> {
+    let actual = macho::relocation_kind(raw)?
+    if actual != expected {
+        return Err("unexpected Mach-O relocation kind")
+    }
+    return Ok(())
+}
+
+fn supported_relocation_kinds() -> Result<void, Text> {
+    let relative: u64 = 83886080
+    expect_relocation(67108864, object::RelocationAbsolute32())?
+    expect_relocation(100663296, object::RelocationAbsolute64())?
+    expect_relocation(relative | 268435456, object::RelocationPcRelative32())?
+    expect_relocation(relative | 536870912, object::RelocationPcRelativeCall32())?
+    expect_relocation(relative | 805306368, object::RelocationGotLoadPcRelative32())?
+    expect_relocation(relative | 1073741824, object::RelocationGotPcRelative32())?
+    expect_relocation(relative | 1610612736, object::RelocationPcRelative32())?
+    expect_relocation(relative | 1879048192, object::RelocationPcRelative32())?
+    return expect_relocation(relative | 2147483648, object::RelocationPcRelative32())
+}
+
+fn rejected_relocation_kinds() -> Result<void, Text> {
+    rejected(macho::relocation_kind(0))?
+    rejected(macho::relocation_kind(33554432))?
+    rejected(macho::relocation_kind(268435456))?
+    rejected(macho::relocation_kind(16777216))?
+    rejected(macho::relocation_kind(83886080 | 1342177280))?
+    return difference_widths()
+}
+
+fn difference_widths() -> Result<void, Text> {
+    rejected(macho::difference_width(0))?
+    rejected(macho::difference_width(33554432))?
+    if macho::difference_width(67108864)? != 4 || macho::difference_width(100663296)? != 8 {
+        return Err("invalid Mach-O difference width")
+    }
+    return Ok(())
+}
+
+fn duplicate_definitions() -> Result<void, Text> {
+    var output = sample_object()
+    rejected(link_object::merge(output, sample_object()))?
+    var source = sample_object()
+    source.symbols[0].binding = object::SymbolLocal()
+    link_object::merge(output, move source)?
+    if output.symbols.length() != 2 {
+        return Err("local symbol was not isolated")
+    }
+    return Ok(())
+}
+
+fn executable_text_relocation() -> Result<void, Text> {
+    var object = import_object()
+    object.relocations[0].offset = 0
+    object.relocations[0].kind = object::RelocationAbsolute64()
+    object.relocations[0].addend = 0
+    let libraries = macho::libraries(Vec<Text>.new())?
+    return rejected(macho::executable(object, libraries))
+}
+
+fn verify_invalid_objects() -> Result<void, Text> {
+    match macho::read_object(Vec<u8>.new()) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            return Err("accepted truncated object")
+        }
+    }
+    var object = sample_object()
+    object.entry = None()
+    match macho::executable(object, Vec<Text>.new()) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            return Err("accepted missing entry")
+        }
+    }
+    return Ok(())
+}

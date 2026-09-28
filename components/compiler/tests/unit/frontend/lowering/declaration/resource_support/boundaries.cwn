@@ -1,0 +1,89 @@
+fn resource_boundaries(analysis: write sema::Analysis) -> u32 {
+    var state = sema::InstanceState {
+        output: Vec<sema::FunctionInstance>.new(), pending: Vec<sema::FunctionInstance>.new(), types: Vec<sema::Type>.new()
+    }
+    let invalid = sema::NamedType(18446744073709551615, Vec<sema::Type>.new())
+    sema::expand_named_resource(analysis.checker, state, invalid)
+    sema::expand_named_resource(analysis.checker, state, sema::builtin_leaf(sema::Unit()))
+    let callable = sema::FunctionType(Vec<sema::ParameterType>.new(), Box.new(sema::builtin_leaf(sema::Unit())))
+    sema::expand_resource_type(analysis.checker, state, callable)
+    if state.types.length() != 0 {
+        return 10
+    }
+    if sema::root_resource_call(analysis.checker.symbols, None()) == false {
+        return 11
+    }
+    if sema::root_resource_call(analysis.checker.symbols, Some(18446744073709551615)) {
+        return 12
+    }
+    let roots = nongeneric_roots()
+    if roots != 0 {
+        return roots
+    }
+    return native_resource_boundaries(analysis)
+}
+fn nongeneric_roots() -> u32 {
+    let text = "resource R {value:u32,drop {value}} fn main()->u32{return 0}"
+    let input = match source_input(text, 128) {
+        Some(value) => move value,
+        None => {
+            return 14
+        }
+    }
+    if sema::root_resource_call(input.analysis.checker.symbols, Some(0)) == false {
+        return 13
+    }
+    if sema::has_generic_resources(input.analysis.checker.symbols) {
+        return 15
+    }
+    return 0
+}
+fn native_resource_boundaries(analysis: write sema::Analysis) -> u32 {
+    analysis.checker.resource_instances.push(sema::builtin_leaf(sema::Unit()))
+    var compiler = lowering::compiler_new()
+    let expression = sema::ExpressionRecord {
+        function: None(), resource_owner: Some(18446744073709551615), span: sema::empty_span(), value_type: sema::ParameterType(0), value: sema::OwnedValue()
+    }
+    lowering::include_resource_expression_types(compiler, analysis, expression)
+    if compiler.drop_types.length() != 0 {
+        return 16
+    }
+    let invalid = sema::ClosureRecord {
+        resource_owner: Some(18446744073709551615), function: None(), span: sema::empty_span(), value_type: sema::Invalid(), captures: Vec<sema::ScopedCapture>.new()
+    }
+    let no_match = lowering::declare_resource_closures(compiler, analysis, invalid)
+    match no_match {
+        Ok(value) => {
+            value
+        },
+        Err(error) => {
+            error;
+            return 17
+        }
+    }
+    let resource_name = frontend::Name {
+        text: "R", span: sema::empty_span()
+    }
+    let symbol = match sema::find_symbol(analysis.checker.symbols, resource_name) {
+        Some(value) => value,
+        None => {
+            return 20
+        }
+    }
+    let broken = sema::ClosureRecord {
+        resource_owner: Some(symbol), function: None(), span: sema::empty_span(), value_type: sema::Invalid(), captures: Vec<sema::ScopedCapture>.new()
+    }
+    match lowering::declare_resource_closures(compiler, analysis, broken) {
+        Ok(value) => {
+            value;
+            return 18
+        },
+        Err(error) => {
+            if error != 321 {
+                return 19
+            }
+        }
+    }
+    analysis.checker.resource_instances.pop()
+    return 0
+}

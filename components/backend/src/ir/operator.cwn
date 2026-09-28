@@ -1,0 +1,250 @@
+module ir {
+    copy enum BinaryOperator {
+        BinaryAdd
+        BinarySubtract
+        BinaryMultiply
+        BinarySignedDivide
+        BinaryUnsignedDivide
+        BinarySignedRemainder
+        BinaryUnsignedRemainder
+        BinaryAnd
+        BinaryOr
+        BinaryXor
+        BinaryShiftLeft
+        BinaryShiftRightSigned
+        BinaryShiftRightUnsigned
+        BinaryFloatAdd
+        BinaryFloatSubtract
+        BinaryFloatMultiply
+        BinaryFloatDivide
+        BinaryFloatRemainder
+    }
+
+    copy enum UnaryOperator {
+        UnaryNegate
+        UnaryNot
+        UnaryFloatNegate
+    }
+
+    copy enum CompareOperator {
+        CompareEqual
+        CompareNotEqual
+        CompareSignedLess
+        CompareSignedLessEqual
+        CompareSignedGreater
+        CompareSignedGreaterEqual
+        CompareUnsignedLess
+        CompareUnsignedLessEqual
+        CompareUnsignedGreater
+        CompareUnsignedGreaterEqual
+        CompareFloatOrderedEqual
+        CompareFloatOrderedNotEqual
+        CompareFloatUnorderedNotEqual
+        CompareFloatOrderedLess
+        CompareFloatOrderedLessEqual
+        CompareFloatOrderedGreater
+        CompareFloatOrderedGreaterEqual
+    }
+
+    copy enum CastOperator {
+        CastTruncate
+        CastZeroExtend
+        CastSignExtend
+        CastSignedIntegerToFloat
+        CastUnsignedIntegerToFloat
+        CastFloatToSignedInteger
+        CastFloatToUnsignedInteger
+        CastFloatExtend
+        CastFloatTruncate
+        CastPointerToInteger
+        CastIntegerToPointer
+        CastBitcast
+    }
+
+    fn binary_may_trap(operator: BinaryOperator) -> bool {
+        match read operator {
+            BinarySignedDivide => {
+                return true
+            }
+            BinaryUnsignedDivide => {
+                return true
+            }
+            BinarySignedRemainder => {
+                return true
+            }
+            BinaryUnsignedRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_is_shift(operator: BinaryOperator) -> bool {
+        match read operator {
+            BinaryShiftLeft => {
+                return true
+            }
+            BinaryShiftRightSigned => {
+                return true
+            }
+            BinaryShiftRightUnsigned => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_is_float(operator: BinaryOperator) -> bool {
+        match read operator {
+            BinaryFloatAdd => {
+                return true
+            }
+            BinaryFloatSubtract => {
+                return true
+            }
+            BinaryFloatMultiply => {
+                return true
+            }
+            BinaryFloatDivide => {
+                return true
+            }
+            BinaryFloatRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn unary_is_float(operator: UnaryOperator) -> bool {
+        match read operator {
+            UnaryFloatNegate => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn compare_is_float(operator: CompareOperator) -> bool {
+        match read operator {
+            CompareFloatOrderedEqual => {
+                return true
+            }
+            CompareFloatOrderedNotEqual => {
+                return true
+            }
+            CompareFloatUnorderedNotEqual => {
+                return true
+            }
+            CompareFloatOrderedLess => {
+                return true
+            }
+            CompareFloatOrderedLessEqual => {
+                return true
+            }
+            CompareFloatOrderedGreater => {
+                return true
+            }
+            CompareFloatOrderedGreaterEqual => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_is_commutative(operator: BinaryOperator) -> bool {
+        match read operator {
+            BinaryAdd => {
+                return true
+            }
+            BinaryMultiply => {
+                return true
+            }
+            BinaryAnd => {
+                return true
+            }
+            BinaryOr => {
+                return true
+            }
+            BinaryXor => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn compare_is_signed(operator: CompareOperator) -> bool {
+        match read operator {
+            CompareSignedLess => {
+                return true
+            }
+            CompareSignedLessEqual => {
+                return true
+            }
+            CompareSignedGreater => {
+                return true
+            }
+            CompareSignedGreaterEqual => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn integer_compare_reverse(operator: CompareOperator) -> Option<CompareOperator> {
+        match read operator {
+            CompareEqual => {
+                return Some(CompareEqual())
+            }
+            CompareNotEqual => {
+                return Some(CompareNotEqual())
+            }
+            CompareSignedLess => {
+                return Some(CompareSignedGreater())
+            }
+            CompareSignedLessEqual => {
+                return Some(CompareSignedGreaterEqual())
+            }
+            CompareSignedGreater => {
+                return Some(CompareSignedLess())
+            }
+            CompareSignedGreaterEqual => {
+                return Some(CompareSignedLessEqual())
+            }
+            _ => unsigned_compare_reverse(operator)
+        }
+    }
+
+    fn unsigned_compare_reverse(operator: CompareOperator) -> Option<CompareOperator> {
+        match read operator {
+            CompareUnsignedLess => {
+                return Some(CompareUnsignedGreater())
+            }
+            CompareUnsignedLessEqual => {
+                return Some(CompareUnsignedGreaterEqual())
+            }
+            CompareUnsignedGreater => {
+                return Some(CompareUnsignedLess())
+            }
+            CompareUnsignedGreaterEqual => {
+                return Some(CompareUnsignedLessEqual())
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

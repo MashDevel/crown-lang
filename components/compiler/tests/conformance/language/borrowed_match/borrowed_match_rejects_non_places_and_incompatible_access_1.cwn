@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    match read Some(1) {
+        Some(value) => {
+            return value
+        },
+        None => {
+            return 0
+        }
+    }
+}

@@ -1,0 +1,76 @@
+module frontend {
+    fn character_scalar(source: Shared<Vec<u8>>, span: Span) -> Option<u32> {
+        if span.end <= span.start + 2 {
+            return None()
+        }
+        let start = span.start + 1
+        let end = span.end - 1
+        let first = source_byte(source, start)
+        if first == 92 {
+            return escaped_character(source, start, end)
+        }
+        if first < 128 && end == start + 1 {
+            return Some(u32.from(first))
+        }
+        return utf8_scalar(source, start, end)
+    }
+
+    fn escaped_character(source: Shared<Vec<u8>>, start: usize, end: usize) -> Option<u32> {
+        if end != start + 2 {
+            return None()
+        }
+        let value = source_byte(source, start + 1)
+        if value == 110 {
+            return Some(10)
+        }
+        if value == 114 {
+            return Some(13)
+        }
+        if value == 116 {
+            return Some(9)
+        }
+        if value == 48 {
+            return Some(0)
+        }
+        if value == 92 || value == 39 || value == 34 {
+            return Some(u32.from(value))
+        }
+        return None()
+    }
+
+    fn utf8_scalar(source: Shared<Vec<u8>>, start: usize, end: usize) -> Option<u32> {
+        let first = source_byte(source, start)
+        let width = end - start
+        if width == 2 {
+            return utf8_two(source, start, first)
+        }
+        if width == 3 {
+            return utf8_three(source, start, first)
+        }
+        if width == 4 {
+            return utf8_four(source, start, first)
+        }
+        return None()
+    }
+
+    fn utf8_two(source: Shared<Vec<u8>>, start: usize, first: u8) -> Option<u32> {
+        let second = source_byte(source, start + 1)
+        let value = (u32.from(first & 31) << 6) | u32.from(second & 63)
+        return Some(value)
+    }
+
+    fn utf8_three(source: Shared<Vec<u8>>, start: usize, first: u8) -> Option<u32> {
+        let second = source_byte(source, start + 1)
+        let third = source_byte(source, start + 2)
+        let value = (u32.from(first & 15) << 12) |(u32.from(second & 63) << 6) | u32.from(third & 63)
+        return Some(value)
+    }
+
+    fn utf8_four(source: Shared<Vec<u8>>, start: usize, first: u8) -> Option<u32> {
+        let second = source_byte(source, start + 1)
+        let third = source_byte(source, start + 2)
+        let fourth = source_byte(source, start + 3)
+        let value = (u32.from(first & 7) << 18) |(u32.from(second & 63) << 12) |(u32.from(third & 63) << 6) | u32.from(fourth & 63)
+        return Some(value)
+    }
+}

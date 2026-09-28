@@ -1,0 +1,15 @@
+module toolchain {
+    const SPAWN_ACTION_WORDS: usize = 10
+    const SPAWN_ATTRIBUTE_WORDS: usize = 42
+    const OUTPUT_OPEN_FLAGS: i32 = 577
+    const LOCK_OPEN_FLAGS: i32 = 66
+    const MONOTONIC_CLOCK: i32 = 1
+
+    extern "c" {
+        fn raw_mkdir(path: RawPtr<u8>, mode: u32) -> i32 = "mkdir"
+        fn raw_chmod(path: RawPtr<u8>, mode: u32) -> i32 = "chmod"
+        fn raw_open(path: RawPtr<u8>, flags: i32,...mode: u32) -> i32 = "open"
+        fn raw_actions_open(actions: RawPtr<RawPtr<u8>>, descriptor: i32, path: RawPtr<u8>, flags: i32, mode: u32) -> i32 = "posix_spawn_file_actions_addopen"
+        fn process_environment() -> RawPtr<RawPtr<u8>> = "crown_process_environment"
+    }
+}

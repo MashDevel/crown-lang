@@ -1,0 +1,5 @@
+const A: u32 = 1
+const BAD: u64 = A
+fn main() -> u32 {
+    0
+}

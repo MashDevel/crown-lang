@@ -1,0 +1,8 @@
+interface Read {
+    fn get(self: read Self) -> u32
+}
+impl Read for u32 {
+}
+fn main() -> u32 {
+    return 0
+}

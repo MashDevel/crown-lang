@@ -1,0 +1,18 @@
+module std::unicode {
+    fn boundary_contains(value: u32, boundaries: Slice<u32>) -> bool {
+        if value > 0x10ffff ||(value >= 0xd800 && value <= 0xdfff) {
+            return false
+        }
+        var low: usize = 0
+        var high = boundaries.length()
+        while low < high {
+            let middle = low +(high - low) / 2
+            if boundaries[middle] <= value {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        return low % 2 == 1
+    }
+}

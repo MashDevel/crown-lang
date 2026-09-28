@@ -1,0 +1,142 @@
+module ir {
+    struct BitSet {
+        length: usize
+        words: Vec<u64>
+    }
+
+    fn bitset_new(length: usize) -> BitSet {
+        var words = Vec<u64>.new()
+        var index: usize = 0
+        var count = length / 64
+        if length % 64 != 0 {
+            count = count + 1
+        }
+        while index < count {
+            words.push(u64.from(0));
+            index = index + 1
+        }
+        return BitSet {
+            length: length, words: move words
+        }
+    }
+
+    fn bitset_copy(set: BitSet) -> BitSet {
+        var words = Vec<u64>.with_capacity(set.words.length())
+        var index: usize = 0
+        while index < set.words.length() {
+            words.push(set.words[index]);
+            index = index + 1
+        }
+        return BitSet {
+            length: set.length, words: move words
+        }
+    }
+
+    fn bitset_contains(set: BitSet, value: usize) -> bool {
+        if value >= set.length {
+            return false
+        }
+        return set.words[value / 64] &(u64.from(1) << u64.from(value % 64)) != 0
+    }
+
+    fn bitset_insert(set: write BitSet, value: usize) -> void {
+        if value >= set.length {
+            return
+        }
+        let word = value / 64
+        set.words[word] = set.words[word] |(u64.from(1) << u64.from(value % 64))
+    }
+
+    fn bitset_remove(set: write BitSet, value: usize) -> void {
+        if value >= set.length {
+            return
+        }
+        let word = value / 64
+        let mask = (u64.from(1) << u64.from(value % 64)) ^ 18446744073709551615
+        set.words[word] = set.words[word] & mask
+    }
+
+    fn bitset_equal(left: BitSet, right: BitSet) -> bool {
+        if left.length != right.length {
+            return false
+        }
+        var index: usize = 0
+        while index < left.words.length() {
+            if left.words[index] != right.words[index] {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn bitset_extend_without(output: write BitSet, values: BitSet, excluded: BitSet) -> void {
+        var index: usize = 0
+        while index < output.words.length() {
+            output.words[index] = output.words[index] |(values.words[index] &(excluded.words[index] ^ 18446744073709551615))
+            index = index + 1
+        }
+    }
+
+    fn bitset_next(set: BitSet, start: usize) -> Option<usize> {
+        if start >= set.length {
+            return None()
+        }
+        var word = start / 64
+        let full: u64 = 18446744073709551615
+        var bits = set.words[word] &(full << u64.from(start % 64))
+        while word < set.words.length() {
+            if bits != 0 {
+                return Some(word * 64 + bitset_trailing_zeros(bits))
+            }
+            word = word + 1
+            if word < set.words.length() {
+                bits = set.words[word]
+            }
+        }
+        return None()
+    }
+
+    fn bitset_trailing_zeros(input: u64) -> usize {
+        var bits = input
+        var count: usize = 0
+        if bits & 4294967295 == 0 {
+            count = count + 32;
+            bits = bits >> 32
+        }
+        if bits & 65535 == 0 {
+            count = count + 16;
+            bits = bits >> 16
+        }
+        if bits & 255 == 0 {
+            count = count + 8;
+            bits = bits >> 8
+        }
+        if bits & 15 == 0 {
+            count = count + 4;
+            bits = bits >> 4
+        }
+        if bits & 3 == 0 {
+            count = count + 2;
+            bits = bits >> 2
+        }
+        if bits & 1 == 0 {
+            count = count + 1
+        }
+        return count
+    }
+
+    fn bitset_count(set: BitSet) -> usize {
+        var count: usize = 0
+        var index: usize = 0
+        while index < set.words.length() {
+            var bits = set.words[index]
+            while bits != 0 {
+                bits = bits &(bits - 1);
+                count = count + 1
+            }
+            index = index + 1
+        }
+        return count
+    }
+}

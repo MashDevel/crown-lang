@@ -1,0 +1,17 @@
+extern "c" {
+    fn resolve(path: RawPtr<u8>, output: RawPtr<u8>) -> RawPtr<u8> = "realpath"
+    fn release(pointer: RawPtr<u8>) -> void = "free"
+}
+
+fn main() -> u32 {
+    let path: Text = "/\0"
+    unsafe {
+        let empty = RawPtr<u8>.from_address(0)
+        let pointer = resolve(path.as_raw(), empty)
+        if pointer == empty {
+            return 1
+        }
+        release(pointer)
+    }
+    return 42
+}

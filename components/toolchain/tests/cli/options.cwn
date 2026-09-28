@@ -1,0 +1,170 @@
+fn option_target_tests() -> Result<void, Text> {
+    let linux = toolchain::parse_options(testing::list("crown|compile|out.s|project|--target|x86_64-linux"))?
+    testing::expect(linux.target == toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux()), "Linux compilation target")?
+    testing::error(toolchain::parse_options(testing::list("crown|compile|out.s|project|--target|arm32-linux")))?
+    let arm = toolchain::parse_options(testing::list("crown|compile|out.s|project|--target|arm64-linux"))?
+    testing::expect(arm.target.architecture == toolchain::Architecture::Arm64(), "ARM64 architecture")?
+    testing::expect(arm.target.platform == toolchain::Platform::Linux(), "ARM64 Linux platform")?
+    testing::error(toolchain::parse_options(testing::list("crown|build|--target")))?
+    return Ok(())
+}
+fn apple_target_tests() -> Result<void, Text> {
+    let apple = toolchain::parse_options(testing::list("crown|build|hello.cwn|--target|arm64-macos"))?
+    testing::expect(apple.target == toolchain::target(toolchain::Architecture::Arm64(), toolchain::Platform::Macos()), "Apple Silicon target")?
+    return testing::expect(std::text::contains(toolchain::help(), "arm64-macos"), "documented Apple Silicon target")
+}
+
+fn option_numeric_tests() -> Result<void, Text> {
+    let good = testing::list("1|128|18446744073709551615")
+    for index in 0..good.length() {
+        toolchain::positive(good[index])?
+    }
+    let bad = testing::list("0|-1|abc|18446744073709551616|١")
+    for index in 0..bad.length() {
+        testing::error(toolchain::positive(bad[index]))?
+    }
+    return Ok(())
+}
+
+fn option_rejection_tests() -> Result<void, Text> {
+    let cases = [
+        "crown|unknown",
+        "crown|--version|extra",
+        "crown|bootstrap|extra",
+        "crown|refresh-seed|extra",
+        "crown|check|--|argument",
+        "crown|check|--seed|1",
+        "crown|build|--check",
+        "crown|build|--force",
+        "crown|release|--filter|one",
+        "crown|release|--seed|invalid",
+        "crown|benchmark|--runs|0",
+        "crown|test|--jobs|5",
+        "crown|build|--output",
+        "crown", "crown|check|--unknown", "crown|build|-o"
+    ]
+    loan read cases as values {
+        for index in 0..values.length() {
+            testing::error(toolchain::parse_options(testing::list(values[index])))?
+        }
+    }
+    return Ok(())
+}
+
+fn option_special_tests() -> Result<void, Text> {
+    let formatting = toolchain::parse_options(testing::list("crown|fmt|--check"))?
+    testing::expect(formatting.check_only, "format check option")?
+    let bootstrap = toolchain::parse_options(testing::list("crown|bootstrap|--force"))?
+    testing::expect(bootstrap.force, "bootstrap force option")?
+    let release = toolchain::parse_options(testing::list("crown|release|--seed|42"))?
+    testing::expect(release.seed == 42, "release seed option")?
+    let benchmark = toolchain::parse_options(testing::list("crown|benchmark|--runs|2"))?
+    testing::expect(benchmark.runs == 2, "benchmark runs option")?
+    let help = toolchain::parse_options(testing::list("crown|build|--help"))?
+    return testing::expect(help.help, "command help option")
+}
+
+fn option_value_tests() -> Result<void, Text> {
+    let links = toolchain::parse_options(testing::list("crown|build|--framework|AppKit|--framework|Foundation|--library|objc"))?
+    testing::expect(testing::equal_lists(links.links, testing::list("-framework|AppKit|-framework|Foundation|-lobjc")), "CLI links")?
+    let options = toolchain::parse_options(testing::list("crown|run|project|--||é|hello world"))?
+    testing::expect(testing::equal_lists(options.arguments, testing::list("|é|hello world")), "CLI program arguments")?
+    return Ok(())
+}
+fn option_tests() -> Result<void, Text> {
+    option_target_tests()?
+    apple_target_tests()?
+    option_numeric_tests()?
+    option_rejection_tests()?
+    option_special_tests()?
+    option_boundary_tests()?
+    return option_value_tests()
+}
+
+fn option_boundary_tests() -> Result<void, Text> {
+    testing::error(toolchain::parse_options(Vec<Text>.new()))?
+    let empty = toolchain::parse_options(testing::list("crown|run|--"))?
+    testing::expect(empty.arguments.length() == 0 && empty.paths.length() == 0, "empty program argument suffix")?
+    let quoted = toolchain::parse_options(testing::list("crown|run|project|--|--help|-o|--"))?
+    testing::expect(testing::equal_lists(quoted.arguments, testing::list("--help|-o|--")), "program flags remain literal")?
+    let allowed = testing::list("--version|bootstrap|refresh-seed")
+    for index in 0..allowed.length() {
+        toolchain::parse_options(testing::list(std::text::joined("crown|", allowed[index])))?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(all_option_tests())
+}
+
+fn bedrock_options() -> Result<void, Text> {
+    let options = toolchain::parse_options(testing::list("crown|build|hello.cwn|-o|hello.elf|--target|x86_64-bedrock"))?
+    testing::expect(options.target == toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock()), "Bedrock build target")?
+    testing::expect(testing::equal_lists(options.paths, testing::list("hello.cwn")), "shared build source syntax")?
+    testing::expect(std::text::equal(options.output, "hello.elf"), "shared build output syntax")?
+    toolchain::validate_native_build(options)?
+    return Ok(())
+}
+
+fn bedrock_option_errors() -> Result<void, Text> {
+    let invalid = testing::list("--coverage|--object|--framework|--library")
+    for index in 0..invalid.length() {
+        let arguments = std::text::joined("crown|build|hello.cwn|--target|x86_64-bedrock|", invalid[index])
+        let rejected = toolchain::parse_options(testing::list(std::text::joined(arguments, "|extra")))?
+        testing::error(toolchain::validate_native_build(rejected))?
+    }
+    testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|-o")))?
+    testing::expect(std::text::contains(toolchain::help(), "x86_64-bedrock"), "documented Bedrock target")?
+    return Ok(())
+}
+
+fn all_option_tests() -> Result<void, Text> {
+    option_tests()?
+    bedrock_options()?
+    removed_linker_options()?
+    link_input_options()?
+    task_argument_tests()?
+    launch_failure_tests()?
+    return bedrock_option_errors()
+}
+
+fn task_argument_tests() -> Result<void, Text> {
+    var benchmark = toolchain::options("benchmark")
+    benchmark.jobs = 4
+    benchmark.runs = 2
+    benchmark.output = "output"
+    benchmark.coverage = "coverage"
+    benchmark.filter = "case"
+    benchmark.paths.push("source")
+    var arguments = testing::list("runner")
+    toolchain::task_arguments(arguments, benchmark)
+    testing::expect(testing::equal_lists(arguments, testing::list("runner|--jobs|4|--runs|2|--output|output|--coverage|coverage|--filter|case|source")), "benchmark task arguments")?
+    var release = toolchain::options("release")
+    release.seed = 42
+    var release_arguments = testing::list("runner")
+    toolchain::task_arguments(release_arguments, release)
+    return testing::expect(testing::equal_lists(release_arguments, testing::list("runner|--jobs|3|--seed|42")), "release task arguments")
+}
+
+fn launch_failure_tests() -> Result<void, Text> {
+    testing::error(toolchain::replace_process(Vec<Text>.new()))?
+    testing::error(toolchain::replace_process(testing::list("/nonexistent/crown-process")))?
+    testing::error(toolchain::replace_process(testing::list("invalid\0command")))?
+    testing::expect(toolchain::exit_status(42) == 42, "positive process status")?
+    return testing::expect(toolchain::exit_status(-9) == 137, "signal process status")
+}
+
+fn link_input_options() -> Result<void, Text> {
+    let options = toolchain::parse_options(testing::list("crown|_link_inputs|--target|arm64-linux|--library|m"))?
+    testing::expect(options.target == toolchain::target(toolchain::Architecture::Arm64(), toolchain::Platform::Linux()), "link-input target")?
+    testing::expect(testing::equal_lists(options.links, testing::list("-lm")), "link-input libraries")?
+    testing::error(toolchain::parse_options(testing::list("crown|_link_inputs|source.cwn")))?
+    testing::error(toolchain::parse_options(testing::list("crown|_link_inputs|--object|file.o")))?
+    return testing::error(toolchain::parse_options(testing::list("crown|_link_inputs|--library")))
+}
+
+fn removed_linker_options() -> Result<void, Text> {
+    testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|--clang|extra")))?
+    return testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|--target|x86_64-bedrock|--clang|extra")))
+}

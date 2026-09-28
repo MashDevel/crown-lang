@@ -1,0 +1,95 @@
+module x86 {
+    fn rex(register: u8, index: u8, base: u8) -> u8 {
+        return 72 |((register >> 3) << 2) |((index >> 3) << 1) |(base >> 3)
+    }
+
+    fn rex_narrow(register: u8, index: u8, base: u8) -> u8 {
+        return 64 |((register >> 3) << 2) |((index >> 3) << 1) |(base >> 3)
+    }
+
+    fn modrm(mode: u8, register: u8, base: u8) -> u8 {
+        return (mode << 6) |((register & 7) << 3) |(base & 7)
+    }
+
+    fn emit_i16(output: write Vec<u8>, value: i16) -> void {
+        output.push(u8.from(u16.from_bits(value) & 255))
+        output.push(u8.from(u16.from_bits(value >> 8) & 255))
+    }
+
+    fn emit_i8(output: write Vec<u8>, value: i8) -> void {
+        output.push(u8.from_bits(value))
+    }
+
+    fn emit_i32(output: write Vec<u8>, value: i32) -> void {
+        output.push(u8.from(u32.from_bits(value) & 255))
+        output.push(u8.from(u32.from_bits(value >> 8) & 255))
+        output.push(u8.from(u32.from_bits(value >> 16) & 255))
+        output.push(u8.from(u32.from_bits(value >> 24) & 255))
+    }
+
+    fn emit_i64(output: write Vec<u8>, value: i64) -> void {
+        output.push(u8.from(u64.from_bits(value) & 255))
+        output.push(u8.from(u64.from_bits(value >> 8) & 255))
+        output.push(u8.from(u64.from_bits(value >> 16) & 255))
+        output.push(u8.from(u64.from_bits(value >> 24) & 255))
+        output.push(u8.from(u64.from_bits(value >> 32) & 255))
+        output.push(u8.from(u64.from_bits(value >> 40) & 255))
+        output.push(u8.from(u64.from_bits(value >> 48) & 255))
+        output.push(u8.from(u64.from_bits(value >> 56) & 255))
+    }
+
+    fn condition_code(condition: Condition) -> u8 {
+        condition.code
+    }
+
+    fn immediate_group(operator: ImmediateOperator) -> u8 {
+        match read operator {
+            ImmediateAdd => {
+                return 0
+            }
+            ImmediateOr => {
+                return 1
+            }
+            ImmediateAnd => {
+                return 4
+            }
+            ImmediateSubtract => {
+                return 5
+            }
+            ImmediateXor => {
+                return 6
+            }
+            ImmediateCompare => {
+                return 7
+            }
+        }
+    }
+
+    fn pack_registers(first: Register, second: Register) -> u16 {
+        return u16.from(register_code(first)) |(u16.from(register_code(second)) << 8)
+    }
+
+    fn pack_sized_registers(first: Register, second: Register, width: Width) -> u32 {
+        return u32.from(register_code(first)) |(u32.from(register_code(second)) << 8) |(u32.from(width_code(width)) << 16)
+    }
+
+    fn first_register(registers: u16) -> u8 {
+        return u8.from(registers & 255)
+    }
+
+    fn second_register(registers: u16) -> u8 {
+        return u8.from(registers >> 8)
+    }
+
+    fn sized_first_register(registers: u32) -> u8 {
+        return u8.from(registers & 255)
+    }
+
+    fn sized_second_register(registers: u32) -> u8 {
+        return u8.from((registers >> 8) & 255)
+    }
+
+    fn sized_width(registers: u32) -> u8 {
+        return u8.from((registers >> 16) & 255)
+    }
+}

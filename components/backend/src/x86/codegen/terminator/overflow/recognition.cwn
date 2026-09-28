@@ -1,0 +1,162 @@
+module x86 {
+    struct OverflowPair {
+        result: usize
+        left: usize
+        right: usize
+    }
+
+    struct OverflowArithmetic {
+        result: usize
+        left: usize
+        right: usize
+        kind: u8
+    }
+
+    struct GuardPairsInput {
+        arithmetic: OverflowArithmetic
+        first: OverflowPair
+        second: OverflowPair
+    }
+
+    fn codegen_overflow_single_use_chain(compiler: FunctionCompiler, block: ir::BasicBlock, start: usize) -> bool {
+        var index = start + 1
+        while index < start + 4 {
+            match read block.instructions[index].result {
+                Some(value) => {
+                    if compiler.uses[value] != 1 {
+                        return false
+                    }
+                }
+                None => {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn codegen_signed_guard_matches(block: ir::BasicBlock, start: usize) -> bool {
+        let arithmetic = match codegen_overflow_arithmetic(block.instructions[start]) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        let first = match codegen_overflow_pair(block.instructions[start + 1], 1) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        let second = match codegen_overflow_pair(block.instructions[start + 2], 1) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        let pairs = GuardPairsInput {
+            arithmetic: move arithmetic, first: move first, second: move second
+        }
+        codegen_guard_pairs(pairs, block.instructions[start + 3])
+    }
+
+    fn codegen_guard_pairs(input: GuardPairsInput, combined: ir::Instruction) -> bool {
+        let pair = match codegen_overflow_pair(combined, 2) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        if codegen_pair_matches(pair, input.first.result, input.second.result) == false {
+            return false
+        }
+        if input.arithmetic.kind == 1 {
+            return codegen_guard_pair_operands(input.first, input.second, input.arithmetic.result, input.arithmetic.left, input.arithmetic.right)
+        }
+        if input.arithmetic.kind == 2 {
+            return codegen_guard_pair_operands(input.first, input.second, input.arithmetic.left, input.arithmetic.right, input.arithmetic.result)
+        }
+        false
+    }
+
+    fn codegen_guard_pair_operands(first: OverflowPair, second: OverflowPair, shared: usize, left: usize, right: usize) -> bool {
+        let direct = codegen_pair_matches(first, shared, left) && codegen_pair_matches(second, shared, right)
+        let reversed = codegen_pair_matches(second, shared, left) && codegen_pair_matches(first, shared, right)
+        direct || reversed
+    }
+
+    fn codegen_overflow_arithmetic(instruction: ir::Instruction) -> Option<OverflowArithmetic> {
+        var result: usize = 0
+        match read instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                match read operator {
+                    ir::BinaryAdd => {
+                        return Some(OverflowArithmetic {
+                                result: result, left: left, right: right, kind: 1
+                            })
+                    }
+                    ir::BinarySubtract => {
+                        return Some(OverflowArithmetic {
+                                result: result, left: left, right: right, kind: 2
+                            })
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_overflow_pair(instruction: ir::Instruction, expected: u8) -> Option<OverflowPair> {
+        var result: usize = 0
+        match read instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                var kind: u8 = 0
+                match read operator {
+                    ir::BinaryXor => {
+                        kind = 1
+                    }
+                    ir::BinaryAnd => {
+                        kind = 2
+                    }
+                    _ => {
+                    }
+                }
+                if kind != expected {
+                    return None()
+                }
+                return Some(OverflowPair {
+                        result: result, left: left, right: right
+                    })
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_pair_matches(pair: OverflowPair, first: usize, second: usize) -> bool {
+        return pair.left == first && pair.right == second || pair.left == second && pair.right == first
+    }
+}

@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    var values = operand_values()
+    values.push(u32.from(empty_values(values)))
+    return 0
+}

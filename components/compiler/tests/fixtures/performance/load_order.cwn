@@ -1,0 +1,42 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => {} } }
+        Err(error) => { error }
+    }
+    return 100000
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var function = ir::function_new("reordered", ir::signature_new(move parameters, value_type), ir::LinkageExport())
+    var index: usize = 0
+    while index < 4 {
+        match ir::function_add_block(function) { Ok(block) => { block } Err(error) => { error; return 1 } }
+        index = index + 1
+    }
+    let address = function.parameters[0]
+    let first = test_append(function, 0, ir::InstructionLoad(address, value_type, 8, false))
+    let last = test_append(function, 2, ir::InstructionLoad(address, value_type, 8, false))
+    match ir::function_terminate(function, 0, ir::TerminatorBranch(3)) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    match ir::function_terminate(function, 3, ir::TerminatorBranch(2)) { Ok(value) => { value } Err(error) => { error; return 3 } }
+    match ir::function_terminate(function, 2, ir::TerminatorBranch(1)) { Ok(value) => { value } Err(error) => { error; return 4 } }
+    match ir::function_terminate(function, 1, ir::TerminatorReturn(Some(last))) { Ok(value) => { value } Err(error) => { error; return 5 } }
+    if optimize::load(function) != 1 { return 6 }
+    if optimize::range(function, true) != 0 { return 7 }
+    match read function.blocks[1].terminator {
+        Some(terminator) => {
+            match read terminator {
+                ir::TerminatorReturn(value) => { match read value { Some(id) => { if id != first { return 8 } } None => { return 9 } } }
+                _ => { return 10 }
+            }
+        }
+        None => { return 11 }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    ir::program_set_entry(program, 0)
+    match ir::validate_program(program) { Ok(value) => { value } Err(error) => { error; return 12 } }
+    return 42
+}

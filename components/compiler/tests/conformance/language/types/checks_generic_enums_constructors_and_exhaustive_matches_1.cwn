@@ -1,0 +1,14 @@
+enum Choice<T> {
+    Left(T), Right(T)
+}
+fn main() -> u32 {
+    let choice = Left(1)
+    match move choice {
+        Left(value) => {
+            return value
+        }
+        Right(value) => {
+            return value
+        }
+    }
+}

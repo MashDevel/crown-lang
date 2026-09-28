@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let values = [1, 2]
+    var saved: Option<Slice<u32>> = None()
+    loan read values as view {
+        saved = Some(view)
+    }
+    return 0
+}

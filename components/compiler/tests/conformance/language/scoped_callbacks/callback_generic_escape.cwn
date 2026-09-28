@@ -1,0 +1,10 @@
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+fn store(action: scoped fn() -> void) -> void {
+    let saved = identity(action);
+    saved()
+}
+fn main() -> u32 {
+    return 0
+}

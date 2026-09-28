@@ -1,0 +1,50 @@
+module profile {
+    fn instrument(program: write ir::Program) -> void {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let target = ir::program_add_function(program, ir::function_new("crown_profile_hit", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageImport()))
+        var cursor: u64 = 0
+        for index in 0..target {
+            for block in 0..program.functions[index].blocks.length() {
+                instrument_block(program.functions[index], block, target, cursor)
+                cursor = cursor + 1
+            }
+        }
+    }
+
+    fn instrument_block(function: write ir::Function, block: usize, target: usize, counter: u64) -> void {
+        let value = ir::function_constant(function, ir::TypeInteger(ir::IntegerWidth64()), ir::ConstantInteger(counter))
+        var arguments = Vec<usize>.new()
+        arguments.push(value)
+        var instructions = Vec<ir::Instruction>.new()
+        var inserted = false
+        for index in 0..function.blocks[block].instructions.length() {
+            if inserted == false && is_phi(function.blocks[block].instructions[index].kind) == false {
+                instructions.push(hit(target, arguments))
+                inserted = true
+            }
+            instructions.push(ir::instruction_copy(function.blocks[block].instructions[index]))
+        }
+        if inserted == false {
+            instructions.push(hit(target, arguments))
+        }
+        function.blocks[block].instructions = move instructions
+    }
+
+    fn is_phi(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                true
+            }
+            _ => false
+        }
+    }
+
+    fn hit(target: usize, arguments: Vec<usize>) -> ir::Instruction {
+        return ir::Instruction {
+            result: None(), kind: ir::InstructionCall(target, ir::usize_values_copy(arguments), ir::TypeVoid())
+        }
+    }
+}

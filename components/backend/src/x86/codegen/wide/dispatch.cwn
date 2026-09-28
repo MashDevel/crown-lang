@@ -1,0 +1,79 @@
+module x86 {
+    fn codegen_wide_instruction(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Option<Result<void, CodegenError>> {
+        match read instruction.kind {
+            ir::InstructionCast(operator, value, target) => {
+                target
+                if codegen_result_is_wide(program, compiler, instruction.result) || codegen_value_is_wide(program, compiler, value) {
+                    return Some(codegen_wide_cast(program, compiler, CastInput {
+                                result: instruction.result, operator: operator, value: value
+                            }))
+                }
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                if codegen_value_is_wide(program, compiler, left) {
+                    return Some(codegen_wide_compare(program, compiler, CompareInput {
+                                result: instruction.result, operator: operator, left: left, right: right
+                            }))
+                }
+            }
+            ir::InstructionMemory(memory) => {
+                return codegen_wide_memory_instruction(program, compiler, instruction.result, memory)
+            }
+            _ => {
+                return codegen_wide_value_instruction(program, compiler, instruction)
+            }
+        }
+        None()
+    }
+
+    fn codegen_wide_value_instruction(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Option<Result<void, CodegenError>> {
+        if codegen_result_is_wide(program, compiler, instruction.result) == false {
+            return None()
+        }
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => Some(codegen_wide_binary(program, compiler, BinaryInput {
+                        result: instruction.result, operator: operator, left: left, right: right
+                    }))
+            ir::InstructionUnary(operator, value) => Some(codegen_wide_unary(program, compiler, UnaryInput {
+                        result: instruction.result, operator: operator, value: value
+                    }))
+            ir::InstructionSelect(condition, then_value, else_value) => Some(codegen_wide_select(program, compiler, SelectInput {
+                        result: instruction.result, condition: condition, then_value: then_value, else_value: else_value
+                    }))
+            _ => None()
+        }
+    }
+
+    fn codegen_wide_memory_instruction(program: ir::Program, compiler: write FunctionCompiler, result: Option<usize>, memory: ir::MemoryInstruction) -> Option<Result<void, CodegenError>> {
+        match read memory {
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                alignment;
+                volatile
+                if codegen_wide_type(value_type) {
+                    return Some(codegen_wide_memory_load(program, compiler, LoadInput {
+                                result: result, address: address, value_type: value_type
+                            }))
+                }
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                alignment;
+                volatile
+                if codegen_value_is_wide(program, compiler, value) {
+                    return Some(codegen_wide_memory_store(program, compiler, StoreInput {
+                                address: address, value: value
+                            }))
+                }
+            }
+            _ => {
+            }
+        }
+        None()
+    }
+
+    fn codegen_result_is_wide(program: ir::Program, compiler: FunctionCompiler, result: Option<usize>) -> bool {
+        match read result {
+            Some(value) => codegen_value_is_wide(program, compiler, value)
+            None => false
+        }
+    }
+}

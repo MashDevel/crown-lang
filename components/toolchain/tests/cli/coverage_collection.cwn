@@ -1,0 +1,51 @@
+fn collection(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "profiles")
+    let output = toolchain::path_join(root, "results")
+    var arguments = testing::list("test|--filter|crown_x86_resolves_local_labels|--jobs|1|--coverage")
+    arguments.push(directory.clone());
+    arguments.push("--output");
+    arguments.push(output.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(result.status == 0 && result.stderr.length() == 0, std::text::joined("instrumented suite: ", result.stderr))?
+    verify_results(output)?
+    return verify_profile(root, directory)
+}
+
+fn verify_results(directory: Text) -> Result<void, Text> {
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(directory, "results.json"))?)?
+    let rows = toolchain::json_array_values(document, document.root)?
+    testing::expect(rows.length() == 1, "exactly one instrumented test")?
+    let error = toolchain::json_text(document, toolchain::json_required(document, rows[0], "error")?)?
+    return testing::expect(error.length() == 0, "instrumentation preserves passing test results")
+}
+
+fn verify_profile(root: Text, directory: Text) -> Result<void, Text> {
+    let entries = toolchain::directory_entries(toolchain::path_join(directory, "groups"))?
+    testing::expect(entries.length() == 1, "one shared profile for the selected group")?
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(entries[0], "map.json"))?)?
+    verify_map(document)?
+    return verify_execution(root, directory)
+}
+
+fn verify_map(document: toolchain::Json) -> Result<void, Text> {
+    testing::expect(toolchain::json_integer(document, toolchain::json_required(document, document.root, "version")?)? == 2, "source-aware coverage format")?
+    let sources = toolchain::json_array_values(document, toolchain::json_required(document, document.root, "files")?)?
+    testing::expect(sources.length() > 1, "all program source files retained")?
+    return Ok(())
+}
+
+fn verify_execution(root: Text, directory: Text) -> Result<void, Text> {
+    let result = testing::invoke(testing::list(std::text::joined("coverage|", directory)), root)?
+    testing::expect(result.status == 1, "partial program coverage does not pass the package threshold")?
+    let document = toolchain::json(result.stdout.clone())?
+    return testing::expect(toolchain::json_integer(document, toolchain::json_required(document, document.root, "runs")?)? == 1, "suite execution records coverage")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    return collection(toolchain::temporary_path(temporary))
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,60 @@
+fn specialization_case(distinct: bool) -> Result<void, u32> {
+    var program = ir::program_new()
+    let integer = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new();
+    parameters.push(integer)
+    var callee = ir::function_new("callee", ir::signature_new(move parameters, integer), ir::LinkageLocal())
+    safety_block(callee)?
+    safety_terminate(callee, 0, ir::TerminatorReturn(Some(0)))?
+    ir::program_add_function(program, move callee)
+    var fixture = counted_loop(4)?
+    for index in 0..6 {
+        let constant = safety_integer(fixture.function, ir::IntegerWidth64(), if distinct {
+                u64.from(index)
+            } else {
+                7
+            })
+        var arguments = Vec<usize>.new();
+        arguments.push(constant)
+        safety_append(fixture.function, fixture.body, ir::InstructionCall(0, move arguments, integer))?
+    }
+    ir::program_add_function(program, ir::function_take(fixture.function))
+    specialization_reserved_name(program)
+    safety_require(optimize::specialize(program) == if distinct {
+            4
+        } else {
+            1
+        }, 1)?
+    match ir::validate_program(program) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err(2)
+        }
+    }
+    ir::program_set_entry(program, 1)
+    return safety_execute(move program)
+}
+
+fn specialization_reserved_name(program: write ir::Program) -> void {
+    var reserved = ir::function_copy(program.functions[0])
+    reserved.name = "callee_specialized_3"
+    ir::program_add_function(program, move reserved)
+    var bytes = Vec<u8>.new()
+    bytes.push(0)
+    ir::program_add_global(program, ir::Global {
+            name: "callee_specialized_3_", bytes: move bytes, size: 1, alignment: 1,
+            kind: ir::GlobalReadOnly(), exported: false, references: Vec<ir::GlobalReference>.new()
+        })
+}
+
+fn main() -> u32 {
+    return safety_status(specialization_cases())
+}
+
+fn specialization_cases() -> Result<void, u32> {
+    specialization_case(false)?
+    return specialization_case(true)
+}

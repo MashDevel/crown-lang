@@ -1,0 +1,202 @@
+struct TestMagic {
+    multiplier: u64
+    shift: u8
+    add: bool
+}
+
+fn test_magic_case(divisor: read u64, width: read x86::Width, expected: read TestMagic) -> bool {
+    match x86::codegen_unsigned_magic(divisor, width) {
+        None => {
+            return false
+        }
+        Some(actual) => {
+            return actual.multiplier == expected.multiplier && actual.shift == expected.shift && actual.add == expected.add
+        }
+    }
+}
+
+fn test_wide_magic() -> bool {
+    let width = x86::Qword()
+    let three = TestMagic {
+        multiplier: 12297829382473034411, shift: 1, add: false
+    }
+    if test_magic_case(3, width, three) == false {
+        return false
+    }
+    let seven = TestMagic {
+        multiplier: 2635249153387078803, shift: 2, add: true
+    }
+    if test_magic_case(7, width, seven) == false {
+        return false
+    }
+    let thirty_one = TestMagic {
+        multiplier: 595056260442243601, shift: 4, add: true
+    }
+    if test_magic_case(31, width, thirty_one) == false {
+        return false
+    }
+    let large = TestMagic {
+        multiplier: 18446744073709551615, shift: 63, add: false
+    }
+    return test_magic_case(9223372036854775809, width, large)
+}
+
+fn test_magic_quotient(numerator: read u64, magic: read x86::UnsignedMagic) -> u64 {
+    let mask = x86::codegen_division_mask(magic.bits)
+    let product = (numerator & mask) * magic.multiplier
+    var quotient = product >> u64.from(magic.bits)
+    if magic.add {
+        quotient = ((numerator - quotient) >> 1) + quotient
+    }
+    return quotient >> u64.from(magic.shift)
+}
+
+fn test_byte_magic() -> bool {
+    let width = x86::Byte()
+    var divisor: u64 = 3
+    while divisor <= 255 {
+        if divisor & divisor.wrapping_sub(1) != 0 {
+            match x86::codegen_unsigned_magic(divisor, width) {
+                None => {
+                    return false
+                }
+                Some(magic) => {
+                    if byte_quotients_match(divisor, magic) == false {
+                        return false
+                    }
+                }
+            }
+        }
+        divisor = divisor + 1
+    }
+    return true
+}
+
+fn test_compile(divisor: read u64) -> Vec<x86::Instruction> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    let signature = ir::signature_new(move parameters, value_type)
+    var function = ir::function_new("division", move signature, ir::LinkageExport())
+    var block: usize = 0
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return Vec<x86::Instruction>.new()
+        }
+    }
+    let constant_value = ir::ConstantInteger(divisor)
+    let right = ir::function_constant(function, value_type, constant_value)
+    var result: usize = 0
+    match ir::function_append(function, block, ir::InstructionBinary(ir::BinaryUnsignedDivide(), function.parameters[0], right)) {
+        Err(error) => {
+            error;
+            return Vec<x86::Instruction>.new()
+        }
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    result = id
+                }
+                None => {
+                    return Vec<x86::Instruction>.new()
+                }
+            }
+        }
+    }
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) {
+        Err(error) => {
+            error;
+            return Vec<x86::Instruction>.new()
+        }
+        Ok(value) => {
+            value
+        }
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Vec<x86::Instruction>.new()
+        }
+        Ok(instructions) => {
+            return move instructions
+        }
+    }
+}
+
+fn test_uses_magic(instructions: read Vec<x86::Instruction>) -> bool {
+    var multiply = false
+    var divide = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::Multiply(destination, source) => {
+                destination;
+                source;
+                multiply = true
+            }
+            x86::DivideUnsigned(source) => {
+                source;
+                divide = true
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return multiply && divide == false
+}
+
+fn test_uses_division(instructions: read Vec<x86::Instruction>) -> bool {
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::DivideUnsigned(source) => {
+                source;
+                return true
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return false
+}
+
+fn main() -> u32 {
+    if test_byte_magic() == false {
+        return 1
+    }
+    if test_wide_magic() == false {
+        return 5
+    }
+    let magic = test_compile(31)
+    if test_uses_magic(magic) == false {
+        return 2
+    }
+    let zero = test_compile(0)
+    if test_uses_division(zero) == false {
+        return 3
+    }
+    let power = test_compile(32)
+    if test_uses_division(power) == false {
+        return 4
+    }
+    return 42
+}
+
+fn byte_quotients_match(divisor: u64, magic: x86::UnsignedMagic) -> bool {
+    var numerator: u64 = 0
+    while numerator <= 255 {
+        if test_magic_quotient(numerator, magic) != numerator / divisor {
+            return false
+        }
+        numerator = numerator + 1
+    }
+    true
+}

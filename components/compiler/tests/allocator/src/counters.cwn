@@ -1,0 +1,58 @@
+module auditor {
+    fn update(instructions: write Vec<x86::Instruction>, amount: i32, label: usize) -> void {
+        instructions.push(x86::Load(x86::Rax(), x86::R8(), 0))
+        instructions.push(x86::Label(x86::InternalLabel(label)))
+        instructions.push(x86::Move(x86::R9(), x86::Rax()))
+        instructions.push(x86::AddImmediate(x86::R9(), amount))
+        instructions.push(x86::CompareExchangeMemory(x86::CompareExchangeMemoryArgs {
+                    address: x86::R8(), value: x86::R9(), width: x86::Qword()
+                }))
+        instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(label)))
+    }
+
+    fn begin() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::LoadSymbolAddress(x86::R8(), "crown_test_counters"))
+        for index in 0..3 {
+            instructions.push(x86::MoveImmediate(x86::Rax(), if index == 2 {
+                        1
+                    } else {
+                        0
+                    }))
+            instructions.push(x86::ExchangeMemory(x86::CompareExchangeMemoryArgs {
+                        address: x86::R8(), value: x86::Rax(), width: x86::Qword()
+                    }))
+            instructions.push(x86::AddImmediate(x86::R8(), 8))
+        }
+        instructions.push(x86::Return())
+        return x86::function_new("crown_test_begin", move instructions)
+    }
+
+    fn enabled(instructions: write Vec<x86::Instruction>) -> void {
+        instructions.push(x86::Test(x86::Rdi(), x86::Rdi()))
+        instructions.push(x86::JumpIf(x86::Equal(), x86::InternalLabel(0)))
+        instructions.push(x86::LoadSymbolAddress(x86::R8(), "crown_test_counters"))
+        instructions.push(x86::Load(x86::Rax(), x86::R8(), 16))
+        instructions.push(x86::Test(x86::Rax(), x86::Rax()))
+        instructions.push(x86::JumpIf(x86::Equal(), x86::InternalLabel(0)))
+    }
+
+    fn acquired() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        enabled(instructions)
+        update(instructions, 1, 1)
+        instructions.push(x86::AddImmediate(x86::R8(), 8))
+        update(instructions, 1, 2)
+        instructions.push(x86::Label(x86::InternalLabel(0)))
+        instructions.push(x86::Return())
+        return x86::function_new("crown_test_acquired", move instructions)
+    }
+
+    fn counter(name: take Text, offset: i32) -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::LoadSymbolAddress(x86::R8(), "crown_test_counters"))
+        instructions.push(x86::Load(x86::Rax(), x86::R8(), offset))
+        instructions.push(x86::Return())
+        return x86::function_new(move name, move instructions)
+    }
+}

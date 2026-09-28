@@ -1,0 +1,46 @@
+fn store_path_case(both: bool, observed: bool) -> Result<void, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypeInteger(ir::IntegerWidth1()))
+    var function = ir::function_new("paths", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let blocks = safety_blocks(function, 3)?
+    let entry = blocks[0]
+    let left = blocks[1]
+    let right = blocks[2]
+    let value = safety_integer(function, ir::IntegerWidth64(), 7)
+    safety_append(function, entry, ir::InstructionStore(0, value, 8, false))?
+    safety_terminate(function, entry, ir::TerminatorConditional(1, left, right))?
+    store_path_successors(function, both, observed, value)?
+    let expected: usize = if both && observed == false {
+        1
+    } else {
+        0
+    }
+    return safety_require(optimize::dead_stores(function, Shared.new(Vec<optimize::MemoryEffect>.new())) == expected, 1)
+}
+
+fn store_paths() -> Result<void, u32> {
+    store_path_case(true, false)?
+    store_path_case(false, false)?
+    store_path_case(true, true)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(store_paths())
+}
+
+fn store_path_successors(function: write ir::Function, both: bool, observed: bool, value: usize) -> Result<void, u32> {
+    let left: usize = 1
+    let right: usize = 2
+    safety_append(function, left, ir::InstructionStore(0, value, 8, false))?
+    if observed {
+        safety_append(function, right, ir::InstructionLoad(0, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    }
+    if both {
+        safety_append(function, right, ir::InstructionStore(0, value, 8, false))?
+    }
+    safety_terminate(function, left, ir::TerminatorReturn(None()))?
+    safety_terminate(function, right, ir::TerminatorReturn(None()))?
+    return Ok(())
+}

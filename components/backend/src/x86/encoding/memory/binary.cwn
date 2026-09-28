@@ -1,0 +1,63 @@
+module x86 {
+    fn encode_memory_binary(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            MemoryBinary(values) => {
+                emit_memory_binary(values, output);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn emit_memory_binary(values: MemoryBinaryArgs, output: write Vec<u8>) -> void {
+        let width = width_code(values.width)
+        if width == 1 {
+            output.push(102)
+        }
+        let register = register_code(values.destination)
+        let base = register_code(values.base)
+        var prefix: u8 = 64 |((register >> 3) << 2) |(base >> 3)
+        if width == 3 {
+            prefix = prefix | 8
+        }
+        output.push(prefix)
+        let opcode = memory_binary_opcode(values.operator)
+        if opcode > 255 {
+            output.push(15)
+        }
+        output.push(u8.from(opcode & 255))
+        output.push(128 |((register & 7) << 3) |(base & 7))
+        if base & 7 == 4 {
+            output.push(36)
+        }
+        emit_i32(output, values.offset)
+    }
+
+    fn memory_binary_opcode(operator: MemoryBinaryOperator) -> u16 {
+        match read operator {
+            MemoryAdd => {
+                return 3
+            }
+            MemorySubtract => {
+                return 43
+            }
+            MemoryMultiply => {
+                return 431
+            }
+            MemoryAnd => {
+                return 35
+            }
+            MemoryOr => {
+                return 11
+            }
+            MemoryXor => {
+                return 51
+            }
+            MemoryCompare => {
+                return 59
+            }
+        }
+    }
+}

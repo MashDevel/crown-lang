@@ -1,0 +1,211 @@
+fn reach_test_function(name: take Text, exported: read bool) -> ir::Function {
+    var function = ir::function_new(move name, ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    if exported {
+        ir::function_export(function)
+    }
+    match ir::function_add_block(function) {
+        Ok(block) => {
+            block
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match ir::function_terminate(function, 0, ir::TerminatorReturn(None())) {
+        Ok(done) => {
+            done
+        }
+        Err(error) => {
+            error
+        }
+    }
+    return move function
+}
+
+fn reach_test_global(name: take Text, exported: read bool) -> ir::Global {
+    var bytes = Vec<u8>.new()
+    var index: usize = 0
+    while index < 8 {
+        bytes.push(0);
+        index = index + 1
+    }
+    return ir::Global {
+        name: move name, bytes: move bytes, size: 8, alignment: 8, kind: ir::GlobalReadOnly(), exported: exported, references: Vec<ir::GlobalReference>.new()
+    }
+}
+
+fn reach_test_append(function: write ir::Function, kind: take ir::InstructionKind) -> bool {
+    match ir::function_append(function, 0, move kind) {
+        Ok(value) => {
+            value;
+            return true
+        }
+        Err(error) => {
+            error;
+            return false
+        }
+    }
+}
+
+fn reach_test_program() -> ir::Program {
+    var program = ir::program_new()
+    ir::program_add_function(program, reach_test_function("unused", false))
+    ir::program_add_function(program, reach_test_function("main", true))
+    ir::program_add_function(program, reach_test_function("callback", false))
+    ir::program_add_function(program, reach_test_function("table_target", false))
+    ir::program_add_function(program, reach_test_function("called", false))
+    ir::program_add_function(program, reach_test_function("named", false))
+    ir::program_add_global(program, reach_test_global("unused_data", false))
+    ir::program_add_global(program, reach_test_global("table", true))
+    ir::program_add_global(program, reach_test_global("table_link", false))
+    ir::program_add_global(program, reach_test_global("data", false))
+    program.entry = Some(1)
+    return move program
+}
+
+fn reach_test_references(program: write ir::Program) -> bool {
+    program.globals[1].references.push(ir::GlobalReference {
+            offset: 0, target: ir::GlobalReferenceGlobal(2), addend: 0
+        })
+    program.globals[2].references.push(ir::GlobalReference {
+            offset: 0, target: ir::GlobalReferenceFunction(3), addend: 0
+        })
+    program.globals[3].references.push(ir::GlobalReference {
+            offset: 0, target: ir::GlobalReferenceGlobal(1), addend: 0
+        })
+    if reach_test_append(program.functions[1], ir::InstructionFunctionAddress(2)) == false {
+        return false
+    }
+    if reach_test_append(program.functions[1], ir::InstructionGlobalAddress(3)) == false {
+        return false
+    }
+    if reach_test_append(program.functions[1], ir::InstructionCall(4, Vec<usize>.new(), ir::TypeVoid())) == false {
+        return false
+    }
+    return reach_test_append(program.functions[1], ir::InstructionSymbolAddress("named"))
+}
+
+fn reach_test_pruning() -> bool {
+    var program = reach_test_program()
+    if reach_test_references(program) == false {
+        return false
+    }
+    match optimize::prune_program(program) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(count) => {
+            if count != 2 {
+                return false
+            }
+        }
+    }
+    if reach_test_retained(program) == false {
+        return false
+    }
+    match ir::validate_program(program) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(done) => {
+            done
+        }
+    }
+    match optimize::prune_program(program) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(count) => {
+            return count == 0
+        }
+    }
+}
+
+fn reach_test_retained(program: read ir::Program) -> bool {
+    if program.functions.length() != 5 || program.globals.length() != 3 {
+        return false
+    }
+    match program.entry {
+        Some(entry) => {
+            if entry != 0 {
+                return false
+            }
+        }
+        None => {
+            return false
+        }
+    }
+    let main_name = "main"
+    let callback_name = "callback"
+    if std::text::equal(program.functions[0].name, main_name) == false {
+        return false
+    }
+    if std::text::equal(program.functions[1].name, callback_name) == false {
+        return false
+    }
+    return true
+}
+
+fn reach_test_empty() -> bool {
+    var program = ir::program_new()
+    match optimize::prune_program(program) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(count) => {
+            if count != 0 {
+                return false
+            }
+        }
+    }
+    ir::program_add_function(program, reach_test_function("unreferenced", false))
+    match optimize::prune_program(program) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(count) => {
+            return count == 1 && program.functions.length() == 0
+        }
+    }
+}
+
+fn reach_test_invalid() -> bool {
+    var program = ir::program_new()
+    ir::program_add_function(program, reach_test_function("main", true))
+    program.entry = Some(9)
+    match optimize::prune_program(program) {
+        Ok(count) => {
+            count;
+            return false
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match program.entry {
+        Some(entry) => {
+            return program.functions.length() == 1 && entry == 9
+        }
+        None => {
+            return false
+        }
+    }
+}
+
+fn main() -> u32 {
+    if reach_test_pruning() == false {
+        return 1
+    }
+    if reach_test_empty() == false {
+        return 2
+    }
+    if reach_test_invalid() == false {
+        return 3
+    }
+    return 42
+}

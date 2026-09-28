@@ -1,0 +1,76 @@
+module native::x11 {
+    unsafe fn next_event(library: std::dylib::Library, display: RawPtr<u8>, event: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 16)).read()
+            return action(display, event)
+        }
+    }
+
+    unsafe fn flush(library: std::dylib::Library, display: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 17)).read()
+            return action(display)
+        }
+    }
+
+    unsafe fn lookup_key(library: std::dylib::Library, event: RawPtr<u8>, index: i32) -> u64 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> u64>.cast(std::dylib::slot(library, 18)).read()
+            return action(event, index)
+        }
+    }
+
+    copy struct CreateImage {
+        display: RawPtr<u8>
+        visual: RawPtr<u8>
+        depth: u32
+        format: i32
+        offset: i32
+        pixels: RawPtr<u8>
+        width: u32
+        height: u32
+        pad: i32
+        stride: i32
+    }
+
+    unsafe fn create_image(library: std::dylib::Library, request: CreateImage) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>, read u32, read i32, read i32, read RawPtr<u8>, read u32, read u32, read i32, read i32) -> RawPtr<u8>>.cast(std::dylib::slot(library, 19)).read()
+            return action(request.display, request.visual, request.depth, request.format, request.offset, request.pixels, request.width, request.height, request.pad, request.stride)
+        }
+    }
+
+    unsafe fn destroy_image(library: std::dylib::Library, image: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 20)).read()
+            return action(image)
+        }
+    }
+
+    copy struct PutImage {
+        display: RawPtr<u8>
+        window: u64
+        gc: RawPtr<u8>
+        image: RawPtr<u8>
+        src_x: i32
+        src_y: i32
+        dst_x: i32
+        dst_y: i32
+        width: u32
+        height: u32
+    }
+
+    unsafe fn put_image(library: std::dylib::Library, request: PutImage) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read RawPtr<u8>, read RawPtr<u8>, read i32, read i32, read i32, read i32, read u32, read u32) -> i32>.cast(std::dylib::slot(library, 21)).read()
+            return action(request.display, request.window, request.gc, request.image, request.src_x, request.src_y, request.dst_x, request.dst_y, request.width, request.height)
+        }
+    }
+
+    unsafe fn clear_window(library: std::dylib::Library, display: RawPtr<u8>, window: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 22)).read()
+            return action(display, window)
+        }
+    }
+}

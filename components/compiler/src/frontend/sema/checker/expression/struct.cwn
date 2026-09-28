@@ -1,0 +1,167 @@
+module sema {
+    struct StructRequest {
+        symbol: usize
+        value_type: Type
+    }
+
+    struct StructFieldsContext {
+        symbol: usize
+        substitutions: Vec<Type>
+    }
+
+    fn checker_struct_value(checker: write Checker, reference: frontend::TypeRef, values: Vec<frontend::FieldValue>) -> Option<ExpressionInfo> {
+        let value_type = checker_resolve_type(checker, reference)
+        if type_is_view(checker.symbols, value_type) == false && checker_require_storable(checker, value_type) == false {
+            return None()
+        }
+        match type_named_symbol(value_type) {
+            None => {
+                checker_error(checker, "invalid struct construction: check fields, visibility, and ownership");
+                return None()
+            }
+            Some(symbol) => {
+                if checker_struct_allowed(checker, symbol) == false {
+                    return None()
+                }
+                let request = StructRequest {
+                    symbol: symbol, value_type: type_copy(value_type)
+                }
+                checker_struct_fields(checker, values, move request)
+                return Some(checker_type_info(checker, move value_type))
+            }
+        }
+    }
+
+    fn checker_struct_allowed(checker: write Checker, symbol: usize) -> bool {
+        if private_constructor_allowed(checker, symbol) == false {
+            checker_error(checker, "invalid struct construction: check fields, visibility, and ownership");
+            return false
+        }
+        var allowed = false
+        var restricted = false
+        match read checker.symbols.types[symbol].kind {
+            Struct => {
+                allowed = true
+            }
+            Resource(opaque_value, transferable) => {
+                transferable;
+                allowed = true;
+                restricted = opaque_value
+            }
+            _ => {
+            }
+        }
+        if allowed == false ||(restricted && checker.unsafe_depth == 0) {
+            checker_error(checker, "invalid struct construction: check fields, visibility, and ownership")
+            return false
+        }
+        return true
+    }
+
+    fn checker_struct_fields(checker: write Checker, values: Vec<frontend::FieldValue>, request: take StructRequest) -> void {
+        let arguments = type_arguments(request.value_type)
+        var parameters = Vec<frontend::Name>.new()
+        loan read checker.symbols.types[request.symbol] as declaration {
+            parameters = names_copy(declaration.type_parameters)
+        }
+        let substitutions = parameter_values(parameters, arguments)
+        let context = StructFieldsContext {
+            symbol: request.symbol, substitutions: move substitutions
+        }
+        checker_supplied_fields(checker, values, context)
+        checker_missing_fields(checker, values, request.symbol)
+    }
+
+    fn checker_supplied_fields(checker: write Checker, values: Vec<frontend::FieldValue>, context: StructFieldsContext) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if field_value_duplicate(checker, values, index) {
+                    checker_error(checker, "invalid struct construction: check fields, visibility, and ownership")
+                }
+                checker_supplied_field(checker, value, context)
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_supplied_field(checker: write Checker, value: frontend::FieldValue, context: StructFieldsContext) -> void {
+        match declaration_field_type(checker, value.name, context) {
+            None => {
+                checker_error(checker, "invalid struct construction: check fields, visibility, and ownership")
+            }
+            Some(expected) => {
+                if checker.symbols.types[context.symbol].view_value {
+                    checker_view_field(checker, value.value, expected)
+                }
+                else {
+                    checker_value(checker, value.value, expected)
+                }
+            }
+        }
+    }
+
+    fn declaration_field_type(checker: Checker, name: frontend::Name, context: StructFieldsContext) -> Option<Type> {
+        var index: usize = 0
+        while index < checker.symbols.types[context.symbol].fields.length() {
+            loan read checker.symbols.types[context.symbol].fields[index] as field {
+                if names_equal(checker.symbols.source, field.name, name) {
+                    return Some(substitute(field.value_type, context.substitutions))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn field_value_duplicate(checker: Checker, values: Vec<frontend::FieldValue>, current: usize) -> bool {
+        var current_name = frontend::Name {
+            text: "", span: frontend::Span {
+                source: 0, start: 0, end: 0, line: 0, column: 0
+            }
+        }
+        loan read values[current] as value {
+            current_name = frontend::name_copy(value.name)
+        }
+        var index: usize = 0
+        while index < current {
+            var equal = false
+            loan read values[index] as value {
+                equal = names_equal(checker.symbols.source, value.name, current_name)
+            }
+            if equal {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn checker_missing_fields(checker: write Checker, values: Vec<frontend::FieldValue>, symbol: usize) -> void {
+        var field: usize = 0
+        while field < checker.symbols.types[symbol].fields.length() {
+            var field_name = frontend::Name {
+                text: "", span: frontend::Span {
+                    source: 0, start: 0, end: 0, line: 0, column: 0
+                }
+            }
+            loan read checker.symbols.types[symbol].fields[field] as value {
+                field_name = frontend::name_copy(value.name)
+            }
+            var supplied = false
+            var index: usize = 0
+            while index < values.length() {
+                loan read values[index] as value {
+                    if names_equal(checker.symbols.source, field_name, value.name) {
+                        supplied = true
+                    }
+                }
+                index = index + 1
+            }
+            if supplied == false {
+                checker_error(checker, "invalid struct construction: check fields, visibility, and ownership")
+            }
+            field = field + 1
+        }
+    }
+}

@@ -1,0 +1,249 @@
+module optimize {
+    fn prove_ranges(function: ir::Function, state: RangeProofState) -> Vec<RangeProven> {
+        var output = Vec<RangeProven>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    match prove_comparison(function, state, instruction, block) {
+                        Some(value) => {
+                            output.push(move value)
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn prove_comparison(function: ir::Function, state: RangeProofState, instruction: ir::Instruction, block: usize) -> Option<RangeProven> {
+        let result = match instruction.result {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionCompare(operator, left, right) => {
+                let query = RangeComparisonQuery {
+                    block: block, operator: operator, left: left, right: right
+                }
+                match prove_query(function, state, query) {
+                    Some(value) => Some(RangeProven {
+                            result: result, value: value
+                        })
+                    None => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn prove_query(function: ir::Function, state: RangeProofState, query: RangeComparisonQuery) -> Option<bool> {
+        if state.enable_relations {
+            match range_relation(function, state, query) {
+                Some(value) => {
+                    return Some(value)
+                }
+                None => {
+                }
+            }
+        }
+        match prove_signed_comparison(function, state, query) {
+            Some(value) => {
+                return Some(value)
+            }
+            None => {
+            }
+        }
+        let left_query = RangeProofQuery {
+            block: query.block, value: query.left
+        }
+        let right_query = RangeProofQuery {
+            block: query.block, value: query.right
+        }
+        let left_value = match proof_value_range(function, state, left_query) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        let right_value = match proof_value_range(function, state, right_query) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        if range_exact(left_value) && range_exact(right_value) {
+            return None()
+        }
+        prove_unsigned(query.operator, left_value, right_value)
+    }
+
+    fn proof_value_range(function: ir::Function, state: RangeProofState, query: RangeProofQuery) -> Option<Range> {
+        let inferred = value_range(function, state.inferred, query.value)
+        match move inferred {
+            None => {
+                return None()
+            }
+            Some(value_range) => {
+                let direct = proof_direct_range(state, query)
+                let derived = proof_derived_range(function, state, query)
+                return intersect_optional_ranges(move value_range, move direct, move derived)
+            }
+        }
+    }
+
+    fn proof_direct_range(state: RangeProofState, query: RangeProofQuery) -> Option<Range> {
+        if query.block >= state.constraints.length() {
+            return None()
+        }
+        loan read state.constraints[query.block] as constraints {
+            return constraint_range(constraints, query.value)
+        }
+    }
+
+    fn proof_derived_range(function: ir::Function, state: RangeProofState, query: RangeProofQuery) -> Option<Range> {
+        if query.value >= state.definitions.length() {
+            return None()
+        }
+        var definition_block: usize = function.blocks.length()
+        var definition_instruction: usize = 0
+        loan read state.definitions[query.value] as location {
+            definition_block = location.block
+            definition_instruction = location.instruction
+        }
+        if definition_block >= function.blocks.length() {
+            return None()
+        }
+        return proof_instruction_range(function, state, query, function.blocks[definition_block].instructions[definition_instruction].kind)
+    }
+
+    fn proof_instruction_range(function: ir::Function, state: RangeProofState, query: RangeProofQuery, kind: ir::InstructionKind) -> Option<Range> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let value_type = match ir::function_value_type(function, query.value) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                let left_query = RangeProofQuery {
+                    block: query.block, value: left
+                }
+                let right_query = RangeProofQuery {
+                    block: query.block, value: right
+                }
+                let left_range = proof_value_range(function, state, left_query)
+                let right_range = proof_value_range(function, state, right_query)
+                let full = type_range(value_type)
+                return binary_ranges(operator, move left_range, move right_range, move full)
+            }
+            ir::InstructionCast(operator, value, target) => {
+                let source_query = RangeProofQuery {
+                    block: query.block, value: value
+                }
+                match proof_value_range(function, state, source_query) {
+                    Some(source) => {
+                        return cast_range(operator, source, target)
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                condition
+                let then_query = RangeProofQuery {
+                    block: query.block, value: then_value
+                }
+                let else_query = RangeProofQuery {
+                    block: query.block, value: else_value
+                }
+                let then_range = proof_value_range(function, state, then_query)
+                let else_range = proof_value_range(function, state, else_query)
+                return union_optional_ranges(move then_range, move else_range)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn intersect_optional_ranges(inferred: take Range, direct: take Option<Range>, derived: take Option<Range>) -> Option<Range> {
+        var output = move inferred
+        match move direct {
+            Some(value) => {
+                match intersect_ranges(output, value) {
+                    Some(intersection) => {
+                        output = move intersection
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        match move derived {
+            Some(value) => {
+                return intersect_ranges(output, value)
+            }
+            None => {
+                return Some(move output)
+            }
+        }
+    }
+
+    fn prove_unsigned(operator: ir::CompareOperator, left: Range, right: Range) -> Option<bool> {
+        match read operator {
+            ir::CompareEqual => prove_range_equality(left, right, true)
+            ir::CompareNotEqual => prove_range_equality(left, right, false)
+            ir::CompareUnsignedLess => prove_range_order(left, right, false)
+            ir::CompareUnsignedLessEqual => prove_range_order(left, right, true)
+            ir::CompareUnsignedGreater => prove_range_order(right, left, false)
+            ir::CompareUnsignedGreaterEqual => prove_range_order(right, left, true)
+            _ => None()
+        }
+    }
+
+    fn prove_range_equality(left: Range, right: Range, equal: bool) -> Option<bool> {
+        if ranges_disjoint(left, right) {
+            return Some(equal == false)
+        }
+        None()
+    }
+
+    fn prove_range_order(left: Range, right: Range, inclusive: bool) -> Option<bool> {
+        if inclusive {
+            if left.maximum <= right.minimum {
+                return Some(true)
+            }
+            if left.minimum > right.maximum {
+                return Some(false)
+            }
+        } else {
+            if left.maximum < right.minimum {
+                return Some(true)
+            }
+            if left.minimum >= right.maximum {
+                return Some(false)
+            }
+        }
+        None()
+    }
+
+    fn ranges_disjoint(left: Range, right: Range) -> bool {
+        return left.maximum < right.minimum || right.maximum < left.minimum
+    }
+
+    fn range_exact(value: Range) -> bool {
+        return value.minimum == value.maximum
+    }
+}

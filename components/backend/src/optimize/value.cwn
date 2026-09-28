@@ -1,0 +1,12 @@
+module optimize {
+    fn option_usize_value(value: Option<usize>) -> Option<usize> {
+        match read value {
+            Some(item) => {
+                return Some(item)
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+}

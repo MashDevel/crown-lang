@@ -1,0 +1,76 @@
+module optimize {
+    fn gvn_dominator_children(function: ir::Function) -> Vec<Vec<usize>> {
+        let dominators = ir::dominators(function)
+        let depths = gvn_dominator_depths(dominators)
+        var output = empty_usize_rows(function.blocks.length())
+        var block: usize = 1
+        while block < function.blocks.length() {
+            match gvn_immediate_dominator(dominators, depths, block) {
+                Some(parent) => {
+                    output[parent].push(block)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn gvn_immediate_dominator(dominators: ir::Dominators, depths: Vec<u32>, block: usize) -> Option<usize> {
+        var best: Option<usize> = None()
+        var depth: u32 = 0
+        var candidate: usize = 0
+        while candidate < dominators.count {
+            if candidate != block && ir::dominates(dominators, block, candidate) {
+                let candidate_depth = depths[candidate]
+                if candidate_depth >= depth {
+                    best = Some(candidate);
+                    depth = candidate_depth
+                }
+            }
+            candidate = candidate + 1
+        }
+        return best
+    }
+
+    fn gvn_dominator_depth(dominators: ir::Dominators, block: usize) -> u32 {
+        var output: u32 = 0
+        var index: usize = 0
+        while index < dominators.blocks[block].length() {
+            output = output + gvn_popcount(dominators.blocks[block][index])
+            index = index + 1
+        }
+        return output
+    }
+
+    fn gvn_popcount(input: u64) -> u32 {
+        var value = input
+        var output: u32 = 0
+        while value != 0 {
+            output = output + 1
+            value = value &(value - 1)
+        }
+        return output
+    }
+
+    fn empty_usize_rows(length: usize) -> Vec<Vec<usize>> {
+        var output = Vec<Vec<usize>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(Vec<usize>.new());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn gvn_dominator_depths(dominators: ir::Dominators) -> Vec<u32> {
+        var output = Vec<u32>.with_capacity(dominators.count)
+        var block: usize = 0
+        while block < dominators.count {
+            output.push(gvn_dominator_depth(dominators, block))
+            block = block + 1
+        }
+        return move output
+    }
+}

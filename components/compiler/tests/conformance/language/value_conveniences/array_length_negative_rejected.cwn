@@ -1,0 +1,6 @@
+const COUNT: i32 = -1
+fn main() -> u32 {
+    let values: [u32; COUNT] = [];
+    values;
+    return 0
+}

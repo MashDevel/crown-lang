@@ -1,0 +1,15 @@
+view struct Parser {
+    data: Slice<u32>
+}
+fn main() -> u32 {
+    var source = [42]
+    loan write source[0..1] as values {
+        var parser = Parser {
+            data: values
+        }
+        let thread = spawn move {
+            parser
+        }
+        return 0
+    }
+}

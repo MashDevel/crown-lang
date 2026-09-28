@@ -1,0 +1,101 @@
+module arm64 {
+    fn float_to_wide(compiler: write Compiler, source: ir::Type, signed: bool) -> Result<void, Text> {
+        let double = ir::type_is_float64(source)
+        let fraction: u64 = if double {
+            52
+        } else {
+            23
+        }
+        let bias: u64 = if double {
+            1023
+        } else {
+            127
+        }
+        let exponent_mask = bias * 2 + 1
+        immediate(compiler, 15, if double {
+                63
+            } else {
+                31
+            })
+        shift_registers(compiler, ShiftOperation::LogicalRight(), 0, 9, 15)
+        immediate(compiler, 15, fraction)
+        shift_registers(compiler, ShiftOperation::LogicalRight(), 4, 9, 15)
+        immediate(compiler, 15, exponent_mask)
+        emit_registers(compiler, 2315255808, 4, 4, 15)
+        immediate(compiler, 15, (u64.from(1) << fraction) - 1)
+        emit_registers(compiler, 2315255808, 9, 9, 15)
+        var zero = Vec<usize>.new()
+        runtime_compare(compiler, 4, exponent_mask)
+        let finite = condition_later(compiler, 1)
+        runtime_compare(compiler, 9, 0)
+        zero.push(condition_later(compiler, 1))
+        branch_here(compiler, finite)
+        if signed == false {
+            runtime_compare(compiler, 0, 0)
+            zero.push(condition_later(compiler, 1))
+        }
+        runtime_compare(compiler, 4, bias)
+        zero.push(condition_later(compiler, 3))
+        runtime_compare(compiler, 4, bias + if signed {
+                127
+            } else {
+                128
+            })
+        let limit = condition_later(compiler, 2)
+        float_wide_magnitude(compiler, fraction, bias)?
+        if signed {
+            float_wide_sign(compiler)
+        }
+        let done = branch_later(compiler)
+        branch_here(compiler, limit)
+        float_wide_limit(compiler, signed)
+        let limited = branch_later(compiler)
+        for index in 0..zero.length() {
+            branch_here(compiler, zero[index])
+        }
+        immediate(compiler, 9, 0)
+        immediate(compiler, 10, 0)
+        branch_here(compiler, done)
+        branch_here(compiler, limited)
+        return Ok(())
+    }
+    fn float_wide_magnitude(compiler: write Compiler, fraction: u64, bias: u64) -> Result<void, Text> {
+        immediate(compiler, 15, u64.from(1) << fraction)
+        emit_registers(compiler, 2852126720, 9, 9, 15)
+        immediate(compiler, 10, 0)
+        immediate(compiler, 15, bias + fraction)
+        emit_registers(compiler, 3405774848, 11, 4, 15)
+        emit_encoding(compiler, compare_word(11, 31))
+        let right = condition_later(compiler, 11)
+        wide_shift(compiler, ir::BinaryShiftLeft())?
+        let done = branch_later(compiler)
+        branch_here(compiler, right)
+        emit_registers(compiler, 3405774848, 11, 31, 11)
+        shift_registers(compiler, ShiftOperation::LogicalRight(), 9, 9, 11)
+        branch_here(compiler, done)
+        return Ok(())
+    }
+    fn float_wide_sign(compiler: write Compiler) -> void {
+        runtime_compare(compiler, 0, 0)
+        let positive = condition_later(compiler, 0)
+        wide_negate(compiler, 9, 10)
+        return branch_here(compiler, positive)
+    }
+    fn float_wide_limit(compiler: write Compiler, signed: bool) -> void {
+        immediate(compiler, 9, 18446744073709551615)
+        immediate(compiler, 10, if signed {
+                9223372036854775807
+            } else {
+                18446744073709551615
+            })
+        if signed {
+            runtime_compare(compiler, 0, 0)
+            let positive = condition_later(compiler, 0)
+            immediate(compiler, 9, 0)
+            immediate(compiler, 10, 9223372036854775808)
+            branch_here(compiler, positive)
+        }
+        return
+    }
+
+}

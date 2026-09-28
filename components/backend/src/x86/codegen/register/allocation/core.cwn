@@ -1,0 +1,45 @@
+module x86 {
+    fn codegen_allocate_registers(function: ir::Function) -> RegisterAllocation {
+        var eligible = codegen_eligible_values(function)
+        var analysis = codegen_liveness(function, ir::flags_copy(eligible))
+        let floats = codegen_allocate_float_registers(function, analysis)
+        for index in 0..eligible.length() {
+            if ir::type_is_float(function.values[index]) || ir::type_is_vector(function.values[index]) {
+                eligible[index] = false
+            }
+        }
+        let affinities = codegen_affinities(function, eligible)
+        let order_analysis = OrderAnalysis {
+            degrees: codegen_graph_degrees(analysis.graph)
+            costs: codegen_spill_costs(function)
+        }
+        var ordered = codegen_order_values(eligible, analysis.used, order_analysis)
+        var state = ColorState {
+            values: codegen_empty_registers(function.values.length())
+            saved: 0
+            graph: replace(analysis.graph, Vec<ir::BitSet>.new())
+            forbidden: replace(analysis.forbidden, Vec<u16>.new())
+            affinities: move affinities
+            preferred: replace(analysis.preferred, Vec<Option<Register>>.new())
+        }
+        codegen_color_values(ordered, state)
+        return RegisterAllocation {
+            floats: move floats
+            values: replace(state.values, Vec<Option<Register>>.new())
+            saved: state.saved
+            interference: replace(state.graph, Vec<ir::BitSet>.new())
+        }
+    }
+
+    fn codegen_register_options_copy(values: Vec<Option<Register>>) -> Vec<Option<Register>> {
+        var output = codegen_empty_registers(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output[index] = codegen_option_register_copy(value)
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

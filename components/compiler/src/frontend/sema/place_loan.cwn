@@ -1,0 +1,203 @@
+module sema {
+    struct PlaceLoan {
+        depth: usize
+        path: frontend::Path
+        mode: frontend::LoanMode
+        origin: frontend::Span
+        duration: LoanDuration
+        requested: frontend::LoanMode
+    }
+
+    copy enum LoanDuration {
+        LoanScopeEnd, LoanCallEnd, LoanExpressionEnd
+    }
+
+    fn place_path(expression: frontend::Expression) -> Option<frontend::Path> {
+        return place_kind_path(expression.kind)
+    }
+
+    fn place_contains_index(expression: frontend::Expression) -> bool {
+        return place_kind_contains_index(expression.kind)
+    }
+
+    fn conflicting_place_loan(checker: Checker, path: frontend::Path, usage: PathUse) -> Option<usize> {
+        var index: usize = 0
+        while index < checker.place_loans.length() {
+            loan read checker.place_loans[index] as current {
+                let compatible = path_is_read(usage) && loan_is_read(current.mode)
+                if compatible == false && paths_overlap(checker.symbols.source, current.path, path) {
+                    return Some(index)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn begin_place_loan(checker: write Checker, source: frontend::Expression, mode: frontend::LoanMode) -> void {
+        begin_temporary_loan(checker, source, mode, LoanScopeEnd())
+    }
+
+    fn begin_temporary_loan(checker: write Checker, source: frontend::Expression, mode: frontend::LoanMode, duration: LoanDuration) -> void {
+        match place_path(source) {
+            Some(path) => {
+                checker.place_loans.push(PlaceLoan {
+                        depth: checker.scopes.length(), path: move path, mode: mode, origin: source.span, duration: duration, requested: mode
+                    })
+            }
+            None => {
+            }
+        }
+    }
+
+    fn root_has_loan(checker: Checker, name: frontend::Name) -> bool {
+        if thread_root_has_loan(checker, name) {
+            return true
+        }
+        var index: usize = 0
+        while index < checker.place_loans.length() {
+            loan read checker.place_loans[index].path.segments[0] as root {
+                if names_equal(checker.symbols.source, root, name) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn place_loans_copy(values: Vec<PlaceLoan>) -> Vec<PlaceLoan> {
+        var output = Vec<PlaceLoan>.new()
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(place_loan_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn check_index_value(checker: write Checker, target: frontend::Expression, index: frontend::Expression) -> void {
+        let expected = builtin_leaf(USize())
+        check_place_operand(checker, target, index, expected)
+    }
+
+    fn check_place_operand(checker: write Checker, target: frontend::Expression, operand: frontend::Expression, expected: Type) -> void {
+        let count = checker.place_loans.length()
+        let mode = frontend::LoanRead()
+        begin_temporary_loan(checker, target, mode, LoanExpressionEnd())
+        checker_value(checker, operand, expected)
+        while checker.place_loans.length() > count {
+            checker.place_loans.pop()
+        }
+    }
+
+    fn reserve_call_argument(checker: write Checker, argument: frontend::Expression, parameter: ParameterType) -> void {
+        if mode_is_take(parameter.mode) {
+            return
+        }
+        if mode_is_read(parameter.mode) && type_is_copy_with_symbols(checker.symbols, parameter.value_type) {
+            if type_contains_view(checker.symbols, parameter.value_type) == false {
+                return
+            }
+        }
+        let mode = frontend::LoanRead()
+        let before = checker.place_loans.length()
+        begin_temporary_loan(checker, argument, mode, LoanCallEnd())
+        if mode_is_write(parameter_access_mode(parameter)) && checker.place_loans.length() > before {
+            checker.place_loans[before].requested = frontend::LoanWrite()
+        }
+    }
+
+    fn place_loan_copy(value: PlaceLoan) -> PlaceLoan {
+        return PlaceLoan {
+            depth: value.depth, path: frontend::path_copy(value.path), mode: value.mode,
+            origin: value.origin, duration: value.duration, requested: value.requested
+        }
+    }
+
+    fn place_kind_path(kind: frontend::ExpressionKind) -> Option<frontend::Path> {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                return Some(frontend::path_copy(path))
+            }
+            frontend::ExpressionIndex(target, index) => {
+                index;
+                loan read target as value {
+                    return place_path(value)
+                }
+            }
+            frontend::ExpressionSlice(target, start, end) => {
+                start;
+                end;
+                loan read target as value {
+                    return place_path(value)
+                }
+            }
+            frontend::ExpressionField(target, name) => {
+                return field_place_path(target, name)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn field_place_path(target: Box<frontend::Expression>, name: frontend::Name) -> Option<frontend::Path> {
+        loan read target as value {
+            match place_path(value) {
+                Some(path) => {
+                    return Some(place_field_result(move path, value, name))
+                }
+                None => {
+                    return None()
+                }
+            }
+        }
+    }
+
+    fn place_field_result(path: take frontend::Path, value: frontend::Expression, name: frontend::Name) -> frontend::Path {
+        var result = move path
+        if place_contains_index(value) == false {
+            result.segments.push(frontend::name_copy(name))
+        }
+        return move result
+    }
+
+    fn place_kind_contains_index(kind: frontend::ExpressionKind) -> bool {
+        match read kind {
+            frontend::ExpressionIndex(target, index) => {
+                target;
+                index;
+                return true
+            }
+            frontend::ExpressionSlice(target, start, end) => {
+                target;
+                start;
+                end;
+                return true
+            }
+            frontend::ExpressionField(target, name) => {
+                name;
+                loan read target as value {
+                    return place_contains_index(value)
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn path_is_read(usage: PathUse) -> bool {
+        match read usage {
+            ReadPath => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

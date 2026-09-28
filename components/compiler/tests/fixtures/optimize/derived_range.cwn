@@ -1,0 +1,35 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn test_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) { Ok(value) => { return value } Err(error) => { error; return function.blocks.length() } }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth8())
+    let result_type = ir::TypeInteger(ir::IntegerWidth1())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("derived_range", ir::signature_new(move parameters, result_type), ir::LinkageLocal())
+    let entry = test_block(function)
+    let narrowed = test_block(function)
+    let exit = test_block(function)
+    let ten_constant = ir::ConstantInteger(u64.from(10))
+    let one_constant = ir::ConstantInteger(u64.from(1))
+    let ten = ir::function_constant(function, value_type, ten_constant)
+    let one = ir::function_constant(function, value_type, one_constant)
+    let condition = test_append(function, entry, ir::InstructionCompare(ir::CompareUnsignedLess(), function.parameters[0], ten))
+    let derived = test_append(function, narrowed, ir::InstructionBinary(ir::BinaryAdd(), function.parameters[0], one))
+    let proven = test_append(function, narrowed, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), derived, ten))
+    match ir::function_terminate(function, entry, ir::TerminatorConditional(condition, narrowed, exit)) { Ok(value) => { value } Err(error) => { error; return 1 } }
+    match ir::function_terminate(function, narrowed, ir::TerminatorReturn(Some(proven))) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    match ir::function_terminate(function, exit, ir::TerminatorReturn(Some(condition))) { Ok(value) => { value } Err(error) => { error; return 3 } }
+    if optimize::range(function, true) != 1 { return 4 }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    match ir::validate_program(program) { Ok(value) => { value; return 42 } Err(error) => { error; return 5 } }
+}

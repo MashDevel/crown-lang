@@ -1,0 +1,157 @@
+module x86 {
+    fn codegen_wide_binary(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        if ir::binary_is_shift(input.operator) {
+            return codegen_wide_shift(program, compiler, move input)
+        }
+        if codegen_binary_is_division(input.operator) {
+            return codegen_wide_division(program, compiler, move input)
+        }
+        let operator = input.operator
+        match operator {
+            ir::BinaryAdd => {
+                return codegen_wide_add_subtract(program, compiler, move input)
+            }
+            ir::BinarySubtract => {
+                return codegen_wide_add_subtract(program, compiler, move input)
+            }
+            ir::BinaryAnd => {
+                return codegen_wide_bitwise(program, compiler, move input)
+            }
+            ir::BinaryOr => {
+                return codegen_wide_bitwise(program, compiler, move input)
+            }
+            ir::BinaryXor => {
+                return codegen_wide_bitwise(program, compiler, move input)
+            }
+            ir::BinaryMultiply => {
+                return codegen_wide_multiply(program, compiler, move input)
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_wide_add_subtract(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.left, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.right, registers: WideRegisters {
+                    low: Rcx(), high: R8()
+                }
+            })?
+        match read input.operator {
+            ir::BinaryAdd => {
+                codegen_emit(compiler, Add(Rax(), Rcx()));
+                codegen_emit(compiler, AddCarry(Rdx(), R8()))
+            }
+            ir::BinarySubtract => {
+                codegen_emit(compiler, Subtract(Rax(), Rcx()));
+                codegen_emit(compiler, SubtractBorrow(Rdx(), R8()))
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_wide_bitwise(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.left, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.right, registers: WideRegisters {
+                    low: Rcx(), high: R8()
+                }
+            })?
+        match read input.operator {
+            ir::BinaryAnd => {
+                codegen_emit(compiler, And(Rax(), Rcx()));
+                codegen_emit(compiler, And(Rdx(), R8()))
+            }
+            ir::BinaryOr => {
+                codegen_emit(compiler, Or(Rax(), Rcx()));
+                codegen_emit(compiler, Or(Rdx(), R8()))
+            }
+            ir::BinaryXor => {
+                codegen_emit(compiler, Xor(Rax(), Rcx()));
+                codegen_emit(compiler, Xor(Rdx(), R8()))
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_wide_multiply(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.left, registers: WideRegisters {
+                    low: R10(), high: R11()
+                }
+            })?
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.right, registers: WideRegisters {
+                    low: Rcx(), high: R9()
+                }
+            })?
+        codegen_emit(compiler, Move(Rax(), R10()))
+        codegen_emit(compiler, MultiplyWideUnsigned(Rcx()))
+        codegen_emit(compiler, Multiply(R10(), R9()))
+        codegen_emit(compiler, Add(Rdx(), R10()))
+        codegen_emit(compiler, Multiply(R11(), Rcx()))
+        codegen_emit(compiler, Add(Rdx(), R11()))
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_wide_unary(program: ir::Program, compiler: write FunctionCompiler, input: take UnaryInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.value, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        match read input.operator {
+            ir::UnaryNot => {
+                codegen_emit(compiler, Not(Rax()));
+                codegen_emit(compiler, Not(Rdx()))
+            }
+            ir::UnaryNegate => {
+                codegen_emit_wide_negate(compiler, WideRegisters {
+                        low: Rax(), high: Rdx()
+                    })
+            }
+            ir::UnaryFloatNegate => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_emit_wide_negate(compiler: write FunctionCompiler, value: take WideRegisters) -> void {
+        codegen_emit(compiler, Not(value.low))
+        codegen_emit(compiler, Not(value.high))
+        codegen_emit(compiler, MoveImmediate(Rcx(), 1))
+        codegen_emit(compiler, Add(value.low, Rcx()))
+        codegen_emit(compiler, MoveImmediate(Rcx(), 0))
+        codegen_emit(compiler, AddCarry(value.high, Rcx()))
+    }
+
+    fn codegen_store_wide_result(compiler: write FunctionCompiler, result: Option<usize>, registers: take WideRegisters) -> Result<void, CodegenError> {
+        let value = codegen_wide_result(compiler, result)?
+        return codegen_store_wide(compiler, value, move registers)
+    }
+}

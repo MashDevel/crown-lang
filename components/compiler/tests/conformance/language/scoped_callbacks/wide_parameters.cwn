@@ -1,0 +1,32 @@
+fn sum(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64, g: u64, h: u64) -> u64 {
+    return a + b + c + d + e + f + g + h
+}
+
+fn call(action: scoped fn(u64, u64, u64, u64, u64, u64, u64, u64) -> u64) -> u64 {
+    return action(1, 2, 3, 4, 5, 6, 7, 8)
+}
+
+fn decimal(action: scoped fn(f64, f64, f64, f64, f64, f64, f64, f64) -> f64) -> f64 {
+    return action(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+}
+
+fn main() -> u32 {
+    let offset: u64 = 6
+    let value = call(fn[read offset](a, b, c, d, e, f, g, h) {
+            return sum(a, b, c, d, e, f, g, h) + offset
+        })
+    if value != 42 {
+        return 1
+    }
+    if call(sum) != 36 {
+        return 2
+    }
+    let base: f64 = 6.0
+    let floating = decimal(fn[read base](a, b, c, d, e, f, g, h) {
+            return a + b + c + d + e + f + g + h + base
+        })
+    if floating != 42.0 {
+        return 3
+    }
+    return 0
+}

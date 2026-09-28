@@ -1,0 +1,9 @@
+fn main() -> u32 {
+    let owned = "x";
+    let value = if true {
+        move owned
+    } else {
+        "other"
+    }
+    return 0
+}

@@ -1,0 +1,15 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    let item = Item {
+        value: 1
+    }
+    let consumed = move item
+    item = Item {
+        value: 2
+    }
+    return consumed.value
+
+}

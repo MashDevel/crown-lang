@@ -1,0 +1,19 @@
+fn main() -> u32 {
+    var value = "x"
+    value.push('😀')
+    if value.length() != 5 {
+        return 1
+    }
+    unsafe {
+        if value.as_raw().read() != 120 {
+            return 2
+        }
+        if value.as_raw().offset(1).read() != 240 {
+            return 3
+        }
+        if value.as_raw().offset(4).read() != 128 {
+            return 4
+        }
+    }
+    return 42
+}

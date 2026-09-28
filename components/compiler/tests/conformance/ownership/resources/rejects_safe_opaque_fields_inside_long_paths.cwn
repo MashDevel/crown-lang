@@ -1,0 +1,22 @@
+opaque resource Secret {
+    code: u32
+    drop {
+    }
+}
+struct Holder {
+    secret: Secret
+}
+fn make() -> Secret {
+    unsafe {
+        return Secret {
+            code: 1
+        }
+    }
+}
+fn main() -> u32 {
+    let secret = make()
+    let holder = Holder {
+        secret: move secret
+    }
+    return holder.secret.code
+}

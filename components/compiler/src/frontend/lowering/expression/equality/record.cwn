@@ -1,0 +1,49 @@
+module lowering {
+    fn structured_equality(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality) -> Result<usize, u32> {
+        match read request.value_type {
+            sema::NamedType(index, arguments) => {
+                arguments;
+                match symbols.types[index].kind {
+                    sema::Struct => {
+                        return record_equality(compiler, symbols, request, index)
+                    }
+                    sema::Enum => {
+                        return enum_equality(compiler, symbols, request)
+                    }
+                    _ => {
+                        return Err(101)
+                    }
+                }
+            }
+            _ => {
+                let builtin = sema::type_builtin(request.value_type)
+                if builtin == sema::Option() || builtin == sema::Result() {
+                    return enum_equality(compiler, symbols, request)
+                }
+                return builtin_equality(compiler, symbols, request)
+            }
+        }
+    }
+
+    fn record_equality(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality, index: usize) -> Result<usize, u32> {
+        var fields = Vec<FieldLayout>.new()
+        for field in 0..symbols.types[index].fields.length() {
+            fields.push(layout_field(symbols, request.value_type, symbols.types[index].fields[field].name)?)
+        }
+        return equality_fields(compiler, symbols, request, fields)
+    }
+
+    fn equality_fields(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality, fields: Vec<FieldLayout>) -> Result<usize, u32> {
+        var equal = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth1()), 1)
+        for index in 0..fields.length() {
+            let left = function_offset(compiler, request.left, fields[index].offset)?
+            let right = function_offset(compiler, request.right, fields[index].offset)?
+            let part = Equality {
+                left: left, right: right, value_type: sema::type_copy(fields[index].value_type)
+            }
+            let value = equality_value(compiler, symbols, part)?
+            equal = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), equal, value))?
+        }
+        return Ok(equal)
+    }
+}

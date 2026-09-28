@@ -1,0 +1,96 @@
+module sema {
+    fn constant_float_binary(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        if input.left.builtin == F32() {
+            return constant_float32_binary(input)
+        }
+        return constant_float64_binary(input)
+    }
+
+    fn constant_float32_binary(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let left = constant_float32(input.left.bits)
+        let right = constant_float32(input.right.bits)
+        var value: f32 = 0.0
+        match input.operator {
+            frontend::BinaryAdd => {
+                value = left + right
+            }
+            frontend::BinarySubtract => {
+                value = left - right
+            }
+            frontend::BinaryMultiply => {
+                value = left * right
+            }
+            frontend::BinaryDivide => {
+                value = left / right
+            }
+            _ => {
+                return Ok(constant_boolean(constant_ordering(input.operator, ConstantOrdering {
+                                equal: left == right, less: left < right, greater: left > right
+                            })))
+            }
+        }
+        return Ok(ConstantScalar {
+                builtin: input.left.builtin, bits: constant_float32_bits(value)
+            })
+    }
+
+    fn constant_float64_binary(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let left = constant_float64(input.left.bits)
+        let right = constant_float64(input.right.bits)
+        var value: f64 = 0.0
+        match input.operator {
+            frontend::BinaryAdd => {
+                value = left + right
+            }
+            frontend::BinarySubtract => {
+                value = left - right
+            }
+            frontend::BinaryMultiply => {
+                value = left * right
+            }
+            frontend::BinaryDivide => {
+                value = left / right
+            }
+            _ => {
+                return Ok(constant_boolean(constant_ordering(input.operator, ConstantOrdering {
+                                equal: left == right, less: left < right, greater: left > right
+                            })))
+            }
+        }
+        return Ok(ConstantScalar {
+                builtin: input.left.builtin, bits: constant_float64_bits(value)
+            })
+    }
+
+    fn constant_float32(bits: u64) -> f32 {
+        var storage = Vec<u32>.new()
+        storage.push(u32.from(bits))
+        unsafe {
+            return RawPtr<f32>.cast(storage.as_raw()).read()
+        }
+    }
+
+    fn constant_float32_bits(value: f32) -> u64 {
+        var storage = Vec<f32>.new()
+        storage.push(value)
+        unsafe {
+            return u64.from(RawPtr<u32>.cast(storage.as_raw()).read())
+        }
+    }
+
+    fn constant_float64(bits: u64) -> f64 {
+        var storage = Vec<u64>.new()
+        storage.push(bits)
+        unsafe {
+            return RawPtr<f64>.cast(storage.as_raw()).read()
+        }
+    }
+
+    fn constant_float64_bits(value: f64) -> u64 {
+        var storage = Vec<f64>.new()
+        storage.push(value)
+        unsafe {
+            return RawPtr<u64>.cast(storage.as_raw()).read()
+        }
+    }
+}

@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    let queue = Channel<u32>.new()
+    match queue.try_receive() { None => {} Some(value) => { return value } }
+    queue.send(20)
+    queue.send(22)
+    var total = 0
+    match queue.try_receive() { Some(value) => { total = value } None => { return 1 } }
+    match queue.try_receive() { Some(value) => { total = total + value } None => { return 2 } }
+    match queue.try_receive() { None => { return total } Some(value) => { return value } }
+}

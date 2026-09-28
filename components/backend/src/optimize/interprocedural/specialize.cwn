@@ -1,0 +1,161 @@
+module optimize {
+    struct Specialization {
+        original: usize
+        target: usize
+        constants: Vec<Option<ir::Constant>>
+    }
+
+    fn specialize(program: write ir::Program) -> usize {
+        let original_count = program.functions.length()
+        var versions = Vec<Specialization>.new()
+        for caller in 0..original_count {
+            specialize_caller(program, caller, versions)
+        }
+        return versions.length()
+    }
+
+    fn specialize_caller(program: write ir::Program, caller: usize, versions: write Vec<Specialization>) -> void {
+        let loops = blocks_in_loops(program.functions[caller])
+        for block in 0..program.functions[caller].blocks.length() {
+            if loops[block] {
+                for index in 0..program.functions[caller].blocks[block].instructions.length() {
+                    specialize_site(program, caller, block, index, versions)
+                }
+            }
+        }
+    }
+
+    fn specialize_site(program: write ir::Program, caller: usize, block: usize, index: usize, versions: write Vec<Specialization>) -> void {
+        let original = ir::instruction_copy(program.functions[caller].blocks[block].instructions[index])
+        match read original.kind {
+            ir::InstructionCall(target, arguments, result) => {
+                if specialization_eligible(program, caller, target) == false {
+                    return
+                }
+                let constants = specialization_constants(program.functions[caller], arguments)
+                let selected = specialization_target(program, target, constants, versions)
+                if selected != target {
+                    program.functions[caller].blocks[block].instructions[index].kind = ir::InstructionCall(selected, ir::usize_values_copy(arguments), result)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn specialization_eligible(program: ir::Program, caller: usize, target: usize) -> bool {
+        if target >= program.functions.length() || caller == target {
+            return false
+        }
+        loan read program.functions[target] as callee {
+            if ir::function_is_import(callee) || inline_cost(callee) > 1024 {
+                return false
+            }
+            let candidate = inline_candidate(callee)
+            return usize_contains(candidate.calls, target) == false && usize_contains(candidate.calls, caller) == false
+        }
+    }
+
+    fn specialization_constants(function: ir::Function, arguments: Vec<usize>) -> Vec<Option<ir::Constant>> {
+        var values = Vec<Option<ir::Constant>>.new()
+        for index in 0..arguments.length() {
+            values.push(ir::function_constant_value(function, arguments[index]))
+        }
+        return move values
+    }
+
+    fn specialization_target(program: write ir::Program, target: usize, constants: Vec<Option<ir::Constant>>, versions: write Vec<Specialization>) -> usize {
+        var count: usize = 0
+        for index in 0..versions.length() {
+            if versions[index].original == target {
+                count = count + 1
+                if specialization_same(versions[index].constants, constants) {
+                    return versions[index].target
+                }
+            }
+        }
+        if count >= 4 || versions.length() >= 128 {
+            return target
+        }
+        var function = ir::function_copy(program.functions[target])
+        if specialization_apply(function, constants) == 0 {
+            return target
+        }
+        let id = program.functions.length()
+        function.name = specialization_name(program, function.name, id)
+        function.linkage = ir::LinkageLocal()
+        function_mode(function, false)
+        ir::program_add_function(program, move function)
+        versions.push(Specialization {
+                original: target, target: id, constants: constants_copy(constants)
+            })
+        return id
+    }
+
+    fn specialization_apply(function: write ir::Function, constants: Vec<Option<ir::Constant>>) -> usize {
+        let uses = value_uses(function)
+        var count: usize = 0
+        for index in 0..constants.length() {
+            let parameter = function.parameters[index]
+            if uses[parameter] != 0 {
+                match read constants[index] {
+                    Some(constant) => {
+                        let value = ir::function_constant(function, function.values[parameter], constant)
+                        ir::function_replace_uses(function, parameter, value)
+                        count = count + 1
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return count
+    }
+
+    fn specialization_same(left: Vec<Option<ir::Constant>>, right: Vec<Option<ir::Constant>>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        for index in 0..left.length() {
+            if optional_constant_same(left[index], right[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn optional_constant_same(left: Option<ir::Constant>, right: Option<ir::Constant>) -> bool {
+        match read left {
+            Some(first) => {
+                match read right {
+                    Some(second) => ir::constant_equal(first, second)
+                    None => false
+                }
+            }
+            None => {
+                match read right {
+                    Some(value) => {
+                        value;
+                        false
+                    }
+                    None => true
+                }
+            }
+        }
+    }
+
+    fn constants_copy(values: Vec<Option<ir::Constant>>) -> Vec<Option<ir::Constant>> {
+        var output = Vec<Option<ir::Constant>>.new()
+        for index in 0..values.length() {
+            match read values[index] {
+                Some(value) => {
+                    output.push(Some(ir::constant_copy(value)))
+                }
+                None => {
+                    output.push(None())
+                }
+            }
+        }
+        return move output
+    }
+}

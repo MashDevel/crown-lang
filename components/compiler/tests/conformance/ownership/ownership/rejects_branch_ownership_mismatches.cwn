@@ -1,0 +1,16 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    let item = Item {
+        value: 1
+    }
+    if true {
+        let taken = move item
+    } else {
+        print(item.value)
+    }
+    return 0
+
+}

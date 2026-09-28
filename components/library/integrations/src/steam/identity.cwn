@@ -1,0 +1,15 @@
+module integration::steam {
+    fn game_identity(value: Text) -> u64 {
+        match std::text::unsigned(value) {
+            Ok(identity) => {
+                if identity <= 4294967295 {
+                    return identity
+                }
+            }
+            Err(error) => {
+                error
+            }
+        }
+        return 0
+    }
+}

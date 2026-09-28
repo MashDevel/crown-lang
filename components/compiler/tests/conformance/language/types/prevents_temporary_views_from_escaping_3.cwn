@@ -1,0 +1,6 @@
+struct Boxed {
+    value: Vec<Slice<u8>>
+}
+fn main() -> u32 {
+    return 0
+}

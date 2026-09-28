@@ -1,0 +1,16 @@
+module auditor {
+    fn instrument_name(name: Text) -> Text {
+        if std::text::contains("|malloc|calloc|realloc|free|", std::text::joined(std::text::joined("|", name), "|")) {
+            return std::text::joined("crown_test_", name)
+        }
+        return name.clone()
+    }
+
+    fn instrument(object: write object::CompilerObject) -> void {
+        for index in 0..object.symbols.length() {
+            if object::symbol_is_import(object.symbols[index].binding) {
+                object.symbols[index].name = instrument_name(object.symbols[index].name)
+            }
+        }
+    }
+}

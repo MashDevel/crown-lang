@@ -1,0 +1,96 @@
+fn arm_fixture() -> Result<ir::Program, u32> {
+    var function = ir::function_new("answer", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    let value = ir::function_constant(function, ir::TypeInteger(ir::IntegerWidth32()), ir::ConstantInteger(42))
+    safety_terminate(function, block, ir::TerminatorReturn(Some(value)))?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn arm_codegen_validates() -> Result<void, u32> {
+    let object = match arm64::codegen(arm_fixture()?, safety_arm_variant()) {
+        Ok(value) => move value
+        Err(error) => {
+            toolchain::failure(error);
+            return Err(1)
+        }
+    }
+    safety_require(object.architecture == object::ArchitectureArm64(), 2)?
+    safety_require(object.entry == Some(0), 3)?
+    match object::validate(object) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err(4)
+        }
+    }
+    if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+        let temporary = match toolchain::temporary(toolchain::temporary_directory()) {
+            Ok(value) => move value
+            Err(error) => {
+                error;
+                return Err(5)
+            }
+        }
+        let path = toolchain::path_join(toolchain::temporary_path(temporary), "answer")
+        let status = arm_run(move object, path)?
+        return safety_require(status == 42, 6)
+    }
+    return Ok(())
+}
+
+fn arm_run(object: take object::CompilerObject, path: Text) -> Result<i32, u32> {
+    let result = arm_run_checked(move object, path)
+    return match move result {
+        Ok(value) => Ok(value)
+        Err(error) => {
+            toolchain::failure(error);
+            Err(7)
+        }
+    }
+}
+
+fn arm_run_checked(object: take object::CompilerObject, path: Text) -> Result<i32, Text> {
+    let bytes = safety_executable(move object)?
+    toolchain::write_bytes(path, bytes)?
+    toolchain::executable(path)?
+    var command = Vec<Text>.new()
+    command.push(path.clone())
+    return toolchain::execute(toolchain::command(move command))
+}
+
+fn arm_codegen_rejects() -> Result<void, u32> {
+    var program = arm_fixture()?
+    program.functions[0].blocks[0].terminator = None()
+    match arm64::codegen(move program, safety_arm_variant()) {
+        Err(error) => {
+            error;
+        }
+        Ok(value) => {
+            value;
+            return Err(8)
+        }
+    }
+    match arm64::codegen(ir::program_new(), arm64::AbiVariant::Aapcs64()) {
+        Err(error) => {
+            error;
+        }
+        Ok(value) => {
+            value;
+            return Err(9)
+        }
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, u32> {
+    arm_codegen_validates()?
+    return arm_codegen_rejects()
+}
+
+fn main() -> u32 {
+    return safety_status(run())
+}

@@ -1,0 +1,109 @@
+module optimize {
+    copy enum MemoryRoot {
+        MemoryUnknown
+        MemoryStack(usize)
+        MemoryGlobal(usize)
+        MemoryParameter(usize, bool)
+    }
+
+    fn memory_roots(function: ir::Function) -> Vec<MemoryRoot> {
+        var roots = Vec<MemoryRoot>.with_capacity(function.values.length())
+        for index in 0..function.values.length() {
+            roots.push(MemoryUnknown())
+        }
+        for index in 0..function.parameters.length() {
+            let value = function.parameters[index]
+            if ir::type_is_pointer(function.values[value]) {
+                roots[value] = MemoryParameter(index, memory_parameter_exclusive(function, value))
+            }
+        }
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    match instruction.result {
+                        Some(result) => {
+                            roots[result] = memory_instruction_root(instruction.kind, result)
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return move roots
+    }
+
+    fn memory_instruction_root(kind: ir::InstructionKind, result: usize) -> MemoryRoot {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryStackSlot(size, alignment) => {
+                        size;
+                        alignment;
+                        return MemoryStack(result)
+                    }
+                    ir::MemoryGlobalAddress(global) => MemoryGlobal(global)
+                    _ => MemoryUnknown()
+                }
+            }
+            _ => MemoryUnknown()
+        }
+    }
+
+    fn memory_roots_disjoint(left: MemoryRoot, right: MemoryRoot) -> bool {
+        match left {
+            MemoryStack(first) => {
+                match right {
+                    MemoryStack(second) => first != second
+                    MemoryGlobal(global) => {
+                        global;
+                        true
+                    }
+                    MemoryUnknown => false
+                    MemoryParameter(value, exclusive) => {
+                        value;
+                        exclusive;
+                        true
+                    }
+                }
+            }
+            MemoryGlobal(first) => {
+                match right {
+                    MemoryStack(stack) => {
+                        stack;
+                        true
+                    }
+                    MemoryGlobal(second) => first != second
+                    MemoryUnknown => false
+                    MemoryParameter(value, exclusive) => {
+                        value;
+                        exclusive;
+                        false
+                    }
+                }
+            }
+            MemoryUnknown => false
+            MemoryParameter(value, exclusive) => memory_parameter_disjoint(value, exclusive, right)
+        }
+    }
+
+    fn memory_parameter_exclusive(function: ir::Function, value: usize) -> bool {
+        for index in 0..function.exclusive_parameters.length() {
+            if function.exclusive_parameters[index] == value {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn memory_parameter_disjoint(value: usize, exclusive: bool, other: MemoryRoot) -> bool {
+        match other {
+            MemoryParameter(second, unique) => value != second &&(exclusive || unique)
+            MemoryStack(stack) => {
+                stack;
+                true
+            }
+            _ => false
+        }
+    }
+}

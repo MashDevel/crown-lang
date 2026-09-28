@@ -1,0 +1,77 @@
+module arm64 {
+    fn runtime_compiler(size: u64) -> Compiler {
+        return Compiler {
+            variant: AbiVariant::Aapcs64(),
+            frame: Frame {
+                size: size, values: Vec<u64>.new(), copies: Vec<u64>.new(), allocations: Vec<u64>.new(),
+                registers: Vec<u32>.new(), saved: Vec<u64>.new()
+            },
+            constants: Vec<Option<ir::WideInteger>>.new(), bytes: Vec<u8>.new(), symbols: Vec<SymbolFixup>.new(), branches: Vec<BranchFixup>.new(), blocks: Vec<usize>.new(), error: "", block: 0,
+            target: 9, result_register: 9, normalized: false
+        }
+    }
+    fn runtime_label(compiler: write Compiler, label: usize) -> void {
+        while compiler.blocks.length() <= label {
+            compiler.blocks.push(18446744073709551615)
+        }
+        compiler.blocks[label] = compiler.bytes.length()
+    }
+    fn runtime_jump(compiler: write Compiler, label: usize) -> void {
+        compiler.branches.push(BranchFixup {
+                offset: compiler.bytes.length(), block: label
+            })
+        emit_encoding(compiler, branch_word(0, false))
+        return
+    }
+    fn runtime_condition(compiler: write Compiler, condition: u32, label: usize) -> void {
+        emit_encoding(compiler, conditional_branch(8, condition ^ 1))
+        return runtime_jump(compiler, label)
+    }
+    fn runtime_compare(compiler: write Compiler, register: u32, value: u64) -> void {
+        immediate(compiler, 15, value)
+        emit_encoding(compiler, compare_word(register, 15))
+        return
+    }
+    fn runtime_move(compiler: write Compiler, destination: u32, source: u32) -> void {
+        return emit_registers(compiler, 2852126720, destination, 31, source)
+    }
+    fn runtime_memory(compiler: write Compiler, register: u32, base: u32, offset: u32, load: bool) -> void {
+        emit_encoding(compiler, memory_word(register, base, offset, 8, load))
+        return
+    }
+    fn runtime_finish(output: write object::CompilerObject, compiler: write Compiler, name: Text) -> Result<void, Text> {
+        for index in 0..compiler.branches.length() {
+            let offset = compiler.branches[index].offset
+            let label = compiler.branches[index].block
+            if label >= compiler.blocks.length() || compiler.blocks[label] == 18446744073709551615 {
+                return Err("ARM64 runtime branch has no label")
+            }
+            patch_branch(compiler, offset, compiler.blocks[label])
+        }
+        let symbol = symbol_index(output, name, object::SymbolFunction())
+        output.symbols[symbol].binding = object::SymbolLocal()
+        return insert_function(output, compiler, symbol)
+    }
+    fn runtime_export(output: write object::CompilerObject, compiler: write Compiler, name: Text) -> Result<void, Text> {
+        runtime_finish(output, compiler, name)?
+        let symbol = symbol_index(output, name, object::SymbolFunction())
+        output.symbols[symbol].binding = object::SymbolGlobal()
+        return Ok(())
+    }
+    fn runtime_required(output: object::CompilerObject, name: Text) -> bool {
+        match link_object::existing_symbol(output, name) {
+            Some(index) => object::symbol_is_import(output.symbols[index].binding)
+            None => false
+        }
+    }
+    fn runtime_zero(output: write object::CompilerObject, name: Text, size: u64) -> void {
+        let symbol = symbol_index(output, name, object::SymbolData())
+        output.symbols[symbol].binding = object::SymbolLocal()
+        output.symbols[symbol].section = Some(output.sections.length())
+        output.symbols[symbol].size = size
+        output.sections.push(object::Section {
+                name: name.clone(), kind: object::SectionZeroFill(), alignment: 16, data: Vec<u8>.new(), memory_size: size
+            })
+    }
+
+}

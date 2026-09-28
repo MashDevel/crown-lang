@@ -1,0 +1,169 @@
+module lowering {
+    struct SpawnEnvironment {
+        pointer: usize
+        captures: Vec<sema::SpawnCapture>
+        offsets: Vec<u64>
+    }
+
+    struct SpawnLayout {
+        size: u64
+        offsets: Vec<u64>
+    }
+
+    fn spawn_record(analysis: sema::Analysis, expression: frontend::Expression) -> Result<sema::SpawnRecord, u32> {
+        var index: usize = 0
+        while index < analysis.checker.spawns.length() {
+            loan read analysis.checker.spawns[index] as record {
+                if spans_equal(record.span, expression.span) {
+                    return Ok(sema::spawn_record_copy(record))
+                }
+            }
+            index = index + 1
+        }
+        return Err(303)
+    }
+
+    fn spawn_capture_layout(symbols: sema::Symbols, captures: Vec<sema::SpawnCapture>) -> Result<SpawnLayout, u32> {
+        var size: u64 = 0
+        var alignment: u32 = 1
+        var offsets = Vec<u64>.with_capacity(captures.length())
+        var index: usize = 0
+        while index < captures.length() {
+            loan read captures[index] as capture {
+                let layout = spawn_capture_value_layout(symbols, capture)?
+                size = align_to(size, layout.alignment)
+                offsets.push(size)
+                size = size + layout.size
+                if layout.alignment > alignment {
+                    alignment = layout.alignment
+                }
+            }
+            index = index + 1
+        }
+        size = align_to(size, alignment)
+        if size == 0 {
+            size = 1
+        }
+        return Ok(SpawnLayout {
+                size: size, offsets: move offsets
+            })
+    }
+
+    fn allocate_spawn_environment(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<SpawnEnvironment, u32> {
+        let record = concrete_spawn_record(compiler, analysis, expression)?
+        let layout = spawn_capture_layout(analysis.checker.symbols, record.captures)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, value_type, layout.size)
+        let pointer = function_allocate(compiler, size)?
+        var index: usize = 0
+        while index < record.captures.length() {
+            loan read record.captures[index] as capture {
+                let target = function_offset(compiler, pointer, layout.offsets[index])?
+                capture_spawn_value(compiler, analysis.checker.symbols, SpawnCaptureTarget {
+                        capture: semantic_spawn_capture_copy(capture), target: target
+                    })?
+            }
+            index = index + 1
+        }
+        return Ok(SpawnEnvironment {
+                pointer: pointer, captures: sema::spawn_captures_copy(record.captures), offsets: u64_values_copy(layout.offsets)
+            })
+    }
+
+    struct SpawnCaptureTarget {
+        capture: sema::SpawnCapture
+        target: usize
+    }
+
+    fn capture_spawn_value(compiler: write FunctionCompiler, symbols: sema::Symbols, request: take SpawnCaptureTarget) -> Result<void, u32> {
+        var binding_index: usize = 0
+        match function_binding_index(compiler, symbols.source, request.capture.name) {
+            Some(value) => {
+                binding_index = value
+            }
+            None => {
+                return Err(304)
+            }
+        }
+        var binding = Binding {
+            name: frontend::name_copy(request.capture.name), value_type: sema::Invalid(), address: 0, owned: false, available: false, depth: 0
+        }
+        loan read compiler.bindings[binding_index] as value {
+            binding = binding_copy(value)
+        }
+        if sema::capture_is_borrowed(request.capture.kind) {
+            return function_store_pointer(compiler, request.target, binding.address)
+        }
+        match read request.capture.kind {
+            sema::CaptureShare => {
+                clone_spawn_shared(compiler, symbols, SpawnClone {
+                        source: binding.address, target: request.target
+                    })?
+            }
+            _ => {
+                let value = AddressValue(binding.address, sema::type_copy(request.capture.value_type))
+                let transfer = CopyRequest {
+                    destination: request.target, value: move value
+                }
+                function_copy(compiler, symbols, transfer)?
+            }
+        }
+        match read request.capture.kind {
+            sema::CaptureMove => {
+                compiler.bindings[binding_index].available = false
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    struct SpawnClone {
+        source: usize
+        target: usize
+    }
+
+    fn clone_spawn_shared(compiler: write FunctionCompiler, symbols: sema::Symbols, clone: take SpawnClone) -> Result<void, u32> {
+        let data = function_load_pointer(compiler, clone.source)?
+        let control_address = function_offset(compiler, clone.source, 8)?
+        let control = function_load_pointer(compiler, control_address)?
+        increment_shared(compiler, symbols, control)?
+        function_store_pointer(compiler, clone.target, data)?
+        let target_control = function_offset(compiler, clone.target, 8)?
+        return function_store_pointer(compiler, target_control, control)
+    }
+
+    fn release_spawn_environment(compiler: write FunctionCompiler, symbols: sema::Symbols, environment: SpawnEnvironment) -> Result<void, u32> {
+        var index: usize = 0
+        while index < environment.captures.length() {
+            loan read environment.captures[index] as capture {
+                let address = function_offset(compiler, environment.pointer, environment.offsets[index])?
+                let value_drop = Place {
+                    address: address, value_type: sema::type_copy(capture.value_type)
+                }
+                if sema::capture_is_borrowed(capture.kind) == false {
+                    drop_value(compiler, value_drop)?
+                }
+            }
+            index = index + 1
+        }
+        symbols
+        return free_pointer(compiler, environment.pointer)
+    }
+
+    fn semantic_spawn_capture_copy(value: sema::SpawnCapture) -> sema::SpawnCapture {
+        return sema::SpawnCapture {
+            name: frontend::name_copy(value.name), value_type: sema::type_copy(value.value_type), kind: value.kind
+        }
+    }
+
+    fn u64_values_copy(values: Vec<u64>) -> Vec<u64> {
+        var output = Vec<u64>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+}

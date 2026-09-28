@@ -1,0 +1,7 @@
+fn one() -> u32 {
+    return 1
+}
+const VALUES: [u32; 1] = [one()]
+fn main() -> u32 {
+    return 0
+}

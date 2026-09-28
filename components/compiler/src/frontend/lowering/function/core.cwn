@@ -1,0 +1,125 @@
+module lowering {
+    fn function_start(compiler: write FunctionCompiler) -> Result<void, u32> {
+        match ir::function_add_block(compiler.ir) {
+            Err(error) => {
+                error;
+                return Err(31)
+            }
+            Ok(block) => {
+                compiler.block = Some(block);
+                return Ok(())
+            }
+        }
+    }
+
+    fn function_append(compiler: write FunctionCompiler, kind: take ir::InstructionKind) -> Result<Option<usize>, u32> {
+        var block: usize = 0
+        match read compiler.block {
+            Some(value) => {
+                block = value
+            }
+            None => {
+                return Err(32)
+            }
+        }
+        match ir::function_append(compiler.ir, block, move kind) {
+            Err(error) => {
+                error;
+                return Err(33)
+            }
+            Ok(value) => {
+                return Ok(value)
+            }
+        }
+    }
+
+    fn function_append_value(compiler: write FunctionCompiler, kind: take ir::InstructionKind) -> Result<usize, u32> {
+        match function_append(compiler, move kind) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                match value {
+                    Some(id) => {
+                        return Ok(id)
+                    }
+                    None => {
+                        return Err(34)
+                    }
+                }
+            }
+        }
+    }
+
+    fn function_finish(compiler: write FunctionCompiler, terminator: take ir::Terminator) -> Result<void, u32> {
+        var block: usize = 0
+        match read compiler.block {
+            Some(value) => {
+                block = value
+            }
+            None => {
+                return Err(35)
+            }
+        }
+        compiler.block = None()
+        match ir::function_terminate(compiler.ir, block, move terminator) {
+            Err(error) => {
+                error;
+                return Err(36)
+            }
+            Ok(value) => {
+                return Ok(value)
+            }
+        }
+    }
+
+    fn function_new_block(compiler: write FunctionCompiler) -> Result<usize, u32> {
+        match ir::function_add_block(compiler.ir) {
+            Err(error) => {
+                error;
+                return Err(37)
+            }
+            Ok(block) => {
+                return Ok(block)
+            }
+        }
+    }
+
+    fn function_select_block(compiler: write FunctionCompiler, block: usize) -> void {
+        compiler.block = Some(block)
+    }
+
+    fn function_integer(compiler: write FunctionCompiler, value_type: ir::Type, value: u64) -> usize {
+        let constant = ir::ConstantInteger(value)
+        return ir::function_constant(compiler.ir, value_type, constant)
+    }
+
+    fn function_expression_type(compiler: FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<sema::Type, u32> {
+        return function_span_type(compiler, analysis, expression.span)
+    }
+
+    fn function_span_type(compiler: FunctionCompiler, analysis: sema::Analysis, span: frontend::Span) -> Result<sema::Type, u32> {
+        match expression_record(compiler, analysis, span) {
+            Some(index) => {
+                loan read analysis.checker.expressions[index] as record {
+                    return Ok(sema::substitute(record.value_type, compiler.substitutions))
+                }
+            }
+            None => {
+                return Err(38)
+            }
+        }
+    }
+
+    fn spans_equal(left: frontend::Span, right: frontend::Span) -> bool {
+        return left.source == right.source && left.start == right.start && left.end == right.end
+    }
+
+    fn function_replace(compiler: write Compiler, binding: FunctionBinding, lowered: take ir::Function) -> Result<void, u32> {
+        if binding.function >= compiler.output.functions.length() {
+            return Err(39)
+        }
+        compiler.output.functions[binding.function] = move lowered
+        return Ok(())
+    }
+}

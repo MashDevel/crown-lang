@@ -1,0 +1,23 @@
+module optimize {
+    fn interprocedural(program: write ir::Program) -> usize {
+        var total: usize = 0
+        var changed = true
+        while changed {
+            var count = resolve_indirect(program)
+            let escaped = escaped_functions(program)
+            let facts = argument_facts(program)
+            for index in 0..program.functions.length() {
+                if escaped[index] == false && ir::function_is_import(program.functions[index]) == false {
+                    let propagated = propagate_arguments(program.functions[index], facts[index])
+                    if propagated != 0 {
+                        function_mode(program.functions[index], false)
+                    }
+                    count = count + propagated
+                }
+            }
+            total = total + count
+            changed = count != 0
+        }
+        return total
+    }
+}

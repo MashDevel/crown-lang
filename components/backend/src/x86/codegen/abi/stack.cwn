@@ -1,0 +1,53 @@
+module x86 {
+    fn abi_memory(size: u64, alignment: u32, assignment: write AbiAssignment) -> Result<ArgumentLocation, CodegenError> {
+        codegen_require_stack_alignment(alignment)?
+        if size > 2147483647 || assignment.stack > 268435453 {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        var alignment_slots = usize.from((u64.from(alignment) + 7) / 8)
+        if alignment_slots == 0 {
+            alignment_slots = 1
+        }
+        let remainder = assignment.stack % alignment_slots
+        if remainder != 0 {
+            assignment.stack = assignment.stack + alignment_slots - remainder
+        }
+        let slots = usize.from((size + 7) / 8)
+        let start = assignment.stack
+        if slots > 268435455 - assignment.stack {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        assignment.stack = assignment.stack + slots
+        return Ok(ArgumentMemory(start, slots, size))
+    }
+
+    fn abi_stack(assignment: write AbiAssignment) -> ArgumentLocation {
+        let slot = assignment.stack
+        assignment.stack = assignment.stack + 1
+        return ArgumentStack(slot)
+    }
+
+    fn abi_stack_count(locations: Vec<ArgumentLocation>) -> usize {
+        var count: usize = 0
+        var index: usize = 0
+        while index < locations.length() {
+            match read locations[index] {
+                ArgumentStack(slot) => {
+                    if slot + 1 > count {
+                        count = slot + 1
+                    }
+                }
+                ArgumentMemory(slot, slots, size) => {
+                    size
+                    if slot + slots > count {
+                        count = slot + slots
+                    }
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        return count
+    }
+}

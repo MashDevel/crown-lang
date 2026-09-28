@@ -1,0 +1,88 @@
+module formatting {
+    fn line_starts(source: take Shared<Vec<u8>>, length: usize) -> Result<Vec<u8>, Text> {
+        let program = parse_source(move source, length)?
+        var starts = Vec<u8>.with_capacity(length + 1)
+        for index in 0..length + 1 {
+            index
+            starts.push(0)
+        }
+        mark_nodes(starts, inspect::program(program))
+        var constants = inspect::Walk {
+            nodes: Vec<inspect::Node>.new(), depth: 0
+        }
+        for index in 0..program.constants.length() {
+            inspect::expression_node(constants, program.constants[index].value)
+        }
+        mark_nodes(starts, constants.nodes)
+        return Ok(move starts)
+    }
+
+    fn parse_source(source: take Shared<Vec<u8>>, length: usize) -> Result<frontend::Program, Text> {
+        match frontend::parse(move source, length, 0) {
+            Ok(program) => Ok(move program)
+            Err(errors) => {
+                errors
+                return Err("cannot format source with syntax errors")
+            }
+        }
+    }
+
+    fn validate_output(value: Text) -> Result<void, Text> {
+        let bytes = toolchain::text_bytes(value)
+        let length = bytes.length()
+        let program = parse_source(Shared.new(move bytes), length)?
+        program
+        return Ok(())
+    }
+
+    fn breaks_after(state: State, kind: frontend::TokenKind) -> bool {
+        if kind == frontend::TokenKind::TokenLeftBrace() {
+            return true
+        }
+        if kind != frontend::TokenKind::TokenSemicolon() {
+            return false
+        }
+        let length = state.delimiters.length()
+        if length == 0 {
+            return true
+        }
+        return state.delimiters[length - 1] != frontend::TokenKind::TokenLeftBracket()
+    }
+
+    fn mark_nodes(starts: write Vec<u8>, nodes: Vec<inspect::Node>) -> void {
+        for index in 0..nodes.length() {
+            let node = nodes[index]
+            match node.kind {
+                inspect::Kind::Statement | inspect::Kind::Arm => {
+                    starts[node.span.start] = 1
+                }
+                _ => {
+                }
+            }
+        }
+    }
+
+    fn breaks_before(previous: frontend::TokenKind, current: frontend::TokenKind, starts_line: bool) -> bool {
+        if current == frontend::TokenKind::TokenRightBrace() {
+            return true
+        }
+        if starts_line {
+            match previous {
+                TokenFatArrow | TokenElse | TokenLeftParen | TokenLeftBracket => {
+                }
+                _ => {
+                    return true
+                }
+            }
+        }
+        if previous != frontend::TokenKind::TokenRightBrace() {
+            return false
+        }
+        match current {
+            TokenModule | TokenPrivate | TokenConst | TokenFn | TokenUnsafe => true
+            TokenStruct | TokenEnum | TokenCopy | TokenOpaque | TokenResource => true
+            TokenInterface | TokenImpl | TokenExtern | TokenDrop => true
+            _ => false
+        }
+    }
+}

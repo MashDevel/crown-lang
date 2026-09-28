@@ -1,0 +1,19 @@
+struct Owner {
+    name: Text
+}
+fn finish(owner: take Owner) -> Result<Owner, u32> {
+    return Ok(move owner)
+}
+fn main() -> u32 {
+    match finish(Owner {
+            name: "valid"
+        }) {
+        Ok(owner) => {
+            owner;
+            return 42
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}

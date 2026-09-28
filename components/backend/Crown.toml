@@ -1,0 +1,3 @@
+[package]
+name = "crown_backend"
+sources = ["src", "../library/src", "../toolchain/src"]

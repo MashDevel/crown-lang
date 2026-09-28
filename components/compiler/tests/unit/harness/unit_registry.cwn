@@ -1,0 +1,40 @@
+fn entry(name: Text, fields: Text) -> Result<harness::Case, Text> {
+    var source = std::text::joined("{\"mode\":\"run\",\"status\":42,\"source\":\"test.cwn\",\"name\":", toolchain::json_quoted(name))
+    std::text::append(source, fields)
+    source.push('}')
+    let document = toolchain::json(move source)?
+    return harness::case(document, document.root, ".")
+}
+
+fn validation() -> Result<void, Text> {
+    let ordinary = entry("ordinary", "")?
+    testing::expect(ordinary.unit == false, "ordinary tests remain standalone")?
+    testing::error(entry("invalid", ",\"unit\":\"true\""))?
+    testing::error(entry("arguments", ",\"unit\":true,\"arguments\":[\"child\"]"))?
+    var unit = entry("unit", ",\"unit\":true")?
+    unit.mode = "check"
+    testing::error(harness::validate_unit(unit))?
+    unit.mode = "run"
+    unit.source = "project"
+    return testing::error(harness::validate_unit(unit))
+}
+
+fn compatible() -> Result<void, Text> {
+    var cases = Vec<harness::Case>.new()
+    cases.push(entry("first", ",\"unit\":true,\"roots\":[\"a\",\"b\"]")?)
+    cases.push(entry("second", ",\"unit\":true,\"roots\":[\"b\",\"a\"]")?)
+    cases.push(entry("budget", ",\"unit\":true,\"roots\":[\"a\",\"b\"],\"max_instances\":129")?)
+    cases.push(entry("roots", ",\"unit\":true,\"roots\":[\"a\"]")?)
+    cases.push(entry("standalone", ",\"roots\":[\"a\",\"b\"]")?)
+    let members = harness::unit_members(cases, 0)
+    return testing::expect(members.length() == 2 && members[0] == 0 && members[1] == 1, "group membership respects roots, budgets, and unit declarations")
+}
+
+fn run() -> Result<void, Text> {
+    validation()?
+    return compatible()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

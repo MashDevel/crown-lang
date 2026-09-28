@@ -1,0 +1,52 @@
+module x86 {
+    fn codegen_immediate(constant: ir::Constant, value_type: ir::Type, extension: Extension) -> Result<i64, CodegenError> {
+        var value: u64 = 0
+        match read constant {
+            ir::ConstantInteger(integer) => {
+                value = integer
+            }
+            ir::ConstantFloat32(bits) => {
+                value = u64.from(bits)
+            }
+            ir::ConstantFloat64(bits) => {
+                value = bits
+            }
+            ir::ConstantNull => {
+                value = 0
+            }
+            ir::ConstantWideInteger(integer) => {
+                integer.low;
+                integer.high
+                return Err(codegen_error(CodegenUnsupportedType(value_type)))
+            }
+        }
+        if codegen_extension_is_sign(extension) && ir::type_is_integer(value_type) {
+            let bits = codegen_integer_bits(value_type)
+            let shift = 64 - bits
+            return Ok(i64.from_bits(value << u64.from(shift)) >> i64.from(shift))
+        }
+        return Ok(i64.from_bits(value))
+    }
+
+    fn codegen_extension_is_sign(extension: Extension) -> bool {
+        match read extension {
+            SignExtend => {
+                return true
+            }
+            ZeroExtend => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_integer_bits(value_type: ir::Type) -> u32 {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                return ir::integer_width_bits(width)
+            }
+            _ => {
+                return 64
+            }
+        }
+    }
+}

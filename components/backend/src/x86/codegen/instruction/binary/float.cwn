@@ -1,0 +1,146 @@
+module x86 {
+    fn codegen_float_binary(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        let remainder = codegen_float_is_remainder(input.operator)
+        if remainder {
+            return codegen_float_remainder(program, compiler, move input)
+        }
+        let width = codegen_float_value_width(program, compiler, input.left)?
+        codegen_load_float_operand(program, compiler, FloatValueAccess {
+                value: input.left, register: Xmm0()
+            })?
+        codegen_load_float_operand(program, compiler, FloatValueAccess {
+                value: input.right, register: Xmm1()
+            })?
+        let operator = codegen_float_binary_operator(input.operator)?
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: move operator
+                    width: width
+                    destination: Xmm0()
+                    source: Xmm1()
+                }))
+        return codegen_store_float_result(program, compiler, FloatResultStore {
+                result: input.result, width: width
+            })
+    }
+
+    fn codegen_float_remainder(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        let width = codegen_float_value_width(program, compiler, input.left)?
+        codegen_emit(compiler, SubtractImmediate(Rsp(), 16))
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.left, register: Rax()
+            })?
+        codegen_emit(compiler, Store(Rsp(), 0, Rax()))
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.right, register: Rax()
+            })?
+        codegen_emit(compiler, Store(Rsp(), 8, Rax()))
+        codegen_float_stack_load(compiler, width, 8)
+        codegen_float_stack_load(compiler, width, 0)
+        codegen_emit(compiler, FloatStackRemainder())
+        codegen_float_stack_store(compiler, width, 0)
+        codegen_emit(compiler, FloatStackPop())
+        codegen_emit(compiler, Load(Rax(), Rsp(), 0))
+        codegen_emit(compiler, AddImmediate(Rsp(), 16))
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result, source: Rax()
+            })
+    }
+
+    fn codegen_load_float_operand(program: ir::Program, compiler: write FunctionCompiler, input: take FloatValueAccess) -> Result<void, CodegenError> {
+        let width = codegen_float_value_width(program, compiler, input.value)?
+        match codegen_frame_float(compiler.frame, input.value) {
+            Some(register) => {
+                codegen_emit(compiler, MoveFloat(width, input.register, register))
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: Rax()
+            })?
+        codegen_emit(compiler, MoveToFloat(width, input.register, Rax()))
+        return Ok(())
+    }
+
+    fn codegen_store_float_result(program: ir::Program, compiler: write FunctionCompiler, input: take FloatResultStore) -> Result<void, CodegenError> {
+        match input.result {
+            Some(value) => {
+                match codegen_frame_float(compiler.frame, value) {
+                    Some(register) => {
+                        codegen_emit(compiler, MoveFloat(input.width, register, Xmm0()))
+                        return Ok(())
+                    }
+                    None => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        let fallback = Rax()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        codegen_emit(compiler, MoveFromFloat(input.width, destination, Xmm0()))
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result, source: destination
+            })
+    }
+
+    fn codegen_float_value_width(program: ir::Program, compiler: FunctionCompiler, value: usize) -> Result<FloatWidth, CodegenError> {
+        let value_type = codegen_value_type(program, compiler, value)?
+        return codegen_float_width(value_type)
+    }
+
+    fn codegen_float_binary_operator(operator: ir::BinaryOperator) -> Result<FloatBinaryOperator, CodegenError> {
+        match read operator {
+            ir::BinaryFloatAdd => {
+                return Ok(FloatAdd())
+            }
+            ir::BinaryFloatSubtract => {
+                return Ok(FloatSubtract())
+            }
+            ir::BinaryFloatMultiply => {
+                return Ok(FloatMultiply())
+            }
+            ir::BinaryFloatDivide => {
+                return Ok(FloatDivide())
+            }
+            _ => {
+                return Err(codegen_error(CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_float_is_remainder(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryFloatRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_float_stack_load(compiler: write FunctionCompiler, width: FloatWidth, offset: i32) -> void {
+        match read width {
+            Float32 => {
+                codegen_emit(compiler, LoadFloatStack(Rsp(), offset))
+            }
+            Float64 => {
+                codegen_emit(compiler, LoadDoubleStack(Rsp(), offset))
+            }
+        }
+    }
+
+    fn codegen_float_stack_store(compiler: write FunctionCompiler, width: FloatWidth, offset: i32) -> void {
+        match read width {
+            Float32 => {
+                codegen_emit(compiler, StoreFloatStack(Rsp(), offset))
+            }
+            Float64 => {
+                codegen_emit(compiler, StoreDoubleStack(Rsp(), offset))
+            }
+        }
+    }
+}

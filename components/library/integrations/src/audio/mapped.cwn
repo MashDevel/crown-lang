@@ -1,0 +1,36 @@
+module integration::audio {
+    copy struct MappedAudio {
+        data: RawPtr<f32>, chunk: RawPtr<native::pipewire::Chunk>, frames: u32
+    }
+
+    unsafe fn mapped_audio(pointer: RawPtr<native::pipewire::Buffer>) -> Option<MappedAudio> {
+        unsafe {
+            if pointer == RawPtr<native::pipewire::Buffer>.from_address(0) {
+                return None()
+            }
+            let buffer = pointer.read()
+            if buffer.buffer == RawPtr<native::pipewire::SpaBuffer>.from_address(0) {
+                return None()
+            }
+            let spa = buffer.buffer.read()
+            if spa.data_count == 0 || spa.data == RawPtr<native::pipewire::Data>.from_address(0) {
+                return None()
+            }
+            let data = spa.data.read()
+            if data.data == RawPtr<f32>.from_address(0) || data.chunk == RawPtr<native::pipewire::Chunk>.from_address(0) {
+                return None()
+            }
+            return Some(MappedAudio {
+                    data: data.data, chunk: data.chunk, frames: buffer_frames(buffer.requested, data.max_size)
+                })
+        }
+    }
+
+    unsafe fn commit_audio(buffer: MappedAudio) -> void {
+        unsafe {
+            buffer.chunk.write(native::pipewire::Chunk {
+                    offset: 0, size: buffer.frames * 8, stride: 8, flags: 0
+                })
+        }
+    }
+}

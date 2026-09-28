@@ -1,0 +1,30 @@
+module optimize {
+    fn escaped_functions(program: ir::Program) -> Vec<bool> {
+        var state = reachability_new(program)
+        reach_roots(program, state)
+        for global in 0..program.globals.length() {
+            reach_data(state, program.globals[global])
+        }
+        for index in 0..program.functions.length() {
+            escape_function(program, state, program.functions[index])
+        }
+        return replace(state.functions, Vec<bool>.new())
+    }
+
+    fn escape_function(program: ir::Program, state: write Reachability, function: ir::Function) -> void {
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index].kind as kind {
+                    match read kind {
+                        ir::InstructionMemory(memory) => {
+                            memory;
+                            reach_instruction(program, state, kind)
+                        }
+                        _ => {
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

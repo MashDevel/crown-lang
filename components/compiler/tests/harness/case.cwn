@@ -1,0 +1,171 @@
+module harness {
+    struct Case {
+        name: Text
+        mode: Text
+        source: Text
+        roots: Vec<Text>
+        hosts: Vec<Text>
+        status: i32
+        stdout: Option<Text>
+        stderr: Vec<Text>
+        diagnostics: Vec<Text>
+        absent: Vec<Text>
+        error_count: Option<usize>
+        arguments: Vec<Text>
+        max_instances: u64
+        timeout: u64
+        unit: bool
+    }
+
+    fn case(document: toolchain::Json, index: usize, root: Text) -> Result<Case, Text> {
+        toolchain::json_known_fields(document, index, "|name|mode|source|roots|hosts|status|stdout|stderr|diagnostics|absent|error_count|arguments|max_instances|origin|timeout_ms|unit|")?
+        var result = case_identity(document, index, root)?
+        read_case_expectation(document, index, result)?
+        read_case_execution(document, index, result)?
+        validate_expectation(result)?
+        validate_unit(result)?
+        return Ok(move result)
+    }
+
+    fn case_identity(document: toolchain::Json, index: usize, root: Text) -> Result<Case, Text> {
+        let name = toolchain::json_text(document, toolchain::json_required(document, index, "name")?)?
+        let mode = toolchain::json_text(document, toolchain::json_required(document, index, "mode")?)?
+        let source = toolchain::json_text(document, toolchain::json_required(document, index, "source")?)?
+        if name.length() == 0 {
+            return Err("test case needs a nonempty name")
+        }
+        if std::text::contains("|run|check|compile|reject|", std::text::joined(std::text::joined("|", mode), "|")) == false {
+            return Err("unknown test mode")
+        }
+        validate_case_source(source, root)?
+        return Ok(Case {
+                name: move name, mode: move mode, source: move source, roots: Vec<Text>.new(), hosts: Vec<Text>.new(),
+                status: 0, stdout: None(), stderr: Vec<Text>.new(), diagnostics: Vec<Text>.new(), absent: Vec<Text>.new(),
+                error_count: None(), arguments: Vec<Text>.new(), max_instances: 128, timeout: 300000, unit: false
+            })
+    }
+
+    fn read_case_expectation(document: toolchain::Json, index: usize, result: write Case) -> Result<void, Text> {
+        result.roots = toolchain::json_optional_strings(document, index, "roots")?
+        result.status = case_status(document, index)?
+        result.stdout = optional_text(document, index, "stdout")?
+        result.stderr = toolchain::json_optional_strings(document, index, "stderr")?
+        result.diagnostics = toolchain::json_optional_strings(document, index, "diagnostics")?
+        result.absent = toolchain::json_optional_strings(document, index, "absent")?
+        result.error_count = optional_count(document, index, "error_count")?
+        return Ok(())
+    }
+
+    fn read_case_execution(document: toolchain::Json, index: usize, result: write Case) -> Result<void, Text> {
+        result.hosts = case_hosts(document, index)?
+        result.arguments = toolchain::json_optional_strings(document, index, "arguments")?
+        result.max_instances = case_budget(document, index)?
+        result.timeout = case_timeout(document, index)?
+        result.unit = case_unit(document, index)?
+        return Ok(())
+    }
+
+    fn validate_case_source(source: Text, root: Text) -> Result<void, Text> {
+        if source.length() == 0 || std::text::contains(source, "\0") {
+            return Err("test source must be a nonempty path without NUL bytes")
+        }
+        let path = toolchain::path_join(root, source)
+        if toolchain::is_directory(path) {
+            let manifest = toolchain::path_join(path, "Crown.toml")
+            if toolchain::exists(manifest) && toolchain::is_directory(manifest) == false {
+                return Ok(())
+            }
+        } else {
+            if std::text::ends(source, ".cwn") {
+                return Ok(())
+            }
+        }
+        return Err("test source must be a Crown file or a project directory with Crown.toml")
+    }
+
+    fn case_timeout(document: toolchain::Json, index: usize) -> Result<u64, Text> {
+        match toolchain::json_field(document, index, "timeout_ms") {
+            None => {
+                return Ok(300000)
+            }
+            Some(field) => {
+                let value = toolchain::json_integer(document, field)?;
+                if value > 0 && value <= 900000 {
+                    return Ok(value)
+                }
+            }
+        }
+        return Err("test timeout must be from 1 to 900000 milliseconds")
+    }
+
+    fn case_status(document: toolchain::Json, index: usize) -> Result<i32, Text> {
+        let mode = toolchain::json_text(document, toolchain::json_required(document, index, "mode")?)?
+        if std::text::equal(mode, "run") == false {
+            return Ok(0)
+        }
+        let field = toolchain::json_required(document, index, "status")?
+        match read document.values[field] {
+            toolchain::JsonString(value) => {
+                if std::text::equal(value, "failure") {
+                    return Ok(-6)
+                }
+            }
+            toolchain::JsonNumber(value) => {
+                let status = std::text::unsigned(value)?;
+                if status <= 255 {
+                    return Ok(i32.from(status))
+                }
+            }
+            _ => {
+            }
+        }
+        return Err("runtime tests require an exit status from 0 to 255 or failure")
+    }
+
+    fn case_budget(document: toolchain::Json, index: usize) -> Result<u64, Text> {
+        match toolchain::json_field(document, index, "max_instances") {
+            None => {
+                return Ok(128)
+            }
+            Some(field) => {
+                let value = toolchain::json_integer(document, field)?;
+                if value != 0 {
+                    return Ok(value)
+                }
+            }
+        }
+        return Err("instance budget must be a positive unsigned 64-bit integer")
+    }
+
+    fn validate_expectation(value: Case) -> Result<void, Text> {
+        if std::text::equal(value.mode, "reject") && value.diagnostics.length() == 0 {
+            return Err("rejection tests require an expected diagnostic")
+        }
+        if value.status == -6 && value.stderr.length() == 0 {
+            return Err("panic tests require an expected diagnostic")
+        }
+        return Ok(())
+    }
+
+    fn optional_text(document: toolchain::Json, index: usize, field: Text) -> Result<Option<Text>, Text> {
+        match toolchain::json_field(document, index, field) {
+            None => {
+                return Ok(None())
+            }
+            Some(value) => {
+                return Ok(Some(toolchain::json_text(document, value)?))
+            }
+        }
+    }
+
+    fn optional_count(document: toolchain::Json, index: usize, field: Text) -> Result<Option<usize>, Text> {
+        match toolchain::json_field(document, index, field) {
+            None => {
+                return Ok(None())
+            }
+            Some(value) => {
+                return Ok(Some(usize.from(toolchain::json_integer(document, value)?)))
+            }
+        }
+    }
+}

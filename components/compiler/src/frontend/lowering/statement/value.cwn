@@ -1,0 +1,250 @@
+module lowering {
+    fn bind_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementBind(name, mutable_value, annotation, expression) => {
+                mutable_value;
+                annotation;
+                expression
+                let bound = statement_bound_value(compiler, analysis, statement)?
+                let address = function_stack(compiler, analysis.checker.symbols, bound.value_type)?
+                let value = value_copy(bound.value)
+                let transfer = CopyRequest {
+                    destination: address, value: move value
+                }
+                function_copy(compiler, analysis.checker.symbols, transfer)?
+                function_add_binding(compiler, Binding {
+                        name: frontend::name_copy(name)
+                        value_type: sema::type_copy(bound.value_type)
+                        address: address
+                        owned: true
+                        available: true
+                        depth: compiler.scope_depth
+                    })
+                return Ok(())
+            }
+            _ => {
+                return Err(80)
+            }
+        }
+    }
+
+    struct BoundValue {
+        value: Value
+        value_type: sema::Type
+    }
+
+    fn statement_bound_value(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<BoundValue, u32> {
+        match read statement.kind {
+            frontend::StatementBind(name, mutable_value, annotation, expression) => {
+                name;
+                mutable_value
+                let concrete = function_expression_type(compiler, analysis, expression)?
+                var dynamic_interface: Option<usize> = None()
+                match read annotation {
+                    Some(reference) => {
+                        dynamic_interface = dynamic_annotation(analysis.checker.symbols, reference)
+                    }
+                    None => {
+                    }
+                }
+                match dynamic_interface {
+                    Some(symbol) => {
+                        symbol;
+                        concrete;
+                        return dynamic_bound_value(compiler, analysis, statement)
+                    }
+                    None => {
+                        let value = function_expression(compiler, analysis, expression)?
+                        return Ok(BoundValue {
+                                value: move value, value_type: move concrete
+                            })
+                    }
+                }
+            }
+            _ => {
+                return Err(332)
+            }
+        }
+    }
+
+    fn dynamic_annotation(symbols: sema::Symbols, reference: frontend::TypeRef) -> Option<usize> {
+        match read reference.kind {
+            frontend::TypeDynamic(interface_name) => {
+                match sema::find_symbol(symbols, interface_name) {
+                    Some(symbol) => {
+                        return Some(symbol)
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn dynamic_bound_value(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<BoundValue, u32> {
+        match read statement.kind {
+            frontend::StatementBind(name, mutable_value, annotation, expression) => {
+                name;
+                mutable_value
+                var interface_symbol: usize = 0
+                match read annotation {
+                    Some(reference) => {
+                        match dynamic_annotation(analysis.checker.symbols, reference) {
+                            Some(value) => {
+                                interface_symbol = value
+                            }
+                            None => {
+                                return Err(333)
+                            }
+                        }
+                    }
+                    None => {
+                        return Err(334)
+                    }
+                }
+                return construct_dynamic_bound_value(compiler, analysis, expression, interface_symbol)
+            }
+            _ => {
+                return Err(335)
+            }
+        }
+    }
+
+    fn return_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let value = function_expression(compiler, analysis, expression)?
+        if sema::type_is_unit(compiler.result) {
+            return finish_return(compiler, None())
+        }
+        if type_is_direct(analysis.checker.symbols, compiler.result)? {
+            match move value {
+                ScalarValue(result, value_type) => {
+                    value_type
+                    return finish_return(compiler, Some(result))
+                }
+                _ => {
+                    return Err(73)
+                }
+            }
+        }
+        let destination = match read compiler.result_address {
+            Some(address) => address
+            None => {
+                return Err(74)
+            }
+        }
+        function_copy(compiler, analysis.checker.symbols, CopyRequest {
+                destination: destination, value: move value
+            })?
+        return finish_return(compiler, None())
+    }
+
+    fn finish_return(compiler: write FunctionCompiler, value: take Option<usize>) -> Result<void, u32> {
+        function_cleanup_all(compiler)?
+        return function_finish(compiler, ir::TerminatorReturn(value))
+    }
+
+    fn discard_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let value = function_expression(compiler, analysis, expression)?
+        let owned = expression_is_owned(compiler, analysis, expression)
+        match move value {
+            AddressValue(address, value_type) => {
+                if owned {
+                    let value_drop = Place {
+                        address: address, value_type: sema::type_copy(value_type)
+                    }
+                    drop_value(compiler, value_drop)?
+                }
+                value_type
+            }
+            ScalarValue(id, value_type) => {
+                id;
+                value_type
+            }
+            VoidValue => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn expression_is_owned(compiler: FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> bool {
+        match expression_record(compiler, analysis, expression.span) {
+            Some(index) => {
+                loan read analysis.checker.expressions[index] as record {
+                    return sema::value_is_owned(record.value)
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn assign_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementAssign(target, expression) => {
+                let value = function_expression(compiler, analysis, expression)?
+                return replace_assigned_value(compiler, analysis, target, move value)
+            }
+            _ => {
+                return Err(81)
+            }
+        }
+    }
+    fn construct_dynamic_bound_value(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, interface_symbol: usize) -> Result<BoundValue, u32> {
+        let concrete = function_expression_type(compiler, analysis, expression)?
+        let layout = layout(analysis.checker.symbols, concrete)?
+        let value = function_expression(compiler, analysis, expression)?
+        if expression_terminated(compiler) {
+            return Err(EXPRESSION_TERMINATED)
+        }
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, size_type, layout.size)
+        let data = function_allocate(compiler, size)?
+        function_copy(compiler, analysis.checker.symbols, CopyRequest {
+                destination: data, value: move value
+            })?
+        let value_type = sema::DynamicType(interface_symbol)
+        let object = function_stack(compiler, analysis.checker.symbols, value_type)?
+        function_store_pointer(compiler, object, data)?
+        let metadata = DynamicMetadata {
+            address: object, interface_symbol: interface_symbol, concrete: sema::type_copy(concrete)
+        }
+        store_dynamic_metadata(compiler, analysis.checker.symbols, move metadata)?
+        return Ok(BoundValue {
+                value: AddressValue(object, sema::type_copy(value_type)), value_type: move value_type
+            })
+    }
+
+    fn replace_assigned_value(compiler: write FunctionCompiler, analysis: sema::Analysis, target: frontend::Expression, value: take Value) -> Result<void, u32> {
+        let place = expression_place_info(compiler, analysis, target)?
+        let binding = place_binding(compiler, analysis.checker.symbols.source, target)?
+        var available = true
+        match read binding {
+            Some(index) => {
+                available = compiler.bindings[index].available
+            }
+            None => {
+            }
+        }
+        if available && sema::type_is_copy_with_symbols(analysis.checker.symbols, place.value_type) == false {
+            drop_value(compiler, place)?
+        }
+        let transfer = CopyRequest {
+            destination: place.address, value: move value
+        }
+        function_copy(compiler, analysis.checker.symbols, transfer)?
+        match read binding {
+            Some(index) => {
+                compiler.bindings[index].available = true
+            }
+            None => {
+            }
+        }
+        return Ok(())
+    }
+
+}

@@ -1,0 +1,12 @@
+fn call(action: scoped fn() -> void) -> void {
+    action()
+}
+fn main() -> u32 {
+    while true {
+        call(fn() {
+                break
+            });
+        break
+    };
+    return 0
+}

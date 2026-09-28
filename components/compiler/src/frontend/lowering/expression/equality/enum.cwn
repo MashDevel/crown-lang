@@ -1,0 +1,95 @@
+module lowering {
+    struct EnumEqualityFlow {
+        result: usize, exit: usize
+    }
+
+    fn enum_equality(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality) -> Result<usize, u32> {
+        let bool_type = sema::builtin_leaf(sema::Bool())
+        let result = function_stack(compiler, symbols, bool_type)?
+        let tags = Equality {
+            left: request.left, right: request.right, value_type: sema::builtin_leaf(sema::U32())
+        }
+        let equal = equality_value(compiler, symbols, tags)?
+        function_store(compiler, symbols, StoreRequest {
+                address: result, value: equal, value_type: sema::type_copy(bool_type)
+            })?
+        let body = function_new_block(compiler)?
+        let exit = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(equal, body, exit))?
+        function_select_block(compiler, body)
+        let variants = equality_variants(symbols, request.value_type)?
+        let flow = EnumEqualityFlow {
+            result: result, exit: exit
+        }
+        enum_equality_cases(compiler, symbols, request, variants, flow)?
+        function_select_block(compiler, exit)
+        return function_load(compiler, symbols, Place {
+                address: result, value_type: move bool_type
+            })
+    }
+
+    fn enum_equality_cases(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality, variants: Vec<VariantLayout>, flow: EnumEqualityFlow) -> Result<void, u32> {
+        let tag = function_load(compiler, symbols, Place {
+                address: request.left, value_type: sema::builtin_leaf(sema::U32())
+            })?
+        var cases = Vec<ir::SwitchCase>.new()
+        var blocks = Vec<usize>.new()
+        for index in 0..variants.length() {
+            let block = function_new_block(compiler)?
+            blocks.push(block)
+            cases.push(ir::SwitchCase {
+                    value: variants[index].tag, block: block
+                })
+        }
+        let invalid = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorSwitch(tag, move cases, invalid))?
+        for index in 0..variants.length() {
+            function_select_block(compiler, blocks[index])
+            let equal = equality_fields(compiler, symbols, request, variants[index].fields)?
+            function_store(compiler, symbols, StoreRequest {
+                    address: flow.result, value: equal, value_type: sema::builtin_leaf(sema::Bool())
+                })?
+            function_finish(compiler, ir::TerminatorBranch(flow.exit))?
+        }
+        function_select_block(compiler, invalid)
+        return function_panic_now(compiler, "invalid_enum_tag")
+    }
+
+    fn equality_variants(symbols: sema::Symbols, owner: sema::Type) -> Result<Vec<VariantLayout>, u32> {
+        var variants = Vec<VariantLayout>.new()
+        match read owner {
+            sema::NamedType(index, arguments) => {
+                arguments;
+                for variant in 0..symbols.types[index].variants.length() {
+                    variants.push(layout_variant(symbols, owner, symbols.types[index].variants[variant].name)?)
+                }
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                arguments;
+                let span = frontend::Span {
+                    source: 0, start: 0, end: 0, line: 0, column: 0
+                }
+                let first = frontend::Name {
+                    text: if builtin == sema::Option() {
+                        "None"
+                    } else {
+                        "Err"
+                    }, span: span
+                }
+                let second = frontend::Name {
+                    text: if builtin == sema::Option() {
+                        "Some"
+                    } else {
+                        "Ok"
+                    }, span: span
+                }
+                variants.push(layout_variant(symbols, owner, first)?)
+                variants.push(layout_variant(symbols, owner, second)?)
+            }
+            _ => {
+                return Err(101)
+            }
+        }
+        return Ok(move variants)
+    }
+}

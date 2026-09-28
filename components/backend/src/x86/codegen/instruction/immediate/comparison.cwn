@@ -1,0 +1,75 @@
+module x86 {
+    struct ImmediateComparison {
+        operator: ir::CompareOperator
+        operand: usize
+        constant: u64
+    }
+
+    fn codegen_emit_immediate_compare(program: ir::Program, compiler: write FunctionCompiler, input: CompareInput) -> Result<Option<Condition>, CodegenError> {
+        match codegen_immediate_comparison(program, compiler, input) {
+            None => {
+                return Ok(None())
+            }
+            Some(comparison) => {
+                let value_type = codegen_value_type(program, compiler, comparison.operand)?
+                let width = codegen_width(value_type)?
+                match codegen_normalized_immediate(comparison.constant, width) {
+                    None => {
+                        return Ok(None())
+                    }
+                    Some(value) => {
+                        var destination = Rax()
+                        match codegen_frame_register(compiler.frame, comparison.operand) {
+                            Some(register) => {
+                                destination = register
+                            }
+                            None => {
+                                codegen_load_value(program, compiler, ValueAccess {
+                                        value: comparison.operand, register: destination
+                                    })?
+                            }
+                        }
+                        codegen_emit(compiler, Immediate(ImmediateArgs {
+                                    operator: ImmediateCompare()
+                                    destination: destination
+                                    value: value
+                                    width: width
+                                }))
+                        return Ok(codegen_condition(comparison.operator))
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_immediate_comparison(program: ir::Program, compiler: FunctionCompiler, input: CompareInput) -> Option<ImmediateComparison> {
+        loan read program.functions[compiler.id] as function {
+            match codegen_integer_constant(function, input.right) {
+                Some(value) => {
+                    return Some(ImmediateComparison {
+                            operator: input.operator, operand: input.left, constant: value
+                        })
+                }
+                None => {
+                }
+            }
+            match codegen_integer_constant(function, input.left) {
+                None => {
+                    return None()
+                }
+                Some(value) => {
+                    match ir::integer_compare_reverse(input.operator) {
+                        Some(operator) => {
+                            return Some(ImmediateComparison {
+                                    operator: operator, operand: input.right, constant: value
+                                })
+                        }
+                        None => {
+                            return None()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

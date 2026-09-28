@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    var value = Text.new()
+    value.push(1)
+    return 0
+}

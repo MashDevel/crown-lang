@@ -1,0 +1,76 @@
+module std {
+    module map {
+        struct TextMap<V> {
+            private entries: Map<Text, V>
+        }
+
+        fn new_text<V>() -> TextMap<V> {
+            return TextMap<V> {
+                entries: new(fn(value) {
+                        return std::text::hash(value)
+                    }, fn(left, right) {
+                        return std::text::equal(left, right)
+                    })
+            }
+        }
+
+        fn text_length<V>(map: TextMap<V>) -> usize {
+            return length(map.entries)
+        }
+
+        fn text_insert<V>(map: write TextMap<V>, key: take Text, value: take V) -> Option<V> {
+            return insert(map.entries, move key, move value)
+        }
+
+        fn text_find<V>(map: TextMap<V>, key: TextView) -> Option<Position> {
+            let bucket = std::text::hash(key) % map.entries.buckets.length()
+            for index in 0..map.entries.buckets[bucket].length() {
+                match read map.entries.buckets[bucket][index] {
+                    Pair(stored, value) => {
+                        value
+                        loan read stored as bytes {
+                            if std::text::equal(bytes, key) {
+                                return Some(Position {
+                                        bucket: bucket, entry: index
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+            return None()
+        }
+
+        fn with_text_value<V, R>(map: TextMap<V>, key: TextView, action: scoped fn(read V) -> R) -> Option<R> {
+            return value_at(map.entries, text_find(map, key), action)
+        }
+
+        fn with_text_value_mut<V, R>(map: write TextMap<V>, key: TextView, action: scoped fn(write V) -> R) -> Option<R> {
+            return value_at_mut(map.entries, text_find(map, key), action)
+        }
+
+        fn text_contains<V>(map: TextMap<V>, key: TextView) -> bool {
+            match text_find(map, key) {
+                Some(position) => {
+                    position;
+                    return true
+                }
+                None => {
+                    return false
+                }
+            }
+        }
+
+        fn text_remove<V>(map: write TextMap<V>, key: TextView) -> Option<V> {
+            return remove_at(map.entries, text_find(map, key))
+        }
+
+        fn text_for_each<V>(map: TextMap<V>, action: scoped fn(read Text, read V) -> void) -> void {
+            for_each(map.entries, action)
+        }
+
+        fn text_clear<V>(map: write TextMap<V>) -> void {
+            clear(map.entries)
+        }
+    }
+}

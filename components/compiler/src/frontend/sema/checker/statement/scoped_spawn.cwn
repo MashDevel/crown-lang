@@ -1,0 +1,99 @@
+module sema {
+    fn checker_scoped_spawn(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        if checker.thread_regions.length() == 0 {
+            checker_error(checker, "borrowed spawn requires an enclosing thread_scope")
+            return None()
+        }
+        match read kind {
+            frontend::ExpressionScopedSpawn(stack, requested, body) => {
+                checker_scoped_stack(checker, stack)
+                let captures = checker_thread_captures(checker, requested)
+                let saved = checker_save(checker)
+                checker_begin_spawn(checker, captures)
+                checker_statements(checker, body)
+                checker_restore(checker, saved)
+                checker.spawns.push(SpawnRecord {
+                        function: checker.current_function, resource_owner: checker.current_resource,
+                        span: checker.current_span, captures: spawn_captures_copy(captures)
+                    })
+                return Some(owned_info(builtin_leaf(ScopedThread())))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+    fn checker_thread_captures(checker: write Checker, requested: Vec<frontend::ClosureCapture>) -> Vec<SpawnCapture> {
+        var captures = Vec<SpawnCapture>.new()
+        for index in 0..requested.length() {
+            loan read requested[index] as capture {
+                match checker_thread_capture(checker, capture) {
+                    Some(value) => {
+                        captures.push(move value)
+                    },
+                    None => {
+                    }
+                }
+            }
+        }
+        return move captures
+    }
+    fn checker_thread_capture(checker: write Checker, capture: frontend::ClosureCapture) -> Option<SpawnCapture> {
+        let key = match checker_find_variable(checker, capture.name) {
+            Some(value) => value,
+            None => {
+                checker_error(checker, "scoped captures must name existing variables");
+                return None()
+            }
+        }
+        let region = checker.thread_regions.length() - 1
+        let writable = mode_is_write(capture.mode)
+        if key.scope + 1 > checker.thread_regions[region].depth {
+            checker_error(checker, "scoped capture must outlive its thread_scope")
+            return None()
+        }
+        if writable && checker.loop_states.length() > checker.thread_regions[region].loops {
+            checker_error(checker, "repeated write capture requires a thread_scope inside the loop")
+            return None()
+        }
+        let path = named_path(capture.name)
+        let usage = if writable {
+            WritePath()
+        } else {
+            ReadPath()
+        }
+        match checker_path(checker, path, usage) {
+            Some(value) => {
+                value
+            },
+            None => {
+                return None()
+            }
+        }
+        let variable = checker_variable_copy(checker, key)
+        checker_capture_transferable(checker, variable.value_type)
+        let mode = if writable {
+            frontend::LoanWrite()
+        } else {
+            frontend::LoanRead()
+        }
+        checker.thread_regions[region].loans.push(PlaceLoan {
+                depth: checker.thread_regions[region].depth, path: frontend::path_copy(path), mode: mode,
+                origin: capture.name.span, duration: LoanScopeEnd(), requested: mode
+            })
+        return Some(SpawnCapture {
+                name: frontend::name_copy(capture.name), value_type: type_copy(variable.value_type),
+                kind: if writable {
+                    CaptureWrite()
+                } else {
+                    CaptureRead()
+                }
+            })
+    }
+    fn checker_capture_transferable(checker: write Checker, value_type: Type) -> void {
+        var visiting = Vec<usize>.new()
+        if type_is_concrete(value_type) && type_transferable(checker.symbols, value_type, visiting) == false {
+            checker_error(checker, "scoped spawn requires transferable capture values")
+        }
+    }
+}

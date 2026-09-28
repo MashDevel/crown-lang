@@ -1,0 +1,117 @@
+module optimize {
+    fn reach_roots(program: ir::Program, state: write Reachability) -> void {
+        match program.entry {
+            Some(entry) => {
+                reach_function(state, entry)
+            }
+            None => {
+            }
+        }
+        var index: usize = 0
+        while index < program.functions.length() {
+            match program.functions[index].linkage {
+                ir::LinkageExport => {
+                    reach_function(state, index)
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < program.globals.length() {
+            if program.globals[index].exported {
+                reach_global(state, index)
+            }
+            index = index + 1
+        }
+    }
+
+    fn reach_references(program: ir::Program, state: write Reachability) -> void {
+        var index: usize = 0
+        while index < state.pending.length() {
+            let item = state.pending[index]
+            match item {
+                ReachableFunction(function) => {
+                    reach_body(program, state, program.functions[function])
+                }
+                ReachableGlobal(global) => {
+                    reach_data(state, program.globals[global])
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn reach_body(program: ir::Program, state: write Reachability, function: ir::Function) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                reach_instruction(program, state, function.blocks[block].instructions[index].kind)
+                index = index + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn reach_instruction(program: ir::Program, state: write Reachability, kind: ir::InstructionKind) -> void {
+        match read kind {
+            ir::InstructionCall(function, arguments, result) => {
+                arguments;
+                result;
+                reach_function(state, function)
+            }
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryFunctionAddress(function) => {
+                        reach_function(state, function)
+                    }
+                    ir::MemoryGlobalAddress(global) => {
+                        reach_global(state, global)
+                    }
+                    ir::MemorySymbolAddress(name) => {
+                        reach_symbol(program, state, name)
+                    }
+                    _ => {
+                    }
+                }
+            }
+
+            _ => {
+            }
+        }
+    }
+
+    fn reach_symbol(program: ir::Program, state: write Reachability, name: Text) -> void {
+        var index: usize = 0
+        while index < program.functions.length() {
+            if std::text::equal(program.functions[index].name, name) {
+                reach_function(state, index)
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < program.globals.length() {
+            if std::text::equal(program.globals[index].name, name) {
+                reach_global(state, index)
+            }
+            index = index + 1
+        }
+    }
+
+    fn reach_data(state: write Reachability, global: ir::Global) -> void {
+        var index: usize = 0
+        while index < global.references.length() {
+            match read global.references[index].target {
+                ir::GlobalReferenceFunction(function) => {
+                    reach_function(state, function)
+                }
+                ir::GlobalReferenceGlobal(target) => {
+                    reach_global(state, target)
+                }
+            }
+            index = index + 1
+        }
+    }
+}

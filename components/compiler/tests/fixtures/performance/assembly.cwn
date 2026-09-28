@@ -1,0 +1,64 @@
+fn test_label(object: write object::CompilerObject, name: take Text, position: read ir::IndexEntry) -> Result<usize, object::Error> {
+    return object::add_symbol(object, object::Symbol {
+        name: move name, kind: object::SymbolFunction(), binding: object::SymbolLocal()
+        section: Some(usize.from(position.group)), offset: position.key, size: 0
+    })
+}
+
+fn test_object() -> Result<object::CompilerObject, object::Error> {
+    var object = object::new()
+    var bytes = Vec<u8>.new()
+    bytes.push(0); bytes.push(7); bytes.push(34); bytes.push(92); bytes.push(255)
+    let text = object::add_section(object, object::Section { name: ".text", kind: object::SectionText(), alignment: 1, data: move bytes, memory_size: 8 })?
+    let start = ir::IndexEntry { group: u64.from(text), key: 0, value: 0 }
+    let entry = test_label(object, "first", start)?
+    test_label(object, "alias", start)?
+    test_label(object, "end", ir::IndexEntry { group: u64.from(text), key: 8, value: 0 })?
+    object::set_entry(object, entry)
+    var data = Vec<u8>.new()
+    data.push(1); data.push(0); data.push(0); data.push(0); data.push(0)
+    let table = object::add_section(object, object::Section { name: ".data", kind: object::SectionReadOnlyData(), alignment: 1, data: move data, memory_size: 5 })?
+    let imported = object::add_symbol(object, object::Symbol { name: "imported", kind: object::SymbolFunction(), binding: object::SymbolImport(), section: None(), offset: 0, size: 0 })?
+    object::add_relocation(object, object::Relocation { section: table, offset: 1, kind: object::RelocationPcRelativeCall32(), symbol: imported, subtract: None(), addend: -4 })
+    let zero = object::add_section(object, object::Section { name: ".bss", kind: object::SectionZeroFill(), alignment: 1, data: Vec<u8>.new(), memory_size: 8 })?
+    test_label(object, "middle", ir::IndexEntry { group: u64.from(zero), key: 3, value: 0 })?
+    return Ok(move object)
+}
+
+fn test_matches(actual: read Text, expected: read Text) -> bool {
+    if actual.length() != expected.length() { return false }
+    loan read actual as left {
+        loan read expected as right {
+            var index: usize = 0
+            while index < left.length() {
+                if left[index] != right[index] { return false }
+                index = index + 1
+            }
+        }
+    }
+    return true
+}
+
+fn test_output(object: read object::CompilerObject) -> bool {
+    let expected = ".subsections_via_symbols\n.globl _main\n.text\n.p2align 0\n_main:\n_first:\n_alias:\n.ascii \"\\000\\007\\042\\134\\377\"\n.zero 3\n_end:\n.section __DATA_CONST,__const\n.p2align 0\n.ascii \"\\001\"\n.long _imported - . - 4\n.section __DATA,__bss\n.p2align 0\n.zero 3\n_middle:\n.zero 5\n"
+    match x86::assembly(object, x86::AssemblyFormat::MachO()) {
+        Ok(actual) => { return test_matches(actual, expected) }
+        Err(error) => { error; return false }
+    }
+}
+
+fn main() -> u32 {
+    match test_object() {
+        Err(error) => { error; return 1 }
+        Ok(value) => {
+            var object = move value
+            if test_output(object) == false { return 2 }
+            object.relocations[0].offset = 2
+            match x86::assembly(object, x86::AssemblyFormat::MachO()) {
+                Ok(output) => { output; return 3 }
+                Err(error) => { if error != 1 { return 4 } }
+            }
+        }
+    }
+    return 42
+}

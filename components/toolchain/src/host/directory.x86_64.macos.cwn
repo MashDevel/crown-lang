@@ -1,0 +1,5 @@
+module toolchain {
+    extern "c" {
+        fn raw_readdir(directory: RawPtr<u8>) -> RawPtr<u8> = "readdir$INODE64"
+    }
+}

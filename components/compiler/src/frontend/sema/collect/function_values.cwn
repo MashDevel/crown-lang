@@ -1,0 +1,100 @@
+module sema {
+    fn collect_function(symbols: write Symbols, function: frontend::Function, context: take FunctionContext) -> void {
+        symbols.current_span = function.name.span
+        match read context.kind {
+            FreeFunction => {
+                symbols.current_span = function.name.span
+                match find_constant(symbols, function.name) {
+                    Some(existing) => {
+                        existing;
+                        symbols_error(symbols, "duplicate function or constant name");
+                        return
+                    }
+                    None => {
+                    }
+                }
+                match find_function(symbols, function.name) {
+                    Some(existing) => {
+                        existing;
+                        symbols_error(symbols, "duplicate function or constant name");
+                        return
+                    }
+                    None => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        let parameters = resolve_parameters(symbols, context.resolution, function.parameters)
+        let result = resolve_type(symbols, context.resolution, function.result)
+        symbols.functions.push(Function {
+                name: frontend::name_copy(function.name)
+                type_parameters: names_copy(function.type_parameters)
+                parameters: move parameters
+                result: move result
+                kind: context.kind
+                unsafe_value: function.unsafe_value
+                variadic_start: None()
+                foreign: context.foreign
+                symbol: context.symbol
+            })
+    }
+
+    fn collect_foreign_function(symbols: write Symbols, function: frontend::ForeignFunction, context: take FunctionContext) -> void {
+        symbols.current_span = function.name.span
+        let abi = frontend::Name {
+            text: Text.new(), span: function.abi
+        }
+        if name_is(symbols.source, abi, "\"c\"") == false && name_is(symbols.source, abi, "\"system\"") == false {
+            symbols_error(symbols, "unsupported foreign ABI; expected c or system")
+        }
+        match find_constant(symbols, function.name) {
+            Some(existing) => {
+                existing;
+                symbols_error(symbols, "duplicate function or constant name");
+                return
+            }
+            None => {
+            }
+        }
+        match find_function(symbols, function.name) {
+            Some(existing) => {
+                existing;
+                symbols_error(symbols, "duplicate function or constant name");
+                return
+            }
+            None => {
+            }
+        }
+        let parameters = resolve_parameters(symbols, context.resolution, function.parameters)
+        let result = resolve_type(symbols, context.resolution, function.result)
+        symbols.functions.push(Function {
+                name: frontend::name_copy(function.name)
+                type_parameters: Vec<frontend::Name>.new()
+                parameters: move parameters
+                result: move result
+                kind: FreeFunction()
+                unsafe_value: true
+                variadic_start: function.variadic_start
+                foreign: true
+                symbol: context.symbol
+            })
+    }
+
+    fn resolve_parameters(symbols: write Symbols, context: Resolution, parameters: Vec<frontend::Parameter>) -> Vec<NamedParameter> {
+        var output = Vec<NamedParameter>.with_capacity(parameters.length())
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                output.push(NamedParameter {
+                        name: frontend::name_copy(parameter.name)
+                        mode: parameter.mode
+                        value_type: resolve_type(symbols, context, parameter.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

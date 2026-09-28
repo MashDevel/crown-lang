@@ -1,0 +1,33 @@
+module sema {
+    fn checker_array_repeat(checker: write Checker, value: Box<frontend::Expression>, length: frontend::ArrayLength, expected: Type) -> Option<ExpressionInfo> {
+        let count = resolve_array_length(checker.symbols, length)
+        var hint = Infer()
+        match read expected {
+            ArrayType(element, size) => {
+                if size != count {
+                    checker_error(checker, "array repetition length does not match the expected array")
+                }
+                loan read element as item {
+                    hint = type_copy(item)
+                }
+            }
+            _ => {
+            }
+        }
+        loan read value as item {
+            match checker_expression_expected(checker, item, hint) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    let element = concrete(info.value_type)
+                    if type_is_copy_with_symbols(checker.symbols, element) == false || checker_require_storable(checker, element) == false {
+                        checker_error(checker, "array repetition requires a copyable element")
+                        return None()
+                    }
+                    return Some(copy_info(ArrayType(Box.new(move element), count)))
+                }
+            }
+        }
+    }
+}

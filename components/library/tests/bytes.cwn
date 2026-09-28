@@ -1,0 +1,24 @@
+fn test_bytes() -> u32 {
+    var bytes = std::bytes::filled(8, 0)
+    std::bytes::write_u32_le(bytes, 2, 0x89ab_cdef)
+    loan read bytes as view {
+        if std::bytes::read_u16_le(view, 2) != 0xcdef {
+            return 1
+        }
+        if std::bytes::read_u32_le(view, 2) != 0x89ab_cdef {
+            return 2
+        }
+        let duplicate = std::bytes::clone(view)
+        if duplicate.length() != 8 || duplicate[5] != 0x89 {
+            return 3
+        }
+    }
+    let empty = std::bytes::filled(0, 0)
+    loan read empty as view {
+        std::bytes::append(bytes, view)
+    }
+    if bytes.length() != 8 {
+        return 4
+    }
+    return 0
+}

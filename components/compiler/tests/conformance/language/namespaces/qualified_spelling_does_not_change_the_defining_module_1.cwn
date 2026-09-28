@@ -1,0 +1,9 @@
+struct names::Value {
+    private value: u32
+}
+fn main() -> u32 {
+    let item = names::Value {
+        value: 42
+    }
+    return item.value
+}

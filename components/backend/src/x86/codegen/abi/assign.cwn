@@ -1,0 +1,94 @@
+module x86 {
+    fn abi_locations(signature: ir::Signature) -> Result<Vec<ArgumentLocation>, CodegenError> {
+        var assignment = abi_assignment_new()
+        var output = Vec<ArgumentLocation>.with_capacity(signature.parameters.length())
+        var index: usize = 0
+        while index < signature.parameters.length() {
+            loan read signature.parameters[index] as value_type {
+                loan read signature.parameter_abi[index] as abi {
+                    match abi_assign(value_type, abi, assignment) {
+                        Ok(location) => {
+                            output.push(move location)
+                        }
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(move output)
+    }
+
+    fn abi_assign(value_type: ir::Type, abi: ir::ParameterAbi, assignment: write AbiAssignment) -> Result<ArgumentLocation, CodegenError> {
+        match read abi {
+            ir::ParameterDirect => {
+                return abi_scalar(value_type, assignment)
+            }
+            ir::ParameterAggregate(aggregate) => {
+                return abi_aggregate(aggregate, assignment)
+            }
+            ir::ParameterReturn(aggregate) => {
+                match read aggregate {
+                    ir::AggregateMemory(size, alignment) => {
+                        size;
+                        alignment;
+                        return abi_scalar(value_type, assignment)
+                    }
+                    ir::AggregateRegisters(size, alignment, components) => {
+                        size;
+                        alignment;
+                        components
+                        return Ok(ArgumentOmitted())
+                    }
+                }
+            }
+        }
+    }
+
+    fn abi_scalar(value_type: ir::Type, assignment: write AbiAssignment) -> Result<ArgumentLocation, CodegenError> {
+        if abi_is_wide_integer(value_type) {
+            var components = Vec<ir::AbiComponent>.new()
+            components.push(ir::AbiComponent {
+                    offset: 0, value_type: ir::TypeInteger(ir::IntegerWidth64())
+                })
+            components.push(ir::AbiComponent {
+                    offset: 8, value_type: ir::TypeInteger(ir::IntegerWidth64())
+                })
+            return abi_registers(16, 16, move components, assignment)
+        }
+        if ir::type_is_float(value_type) {
+            match abi_take_float(assignment) {
+                Some(register) => {
+                    return Ok(ArgumentFloat(register))
+                }
+                None => {
+                    return Ok(abi_stack(assignment))
+                }
+            }
+        }
+        if ir::type_is_integer(value_type) || ir::type_is_pointer(value_type) {
+            match abi_take_integer(assignment) {
+                Some(register) => {
+                    return Ok(ArgumentInteger(register))
+                }
+                None => {
+                    return Ok(abi_stack(assignment))
+                }
+            }
+        }
+        return Err(codegen_error(CodegenUnsupportedType(value_type)))
+    }
+
+    fn abi_is_wide_integer(value_type: ir::Type) -> bool {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                return ir::integer_width_bits(width) == 128
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

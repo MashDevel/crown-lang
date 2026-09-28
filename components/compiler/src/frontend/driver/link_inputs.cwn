@@ -1,0 +1,24 @@
+module frontend {
+    fn link_inputs(options: toolchain::Options) -> Result<u32, Text> {
+        if options.target.platform != toolchain::Platform::Linux() {
+            return Err("link-input discovery requires a Linux target")
+        }
+        let settings = linux_link_options(options)?
+        let architecture = if options.target.architecture == toolchain::Architecture::Arm64() {
+            object::ArchitectureArm64()
+        } else {
+            object::ArchitectureX86_64()
+        }
+        let paths = elf::library_paths(settings.libraries, settings.interpreter, architecture)?
+        var output = "["
+        for index in 0..paths.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, toolchain::json_quoted(toolchain::absolute(paths[index])?))
+        }
+        output.push(']')
+        toolchain::say(output)
+        return Ok(0)
+    }
+}

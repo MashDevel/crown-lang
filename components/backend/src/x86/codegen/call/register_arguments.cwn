@@ -1,0 +1,150 @@
+module x86 {
+    fn codegen_load_register_arguments(program: ir::Program, compiler: write FunctionCompiler, state: ArgumentState) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < state.input.values.length() {
+            var value_type = ir::TypeVoid()
+            var location = ArgumentOmitted()
+            loan read state.input.signature.parameters[index] as source {
+                value_type = source
+            }
+            loan read state.locations[index] as source {
+                location = codegen_argument_location_copy(source)
+            }
+            let input = RegisterArgument {
+                value: state.input.values[index]
+                value_type: value_type
+                location: move location
+            }
+            match codegen_load_register_argument(program, compiler, move input) {
+                Err(error) => {
+                    return Err(move error)
+                }
+                Ok(done) => {
+                    done
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_load_register_argument(program: ir::Program, compiler: write FunctionCompiler, input: take RegisterArgument) -> Result<void, CodegenError> {
+        match read input.location {
+            ArgumentInteger(register) => {
+                return codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value
+                        register: register
+                    })
+            }
+            ArgumentFloat(register) => {
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: Rax()
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+                match codegen_float_width(input.value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, MoveToFloat(width, register, Rax()))
+                        return Ok(())
+                    }
+                }
+            }
+            ArgumentRegisters(components) => {
+                components
+                return codegen_load_components(program, compiler, input)
+            }
+            _ => {
+                return Ok(())
+            }
+        }
+    }
+
+    fn codegen_load_components(program: ir::Program, compiler: write FunctionCompiler, input: RegisterArgument) -> Result<void, CodegenError> {
+        if codegen_type_is_wide(input.value_type) {
+            return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: R10()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match read input.location {
+            ArgumentRegisters(components) => {
+                var index: usize = 0
+                while index < components.length() {
+                    loan read components[index] as component {
+                        match codegen_load_component(compiler, component) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(done) => {
+                                done
+                            }
+                        }
+                    }
+                    index = index + 1
+                }
+                return Ok(())
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+    }
+
+    fn codegen_load_component(compiler: write FunctionCompiler, component: AbiComponentLocation) -> Result<void, CodegenError> {
+        if component.component.offset > 2147483647 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        match codegen_width(component.component.value_type) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(width) => {
+                match read component.location {
+                    ScalarInteger(register) => {
+                        codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                                    destination: register
+                                    base: R10()
+                                    offset: i32.from(component.component.offset)
+                                    width: width
+                                    extension: ZeroExtend()
+                                }))
+                        return Ok(())
+                    }
+                    ScalarFloat(register) => {
+                        codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                                    destination: Rax()
+                                    base: R10()
+                                    offset: i32.from(component.component.offset)
+                                    width: width
+                                    extension: ZeroExtend()
+                                }))
+                        match codegen_float_width(component.component.value_type) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(float_width) => {
+                                codegen_emit(compiler, MoveToFloat(float_width, register, Rax()))
+                                return Ok(())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

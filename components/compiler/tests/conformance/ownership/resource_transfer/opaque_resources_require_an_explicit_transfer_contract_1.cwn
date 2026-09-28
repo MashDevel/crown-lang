@@ -1,0 +1,20 @@
+opaque resource NativeHandle {
+    value: usize, drop {
+        value
+    }
+}
+fn main() -> u32 {
+    let value = unsafe_value()
+    let capture = move value
+    let worker = spawn move {
+        capture
+    }
+    return 0
+}
+fn unsafe_value() -> NativeHandle {
+    unsafe {
+        return NativeHandle {
+            value: 1
+        }
+    }
+}

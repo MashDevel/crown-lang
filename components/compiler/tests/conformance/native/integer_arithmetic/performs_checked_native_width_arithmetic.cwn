@@ -1,0 +1,24 @@
+fn main() -> u32 {
+    let left: i32 = -84
+    let right: i32 = 7
+    let three: i32 = 3
+    if left / right != -12 {
+        return 1
+    }
+    if left % right != 0 {
+        return 2
+    }
+    if left + right != -77 {
+        return 3
+    }
+    if left - right != -91 {
+        return 4
+    }
+    if left * three != -252 {
+        return 5
+    }
+    if three * right != 21 {
+        return 6
+    }
+    return 0
+}

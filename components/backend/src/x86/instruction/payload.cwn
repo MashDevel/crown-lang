@@ -1,0 +1,219 @@
+module x86 {
+    struct CompareExchangeMemoryArgs {
+        address: Register
+        value: Register
+        width: Width
+    }
+
+    struct FloatBinaryArgs {
+        operator: FloatBinaryOperator
+        width: FloatWidth
+        destination: FloatRegister
+        source: FloatRegister
+    }
+
+    struct FloatBinaryMemoryArgs {
+        operator: FloatBinaryOperator
+        width: FloatWidth
+        destination: FloatRegister
+        base: Register
+        offset: i32
+    }
+
+    struct FloatCompareMemoryArgs {
+        width: FloatWidth
+        left: FloatRegister
+        base: Register
+        offset: i32
+    }
+
+    struct ConvertFloatArgs {
+        source_width: FloatWidth
+        destination: FloatRegister
+        source: FloatRegister
+    }
+
+    struct FloatToSignedArgs {
+        width: FloatWidth
+        destination: Register
+        source: FloatRegister
+        destination_64: bool
+    }
+
+    struct FloatUnaryArgs {
+        operator: FloatUnaryOperator
+        width: FloatWidth
+        destination: FloatRegister
+        source: FloatRegister
+    }
+
+    struct LoadFloatMemoryArgs {
+        width: FloatWidth
+        destination: FloatRegister
+        base: Register
+        offset: i32
+    }
+
+    struct ImmediateArgs {
+        operator: ImmediateOperator
+        destination: Register
+        value: i32
+        width: Width
+    }
+
+    struct LoadSizedArgs {
+        destination: Register
+        base: Register
+        offset: i32
+        width: Width
+        extension: Extension
+    }
+
+    struct LoadIndexedArgs {
+        destination: Register
+        base: Register
+        index: Register
+        scale: u8
+        width: Width
+        extension: Extension
+    }
+
+    struct MemoryBinaryArgs {
+        operator: MemoryBinaryOperator
+        destination: Register
+        base: Register
+        offset: i32
+        width: Width
+    }
+
+    struct MoveSizedArgs {
+        destination: Register
+        source: Register
+        width: Width
+        extension: Extension
+    }
+
+    struct SignedToFloatArgs {
+        width: FloatWidth
+        destination: FloatRegister
+        source: Register
+        source_64: bool
+    }
+
+    struct StoreFloatMemoryArgs {
+        width: FloatWidth
+        base: Register
+        offset: i32
+        source: FloatRegister
+    }
+
+    struct StoreSizedArgs {
+        base: Register
+        offset: i32
+        source: Register
+        width: Width
+    }
+
+    struct StoreIndexedArgs {
+        base: Register
+        index: Register
+        scale: u8
+        source: Register
+        width: Width
+    }
+
+    struct MemoryAddress {
+        base: Register
+        offset: i32
+    }
+
+    struct IndexedAddress {
+        base: Register
+        index: Register
+        scale: u8
+    }
+
+    struct MemoryEncoding {
+        prefix: Option<u8>
+        wide: bool
+        opcodes: Vec<u8>
+        register: Register
+        memory: MemoryAddress
+    }
+
+    struct IndexedEncoding {
+        prefix: Option<u8>
+        wide: bool
+        opcodes: Vec<u8>
+        register: Register
+        address: IndexedAddress
+    }
+
+    struct ImmediateEncoding {
+        group: u8
+        register: u8
+        value: i32
+    }
+
+    struct SizedImmediateEncoding {
+        group: u8
+        register: u8
+        value: i32
+        width: u8
+    }
+
+    struct ShiftEncoding {
+        group: u8
+        register: u8
+        value: u8
+        width: u8
+    }
+
+    struct RawMemoryEncoding {
+        prefix: Option<u8>
+        wide: bool
+        first_opcode: u8
+        second_opcode: Option<u8>
+        register: u8
+        base: u8
+        offset: i32
+    }
+
+    struct RawIndexedEncoding {
+        prefix: Option<u8>
+        wide: bool
+        opcode: u8
+        register: u8
+        base: u8
+        index: u8
+        scale: u8
+    }
+
+    struct FloatRegistersEncoding {
+        width: u8
+        destination: u8
+        source: u8
+    }
+
+    struct FloatIntegerEncoding {
+        width: u8
+        float_register: u8
+        integer_register: u8
+        wide: bool
+    }
+
+    struct FloatMemoryEncoding {
+        prefix: Option<u8>
+        first_opcode: u8
+        second_opcode: u8
+        register: u8
+        base: u8
+        offset: i32
+    }
+
+    struct FloatStateEncoding {
+        base: u8
+        offset: i32
+        group: u8
+    }
+}

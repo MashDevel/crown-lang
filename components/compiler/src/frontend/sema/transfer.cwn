@@ -1,0 +1,147 @@
+module sema {
+    fn type_transferable(symbols: Symbols, value_type: Type, visiting: write Vec<usize>) -> bool {
+        if type_contains_view(symbols, value_type) {
+            return false
+        }
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                let kind = builtin
+                if kind == Thread() || kind == RawPtr() || kind == RootLease() {
+                    return false
+                }
+                if kind == Handle() {
+                    return true
+                }
+                return transfer_arguments(symbols, arguments, visiting)
+            }
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return type_transferable(symbols, value, visiting)
+                }
+            }
+            NamedType(symbol, arguments) => {
+                let request = TransferType {
+                    symbol: symbol, arguments: types_copy(arguments)
+                }
+                return named_transferable(symbols, request, visiting)
+            }
+            _ => {
+                return leaf_transferable(value_type)
+            }
+        }
+    }
+
+    struct TransferType {
+        symbol: usize
+        arguments: Vec<Type>
+    }
+
+    fn transfer_arguments(symbols: Symbols, arguments: Vec<Type>, visiting: write Vec<usize>) -> bool {
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as value {
+                if type_transferable(symbols, value, visiting) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn transfer_fields(symbols: Symbols, request: TransferType, visiting: write Vec<usize>) -> bool {
+        let fields = transfer_field_types(symbols, request)
+        return transfer_arguments(symbols, fields, visiting)
+    }
+
+    fn leaf_transferable(value_type: Type) -> bool {
+        match read value_type {
+            DynamicType(symbol) => {
+                symbol;
+                return false
+            }
+            ParameterType(parameter) => {
+                parameter;
+                return false
+            }
+            Infer => {
+                return false
+            }
+            Invalid => {
+                return false
+            }
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn transfer_contract(declaration: Symbol) -> Option<bool> {
+        match read declaration.kind {
+            Resource(opaque_value, transferable) => {
+                if opaque_value {
+                    return Some(transferable)
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn named_transferable(symbols: Symbols, request: TransferType, visiting: write Vec<usize>) -> bool {
+        loan read symbols.types[request.symbol] as declaration {
+            match transfer_contract(declaration) {
+                Some(allowed) => {
+                    return allowed
+                }
+                None => {
+                }
+            }
+        }
+        if transfer_arguments(symbols, request.arguments, visiting) == false {
+            return false
+        }
+        var index: usize = 0
+        while index < visiting.length() {
+            if visiting[index] == request.symbol {
+                return true
+            };
+            index = index + 1
+        }
+        visiting.push(request.symbol)
+        let valid = transfer_fields(symbols, request, visiting)
+        visiting.pop()
+        return valid
+    }
+
+    fn transfer_field_types(symbols: Symbols, request: TransferType) -> Vec<Type> {
+        var result = Vec<Type>.new()
+        var index: usize = 0
+        while index < symbols.types[request.symbol].fields.length() {
+            loan read symbols.types[request.symbol].fields[index] as field {
+                result.push(substitute(field.value_type, request.arguments))
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < symbols.types[request.symbol].variants.length() {
+            loan read symbols.types[request.symbol].variants[index] as variant {
+                transfer_variant_types(result, variant, request.arguments)
+            }
+            index = index + 1
+        }
+        return move result
+    }
+
+    fn transfer_variant_types(output: write Vec<Type>, variant: Variant, arguments: Vec<Type>) -> void {
+        var index: usize = 0
+        while index < variant.fields.length() {
+            loan read variant.fields[index] as field {
+                output.push(substitute(field, arguments))
+            }
+            index = index + 1
+        }
+    }
+}

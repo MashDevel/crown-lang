@@ -1,0 +1,11 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    let instruction = x86::Jump(x86::BlockLabel(usize.from(0)))
+    if x86::encode_fixed(instruction, bytes) {
+        return 1
+    }
+    if bytes.length() != 0 {
+        return 2
+    }
+    return 42
+}

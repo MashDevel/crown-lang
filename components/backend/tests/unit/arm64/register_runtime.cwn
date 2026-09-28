@@ -1,0 +1,71 @@
+fn pressure_program() -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, pressure_with_temporary())
+    var function = ir::function_new("main", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    let one = safety_integer(function, ir::IntegerWidth64(), 1)
+    var arguments = Vec<usize>.new()
+    var retained = Vec<usize>.new()
+    for index in 0..24 {
+        let constant = safety_integer(function, ir::IntegerWidth64(), u64.from(index))
+        let value = safety_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), constant, one))?
+        arguments.push(value)
+        retained.push(value)
+    }
+    var result = safety_append(function, block, ir::InstructionCall(0, move arguments, ir::TypeInteger(ir::IntegerWidth64())))?
+    for index in 0..retained.length() {
+        result = safety_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), result, retained[index]))?
+    }
+    let expected = safety_integer(function, ir::IntegerWidth64(), 600)
+    safety_return_equal(function, block, result, expected)?
+    let entry = ir::program_add_function(program, move function)
+    ir::program_set_entry(program, entry)
+    return Ok(move program)
+}
+
+fn rotating_program() -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, rotating_function())
+    var function = ir::function_new("main", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    var result = safety_integer(function, ir::IntegerWidth64(), 0)
+    let counts: [u64; 4] = [0, 1, 2, 31]
+    for index in 0..4 {
+        var arguments = Vec<usize>.new()
+        arguments.push(safety_integer(function, ir::IntegerWidth64(), counts[index]))
+        let value = safety_append(function, block, ir::InstructionCall(0, move arguments, ir::TypeInteger(ir::IntegerWidth64())))?
+        result = safety_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), result, value))?
+    }
+    let expected = safety_integer(function, ir::IntegerWidth64(), 66)
+    safety_return_equal(function, block, result, expected)?
+    let entry = ir::program_add_function(program, move function)
+    ir::program_set_entry(program, entry)
+    return Ok(move program)
+}
+
+fn run() -> Result<void, u32> {
+    safety_execute(aggregate_return_program()?)?
+    safety_execute(pressure_program()?)?
+    return safety_execute(rotating_program()?)
+}
+
+fn main() -> u32 {
+    return safety_status(run())
+}
+
+fn aggregate_return_program() -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, aggregate_return_function())
+    var function = ir::function_new("main", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    let address = safety_append(function, block, ir::InstructionStackSlot(8, 8))?
+    var arguments = Vec<usize>.new()
+    arguments.push(address)
+    safety_append(function, block, ir::InstructionCall(0, move arguments, ir::TypeVoid()))?;
+    let actual = safety_append(function, block, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let expected = safety_integer(function, ir::IntegerWidth64(), 42)
+    safety_return_equal(function, block, actual, expected)?
+    let entry = ir::program_add_function(program, move function)
+    ir::program_set_entry(program, entry)
+    return Ok(move program)
+}

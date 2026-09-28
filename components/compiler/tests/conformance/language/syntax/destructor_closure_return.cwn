@@ -1,0 +1,15 @@
+resource Item {
+    value: u32
+    drop {
+        let action: fn(u32) -> u32 = fn(number) {
+            number + 1
+        }
+        print(action(value))
+    }
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    };
+    42
+}

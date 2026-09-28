@@ -1,0 +1,148 @@
+module sema {
+    fn checker_dynamic_method(checker: write Checker, kind: frontend::ExpressionKind, receiver: Type) -> Option<ExpressionInfo> {
+        match read receiver {
+            DynamicType(interface_symbol) => {
+                return checker_dynamic_interface(checker, kind, interface_symbol)
+            }
+            _ => {
+                checker_error(checker, "dynamic method does not exist or has an incompatible signature");
+                return None()
+            }
+        }
+    }
+
+    fn checker_dynamic_interface(checker: write Checker, kind: frontend::ExpressionKind, interface_symbol: usize) -> Option<ExpressionInfo> {
+        match dynamic_method_signature(checker, kind, interface_symbol) {
+            None => {
+                checker_error(checker, "dynamic method does not exist or has an incompatible signature");
+                return None()
+            }
+            Some(signature) => {
+                return checker_apply_dynamic_method(checker, kind, move signature)
+            }
+        }
+    }
+
+    fn dynamic_method_signature(checker: Checker, kind: frontend::ExpressionKind, interface_symbol: usize) -> Option<DynamicMethodSignature> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                arguments
+                let query = InterfaceMethodQuery {
+                    interface_symbol: interface_symbol, method: frontend::name_copy(method)
+                }
+                return find_interface_method(checker, query)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn find_interface_method(checker: Checker, query: InterfaceMethodQuery) -> Option<DynamicMethodSignature> {
+        var index: usize = 0
+        while index < checker.symbols.functions.length() {
+            loan read checker.symbols.functions[index] as function {
+                if interface_method_is(checker, function, query) {
+                    return Some(interface_method_signature(function))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    struct InterfaceMethodQuery {
+        interface_symbol: usize
+        method: frontend::Name
+    }
+
+    fn interface_method_is(checker: Checker, function: Function, query: InterfaceMethodQuery) -> bool {
+        var owner = false
+        match read function.kind {
+            InterfaceFunction(symbol) => {
+                owner = symbol == query.interface_symbol
+            }
+            _ => {
+            }
+        }
+        return owner && names_equal(checker.symbols.source, function.name, query.method)
+    }
+
+    struct DynamicMethodSignature {
+        write_receiver: bool
+        call: CallSignature
+    }
+
+    fn interface_method_signature(function: Function) -> DynamicMethodSignature {
+        var write_receiver = false
+        var parameters = Vec<ParameterType>.new()
+        if function.parameters.length() > 0 {
+            loan read function.parameters[0] as receiver {
+                write_receiver = mode_is_write(receiver.mode)
+            }
+        }
+        var index: usize = 1
+        while index < function.parameters.length() {
+            loan read function.parameters[index] as parameter {
+                parameters.push(ParameterType {
+                        mode: parameter.mode, value_type: type_copy(parameter.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        let call = CallSignature {
+            function: None()
+            parameters: move parameters
+            result: type_copy(function.result)
+            type_parameter_count: 0
+            unsafe_value: false
+        }
+        return DynamicMethodSignature {
+            write_receiver: write_receiver, call: move call
+        }
+    }
+
+    fn checker_apply_dynamic_method(checker: write Checker, kind: frontend::ExpressionKind, signature: take DynamicMethodSignature) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                let loan_count = checker.place_loans.length()
+                if dynamic_receiver(checker, receiver, signature.write_receiver) == false {
+                    return None()
+                }
+                let request = CallRequest {
+                    signature: call_signature_copy(signature.call), expected: Infer(), span: method.span
+                }
+                let result = checker_start_call(checker, arguments, move request)
+                while checker.place_loans.length() > loan_count {
+                    checker.place_loans.pop()
+                }
+                return move result
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn dynamic_receiver(checker: write Checker, receiver: Box<frontend::Expression>, writable: bool) -> bool {
+        var usage = ReadPath()
+        var mode = frontend::LoanRead()
+        if writable {
+            usage = WritePath();
+            mode = frontend::LoanWrite()
+        }
+        loan read receiver as value {
+            match checker_place(checker, value, usage) {
+                None => {
+                    return false
+                }
+                Some(info) => {
+                    info;
+                    begin_temporary_loan(checker, value, mode, LoanCallEnd());
+                    return true
+                }
+            }
+        }
+    }
+}

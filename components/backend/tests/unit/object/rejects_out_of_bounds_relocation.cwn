@@ -1,0 +1,48 @@
+fn run() -> Result<u32, u32> {
+    var object = object::new()
+    var bytes = Vec<u8>.new()
+    bytes.push(0)
+    let section = backend_test::checked(object::add_section(object, object::Section {
+                name: ".data"
+                kind: object::SectionData()
+                alignment: 1
+                data: move bytes
+                memory_size: 1
+            }), 1)?
+    let symbol = backend_test::checked(object::add_symbol(object, object::Symbol {
+                name: "value"
+                kind: object::SymbolData()
+                binding: object::SymbolLocal()
+                section: Some(section)
+                offset: 0
+                size: 1
+            }), 2)?
+    object::add_relocation(object, object::Relocation {
+            section: section
+            offset: 0
+            kind: object::RelocationAbsolute64()
+            symbol: symbol
+            subtract: None()
+            addend: 0
+        })
+    match object::finish_relocatable(move object) {
+        Ok(value) => {
+            value;
+            return Ok(3)
+        }
+        Err(error) => {
+            match read error.kind {
+                object::ErrorRelocationOutOfBounds => {
+                    return Ok(42)
+                }
+                _ => {
+                    return Ok(4)
+                }
+            }
+        }
+    }
+}
+
+fn main() -> u32 {
+    backend_test::finished(run())
+}

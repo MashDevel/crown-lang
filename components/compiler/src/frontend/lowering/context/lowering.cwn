@@ -1,0 +1,111 @@
+module lowering {
+    fn lower_program(compiler: write Compiler, input: ProgramInput) -> Result<void, u32> {
+        lower_generated_program(compiler, input)?
+        for index in 0..compiler.tables.functions.length() {
+            let binding = function_binding_copy(compiler.tables.functions[index])
+            lower_bound_ast_function(compiler, input, binding)?
+        }
+        return set_main_entry(compiler, input.analysis.checker.symbols)
+    }
+
+    fn lower_generated_program(compiler: write Compiler, input: ProgramInput) -> Result<void, u32> {
+        lower_panics(compiler)?
+        lower_interface_drops(compiler, input)?
+        return lower_drop_glue(compiler, input)
+    }
+
+    fn set_main_entry(compiler: write Compiler, symbols: sema::Symbols) -> Result<void, u32> {
+        var entry: Option<usize> = None()
+        var semantic_function: usize = 0
+        var index: usize = 0
+        while index < compiler.tables.functions.length() {
+            loan read compiler.tables.functions[index] as binding {
+                if binding.arguments.length() == 0 && semantic_function_is_main(symbols, binding.semantic_function) {
+                    entry = Some(binding.function)
+                    semantic_function = binding.semantic_function
+                }
+            }
+            match read entry {
+                Some(value) => {
+                    index = compiler.tables.functions.length()
+                }
+                None => {
+                    index = index + 1
+                }
+            }
+        }
+        match entry {
+            Some(value) => {
+                if main_accepts_arguments(symbols, semantic_function) {
+                    return add_arguments_entry(compiler, value)
+                }
+                ir::program_set_entry(compiler.output, value)
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        return Err(82)
+    }
+
+    fn main_accepts_arguments(symbols: sema::Symbols, function: usize) -> bool {
+        if function >= symbols.functions.length() {
+            return false
+        }
+        loan read symbols.functions[function] as value {
+            if value.parameters.length() != 1 {
+                return false
+            }
+            loan read value.parameters[0] as parameter {
+                return sema::mode_is_read(parameter.mode) && sema::type_builtin(parameter.value_type) == sema::Arguments()
+            }
+        }
+    }
+
+    fn lower_function_binding(compiler: write Compiler, analysis: sema::Analysis, function: frontend::Function, binding: FunctionBinding) -> Result<void, u32> {
+        var state = function_compiler_new(compiler, analysis, binding)?
+        let status = lower_function_body(state, analysis, function)
+        swap(compiler.tables, state.tables)
+        status?
+        function_replace(compiler, binding, take_function_ir(state))?
+        return replace_generated_functions(compiler, state.lowered_generated)
+    }
+
+    fn replace_generated_functions(compiler: write Compiler, values: Vec<LoweredFunction>) -> Result<void, u32> {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if value.function >= compiler.output.functions.length() {
+                    return Err(285)
+                }
+                compiler.output.functions[value.function] = ir::function_copy(value.lowered)
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn lower_function_body(state: write FunctionCompiler, analysis: sema::Analysis, function: frontend::Function) -> Result<void, u32> {
+        function_source_start(state, function.span)?
+        function_bind_parameters(state, analysis)?
+        function_statements(state, analysis, function.body)?
+        return finish_void_body(state)
+    }
+
+    fn finish_void_body(state: write FunctionCompiler) -> Result<void, u32> {
+        var active = false
+        match read state.block {
+            Some(block) => {
+                block;
+                active = true
+            }
+            None => {
+            }
+        }
+        if active {
+            function_cleanup_all(state)?
+            function_finish(state, ir::TerminatorReturn(None()))?
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,202 @@
+module harness {
+    struct Suite {
+        executable: Text, environment: Environment, registry: Text, jobs: usize, filter: Text
+    }
+    struct Worker {
+        name: Text, directory: Text, pid: i32, index: usize, deadline: u64, status: Vec<i32>
+    }
+    struct SuiteExecution {
+        request: Suite, builds: Text
+    }
+
+    fn run_suite(input: take Suite) -> Result<u32, Text> {
+        var request = move input
+        toolchain::make_directory(request.environment.output)?
+        let temporary = toolchain::temporary(request.environment.output)?
+        let directory = toolchain::temporary_path(temporary)
+        let registry = toolchain::path_join(directory, "cases.json")
+        toolchain::copy_file(request.registry, registry)?
+        request.registry = registry.clone()
+        let cases = load_cases(request.registry, request.environment.root)?
+        let unavailable = write_applicability(cases, request)?
+        let execution = SuiteExecution {
+            request: move request, builds: directory.clone()
+        }
+        return execute_suite(cases, execution, unavailable)
+    }
+
+    fn execute_suite(cases: Vec<Case>, execution: SuiteExecution, unavailable: usize) -> Result<u32, Text> {
+        var workers = Vec<Worker>.new()
+        var results = report()
+        var selected = Vec<bool>.with_capacity(cases.length())
+        var completed = Vec<Option<Outcome>>.with_capacity(cases.length())
+        var next: usize = 0
+        for index in 0..cases.length() {
+            let active = selected_case(cases[index], execution.request.filter)
+            selected.push(active)
+            completed.push(None())
+            if active {
+                queue_case(execution, index, cases[index].name, workers, completed)
+                if workers.length() == execution.request.jobs {
+                    finish_next_worker(workers, completed)
+                }
+            }
+            report_ready(selected, completed, next, results)
+        }
+        while workers.length() != 0 {
+            finish_next_worker(workers, completed)
+            report_ready(selected, completed, next, results)
+        }
+        return finish_suite(results, execution.request.environment.output, unavailable)
+    }
+
+    fn selected_case(value: Case, filter: Text) -> bool {
+        if std::text::contains(value.name, filter) == false {
+            return false
+        }
+        if case_applies(value, toolchain::host_target()) == false {
+            toolchain::say(std::text::joined("Not applicable on this host: ", value.name))
+            return false
+        }
+        return true
+    }
+
+    fn queue_case(request: SuiteExecution, index: usize, name: Text, workers: write Vec<Worker>, completed: write Vec<Option<Outcome>>) -> void {
+        match start_worker(request, index) {
+            Ok(worker) => {
+                var active = move worker
+                active.name = name.clone()
+                workers.push(move active)
+            }
+            Err(error) => {
+                completed[index] = Some(outcome(name, Err(move error)))
+            }
+        }
+    }
+
+    fn finish_suite(results: Report, output: Text, unavailable: usize) -> Result<u32, Text> {
+        if results.rows.length() == 0 && unavailable == 0 {
+            return Err("no tests matched")
+        }
+        if unavailable != 0 {
+            toolchain::say(std::text::joined(std::text::decimal(u64.from(unavailable)), " tests require another host; see applicability.json"))
+        }
+        return finish_report(results, output)
+    }
+
+    fn start_worker(execution: SuiteExecution, index: usize) -> Result<Worker, Text> {
+        loan read execution.request as request {
+            let directory = toolchain::path_join(request.environment.output, std::text::decimal(u64.from(index)))
+            toolchain::make_directory(directory)?
+            var arguments = Vec<Text>.new()
+            arguments.push(request.executable.clone());
+            arguments.push("_case")
+            arguments.push(request.environment.compiler.clone());
+            arguments.push(std::text::decimal(u64.from(index)))
+            arguments.push(directory.clone());
+            arguments.push(request.registry.clone());
+            arguments.push(request.environment.root.clone())
+            arguments.push(request.environment.coverage.clone())
+            arguments.push(execution.builds.clone())
+            let command = toolchain::Command {
+                arguments: move arguments, stdout: toolchain::path_join(directory, "stdout.log"), stderr: toolchain::path_join(directory, "stderr.log"), timeout: 960000
+            }
+            return Ok(Worker {
+                    name: "", directory: move directory, pid: toolchain::start_process(command)?, index: index, deadline: toolchain::milliseconds() + 960000, status: toolchain::process_status_slot()
+                })
+        }
+    }
+
+    fn case_coverage(directory: Text, index: usize) -> Text {
+        if directory.length() == 0 {
+            return ""
+        }
+        return toolchain::path_join(directory, std::text::decimal(u64.from(index)))
+    }
+
+    fn finish_next_worker(workers: write Vec<Worker>, completed: write Vec<Option<Outcome>>) -> void {
+        while true {
+            for index in 0..workers.length() {
+                if poll_worker(workers, completed, index) {
+                    return
+                }
+            }
+            toolchain::wait_briefly()
+        }
+    }
+
+    fn poll_worker(workers: write Vec<Worker>, completed: write Vec<Option<Outcome>>, index: usize) -> bool {
+        let status = match toolchain::poll_process(workers[index].pid, workers[index].status) {
+            Ok(value) => value
+            Err(error) => {
+                finish_worker(workers, completed, index, Err(move error))
+                return true
+            }
+        }
+        match status {
+            Some(code) => {
+                let result = worker_result(workers[index], code)
+                finish_worker(workers, completed, index, move result)
+                return true
+            }
+            None() => {
+            }
+        }
+        if toolchain::milliseconds() >= workers[index].deadline {
+            finish_expired_worker(workers, completed, index)
+            return true
+        }
+        return false
+    }
+
+    fn finish_expired_worker(workers: write Vec<Worker>, completed: write Vec<Option<Outcome>>, index: usize) -> void {
+        let result = match toolchain::wait_process(workers[index].pid, 1) {
+            Ok(status) => worker_result(workers[index], status)
+            Err(error) => Err(move error)
+        }
+        finish_worker(workers, completed, index, move result)
+    }
+
+    fn finish_worker(workers: write Vec<Worker>, completed: write Vec<Option<Outcome>>, index: usize, result: take Result<void, Text>) -> void {
+        let last = workers.length() - 1
+        swap(workers[index], workers[last])
+        match workers.pop() {
+            Some(worker) => {
+                completed[worker.index] = Some(outcome(worker.name, move result))
+            }
+            None() => {
+                std::discard(move result)
+            }
+        }
+    }
+
+    fn report_ready(selected: Vec<bool>, completed: write Vec<Option<Outcome>>, next: write usize, results: write Report) -> void {
+        while next < selected.length() {
+            if selected[next] == false {
+                next = next + 1
+                continue
+            }
+            match replace(completed[next], None()) {
+                Some(row) => {
+                    record_result(results, move row)
+                    if results.rows.length() % 25 == 0 {
+                        toolchain::say(std::text::joined("Checked ", std::text::decimal(u64.from(results.rows.length()))))
+                    }
+                    next = next + 1
+                }
+                None() => {
+                    return
+                }
+            }
+        }
+    }
+
+    fn worker_result(worker: Worker, status: i32) -> Result<void, Text> {
+        let stderr = toolchain::read_text(toolchain::path_join(worker.directory, "stderr.log"))?
+        let stdout = toolchain::read_text(toolchain::path_join(worker.directory, "stdout.log"))?
+        if status != 0 || stderr.length() != 0 || stdout.length() != 0 {
+            return Err(std::text::joined(std::text::joined("worker status ", std::text::signed_decimal(i64.from(status))), std::text::joined("\n", std::text::joined(stdout, stderr))))
+        }
+        return Ok(())
+    }
+}

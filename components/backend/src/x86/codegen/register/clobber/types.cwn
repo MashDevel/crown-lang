@@ -1,0 +1,62 @@
+module x86 {
+    fn codegen_instruction_is_wide(function: ir::Function, instruction: ir::Instruction) -> bool {
+        match read instruction.result {
+            Some(value) => {
+                loan read function.values[value] as value_type {
+                    if codegen_type_is_wide(value_type) {
+                        return true
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        let operands = ir::instruction_operands(instruction.kind)
+        var index: usize = 0
+        while index < operands.length() {
+            loan read function.values[operands[index]] as value_type {
+                if codegen_type_is_wide(value_type) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn codegen_instruction_is_float(function: ir::Function, instruction: ir::Instruction) -> bool {
+        match read instruction.result {
+            Some(value) => {
+                loan read function.values[value] as value_type {
+                    if ir::type_is_float(value_type) {
+                        return true
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        let operands = ir::instruction_operands(instruction.kind)
+        var index: usize = 0
+        while index < operands.length() {
+            loan read function.values[operands[index]] as value_type {
+                if ir::type_is_float(value_type) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn codegen_type_is_wide(value_type: ir::Type) -> bool {
+        match ir::type_size(value_type) {
+            Some(size) => {
+                return size > 8
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}

@@ -1,0 +1,82 @@
+module optimize {
+    struct VectorGuard {
+        block: usize
+        start: usize
+        count: usize
+        size: usize
+        valid: usize
+    }
+
+    fn vector_guard(function: write ir::Function, block: usize, plan: VectorPlan) -> usize {
+        let integer = ir::TypeInteger(ir::IntegerWidth64())
+        let start = vector_extend(function, block, plan.evolution.induction.start)
+        let bound = vector_extend(function, block, plan.evolution.bound)
+        let count = induction_emit(function, block, integer, ir::InstructionBinary(ir::BinarySubtract(), bound, start))
+        let size = ir::function_constant(function, integer, ir::ConstantInteger(u64.from(usize.from(16) / plan.lanes)))
+        let bytes = induction_emit(function, block, integer, ir::InstructionBinary(ir::BinaryMultiply(), count, size))
+        let limit = ir::function_constant(function, integer, ir::ConstantInteger(18446744073709551615 / u64.from(usize.from(16) / plan.lanes)))
+        let valid = vector_compare(function, block, ir::CompareUnsignedLessEqual(), bound, limit)
+        let ordered = vector_compare(function, block, ir::CompareUnsignedLessEqual(), start, bound)
+        var guard = VectorGuard {
+            block: block, start: start, count: bytes, size: size, valid: vector_and(function, block, valid, ordered)
+        }
+        var addresses = Vec<usize>.new()
+        for index in 0..plan.accesses.length() {
+            addresses.push(vector_start_address(function, guard, plan.accesses[index]))
+        }
+        for left in 0..plan.accesses.length() {
+            for right in 0..left {
+                if plan.accesses[left].writing || plan.accesses[right].writing {
+                    vector_guard_pair(function, guard, addresses[left], addresses[right])
+                }
+            }
+        }
+        return guard.valid
+    }
+
+    fn vector_guard_pair(function: write ir::Function, guard: write VectorGuard, first: usize, second: usize) -> void {
+        let integer = ir::TypeInteger(ir::IntegerWidth64())
+        let first_end = induction_emit(function, guard.block, integer, ir::InstructionBinary(ir::BinaryAdd(), first, guard.count))
+        let second_end = induction_emit(function, guard.block, integer, ir::InstructionBinary(ir::BinaryAdd(), second, guard.count))
+        let before = vector_compare(function, guard.block, ir::CompareUnsignedLessEqual(), first_end, second)
+        let after = vector_compare(function, guard.block, ir::CompareUnsignedLessEqual(), second_end, first)
+        let disjoint = induction_emit(function, guard.block, ir::TypeInteger(ir::IntegerWidth1()), ir::InstructionBinary(ir::BinaryOr(), before, after))
+        let first_valid = vector_compare(function, guard.block, ir::CompareUnsignedGreaterEqual(), first_end, first)
+        let second_valid = vector_compare(function, guard.block, ir::CompareUnsignedGreaterEqual(), second_end, second)
+        let valid = vector_and(function, guard.block, first_valid, second_valid)
+        let equal = vector_compare(function, guard.block, ir::CompareEqual(), first, second)
+        let safe = induction_emit(function, guard.block, ir::TypeInteger(ir::IntegerWidth1()), ir::InstructionBinary(ir::BinaryOr(), disjoint, equal))
+        let checked = vector_and(function, guard.block, safe, valid)
+        guard.valid = vector_and(function, guard.block, guard.valid, checked)
+    }
+
+    fn vector_start_address(function: write ir::Function, guard: write VectorGuard, access: VectorAccess) -> usize {
+        let integer = ir::TypeInteger(ir::IntegerWidth64())
+        let base = induction_emit(function, guard.block, integer, ir::InstructionCast(ir::CastPointerToInteger(), access.base, integer))
+        let offset = induction_emit(function, guard.block, integer, ir::InstructionBinary(ir::BinaryMultiply(), guard.start, guard.size))
+        let bias = ir::function_constant(function, integer, ir::ConstantInteger(access.bias))
+        let adjusted = induction_emit(function, guard.block, integer, ir::InstructionBinary(ir::BinaryAdd(), base, bias))
+        let address = induction_emit(function, guard.block, integer, ir::InstructionBinary(ir::BinaryAdd(), adjusted, offset))
+        let bias_valid = vector_compare(function, guard.block, ir::CompareUnsignedGreaterEqual(), adjusted, base)
+        let offset_valid = vector_compare(function, guard.block, ir::CompareUnsignedGreaterEqual(), address, adjusted)
+        let valid = vector_and(function, guard.block, bias_valid, offset_valid)
+        guard.valid = vector_and(function, guard.block, guard.valid, valid)
+        return address
+    }
+
+    fn vector_compare(function: write ir::Function, block: usize, operator: ir::CompareOperator, left: usize, right: usize) -> usize {
+        return induction_emit(function, block, ir::TypeInteger(ir::IntegerWidth1()), ir::InstructionCompare(operator, left, right))
+    }
+
+    fn vector_and(function: write ir::Function, block: usize, left: usize, right: usize) -> usize {
+        return induction_emit(function, block, ir::TypeInteger(ir::IntegerWidth1()), ir::InstructionBinary(ir::BinaryAnd(), left, right))
+    }
+
+    fn vector_extend(function: write ir::Function, block: usize, value: usize) -> usize {
+        let integer = ir::TypeInteger(ir::IntegerWidth64())
+        if ir::type_equal(function.values[value], integer) {
+            return value
+        }
+        return induction_emit(function, block, integer, ir::InstructionCast(ir::CastZeroExtend(), value, integer))
+    }
+}

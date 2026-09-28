@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let original = Text.new()
+    let copied = original.clone()
+    if copied.length() != 0 {
+        return 1
+    }
+    return 42
+}

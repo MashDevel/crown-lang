@@ -1,0 +1,103 @@
+module lowering {
+    fn vector_push(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                var state = VectorState {
+                    address: 0, element: sema::Invalid(), length_address: 0, capacity_address: 0, length: 0, capacity: 0
+                }
+                loan read receiver as value {
+                    state = vector_state(compiler, analysis, value)?
+                }
+                let full = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), state.length, state.capacity))?
+                let growth = VectorGrowth {
+                    state: vector_state_copy(state), full: full
+                }
+                grow_vector(compiler, analysis.checker.symbols, growth)?
+                if arguments.length() != 1 {
+                    return Err(149)
+                }
+                store_vector_item(compiler, analysis, expression)?
+                increment_vector_length(compiler, analysis.checker.symbols, state)?
+                return Ok(VoidValue())
+            }
+            _ => {
+                return Err(150)
+            }
+        }
+    }
+
+    struct VectorGrowth {
+        state: VectorState
+        full: usize
+    }
+
+    fn grow_vector(compiler: write FunctionCompiler, symbols: sema::Symbols, growth: VectorGrowth) -> Result<void, u32> {
+        let ready = function_begin_guarded_block(compiler, growth.full)?
+        let next = next_buffer_capacity(compiler, symbols, growth.state.capacity)?
+        let resize = VectorResize {
+            state: vector_state_copy(growth.state), next: next
+        }
+        resize_vector(compiler, symbols, resize)?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+    struct VectorResize {
+        state: VectorState
+        next: usize
+    }
+
+    fn resize_vector(compiler: write FunctionCompiler, symbols: sema::Symbols, resize: VectorResize) -> Result<void, u32> {
+        let bytes = buffer_byte_size(compiler, symbols, resize.state.element, resize.next)?
+        let current = function_load_pointer(compiler, resize.state.address)?
+        let pointer = function_resize(compiler, current, bytes)?
+        function_store_pointer(compiler, resize.state.address, pointer)?
+        let store = StoreRequest {
+            address: resize.state.capacity_address, value: resize.next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn store_vector_item(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                if arguments.length() != 1 {
+                    return Err(204)
+                }
+                var state = VectorState {
+                    address: 0, element: sema::Invalid(), length_address: 0, capacity_address: 0, length: 0, capacity: 0
+                }
+                loan read receiver as value {
+                    state = vector_state(compiler, analysis, value)?
+                }
+                let data = function_load_pointer(compiler, state.address)?
+                let layout = layout(analysis.checker.symbols, state.element)?
+                let size_type = ir::TypeInteger(ir::IntegerWidth64())
+                let size = function_integer(compiler, size_type, layout.size)
+                let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), state.length, size))?
+                let target = function_append_value(compiler, ir::InstructionOffset(data, offset))?
+                loan read arguments[0] as item {
+                    return copy_expression_to(compiler, analysis, item, target)
+                }
+            }
+            _ => {
+                return Err(205)
+            }
+        }
+    }
+
+    fn increment_vector_length(compiler: write FunctionCompiler, symbols: sema::Symbols, state: VectorState) -> Result<void, u32> {
+        let one_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, one_type, 1)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: state.length, right: one, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let next = integer_binary(compiler, symbols, operation)?
+        let store = StoreRequest {
+            address: state.length_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+}

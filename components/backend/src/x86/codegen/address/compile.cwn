@@ -1,0 +1,101 @@
+module x86 {
+    fn codegen_compile_sequence_at(program: ir::Program, compiler: write FunctionCompiler, position: take SequencePosition) -> Result<usize, CodegenError> {
+        match codegen_packed_sequence(program, compiler, position) {
+            Some(sequence) => {
+                codegen_compile_packed(program, compiler, position.index, sequence)?
+                return Ok(sequence.end - position.index)
+            }
+            None => {
+            }
+        }
+        match codegen_fused_memory(program, compiler, position) {
+            Some(fusion) => {
+                let consumed = fusion.consumed
+                codegen_compile_fused_memory(program, compiler, fusion.memory)?
+                return Ok(consumed)
+            }
+            None => {
+                loan read program.functions[compiler.id].blocks[codegen_current_block(compiler)].instructions[position.index] as instruction {
+                    codegen_compile_instruction(program, compiler, instruction)?
+                }
+                return Ok(1)
+            }
+        }
+    }
+
+    fn codegen_memory_pattern(function: ir::Function, instruction: ir::Instruction, pattern: take MemoryPattern) -> Option<FusedMemory> {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        if address != pattern.address || codegen_scalar(value_type) == false {
+                            return None()
+                        }
+                        return Some(FusedLoad(instruction.result, pattern.base, codegen_memory_offset_copy(pattern.offset), value_type))
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        if address != pattern.address || codegen_scalar(function.values[value]) == false {
+                            return None()
+                        }
+                        return Some(FusedStore(pattern.base, codegen_memory_offset_copy(pattern.offset), value))
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_compile_fused_memory(program: ir::Program, compiler: write FunctionCompiler, memory: FusedMemory) -> Result<void, CodegenError> {
+        match read memory {
+            FusedLoad(result, base, offset, value_type) => {
+                match read offset {
+                    MemoryImmediate(value) => {
+                        return codegen_compile_load_at(program, compiler, LoadAtInput {
+                                result: result, address: base, offset: value, value_type: value_type
+                            })
+                    }
+                    MemoryDynamic(index, scale) => {
+                        return codegen_compile_load_indexed(program, compiler, LoadIndexedInput {
+                                result: result, base: base, index: index, scale: scale, value_type: value_type
+                            })
+                    }
+                }
+            }
+            FusedStore(base, offset, value) => {
+                match read offset {
+                    MemoryImmediate(immediate) => {
+                        return codegen_compile_store_at(program, compiler, StoreAtInput {
+                                address: base, offset: immediate, value: value
+                            })
+                    }
+                    MemoryDynamic(index, scale) => {
+                        return codegen_compile_store_indexed(program, compiler, StoreIndexedInput {
+                                base: base, index: index, scale: scale, value: value
+                            })
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_memory_offset_copy(offset: MemoryOffset) -> MemoryOffset {
+        match read offset {
+            MemoryImmediate(value) => {
+                return MemoryImmediate(value)
+            }
+            MemoryDynamic(value, scale) => {
+                return MemoryDynamic(value, scale)
+            }
+        }
+    }
+}

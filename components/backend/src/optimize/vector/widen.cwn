@@ -1,0 +1,98 @@
+module optimize {
+    fn vector_widen_body(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, entry: usize) -> void {
+        let original = ir::basic_block_copy(function.blocks[plan.evolution.body])
+        var instructions = Vec<ir::Instruction>.new()
+        for index in 0..original.instructions.length() {
+            instructions.push(vector_widen_instruction(function, plan, mapping, original.instructions[index], entry))
+        }
+        function.blocks[mapping.blocks[plan.evolution.body]].instructions = move instructions
+    }
+
+    fn vector_widen_instruction(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, instruction: ir::Instruction, entry: usize) -> ir::Instruction {
+        let result = match instruction.result {
+            Some(value) => Some(inline_mapped_value(mapping, value))
+            None => None()
+        }
+        var kind = inline_remap_instruction(instruction.kind, mapping)
+        let vector = match ir::vector_type(plan.scalar) {
+            Some(value) => value
+            None => ir::TypeVoid()
+        }
+        match instruction.result {
+            Some(value) => {
+                if plan.widened[value] {
+                    function.values[inline_mapped_value(mapping, value)] = vector
+                    kind = vector_widen_kind(function, plan, mapping, instruction.kind, entry)
+                } else {
+                    vector_widen_step(function, plan, mapping, value, kind)
+                }
+            }
+            None => {
+                kind = vector_widen_kind(function, plan, mapping, instruction.kind, entry)
+            }
+        }
+        return ir::Instruction {
+            result: result, kind: move kind
+        }
+    }
+
+    fn vector_widen_kind(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, kind: ir::InstructionKind, entry: usize) -> ir::InstructionKind {
+        let target = match ir::vector_type(plan.scalar) {
+            Some(value) => value
+            None => ir::TypeVoid()
+        }
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let first = vector_operand(function, plan, mapping, left, entry)
+                let second = vector_operand(function, plan, mapping, right, entry)
+                return ir::InstructionBinary(operator, first, second)
+            }
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        return ir::InstructionLoad(inline_mapped_value(mapping, address), target, alignment, volatile)
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        let operand = vector_operand(function, plan, mapping, value, entry)
+                        return ir::InstructionStore(inline_mapped_value(mapping, address), operand, alignment, volatile)
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return inline_remap_instruction(kind, mapping)
+    }
+
+    fn vector_operand(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, value: usize, entry: usize) -> usize {
+        if plan.widened[value] {
+            return inline_mapped_value(mapping, value)
+        }
+        let target = match ir::vector_type(plan.scalar) {
+            Some(found) => found
+            None => ir::TypeVoid()
+        }
+        return induction_emit(function, entry, target, ir::InstructionVectorSplat(value, target))
+    }
+
+    fn vector_widen_step(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, result: usize, kind: write ir::InstructionKind) -> void {
+        for index in 0..plan.inductions.length() {
+            loan read plan.inductions[index] as induction {
+                if induction.next == result {
+                    let step = match integer_constant(function, induction.step) {
+                        Some(value) => value
+                        None => {
+                            return
+                        }
+                    }
+                    let scaled = ir::function_constant(function, induction.value_type, ir::ConstantInteger(step.wrapping_mul(u64.from(plan.lanes))))
+                    kind = ir::InstructionBinary(induction.operator, inline_mapped_value(mapping, induction.value), scaled)
+                    return
+                }
+            }
+        }
+    }
+}

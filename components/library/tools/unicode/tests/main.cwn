@@ -1,0 +1,18 @@
+fn run() -> Result<void, Text> {
+    unicode_tests::input()?
+    unicode_tests::tables()?
+    unicode_tests::output()?
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let output = toolchain::path_join(root, "output")
+    testing::error(unicode_tables::generate(root, output))?
+    testing::write_file(root, "printable.rs", unicode_tests::printable_source())?
+    testing::write_file(root, "unicode_data.rs", unicode_tests::grapheme_source("768"))?
+    unicode_tables::generate(root, output)?
+    testing::expect(toolchain::exists(toolchain::path_join(output, "printable.cwn")), "printable output")?
+    return testing::expect(toolchain::exists(toolchain::path_join(output, "grapheme.cwn")), "grapheme output")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

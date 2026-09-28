@@ -1,0 +1,224 @@
+module x86 {
+    struct UnsignedMagic {
+        multiplier: u64
+        shift: u8
+        add: bool
+        bits: u8
+    }
+
+    struct DivisionResult {
+        quotient: u64
+        remainder: u64
+    }
+
+    fn codegen_constant_unsigned_division(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<bool, CodegenError> {
+        match read input.operator {
+            ir::BinaryUnsignedDivide => {
+            }
+            _ => {
+                return Ok(false)
+            }
+        }
+        var divisor: u64 = 0
+        loan read program.functions[compiler.id] as function {
+            match codegen_integer_constant(function, input.right) {
+                Some(value) => {
+                    divisor = value
+                }
+                None => {
+                    return Ok(false)
+                }
+            }
+        }
+        let value_type = codegen_value_type(program, compiler, input.left)?
+        let width = codegen_width(value_type)?
+        match codegen_unsigned_magic(divisor, width) {
+            None => {
+                return Ok(false)
+            }
+            Some(magic) => {
+                codegen_load_value(program, compiler, ValueAccess {
+                        value: input.left, register: Rax()
+                    })?
+                codegen_prepare_magic_input(compiler, magic)
+                codegen_emit_magic_product(compiler, magic)
+                codegen_prepare_magic_quotient(compiler, magic)
+                codegen_emit_magic_quotient(compiler, magic)
+                codegen_store_result(program, compiler, ResultStore {
+                        result: input.result
+                        source: Rax()
+                    })?
+                return Ok(true)
+            }
+        }
+    }
+
+    fn codegen_prepare_magic_input(compiler: write FunctionCompiler, magic: UnsignedMagic) -> void {
+        if magic.add && magic.bits == 64 {
+            codegen_emit(compiler, Push(Rax()))
+        }
+        if magic.add && magic.bits != 64 {
+            codegen_emit(compiler, Move(Rdx(), Rax()))
+        }
+    }
+
+    fn codegen_prepare_magic_quotient(compiler: write FunctionCompiler, magic: UnsignedMagic) -> void {
+        if magic.add && magic.bits == 64 {
+            codegen_emit(compiler, Pop(Rcx()))
+        }
+        if magic.add && magic.bits != 64 {
+            codegen_emit(compiler, Move(Rcx(), Rdx()))
+        }
+    }
+
+    fn codegen_emit_magic_product(compiler: write FunctionCompiler, magic: UnsignedMagic) -> void {
+        codegen_emit(compiler, MoveImmediate(Rcx(), i64.from_bits(magic.multiplier)))
+        if magic.bits == 64 {
+            codegen_emit(compiler, MultiplyWideUnsigned(Rcx()))
+            codegen_emit(compiler, Move(Rax(), Rdx()))
+        } else {
+            codegen_emit(compiler, Multiply(Rax(), Rcx()))
+            codegen_emit(compiler, ShiftRightLogicalImmediate(Rax(), magic.bits))
+        }
+    }
+
+    fn codegen_emit_magic_quotient(compiler: write FunctionCompiler, magic: UnsignedMagic) -> void {
+        if magic.add {
+            codegen_emit(compiler, Subtract(Rcx(), Rax()))
+            codegen_emit(compiler, ShiftRightLogicalImmediate(Rcx(), 1))
+            codegen_emit(compiler, Add(Rax(), Rcx()))
+        }
+        if magic.shift != 0 {
+            codegen_emit(compiler, ShiftRightLogicalImmediate(Rax(), magic.shift))
+        }
+    }
+
+    fn codegen_unsigned_magic(raw_divisor: u64, width: Width) -> Option<UnsignedMagic> {
+        let bits = codegen_division_width_bits(width)
+        let mask = codegen_division_mask(bits)
+        let divisor = raw_divisor & mask
+        if divisor == 0 || divisor & divisor.wrapping_sub(1) == 0 {
+            return None()
+        }
+        let floor_log = codegen_floor_log(divisor)
+        let division = codegen_divide_power(divisor, bits + floor_log)
+        var proposed = division.quotient
+        let threshold = u64.from(1) << u64.from(floor_log)
+        let add = divisor - division.remainder >= threshold
+        if add {
+            proposed = proposed.wrapping_mul(2)
+            let half = divisor / 2 + divisor % 2
+            if division.remainder >= half {
+                proposed = proposed.wrapping_add(1)
+            }
+        }
+        return Some(UnsignedMagic {
+                multiplier: proposed.wrapping_add(1) & mask
+                shift: floor_log
+                add: add
+                bits: bits
+            })
+    }
+
+    fn codegen_divide_power(divisor: u64, exponent: u8) -> DivisionResult {
+        var quotient: u64 = 0
+        var remainder: u64 = 1
+        var position = exponent
+        while position != 0 {
+            position = position - 1
+            let carry = remainder >> 63 != 0
+            remainder = remainder << 1
+            if carry || remainder >= divisor {
+                remainder = remainder.wrapping_sub(divisor)
+                if position < 64 {
+                    quotient = quotient |(u64.from(1) << u64.from(position))
+                }
+            }
+        }
+        return DivisionResult {
+            quotient: quotient, remainder: remainder
+        }
+    }
+
+    fn codegen_floor_log(value: u64) -> u8 {
+        var remaining = value
+        var output: u8 = 0
+        while remaining > 1 {
+            remaining = remaining >> 1;
+            output = output + 1
+        }
+        return output
+    }
+
+    fn codegen_division_width_bits(width: Width) -> u8 {
+        match read width {
+            Byte => {
+                return 8
+            }
+            Word => {
+                return 16
+            }
+            Dword => {
+                return 32
+            }
+            Qword => {
+                return 64
+            }
+        }
+    }
+
+    fn codegen_division_mask(bits: u8) -> u64 {
+        if bits == 64 {
+            return 18446744073709551615
+        }
+        return (u64.from(1) << u64.from(bits)) - 1
+    }
+
+    fn codegen_division(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<void, CodegenError> {
+        let extension = if codegen_binary_is_signed(input.operator) {
+            SignExtend()
+        } else {
+            ZeroExtend()
+        }
+        codegen_load_extended(program, compiler, ExtendedLoad {
+                value: input.left
+                destination: Rax()
+                extension: extension
+            })?
+        codegen_load_extended(program, compiler, ExtendedLoad {
+                value: input.right
+                destination: Rcx()
+                extension: extension
+            })?
+        codegen_emit_division(compiler, input.operator)
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: Rax()
+            })
+    }
+
+    fn codegen_emit_division(compiler: write FunctionCompiler, operator: ir::BinaryOperator) -> void {
+        match read operator {
+            ir::BinarySignedDivide => {
+                codegen_emit(compiler, SignExtendRax());
+                codegen_emit(compiler, DivideSigned(Rcx()))
+            }
+            ir::BinarySignedRemainder => {
+                codegen_emit(compiler, SignExtendRax());
+                codegen_emit(compiler, DivideSigned(Rcx()));
+                codegen_emit(compiler, Move(Rax(), Rdx()))
+            }
+            ir::BinaryUnsignedDivide => {
+                codegen_emit(compiler, MoveImmediate(Rdx(), 0));
+                codegen_emit(compiler, DivideUnsigned(Rcx()))
+            }
+            ir::BinaryUnsignedRemainder => {
+                codegen_emit(compiler, MoveImmediate(Rdx(), 0));
+                codegen_emit(compiler, DivideUnsigned(Rcx()));
+                codegen_emit(compiler, Move(Rax(), Rdx()))
+            }
+            _ => {
+            }
+        }
+    }
+}

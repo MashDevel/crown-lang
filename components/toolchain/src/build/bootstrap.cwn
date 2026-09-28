@@ -1,0 +1,135 @@
+module toolchain {
+    struct BootstrapRequest {
+        root: Text, compiler: Text, directory: Text, force: bool, verify: bool
+    }
+    struct Stage {
+        assembly: Text, binary: Text
+    }
+
+    fn compiler_sources(root: Text) -> Result<Vec<Text>, Text> {
+        var entries = Vec<Text>.new()
+        entries.push(path_join(root, "components/compiler/src"))
+        entries.push(path_join(root, "components/backend/src"))
+        entries.push(path_join(root, "components/library/src"))
+        entries.push(path_join(root, "components/toolchain/src"))
+        let request = SourcePaths {
+            entries: move entries, excluded: Vec<Text>.new(), target: host_target()
+        }
+        return require_sources(request)
+    }
+
+    fn verify_seed(root: Text) -> Result<Text, Text> {
+        let path = path_join(root, seed_relative("compiler.s"))
+        let document = json(read_text(path_join(parent_path(path), "manifest.json"))?)?
+        let expected = json_text(document, json_required(document, document.root, "assembly_sha256")?)?
+        if std::text::equal(digest(path)?, expected) == false {
+            return Err("bootstrap assembly checksum mismatch")
+        }
+        return Ok(move path)
+    }
+
+    fn bootstrap(request: BootstrapRequest) -> Result<Text, Text> {
+        let directory = absolute(request.directory)?
+        make_directory(directory)?
+        let output = path_join(directory, "crown")
+        let lock = lock_file(std::text::joined(output, ".lock"))?
+        bootstrap_locked(request, output)?
+        lock
+        return Ok(move output)
+    }
+
+    fn bootstrap_locked(request: BootstrapRequest, output: Text) -> Result<void, Text> {
+        let seed = verify_seed(request.root)?
+        let sources = compiler_sources(request.root)?
+        let input = bootstrap_fingerprint(seed, sources, request.verify)?
+        if request.force == false && fresh(output, input) {
+            return record_bootstrap(output, input, seed)
+        }
+        return reuse_bootstrap(request, output, seed, sources, input)
+    }
+
+    fn publish_bootstrap(request: BootstrapRequest, output: Text, seed: Text, sources: Vec<Text>, input: Text) -> Result<void, Text> {
+        let temporary = temporary(parent_path(output))?
+        let build_directory = temporary_path(temporary)
+        let binary = bootstrap_stage(request, seed, sources, build_directory)?
+        verify_bootstrap_inputs(request.root, seed, input, request.verify)?
+        rename_file(binary, output)?
+        record_bootstrap(output, input, seed)?
+        say(std::text::joined(if request.verify {
+                    "Verified compiler SHA-256: "
+                } else {
+                    "Built compiler SHA-256: "
+                }, digest(output)?))
+        return Ok(())
+    }
+
+    fn verify_bootstrap_inputs(root: Text, seed: Text, input: Text, verify: bool) -> Result<void, Text> {
+        if std::text::equal(input, bootstrap_fingerprint(seed, compiler_sources(root)?, verify)?) == false {
+            return Err("compiler sources changed during bootstrap")
+        }
+        return Ok(())
+    }
+
+    fn bootstrap_fingerprint(seed: Text, sources: Vec<Text>, verify: bool) -> Result<Text, Text> {
+        var inputs = std::text::clone_list(sources)
+        inputs.push(seed.clone())
+        var options = Vec<Text>.new()
+        options.push(if verify {
+                bootstrap_driver()
+            } else {
+                "crown-native-bootstrap-v1"
+            })
+        options.push(target_name(host_target()))
+        if verify == false {
+            options.push(environment("CROWN_LINUX_INTERPRETER"))
+            options.push(environment("CROWN_LINUX_LIBRARY_PATH"))
+        }
+        return fingerprint(inputs, options)
+    }
+
+    fn build_stage(compiler: Text, sources: Vec<Text>, directory: Text) -> Result<Stage, Text> {
+        let assembly = path_join(directory, "compiler.s")
+        let binary = path_join(directory, "compiler")
+        let request = CompileRequest {
+            compiler: compiler.clone(), assembly: assembly.clone(), sources: std::text::clone_list(sources), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
+        }
+        compile(request)?
+        bootstrap_link(assembly, binary)?
+        return Ok(Stage {
+                assembly: move assembly, binary: move binary
+            })
+    }
+
+    fn rebuild(compiler: Text, sources: Vec<Text>, directory: Text) -> Result<Stage, Text> {
+        say("Building Crown from the available compiler")
+        let first = build_stage(compiler, sources, directory)?
+        let previous = path_join(directory, "previous")
+        save_stage(first, previous)?
+        say("Building Crown with the current compiler")
+        let second = build_stage(previous, sources, directory)?
+        let expected = stage_digest(second)?
+        save_stage(second, previous)?
+        say("Rebuilding Crown and checking the fixed point")
+        let third = build_stage(previous, sources, directory)?
+        verify_stage(expected, stage_digest(third)?)?
+        return Ok(move third)
+    }
+
+    fn stage_digest(stage: Stage) -> Result<Stage, Text> {
+        return Ok(Stage {
+                assembly: digest(stage.assembly)?, binary: digest(stage.binary)?
+            })
+    }
+
+    fn save_stage(stage: Stage, output: Text) -> Result<void, Text> {
+        copy_file(stage.binary, output)?
+        return executable(output)
+    }
+
+    fn verify_stage(expected: Stage, actual: Stage) -> Result<void, Text> {
+        if std::text::equal(expected.assembly, actual.assembly) && std::text::equal(expected.binary, actual.binary) {
+            return Ok(())
+        }
+        return Err("Crown bootstrap did not reproduce identical assembly and executable bytes")
+    }
+}

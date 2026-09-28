@@ -1,0 +1,36 @@
+module x86 {
+    enum CodegenErrorKind {
+        CodegenInvalidIr
+        CodegenUnsupportedType(ir::Type)
+        CodegenUnsupportedInstruction
+        CodegenUnsupportedCast
+        CodegenTooManyArguments
+        CodegenNumericOverflow
+        CodegenMissingSymbol
+        CodegenEncodeError
+    }
+
+    struct CodegenError {
+        kind: CodegenErrorKind
+        function: Option<usize>
+        block: Option<usize>
+    }
+
+    fn codegen_error(kind: take CodegenErrorKind) -> CodegenError {
+        return CodegenError {
+            kind: move kind, function: None(), block: None()
+        }
+    }
+
+    fn codegen_error_at(error: write CodegenError, function: usize, block: Option<usize>) -> void {
+        error.function = Some(function)
+        match read block {
+            Some(value) => {
+                error.block = Some(value)
+            }
+            None => {
+                error.block = None()
+            }
+        }
+    }
+}

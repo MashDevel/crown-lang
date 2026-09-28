@@ -1,0 +1,86 @@
+module toolchain {
+    fn digest_bytes(bytes: Vec<u8>) -> Result<Text, Text> {
+        if bytes.length() > 4294967295 {
+            return Err("input exceeds the digest size limit")
+        }
+        let digest = std::sha256::digest(bytes)
+        var output = ""
+        for index in 0..digest.length() {
+            std::text::hex_byte(output, digest[index])
+        }
+        return Ok(move output)
+    }
+
+    fn digest(path: Text) -> Result<Text, Text> {
+        let bytes = read_bytes(path)?;
+        return digest_bytes(bytes)
+    }
+
+    fn text_bytes(value: Text) -> Vec<u8> {
+        var output = Vec<u8>.with_capacity(value.length())
+        loan read value as bytes {
+            for index in 0..bytes.length() {
+                output.push(bytes[index])
+            }
+        }
+        return move output
+    }
+
+    fn digest_text(value: Text) -> Result<Text, Text> {
+        let bytes = text_bytes(value);
+        return digest_bytes(bytes)
+    }
+
+    fn fingerprint(paths: Vec<Text>, options: Vec<Text>) -> Result<Text, Text> {
+        var input = ""
+        for index in 0..options.length() {
+            fingerprint_part(input, options[index])
+        }
+        input.push('\n')
+        for index in 0..paths.length() {
+            fingerprint_part(input, paths[index])
+            fingerprint_part(input, digest(paths[index])?)
+        }
+        return digest_text(input)
+    }
+
+    fn fingerprint_part(output: write Text, value: Text) -> void {
+        std::text::append(output, std::text::decimal(u64.from(value.length())))
+        output.push(':')
+        std::text::append(output, value)
+    }
+
+    fn crc_table() -> Vec<u32> {
+        var output = Vec<u32>.with_capacity(256)
+        for index in 0..256 {
+            var value = u32.from(index) << 24
+            for bit in 0..8 {
+                bit;
+                value = crc_bit(value)
+            }
+            output.push(value)
+        }
+        return move output
+    }
+
+    fn crc_bit(value: u32) -> u32 {
+        if value & 2147483648 != 0 {
+            return (value << 1) ^ 79764919
+        }
+        return value << 1
+    }
+
+    fn checksum(bytes: Vec<u8>) -> Text {
+        let table = crc_table()
+        var crc: u32 = 0
+        for index in 0..bytes.length() {
+            crc = (crc << 8) ^ table[usize.from((crc >> 24) ^ u32.from(bytes[index]))]
+        }
+        var length = bytes.length()
+        while length != 0 {
+            crc = (crc << 8) ^ table[usize.from((crc >> 24) ^ u32.from(length & 255))];
+            length = length >> 8
+        }
+        return std::text::joined(std::text::joined(std::text::decimal(u64.from(~crc)), " "), std::text::decimal(u64.from(bytes.length())))
+    }
+}

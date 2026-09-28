@@ -1,0 +1,85 @@
+module x86 {
+    fn stack_runtime_function() -> Function {
+        var instructions = Vec<Instruction>.new()
+        stack_runtime_validate(instructions)
+        instructions.push(Push(Rbx()))
+        instructions.push(SubtractImmediate(Rsp(), 112))
+        instructions.push(Store(Rsp(), 72, Rdi()))
+        instructions.push(Store(Rsp(), 80, Rsi()))
+        instructions.push(Store(Rsp(), 88, Rdx()))
+        instructions.push(Store(Rsp(), 96, Rcx()))
+        instructions.push(Store(Rsp(), 104, R8()))
+        instructions.push(Move(Rdi(), Rsp()))
+        instructions.push(Call("pthread_attr_init"))
+        stack_runtime_status(instructions)
+        instructions.push(Test(Rbx(), Rbx()))
+        instructions.push(JumpIf(NotEqual(), InternalLabel(3)))
+        instructions.push(Move(Rdi(), Rsp()))
+        instructions.push(Load(Rsi(), Rsp(), 96))
+        instructions.push(Load(Rdx(), Rsp(), 104))
+        instructions.push(Call("pthread_attr_setstack"))
+        stack_runtime_status(instructions)
+        instructions.push(Test(Rbx(), Rbx()))
+        instructions.push(JumpIf(NotEqual(), InternalLabel(2)))
+        instructions.push(LoadAddress(Rdi(), Rsp(), 64))
+        instructions.push(Move(Rsi(), Rsp()))
+        instructions.push(Load(Rdx(), Rsp(), 80))
+        instructions.push(Load(Rcx(), Rsp(), 88))
+        instructions.push(Call("pthread_create"))
+        stack_runtime_status(instructions)
+        instructions.push(Label(InternalLabel(2)))
+        instructions.push(Move(Rdi(), Rsp()))
+        instructions.push(Call("pthread_attr_destroy"))
+        instructions.push(Test(Rbx(), Rbx()))
+        instructions.push(JumpIf(NotEqual(), InternalLabel(3)))
+        instructions.push(Load(Rax(), Rsp(), 64))
+        instructions.push(Load(Rcx(), Rsp(), 72))
+        instructions.push(Store(Rcx(), 0, Rax()))
+        instructions.push(Label(InternalLabel(3)))
+        instructions.push(Move(Rax(), Rbx()))
+        instructions.push(AddImmediate(Rsp(), 112))
+        instructions.push(Pop(Rbx()))
+        instructions.push(Return())
+        instructions.push(Label(InternalLabel(4)))
+        instructions.push(MoveImmediate(Rax(), 22))
+        instructions.push(Return())
+        return function_new("crown_pthread_create_stack", move instructions)
+    }
+
+    fn stack_runtime_status(instructions: write Vec<Instruction>) -> void {
+        instructions.push(MoveSized(MoveSizedArgs {
+                    destination: Rbx(), source: Rax(), width: Dword(), extension: ZeroExtend()
+                }))
+    }
+
+    fn stack_runtime_validate(instructions: write Vec<Instruction>) -> void {
+        instructions.push(Test(Rdi(), Rdi()))
+        instructions.push(JumpIf(Equal(), InternalLabel(4)))
+        instructions.push(Test(Rsi(), Rsi()))
+        instructions.push(JumpIf(Equal(), InternalLabel(4)))
+        instructions.push(Test(Rcx(), Rcx()))
+        instructions.push(JumpIf(Equal(), InternalLabel(4)))
+        instructions.push(Move(Rax(), Rcx()))
+        instructions.push(MoveImmediate(R9(), 15))
+        instructions.push(And(Rax(), R9()))
+        instructions.push(JumpIf(NotEqual(), InternalLabel(4)))
+        instructions.push(CompareImmediate(R8(), 16384))
+        instructions.push(JumpIf(Below(), InternalLabel(4)))
+        instructions.push(Move(Rax(), Rcx()))
+        instructions.push(Add(Rax(), R8()))
+        instructions.push(JumpIf(Below(), InternalLabel(4)))
+    }
+
+    fn codegen_add_stack_runtime(program: write Program) -> Result<void, CodegenError> {
+        if program_has_import(program, "crown_pthread_create_stack") == false {
+            return Ok(())
+        }
+        program_remove_import(program, "crown_pthread_create_stack")
+        codegen_insert_function(program, stack_runtime_function())?
+        root_runtime_import(program, "pthread_attr_init")?
+        root_runtime_import(program, "pthread_attr_setstack")?
+        root_runtime_import(program, "pthread_attr_destroy")?
+        root_runtime_import(program, "pthread_create")?
+        return Ok(())
+    }
+}

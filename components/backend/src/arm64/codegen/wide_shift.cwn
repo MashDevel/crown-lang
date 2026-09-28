@@ -1,0 +1,66 @@
+module arm64 {
+    fn wide_shift(compiler: write Compiler, operator: ir::BinaryOperator) -> Result<void, Text> {
+        immediate(compiler, 12, 127)
+        emit_registers(compiler, 2315255808, 11, 11, 12)
+        emit_encoding(compiler, compare_word(11, 31))
+        emit_encoding(compiler, conditional_branch(8, 1))
+        let done = compiler.bytes.length()
+        emit_encoding(compiler, branch_word(0, false))
+        immediate(compiler, 12, 64)
+        emit_encoding(compiler, compare_word(11, 12))
+        emit_encoding(compiler, conditional_branch(8, 3))
+        let large = compiler.bytes.length()
+        emit_encoding(compiler, branch_word(0, false))
+        emit_registers(compiler, 3405774848, 12, 31, 11)
+        wide_shift_small(compiler, operator)?
+        let finish = compiler.bytes.length()
+        emit_encoding(compiler, branch_word(0, false))
+        patch_branch(compiler, large, compiler.bytes.length())
+        wide_shift_large(compiler, operator)?
+        patch_branch(compiler, finish, compiler.bytes.length())
+        patch_branch(compiler, done, compiler.bytes.length())
+        return Ok(())
+    }
+    fn shift_registers(compiler: write Compiler, operation: ShiftOperation, destination: u32, left: u32, right: u32) -> void {
+        emit_encoding(compiler, shift_word(operation, Registers {
+                    destination: destination, left: left, right: right
+                }))
+        return
+    }
+    fn wide_shift_small(compiler: write Compiler, operator: ir::BinaryOperator) -> Result<void, Text> {
+        if operator == ir::BinaryShiftLeft() {
+            shift_registers(compiler, ShiftOperation::LogicalRight(), 13, 9, 12)
+            shift_registers(compiler, ShiftOperation::Left(), 9, 9, 11)
+            shift_registers(compiler, ShiftOperation::Left(), 10, 10, 11)
+            emit_registers(compiler, 2852126720, 10, 10, 13)
+            return Ok(())
+        }
+        shift_registers(compiler, ShiftOperation::Left(), 13, 10, 12)
+        shift_registers(compiler, ShiftOperation::LogicalRight(), 9, 9, 11)
+        let operation = if operator == ir::BinaryShiftRightSigned() {
+            ShiftOperation::ArithmeticRight()
+        } else {
+            ShiftOperation::LogicalRight()
+        }
+        shift_registers(compiler, operation, 10, 10, 11)
+        emit_registers(compiler, 2852126720, 9, 9, 13)
+        return Ok(())
+    }
+    fn wide_shift_large(compiler: write Compiler, operator: ir::BinaryOperator) -> Result<void, Text> {
+        if operator == ir::BinaryShiftLeft() {
+            shift_registers(compiler, ShiftOperation::Left(), 10, 9, 11)
+            immediate(compiler, 9, 0)
+            return Ok(())
+        }
+        if operator == ir::BinaryShiftRightSigned() {
+            shift_registers(compiler, ShiftOperation::ArithmeticRight(), 9, 10, 11)
+            immediate(compiler, 12, 63)
+            shift_registers(compiler, ShiftOperation::ArithmeticRight(), 10, 10, 12)
+            return Ok(())
+        }
+        shift_registers(compiler, ShiftOperation::LogicalRight(), 9, 10, 11)
+        immediate(compiler, 10, 0)
+        return Ok(())
+    }
+
+}

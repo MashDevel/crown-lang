@@ -1,0 +1,133 @@
+module sema {
+    fn checker_match_arm(checker: write Checker, arm: frontend::MatchArm, context: write MatchContext) -> void {
+        if context.wildcard {
+            checker_error(checker, "invalid match arm: check duplicate variants and payload bindings");
+            return
+        }
+        context.current_fields = Vec<Type>.new()
+        for index in 0..arm.pattern.choices.length() {
+            match checker_pattern(checker, arm.pattern.choices[index], context) {
+                None => {
+                    return
+                }
+                Some(fields) => {
+                    if fields.length() != arm.pattern.bindings.length() {
+                        checker_error(checker, "invalid match arm: check duplicate variants and payload bindings");
+                        return
+                    }
+                    if index != 0 && type_vectors_equal(fields, context.current_fields) == false {
+                        checker_error(checker, "combined patterns require identical payload types");
+                        return
+                    }
+                    context.current_fields = move fields
+                }
+            }
+        }
+        checker_match_arm_body(checker, arm, context)
+    }
+
+    fn checker_pattern(checker: write Checker, kind: frontend::PatternKind, context: write MatchContext) -> Option<Vec<Type>> {
+        if context.wildcard {
+            checker_error(checker, "invalid match arm after wildcard");
+            return None()
+        }
+        if type_is_integer(context.value_type) {
+            return checker_integer_pattern(checker, kind, context)
+        }
+        match read kind {
+            frontend::PatternWildcard => {
+                context.wildcard = true;
+                return Some(Vec<Type>.new())
+            }
+            frontend::PatternVariant(name) => {
+                return checker_variant_pattern(checker, name, context)
+            }
+            frontend::PatternText(span) => {
+                return checker_text_pattern(checker, span, context)
+            }
+            frontend::PatternInteger(value, negative) => {
+                value;
+                negative;
+                checker_error(checker, "integer patterns require an integer scrutinee");
+                return None()
+            }
+        }
+    }
+
+    fn checker_variant_pattern(checker: write Checker, name: frontend::Name, context: write MatchContext) -> Option<Vec<Type>> {
+        if match_seen(checker, context.seen, name) {
+            checker_error(checker, "invalid match arm: check duplicate variants and payload bindings");
+            return None()
+        }
+        context.seen.push(frontend::name_copy(name))
+        match match_variant_fields(checker, context.value_type, name) {
+            None => {
+                checker_error(checker, "invalid match arm: check duplicate variants and payload bindings");
+                return None()
+            }
+            Some(fields) => {
+                return Some(move fields)
+            }
+        }
+    }
+
+    fn match_seen(checker: Checker, seen: Vec<frontend::Name>, name: frontend::Name) -> bool {
+        var index: usize = 0
+        while index < seen.length() {
+            loan read seen[index] as previous {
+                if name_leaves_equal(checker.symbols.source, previous, name) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn checker_match_arm_body(checker: write Checker, arm: frontend::MatchArm, context: write MatchContext) -> void {
+        checker.scopes = scopes_copy(context.before)
+        checker.thread_regions = thread_regions_copy(context.region_before)
+        checker.continuing = true
+        checker_push_scope(checker)
+        checker_match_bindings(checker, arm, context)
+        checker_match_body(checker, arm.body, context)
+        checker_pop_scope(checker)
+        context.states.push(MatchArmState {
+                continuing: checker.continuing
+                scopes: scopes_copy(checker.scopes)
+                regions: thread_regions_copy(checker.thread_regions)
+            })
+    }
+
+    fn checker_match_bindings(checker: write Checker, arm: frontend::MatchArm, context: MatchContext) -> void {
+        var index: usize = 0
+        while index < arm.pattern.bindings.length() {
+            var access = OwnedAccess()
+            var mutable_value = false
+            match read context.access {
+                Some(mode) => {
+                    access = loan_access(mode);
+                    mutable_value = loan_is_write(mode)
+                }
+                None => {
+                }
+            }
+            loan read arm.pattern.bindings[index] as name {
+                loan read context.current_fields[index] as value_type {
+                    let variable = Variable {
+                        name: frontend::name_copy(name)
+                        value_type: type_copy(value_type)
+                        copy_value: type_is_copy_with_symbols(checker.symbols, value_type)
+                        mutable_value: mutable_value
+                        state: Available()
+                        access: access
+                        state_span: arm.pattern.span
+                        span: arm.pattern.span
+                    }
+                    checker_add_variable(checker, move variable)
+                }
+            }
+            index = index + 1
+        }
+    }
+}

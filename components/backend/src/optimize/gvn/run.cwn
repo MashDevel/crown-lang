@@ -1,0 +1,111 @@
+module optimize {
+    copy enum GvnFrame {
+        Enter(usize), Leave(usize)
+    }
+
+    fn gvn(function: write ir::Function) -> usize {
+        if function.blocks.length() == 0 {
+            return 0
+        }
+        var state = GvnState {
+            pending: Vec<GvnFrame>.new()
+            children: gvn_dominator_children(function)
+            expressions: Vec<GvnEntry>.new()
+            replacements: none_usize(function.values.length())
+            eliminated: 0
+        }
+        gvn_visit(function, state, 0)
+        if state.eliminated == 0 {
+            return 0
+        }
+        ir::function_replace_uses_many(function, state.replacements)
+        remove_results(function, state.replacements, ir::value_present)
+        return state.eliminated
+    }
+
+    fn gvn_visit(function: ir::Function, state: write GvnState, block: usize) -> void {
+        state.pending.push(Enter(block))
+        while state.pending.length() != 0 {
+            match state.pending.pop() {
+                Some(frame) => {
+                    gvn_step(function, state, frame)
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn gvn_step(function: ir::Function, state: write GvnState, frame: GvnFrame) -> void {
+        match frame {
+            Enter(block) => {
+                state.pending.push(Leave(state.expressions.length()))
+                gvn_block(function, state, block)
+                var index = state.children[block].length()
+                while index > 0 {
+                    index = index - 1;
+                    state.pending.push(Enter(state.children[block][index]))
+                }
+            }
+            Leave(length) => {
+                while state.expressions.length() > length {
+                    state.expressions.pop()
+                }
+            }
+        }
+    }
+
+    fn gvn_block(function: ir::Function, state: write GvnState, block: usize) -> void {
+        for index in 0..function.blocks[block].instructions.length() {
+            loan read function.blocks[block].instructions[index] as instruction {
+                gvn_instruction(state, instruction)
+            }
+        }
+    }
+
+    fn gvn_instruction(state: write GvnState, instruction: ir::Instruction) -> void {
+        var result: usize = 0
+        match instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return
+            }
+        }
+        match gvn_expression(instruction.kind, state.replacements) {
+            Some(expression) => {
+                gvn_record(state, expression, result)
+            }
+            None => {
+            }
+        }
+    }
+
+    fn gvn_record(state: write GvnState, expression: GvnExpression, result: usize) -> void {
+        match gvn_existing(state.expressions, expression) {
+            Some(existing) => {
+                state.replacements[result] = Some(existing)
+                state.eliminated = state.eliminated + 1
+            }
+            None => {
+                state.expressions.push(GvnEntry {
+                        expression: gvn_expression_copy(expression), result: result
+                    })
+            }
+        }
+    }
+
+    fn gvn_existing(entries: Vec<GvnEntry>, expression: GvnExpression) -> Option<usize> {
+        var index = entries.length()
+        while index > 0 {
+            index = index - 1
+            loan read entries[index] as entry {
+                if gvn_expression_equal(entry.expression, expression) {
+                    return Some(entry.result)
+                }
+            }
+        }
+        return None()
+    }
+}

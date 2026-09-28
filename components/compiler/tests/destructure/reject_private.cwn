@@ -1,0 +1,14 @@
+module hidden {
+    struct Owner {
+        private value: Vec<u8>
+    }
+}
+fn invalid(owner: take hidden::Owner) -> void {
+    let {
+        value
+    } = move owner
+    value
+}
+fn main() -> u32 {
+    return 0
+}

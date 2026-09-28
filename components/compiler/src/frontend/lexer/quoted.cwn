@@ -1,0 +1,137 @@
+module frontend {
+    fn lexer_valid_escape(value: u8) -> bool {
+        if value == 110 || value == 114 || value == 116 || value == 48 {
+            return true
+        }
+        return value == 92 || value == 39 || value == 34
+    }
+
+    fn lexer_quoted(lexer: write Lexer, quote: u8) -> bool {
+        var valid = true
+        while lexer.offset < lexer.length && lexer_peek_or_zero(lexer) != quote && lexer_peek_or_zero(lexer) != 10 {
+            if lexer_peek_or_zero(lexer) == 92 {
+                lexer_advance(lexer)
+                if lexer.offset >= lexer.length || lexer_peek_or_zero(lexer) == 10 {
+                    valid = false
+                } else {
+                    if lexer_valid_escape(lexer_peek_or_zero(lexer)) == false {
+                        valid = false
+                    }
+                    lexer_advance(lexer)
+                }
+            } else {
+                lexer_advance(lexer)
+            }
+        }
+        return valid
+    }
+
+    fn lexer_character(lexer: write Lexer, mark: LexerMark) -> void {
+        let content_start = lexer.offset
+        let valid_escape = lexer_quoted(lexer, 39)
+        if lexer.offset >= lexer.length || lexer_peek_or_zero(lexer) != 39 {
+            lexer_error(lexer, InvalidCharacter(), mark)
+            return
+        }
+        let content_end = lexer.offset
+        lexer_advance(lexer)
+        var valid = valid_escape
+        if content_end > content_start && source_byte(lexer.source, content_start) == 92 {
+            if content_end - content_start != 2 {
+                valid = false
+            }
+        } else {
+            if lexer_utf8_scalar_length(lexer, content_start, content_end) == 0 {
+                valid = false
+            }
+        }
+        if valid {
+            lexer_push(lexer, LexerTokenInput {
+                    kind: TokenCharacter(), mark: LexerMark {
+                        offset: mark.offset, line: mark.line, column: mark.column
+                    }, integer: 0
+                })
+        } else {
+            lexer_error(lexer, InvalidCharacter(), mark)
+        }
+    }
+
+    fn lexer_text(lexer: write Lexer, mark: LexerMark) -> void {
+        let valid = lexer_quoted(lexer, 34)
+        if lexer.offset >= lexer.length || lexer_peek_or_zero(lexer) != 34 {
+            lexer_error(lexer, InvalidText(), mark)
+            return
+        }
+        lexer_advance(lexer)
+        if valid {
+            lexer_push(lexer, LexerTokenInput {
+                    kind: TokenText(), mark: LexerMark {
+                        offset: mark.offset, line: mark.line, column: mark.column
+                    }, integer: 0
+                })
+        } else {
+            lexer_error(lexer, InvalidText(), mark)
+        }
+    }
+
+    fn lexer_utf8_scalar_length(lexer: Lexer, start: usize, end: usize) -> usize {
+        if start >= end {
+            return 0
+        }
+        let first = source_byte(lexer.source, start)
+        let width = utf8_width(first)
+        if width == 0 || start + width != end {
+            return 0
+        }
+        var index = start + 1
+        while index < end {
+            let value = source_byte(lexer.source, index)
+            if value < 128 || value > 191 {
+                return 0
+            }
+            index = index + 1
+        }
+        if width > 1 {
+            let second = source_byte(lexer.source, start + 1)
+            if utf8_scalar_prefix(first, second) == false {
+                return 0
+            }
+        }
+        width
+    }
+
+    fn utf8_width(first: u8) -> usize {
+        if first <= 127 {
+            return 1
+        }
+        if first < 194 {
+            return 0
+        }
+        if first <= 223 {
+            return 2
+        }
+        if first <= 239 {
+            return 3
+        }
+        if first <= 244 {
+            return 4
+        }
+        0
+    }
+
+    fn utf8_scalar_prefix(first: u8, second: u8) -> bool {
+        if first == 224 {
+            return second >= 160
+        }
+        if first == 237 {
+            return second <= 159
+        }
+        if first == 240 {
+            return second >= 144
+        }
+        if first == 244 {
+            return second <= 143
+        }
+        true
+    }
+}

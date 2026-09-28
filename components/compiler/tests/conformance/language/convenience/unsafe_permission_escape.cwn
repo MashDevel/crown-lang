@@ -1,0 +1,2 @@
+extern "c" { fn abs(value: i32) -> i32 }
+fn main() -> u32 { let value = unsafe { abs(-1) }; return u32.from(abs(value)) }

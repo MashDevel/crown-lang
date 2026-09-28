@@ -1,0 +1,107 @@
+struct PackedFixture {
+    left: usize
+    right: usize
+    destination: usize
+    left_next: usize
+    right_next: usize
+    destination_next: usize
+}
+
+fn packed_fixture(function: write ir::Function, gap: u64, alias: bool) -> Result<PackedFixture, u32> {
+    let left = safety_append(function, 0, ir::InstructionStackSlot(24, 8))?
+    let right = safety_append(function, 0, ir::InstructionStackSlot(24, 8))?
+    let destination = if alias {
+        left
+    } else {
+        safety_append(function, 0, ir::InstructionStackSlot(24, 8))?
+    }
+    let offset = safety_integer(function, ir::IntegerWidth64(), gap)
+    let left_next = safety_append(function, 0, ir::InstructionOffset(left, offset))?
+    let right_next = safety_append(function, 0, ir::InstructionOffset(right, offset))?
+    let destination_next = safety_append(function, 0, ir::InstructionOffset(destination, offset))?
+    let fixture = PackedFixture {
+        left: left, right: right, destination: destination, left_next: left_next, right_next: right_next, destination_next: destination_next
+    }
+    packed_initialize(function, fixture)?
+    return Ok(move fixture)
+}
+
+fn packed_operations(function: write ir::Function, fixture: PackedFixture, volatile: bool) -> Result<void, u32> {
+    let value_type = ir::TypeFloat(ir::FloatWidth64())
+    let left = safety_append(function, 0, ir::InstructionLoad(fixture.left, value_type, 8, volatile))?
+    let right = safety_append(function, 0, ir::InstructionLoad(fixture.right, value_type, 8, false))?
+    let first = safety_append(function, 0, ir::InstructionBinary(ir::BinaryFloatAdd(), left, right))?
+    let left_next = safety_append(function, 0, ir::InstructionLoad(fixture.left_next, value_type, 8, false))?
+    let right_next = safety_append(function, 0, ir::InstructionLoad(fixture.right_next, value_type, 8, false))?
+    let second = safety_append(function, 0, ir::InstructionBinary(ir::BinaryFloatAdd(), left_next, right_next))?
+    safety_append(function, 0, ir::InstructionStore(fixture.destination, first, 8, false))?
+    safety_append(function, 0, ir::InstructionStore(fixture.destination_next, second, 8, false))?
+    return packed_verify(function, fixture)
+}
+
+fn packed_case(gap: u64, alias: bool, volatile: bool) -> Result<void, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    safety_block(function)?
+    let fixture = packed_fixture(function, gap, alias)?
+    packed_operations(function, fixture, volatile)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    let instructions = match x86::codegen_compile_function(program, 0) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err(1)
+        }
+    }
+    var count: usize = 0
+    for index in 0..instructions.length() {
+        match read instructions[index] {
+            x86::PackedFloatBinary(values) => {
+                values;
+                count = count + 1
+            }
+            _ => {
+            }
+        }
+    }
+    let expected: usize = if gap == 8 && volatile == false {
+        1
+    } else {
+        0
+    }
+    safety_require(count == expected, 2)?
+    return safety_execute(move program)
+}
+
+fn packed_cases() -> Result<void, u32> {
+    packed_case(8, false, false)?
+    packed_case(8, true, false)?
+    packed_case(16, false, false)?
+    packed_case(8, false, true)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(packed_cases())
+}
+
+fn packed_initialize(function: write ir::Function, fixture: PackedFixture) -> Result<void, u32> {
+    let value_type = ir::TypeFloat(ir::FloatWidth64())
+    let two = ir::function_constant(function, value_type, ir::ConstantFloat64(4611686018427387904))
+    let three = ir::function_constant(function, value_type, ir::ConstantFloat64(4613937818241073152))
+    safety_append(function, 0, ir::InstructionStore(fixture.left, two, 8, false))?
+    safety_append(function, 0, ir::InstructionStore(fixture.left_next, three, 8, false))?
+    safety_append(function, 0, ir::InstructionStore(fixture.right, three, 8, false))?
+    safety_append(function, 0, ir::InstructionStore(fixture.right_next, two, 8, false))?
+    return Ok(())
+}
+
+fn packed_verify(function: write ir::Function, fixture: PackedFixture) -> Result<void, u32> {
+    let value_type = ir::TypeFloat(ir::FloatWidth64())
+    let low = safety_append(function, 0, ir::InstructionLoad(fixture.destination, value_type, 8, false))?
+    let high = safety_append(function, 0, ir::InstructionLoad(fixture.destination_next, value_type, 8, false))?
+    let sum = safety_append(function, 0, ir::InstructionBinary(ir::BinaryFloatAdd(), low, high))?
+    let integer = safety_append(function, 0, ir::InstructionCast(ir::CastFloatToSignedInteger(), sum, ir::TypeInteger(ir::IntegerWidth64())))?
+    let ten = safety_integer(function, ir::IntegerWidth64(), 10)
+    return safety_return_equal(function, 0, integer, ten)
+}

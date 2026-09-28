@@ -1,0 +1,156 @@
+module object {
+    copy enum Architecture {
+        ArchitectureX86_64
+        ArchitectureArm64
+    }
+
+    enum Endianness {
+        EndiannessLittle
+    }
+
+    enum SectionKind {
+        SectionText
+        SectionReadOnlyData
+        SectionData
+        SectionZeroFill
+    }
+
+    struct Section {
+        name: Text
+        kind: SectionKind
+        alignment: u64
+        data: Vec<u8>
+        memory_size: u64
+    }
+
+    copy enum SymbolKind {
+        SymbolFunction
+        SymbolData
+    }
+
+    enum SymbolBinding {
+        SymbolLocal
+        SymbolGlobal
+        SymbolImport
+    }
+
+    struct Symbol {
+        name: Text
+        kind: SymbolKind
+        binding: SymbolBinding
+        section: Option<usize>
+        offset: u64
+        size: u64
+    }
+
+    copy enum RelocationKind {
+        RelocationAbsolute32
+        RelocationAbsolute64
+        RelocationPcRelative32
+        RelocationPcRelativeCall32
+        RelocationGotPcRelative32
+        RelocationGotLoadPcRelative32
+        RelocationTlvPcRelative32
+        RelocationThreadOffset64
+        RelocationDifference32
+        RelocationDifference64
+        RelocationArmBranch26
+        RelocationArmPage21
+        RelocationArmPageOffset12
+        RelocationArmLoadPageOffset12(u32)
+        RelocationArmGotPage21
+        RelocationArmGotLoadPageOffset12
+    }
+
+    struct Relocation {
+        section: usize
+        offset: u64
+        kind: RelocationKind
+        symbol: usize
+        subtract: Option<usize>
+        addend: i64
+    }
+
+    struct CompilerObject {
+        architecture: Architecture
+        sections: Vec<Section>
+        symbols: Vec<Symbol>
+        relocations: Vec<Relocation>
+        entry: Option<usize>
+    }
+
+    fn new() -> CompilerObject {
+        return CompilerObject {
+            architecture: ArchitectureX86_64()
+            sections: Vec<Section>.new()
+            symbols: Vec<Symbol>.new()
+            relocations: Vec<Relocation>.new()
+            entry: None()
+        }
+    }
+
+    fn relocation_width(kind: RelocationKind) -> u64 {
+        match read kind {
+            RelocationAbsolute64 => {
+                return 8
+            }
+            RelocationThreadOffset64 => {
+                return 8
+            }
+
+            RelocationDifference64 => {
+                return 8
+            }
+            _ => {
+                return 4
+            }
+        }
+    }
+
+    fn section_is_zero_fill(kind: SectionKind) -> bool {
+        match read kind {
+            SectionZeroFill => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn section_is_executable(kind: SectionKind) -> bool {
+        match read kind {
+            SectionText => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn symbol_is_import(binding: SymbolBinding) -> bool {
+        match read binding {
+            SymbolImport => {
+                return true
+            }
+            SymbolLocal => {
+                return false
+            }
+            SymbolGlobal => {
+                return false
+            }
+        }
+    }
+
+    fn symbol_is_function(kind: SymbolKind) -> bool {
+        match read kind {
+            SymbolFunction => {
+                return true
+            }
+            SymbolData => {
+                return false
+            }
+        }
+    }
+}

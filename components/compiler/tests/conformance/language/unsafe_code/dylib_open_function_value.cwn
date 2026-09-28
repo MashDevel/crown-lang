@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let load = std::dylib::open
+    load
+    return 0
+}

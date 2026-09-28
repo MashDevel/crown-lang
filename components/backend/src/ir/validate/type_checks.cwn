@@ -1,0 +1,121 @@
+module ir {
+    fn value_type_equal(function: Function, value: usize, expected: Type) -> bool {
+        if value >= function.values.length() {
+            return false
+        }
+        loan read function.values[value] as actual {
+            return type_equal(actual, expected)
+        }
+    }
+
+    fn value_is_integer(function: Function, value: usize) -> bool {
+        if value >= function.values.length() {
+            return false
+        }
+        loan read function.values[value] as value_type {
+            return type_is_integer(value_type)
+        }
+    }
+
+    fn value_is_float(function: Function, value: usize) -> bool {
+        if value >= function.values.length() {
+            return false
+        }
+        loan read function.values[value] as value_type {
+            return type_is_float(value_type)
+        }
+    }
+
+    fn value_is_pointer(function: Function, value: usize) -> bool {
+        if value >= function.values.length() {
+            return false
+        }
+        loan read function.values[value] as value_type {
+            return type_is_pointer(value_type)
+        }
+    }
+
+    fn value_has_type(function: Function, value: usize) -> bool {
+        if value >= function.values.length() {
+            return false
+        }
+        loan read function.values[value] as value_type {
+            return type_has_value(value_type)
+        }
+    }
+
+    fn values_same_type(function: Function, left: usize, right: usize) -> bool {
+        if left >= function.values.length() || right >= function.values.length() {
+            return false
+        }
+        loan read function.values[left] as left_type {
+            loan read function.values[right] as right_type {
+                return type_equal(left_type, right_type)
+            }
+        }
+    }
+
+    fn arguments_match(function: Function, values: Vec<usize>, types: Vec<Type>) -> bool {
+        if values.length() != types.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < values.length() {
+            loan read types[index] as value_type {
+                if value_type_equal(function, values[index], value_type) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn type_valid(value_type: Type) -> bool {
+        match read value_type {
+            TypeVector(lane) => {
+                lane;
+                let scalar = match vector_scalar(value_type) {
+                    Some(value) => value
+                    None => {
+                        return false
+                    }
+                }
+                return vector_type(scalar) == Some(value_type)
+            }
+            TypeAggregate(size, alignment) => {
+                size;
+                return valid_alignment(alignment)
+            }
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn optional_type_matches(function: Function, result: Option<usize>, expected: Option<Type>) -> bool {
+        match read result {
+            Some(value) => {
+                match read expected {
+                    Some(value_type) => {
+                        return value_type_equal(function, value, value_type)
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                match read expected {
+                    Some(value_type) => {
+                        value_type;
+                        return false
+                    }
+                    None => {
+                        return true
+                    }
+                }
+            }
+        }
+    }
+}

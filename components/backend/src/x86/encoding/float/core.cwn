@@ -1,0 +1,93 @@
+module x86 {
+    fn encode_float_instruction(instruction: Instruction, output: write Vec<u8>) -> bool {
+        if encode_packed_float(instruction, output) {
+            return true
+        }
+        if encode_float_arithmetic(instruction, output) {
+            return true
+        }
+        if encode_float_movement(instruction, output) {
+            return true
+        }
+        return encode_float_stack(instruction, output)
+    }
+
+    fn encode_float_arithmetic(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            FloatBinary(values) => {
+                emit_float_operation(output, float_registers(values.width, values.destination, values.source), float_binary_opcode(values.operator))
+                return true
+            }
+            FloatCompare(width, left, right) => {
+                let registers = float_registers(width, left, right)
+                if registers.width == 1 {
+                    output.push(102)
+                }
+                emit_float_rex(output, false, u16.from(registers.destination) |(u16.from(registers.source) << 8))
+                output.push(15)
+                output.push(46)
+                output.push(modrm(3, registers.destination, registers.source))
+                return true
+            }
+            FloatUnary(values) => {
+                emit_float_operation(output, float_registers(values.width, values.destination, values.source), 81)
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn emit_float_operation(output: write Vec<u8>, registers: take FloatRegistersEncoding, opcode: u8) -> void {
+        output.push(float_width_prefix(registers.width))
+        emit_float_rex(output, false, u16.from(registers.destination) |(u16.from(registers.source) << 8))
+        output.push(15)
+        output.push(opcode)
+        output.push(modrm(3, registers.destination, registers.source))
+    }
+
+    fn float_registers(width: FloatWidth, destination: FloatRegister, source: FloatRegister) -> FloatRegistersEncoding {
+        return FloatRegistersEncoding {
+            width: float_width_code(width)
+            destination: float_register_code(destination)
+            source: float_register_code(source)
+        }
+    }
+
+    fn float_width_prefix(width: u8) -> u8 {
+        if width == 0 {
+            return 243
+        }
+        return 242
+    }
+
+    fn float_binary_opcode(operator: FloatBinaryOperator) -> u8 {
+        match read operator {
+            FloatAdd => {
+                return 88
+            }
+            FloatSubtract => {
+                return 92
+            }
+            FloatMultiply => {
+                return 89
+            }
+            FloatDivide => {
+                return 94
+            }
+        }
+    }
+
+    fn emit_float_rex(output: write Vec<u8>, wide: bool, registers: u16) -> void {
+        let register = u8.from(registers & 255)
+        let base = u8.from(registers >> 8)
+        var value: u8 = 64 |((register >> 3) << 2) |(base >> 3)
+        if wide {
+            value = value | 8
+        }
+        if value != 64 {
+            output.push(value)
+        }
+    }
+}

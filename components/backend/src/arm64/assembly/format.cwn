@@ -1,0 +1,8 @@
+module arm64 {
+    fn assembly(object: object::CompilerObject, prefix: Text, variant: AbiVariant) -> Result<Text, Text> {
+        if variant == AbiVariant::Darwin() {
+            return macho_assembly(object, prefix)
+        }
+        return elf_assembly(object, prefix)
+    }
+}

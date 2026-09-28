@@ -1,0 +1,17 @@
+fn main() -> u32 {
+    let maximum: u8 = 255
+    let wrapped = maximum.wrapping_add(1)
+    let signed: i16 = -7
+    let adjusted = signed + 14
+    let answer = u32.from(adjusted)
+    let encoded: u8 = 240
+    let shifted = encoded >> 4
+    if wrapped == 0 {
+        if ~shifted == 240 {
+            if i8.from_bits(255) == -1 {
+                return answer
+            }
+        }
+    }
+    return 0
+}

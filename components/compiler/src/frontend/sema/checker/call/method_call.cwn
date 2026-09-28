@@ -1,0 +1,76 @@
+module sema {
+    fn checker_method_call(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                var receiver_type = Invalid()
+                loan read receiver as value {
+                    match checker_expression(checker, value) {
+                        None => {
+                            return None()
+                        }
+                        Some(info) => {
+                            receiver_type = type_copy(info.value_type)
+                        }
+                    }
+                }
+                match checker_special_method(checker, kind, receiver_type) {
+                    Some(result) => {
+                        return move result
+                    }
+                    None => {
+                    }
+                }
+                match builtin_method_signature(checker, receiver_type, method) {
+                    None => {
+                        return checker_dynamic_method(checker, kind, receiver_type)
+                    }
+                    Some(signature) => {
+                        return checker_apply_method(checker, kind, move signature)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "method does not exist or its receiver cannot be used with this access mode");
+                return None()
+            }
+        }
+    }
+
+    fn checker_apply_method(checker: write Checker, kind: frontend::ExpressionKind, signature: take MethodSignature) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                if signature.parameters.length() != arguments.length() {
+                    checker_error(checker, "method does not exist or its receiver cannot be used with this access mode");
+                    return None()
+                }
+                var usage = ReadPath()
+                if signature.write_receiver {
+                    usage = WritePath()
+                }
+                let loan_count = checker.place_loans.length()
+                loan read receiver as value {
+                    checker_place(checker, value, usage)
+                    begin_temporary_loan(checker, value, frontend::LoanRead(), LoanCallEnd())
+                }
+                var index: usize = 0
+                while index < arguments.length() {
+                    loan read arguments[index] as argument {
+                        loan read signature.parameters[index] as expected {
+                            checker_value(checker, argument, expected)
+                        }
+                    }
+                    index = index + 1
+                }
+                while checker.place_loans.length() > loan_count {
+                    checker.place_loans.pop()
+                }
+                return Some(checker_type_info(checker, type_copy(signature.result)))
+            }
+            _ => {
+                checker_error(checker, "method does not exist or its receiver cannot be used with this access mode");
+                return None()
+            }
+        }
+    }
+}

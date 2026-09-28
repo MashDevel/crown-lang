@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let value: i64 = -9223372036854775808
+    -value
+    return 0
+}

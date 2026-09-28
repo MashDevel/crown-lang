@@ -1,0 +1,27 @@
+module lowering {
+    fn declare_text_literals(compiler: write Compiler, analysis: sema::Analysis) -> void {
+        var index: usize = 0
+        while index < analysis.checker.expressions.length() {
+            loan read analysis.checker.expressions[index] as expression {
+                if record_is_text_literal(analysis.checker.symbols.source, expression) {
+                    var key = "text_"
+                    frontend::text_push_usize(key, expression.span.start)
+                    let bytes = frontend::text_literal_bytes(analysis.checker.symbols.source, expression.span)
+                    declare_bytes_global(compiler, move key, move bytes)
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn record_is_text_literal(source: Shared<Vec<u8>>, expression: sema::ExpressionRecord) -> bool {
+        let builtin = sema::type_builtin(expression.value_type)
+        if builtin != sema::Text() && builtin != sema::TextView() {
+            return false
+        }
+        if expression.span.end <= expression.span.start + 1 {
+            return false
+        }
+        return frontend::source_byte(source, expression.span.start) == 34
+    }
+}

@@ -1,0 +1,82 @@
+module toolchain {
+    copy enum Architecture {
+        X86_64, Arm64
+    }
+
+    copy enum Platform {
+        Macos, Linux, Bedrock
+    }
+
+    copy struct Target {
+        architecture: Architecture
+        platform: Platform
+    }
+
+    fn target(architecture: Architecture, platform: Platform) -> Target {
+        return Target {
+            architecture: architecture, platform: platform
+        }
+    }
+
+    fn parse_target(value: Text) -> Result<Target, Text> {
+        match read value {
+            "x86_64-macos" => Ok(target(Architecture::X86_64(), Platform::Macos()))
+            "arm64-macos" => Ok(target(Architecture::Arm64(), Platform::Macos()))
+            "x86_64-linux" => Ok(target(Architecture::X86_64(), Platform::Linux()))
+            "arm64-linux" => Ok(target(Architecture::Arm64(), Platform::Linux()))
+            "x86_64-bedrock" => Ok(target(Architecture::X86_64(), Platform::Bedrock()))
+            _ => Err("target must be x86_64-macos, arm64-macos, x86_64-linux, arm64-linux, or x86_64-bedrock")
+        }
+    }
+
+    fn architecture_name(architecture: Architecture) -> Text {
+        match architecture {
+            Architecture::X86_64 => "x86_64"
+            Architecture::Arm64 => "arm64"
+        }
+    }
+
+    fn platform_name(platform: Platform) -> Text {
+        match platform {
+            Platform::Macos => "macos"
+            Platform::Linux => "linux"
+            Platform::Bedrock => "bedrock"
+        }
+    }
+
+    fn target_name(value: Target) -> Text {
+        return std::text::joined(std::text::joined(architecture_name(value.architecture), "-"), platform_name(value.platform))
+    }
+
+    fn target_section(value: Target) -> Text {
+        return std::text::joined(std::text::joined("target.", platform_name(value.platform)), ".")
+    }
+
+    fn target_source(path: Text, value: Target) -> bool {
+        let suffixes = std::text::split("macos|linux|bedrock", 124)
+        for index in 0..suffixes.length() {
+            let suffix = std::text::joined(std::text::joined(".", suffixes[index]), ".cwn")
+            if std::text::ends(path, suffix) {
+                if std::text::equal(platform_name(value.platform), suffixes[index]) == false {
+                    return false
+                }
+                let stem = std::text::slice(path, 0, path.length() - suffix.length())
+                return architecture_source(stem, value.architecture)
+            }
+        }
+        if std::text::ends(path, ".cwn") {
+            return architecture_source(std::text::slice(path, 0, path.length() - 4), value.architecture)
+        }
+        return true
+    }
+
+    fn architecture_source(stem: Text, architecture: Architecture) -> bool {
+        if std::text::ends(stem, ".arm64") {
+            return architecture == Architecture::Arm64()
+        }
+        if std::text::ends(stem, ".x86_64") {
+            return architecture == Architecture::X86_64()
+        }
+        return true
+    }
+}

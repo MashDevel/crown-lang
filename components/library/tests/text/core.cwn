@@ -1,0 +1,110 @@
+fn test_text() -> u32 {
+    let append = test_text_append()
+    if append != 0 {
+        return append
+    }
+    let decoding = test_text_decoding()
+    if decoding != 0 {
+        return 10 + decoding
+    }
+    let validation = test_utf8_validation()
+    if validation != 0 {
+        return 30 + validation
+    }
+    let numbers = test_text_numbers()
+    if numbers != 0 {
+        return 20 + numbers
+    }
+    return 0
+}
+
+fn test_text_append() -> u32 {
+    let values = ["", "plain", "é", "λ", "😀", "a\0b"]
+    return test_text_append_cases(values)
+}
+
+fn test_text_append_cases(values: Slice<Text>) -> u32 {
+    for index in 0..values.length() {
+        var result = "prefix"
+        std::text::append(result, values[index])
+        let suffix = std::text::slice(result, 6, result.length())
+        if std::text::equal(suffix, values[index]) == false {
+            return 1
+        }
+    }
+    if std::text::equal("é", "e") {
+        return 3
+    }
+    if std::text::equal(std::text::slice("aéλz", 1, 5), "éλ") == false {
+        return 4
+    }
+    return 0
+}
+
+fn test_text_decoding() -> u32 {
+    let valid: [u8; 4] = [0xf0, 0x9f, 0x98, 0x80]
+    loan read valid as bytes {
+        match std::text::from_bytes(std::bytes::clone(bytes)) {
+            Ok(value) => {
+                if std::text::equal(value, "😀") == false {
+                    return 1
+                }
+            }
+            Err(error) => {
+                error;
+                return 2
+            }
+        }
+    }
+    let invalid: [u8; 4] = [0xc0, 0xaf, 0xed, 0xa0]
+    loan read invalid as bytes {
+        match std::text::from_bytes(std::bytes::clone(bytes)) {
+            Ok(value) => {
+                value;
+                return 3
+            }
+            Err(error) => {
+                error
+            }
+        }
+        let lossy = std::text::from_bytes_lossy(std::bytes::clone(bytes))
+        if lossy.length() == 0 {
+            return 4
+        }
+    }
+    return 0
+}
+
+fn test_text_numbers() -> u32 {
+    let values: [u64; 4] = [0, 9, 10, 0xffff_ffff_ffff_ffff]
+    loan read values as cases {
+        for index in 0..cases.length() {
+            match std::text::unsigned(std::text::decimal(cases[index])) {
+                Ok(value) => {
+                    if value != cases[index] {
+                        return 1
+                    }
+                }
+                Err(error) => {
+                    error;
+                    return 2
+                }
+            }
+        }
+    }
+    let invalid = ["", "-1", "1x", "18446744073709551616"]
+    loan read invalid as cases {
+        for index in 0..cases.length() {
+            match std::text::unsigned(cases[index]) {
+                Ok(value) => {
+                    value;
+                    return 3
+                }
+                Err(error) => {
+                    error
+                }
+            }
+        }
+    }
+    return 0
+}

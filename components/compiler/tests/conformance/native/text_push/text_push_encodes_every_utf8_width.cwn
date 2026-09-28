@@ -1,0 +1,22 @@
+fn main() -> u32 {
+    var value = Text.new()
+    value.push('A')
+    value.push('é')
+    value.push('ह')
+    value.push('😀')
+    if value.length() != 10 {
+        return 1
+    }
+    unsafe {
+        let bytes = value.as_raw()
+        let expected: [u8; 10] = [65, 195, 169, 224, 164, 185, 240, 159, 152, 128]
+        var index: usize = 0
+        while index < 10 {
+            if bytes.offset(index).read() != expected[index] {
+                return u32.from(index) + 2
+            }
+            index = index + 1
+        }
+    }
+    return 42
+}

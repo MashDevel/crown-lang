@@ -1,0 +1,13 @@
+fn main() -> u32 {
+    var value: u32 = 0
+    thread_scope {
+        for index in 0..2 {
+            index
+            let started = spawn[write value] {
+                value = 1
+            }
+            started
+        }
+    }
+    return value
+}

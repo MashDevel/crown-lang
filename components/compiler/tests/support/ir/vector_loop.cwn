@@ -1,0 +1,84 @@
+fn vector_loop(name: Text, scalar: ir::Type, broadcast: bool) -> Result<ir::Function, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    var function = ir::function_new(name.clone(), ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let blocks = safety_blocks(function, 4)?
+    let zero = safety_integer(function, ir::IntegerWidth64(), 0)
+    let one = safety_integer(function, ir::IntegerWidth64(), 1)
+    let next = ir::function_new_value(function, ir::TypeInteger(ir::IntegerWidth64()))
+    let index = counted_phi(function, blocks[1], ir::PhiIncoming {
+            block: blocks[0], value: zero
+        }, ir::PhiIncoming {
+            block: blocks[2], value: next
+        })?
+    let condition = safety_append(function, blocks[1], ir::InstructionCompare(ir::CompareUnsignedLess(), index, 2))?
+    vector_loop_body(function, scalar, broadcast, index)?
+    function.blocks[blocks[2]].instructions.push(ir::Instruction {
+            result: Some(next), kind: ir::InstructionBinary(ir::BinaryAdd(), index, one)
+        })
+    counted_control(function, blocks, condition)?
+    safety_terminate(function, blocks[3], ir::TerminatorReturn(None()))?
+    return Ok(move function)
+}
+
+fn vector_loop_body(function: write ir::Function, scalar: ir::Type, broadcast: bool, index: usize) -> Result<void, u32> {
+    let stride = safety_integer(function, ir::IntegerWidth64(), vector_test_size(scalar)?)
+    let offset = safety_append(function, 2, ir::InstructionBinary(ir::BinaryMultiply(), index, stride))?
+    let source = safety_append(function, 2, ir::InstructionOffset(0, offset))?
+    let value = safety_append(function, 2, ir::InstructionLoad(source, scalar, 1, false))?
+    let operator = if ir::type_is_float(scalar) {
+        ir::BinaryFloatAdd()
+    } else {
+        ir::BinaryAdd()
+    }
+    let right = if broadcast {
+        vector_test_constant(function, scalar)
+    } else {
+        value
+    }
+    let doubled = safety_append(function, 2, ir::InstructionBinary(operator, value, right))?
+    let destination = safety_append(function, 2, ir::InstructionOffset(1, offset))?
+    safety_append(function, 2, ir::InstructionStore(destination, doubled, 1, false))?
+    return Ok(())
+}
+
+fn vector_test_size(scalar: ir::Type) -> Result<u64, u32> {
+    match ir::type_size(scalar) {
+        Some(value) => Ok(value)
+        None => Err(20)
+    }
+}
+
+fn vector_test_buffer(function: write ir::Function, scalar: ir::Type) -> Result<usize, u32> {
+    let buffer = safety_append(function, 0, ir::InstructionStackSlot(512, 16))?
+    let size = vector_test_size(scalar)?
+    let value = vector_test_constant(function, scalar)
+    for index in 0..64 {
+        let offset = safety_integer(function, ir::IntegerWidth64(), u64.from(index) * size)
+        let address = safety_append(function, 0, ir::InstructionOffset(buffer, offset))?
+        safety_append(function, 0, ir::InstructionStore(address, value, 1, false))?
+    }
+    return Ok(buffer)
+}
+
+fn vector_test_call(function: write ir::Function, target: usize, buffers: Vec<usize>, count: u64) -> Result<void, u32> {
+    var arguments = ir::usize_values_copy(buffers)
+    let bound = safety_integer(function, ir::IntegerWidth64(), count)
+    arguments.push(bound)
+    safety_append(function, 0, ir::InstructionCall(target, move arguments, ir::TypeVoid()))?
+    return Ok(())
+}
+
+fn vector_test_constant(function: write ir::Function, scalar: ir::Type) -> usize {
+    if ir::type_is_float(scalar) {
+        let constant = if ir::type_is_float32(scalar) {
+            ir::ConstantFloat32(1065353216)
+        } else {
+            ir::ConstantFloat64(4607182418800017408)
+        }
+        return ir::function_constant(function, scalar, constant)
+    }
+    return ir::function_constant(function, scalar, ir::ConstantInteger(3))
+}

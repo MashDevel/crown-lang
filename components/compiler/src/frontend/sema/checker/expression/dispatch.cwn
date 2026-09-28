@@ -1,0 +1,234 @@
+module sema {
+    fn checker_expression(checker: write Checker, expression: frontend::Expression) -> Option<ExpressionInfo> {
+        let expected = Infer()
+        return checker_expression_expected(checker, expression, expected)
+    }
+
+    fn checker_expression_expected(checker: write Checker, expression: frontend::Expression, expected: Type) -> Option<ExpressionInfo> {
+        let previous = replace(checker.current_span, expression.span)
+        let result = checker_expression_dispatch(checker, expression, expected)
+        checker.current_span = previous
+        match move result {
+            None => {
+                return None()
+            }
+            Some(info) => {
+                checker_record_text_span(checker, expression, info)
+                checker_record_spawn_span(checker, expression)
+                checker_record(checker, expression, info)
+                return Some(move info)
+            }
+        }
+    }
+
+    fn checker_expression_dispatch(checker: write Checker, expression: frontend::Expression, expected: Type) -> Option<ExpressionInfo> {
+        return checker_known_expression(checker, expression.kind, expected)
+    }
+
+    fn checker_known_expression(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionInteger(value) => {
+                return checker_integer(checker, value, expected)
+            }
+            frontend::ExpressionFloat(span) => {
+                return checker_float(checker, span, expected)
+            }
+            frontend::ExpressionCharacter(span) => {
+                span;
+                return Some(copy_info(builtin_leaf(Char())))
+            }
+            frontend::ExpressionBoolean(value) => {
+                value;
+                return Some(copy_info(builtin_leaf(Bool())))
+            }
+            frontend::ExpressionUnit => {
+                return Some(copy_info(builtin_leaf(Unit())))
+            }
+            frontend::ExpressionText(span) => {
+                span;
+                if type_builtin(expected) == TextView() {
+                    return Some(copy_info(builtin_leaf(TextView())))
+                }
+                return Some(owned_info(builtin_leaf(Text())))
+            }
+            _ => checker_value_expression(checker, kind, expected)
+        }
+    }
+
+    fn checker_value_expression(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                return checker_expected_path(checker, path, expected)
+            }
+            frontend::ExpressionMove(path) => {
+                let usage = MovePath();
+                return checker_path(checker, path, usage)
+            }
+            frontend::ExpressionIndex(target, index) => {
+                return checker_index(checker, target, index)
+            }
+            frontend::ExpressionSlice(target, start, end) => {
+                target;
+                start;
+                end;
+                checker_error(checker, "invalid expression for the expected type");
+                return None()
+            }
+            frontend::ExpressionField(target, name) => {
+                return checker_field(checker, target, name)
+            }
+            frontend::ExpressionArrayRepeat(value, length) => {
+                return checker_array_repeat(checker, value, length, expected)
+            }
+            frontend::ExpressionArray(values) => {
+                return checker_array(checker, values, expected)
+            }
+            frontend::ExpressionStruct(value_type, fields) => {
+                return checker_struct_value(checker, value_type, fields)
+            }
+            _ => checker_operation_expression(checker, kind, expected)
+        }
+    }
+
+    fn checker_operation_expression(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                name;
+                arguments;
+                return checker_call(checker, kind, expected)
+            }
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method;
+                arguments;
+                return checker_static_call(checker, kind)
+            }
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method;
+                arguments;
+                return checker_method_call(checker, kind)
+            }
+            frontend::ExpressionBinary(left, operator, right) => {
+                left;
+                operator;
+                right
+                return checker_binary(checker, kind, expected)
+            }
+            frontend::ExpressionTry(value) => {
+                return checker_try(checker, value, expected)
+            }
+            frontend::ExpressionNegate(value) => {
+                return checker_negate(checker, value, expected)
+            }
+            frontend::ExpressionBitwiseNot(value) => {
+                return checker_bitwise_not(checker, value, expected)
+            }
+            _ => checker_control_expression(checker, kind, expected)
+        }
+    }
+
+    fn checker_record_spawn_span(checker: write Checker, expression: frontend::Expression) -> void {
+        match read expression.kind {
+            frontend::ExpressionScopedSpawn(stack, captures, body) => {
+                stack;
+                captures;
+                body
+                if checker.spawns.length() != 0 {
+                    checker.spawns[checker.spawns.length() - 1].span = expression.span
+                }
+            }
+            frontend::ExpressionSpawn(configuration, body) => {
+                configuration;
+                body
+                if checker.spawns.length() != 0 {
+                    checker.spawns[checker.spawns.length() - 1].span = expression.span
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn builtin_leaf(builtin: take Builtin) -> Type {
+        return BuiltinType(builtin, Vec<Type>.new())
+    }
+
+    fn checker_integer(checker: write Checker, value: u64, expected: Type) -> Option<ExpressionInfo> {
+        match read expected {
+            BuiltinType(builtin, arguments) => {
+                arguments
+                if builtin_is_integer(builtin) {
+                    if literal_fits(builtin, value) {
+                        return Some(copy_info(type_copy(expected)))
+                    }
+                    checker_error(checker, "invalid expression for the expected type")
+                    return None()
+                }
+            }
+            _ => {
+            }
+        }
+        return Some(copy_info(builtin_leaf(if value <= 4294967295 {
+                        U32()
+                    } else {
+                        U64()
+                    })))
+    }
+
+    fn checker_float(checker: write Checker, span: frontend::Span, expected: Type) -> Option<ExpressionInfo> {
+        if float_fits(checker.symbols.source, span, expected) == false {
+            checker_error(checker, "float literal does not fit in the expected floating-point type")
+            return None()
+        }
+        if type_is_float(expected) {
+            return Some(copy_info(type_copy(expected)))
+        }
+        return Some(copy_info(builtin_leaf(F64())))
+    }
+
+    fn float_fits(source: Shared<Vec<u8>>, span: frontend::Span, expected: Type) -> bool {
+        if type_builtin(expected) == F32() {
+            return frontend::float32_bits(source, span) & 0x7f800000 != 0x7f800000
+        }
+        return frontend::float64_bits(source, span) & 0x7ff0000000000000 != 0x7ff0000000000000
+    }
+
+    fn checker_control_expression(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionMatch(expression) => {
+                loan read expression as value {
+                    return checker_match_value(checker, value, Some(type_copy(expected)))
+                }
+            }
+            frontend::ExpressionUnsafe(body) => {
+                return checker_unsafe_expression(checker, body, expected)
+            }
+            frontend::ExpressionConditional(value) => {
+                return checker_conditional(checker, value, expected)
+            }
+            frontend::ExpressionScopedSpawn(stack, captures, body) => {
+                stack;
+                stack;
+                captures;
+                body;
+                return checker_scoped_spawn(checker, kind)
+            }
+            frontend::ExpressionSpawn(configuration, body) => {
+                configuration;
+                body;
+                return checker_spawn(checker, kind)
+            }
+            frontend::ExpressionClosure(captures, parameters, body) => {
+                captures;
+                parameters;
+                body;
+                return checker_closure(checker, kind, expected)
+            }
+            _ => {
+                checker_error(checker, "invalid expression for the expected type");
+                return None()
+            }
+        }
+    }
+}

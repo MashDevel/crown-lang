@@ -1,0 +1,128 @@
+module bedrock {
+    fn patch(image: write Image, address: u64, value: u64, width: usize) -> Result<void, Text> {
+        if address >= image.data_base {
+            let offset = usize.from(address - image.data_base)
+            link_binary::number(image.data, offset, width)?
+            link_binary::put(image.data, offset, value, width)
+        } else {
+            if address < image.base {
+                return Err("relocation outside executable")
+            }
+            let offset = usize.from(address - image.base)
+            link_binary::number(image.text, offset, width)?
+            link_binary::put(image.text, offset, value, width)
+        }
+        return Ok(())
+    }
+
+    fn relocate_object(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..object.relocations.length() {
+            relocate_one(image, object.relocations[index])?
+        }
+        return Ok(())
+    }
+
+    fn relocate_one(image: write Image, relocation: object::Relocation) -> Result<void, Text> {
+        let address = section_address(image, relocation.section) + relocation.offset
+        var value = i64.from(image.symbols[relocation.symbol]) + relocation.addend
+        match read relocation.subtract {
+            Some(symbol) => {
+                value = value - i64.from(image.symbols[symbol])
+            }
+            None => {
+            }
+        }
+        match read relocation.kind {
+            object::RelocationPcRelative32 | object::RelocationPcRelativeCall32 => {
+                value = value - i64.from(address)
+                if value < -2147483648 || value > 2147483647 {
+                    return Err("relative relocation overflow")
+                }
+            }
+            object::RelocationAbsolute32 | object::RelocationAbsolute64 | object::RelocationDifference32 | object::RelocationDifference64 => {
+            }
+            _ => {
+                return Err("unsupported Crown relocation")
+            }
+        }
+        return patch(image, address, u64.from_bits(value), usize.from(object::relocation_width(relocation.kind)))
+    }
+
+    fn relocate_runtime(image: write Image, runtime: Runtime) -> Result<void, Text> {
+        for index in 0..runtime.section_count {
+            let section = runtime.sections + index * 64
+            if link_binary::number(runtime.bytes, section + 4, 4)? == 4 {
+                runtime_relocations(image, runtime, section)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn runtime_relocations(image: write Image, runtime: Runtime, section: usize) -> Result<void, Text> {
+        let offset = usize.from(link_binary::number(runtime.bytes, section + 24, 8)?)
+        let length = usize.from(link_binary::number(runtime.bytes, section + 32, 8)?)
+        let table = runtime.sections + usize.from(link_binary::number(runtime.bytes, section + 40, 4)?) * 64
+        let symbols = usize.from(link_binary::number(runtime.bytes, table + 24, 8)?)
+        if link_binary::number(runtime.bytes, section + 56, 8)? != 24 || length % 24 != 0 {
+            return Err("invalid runtime relocation table")
+        }
+        for index in 0..length / 24 {
+            runtime_relocation(image, runtime, offset + index * 24, symbols)?
+        }
+        return Ok(())
+    }
+
+    fn runtime_relocation(image: write Image, runtime: Runtime, offset: usize, symbols: usize) -> Result<void, Text> {
+        let item = runtime_relocation_item(runtime, offset, symbols)?
+        let previous = item.address
+        let kind = item.kind
+        let address = relocate_address(image, runtime, previous)
+        let target = relocate_address(image, runtime, item.target)
+        var value = i64.from(target) + item.addend
+        var width: usize = 4
+        match kind {
+            1 => {
+                width = 8
+            }
+            2 | 4 => {
+                value = value - i64.from(address)
+            }
+            9 => {
+                let slot = u64.from(got_relocation(image, runtime, previous)?)
+                patch(image, slot, target, 8)?
+                value = i64.from(slot) - i64.from(address) - 4
+            }
+            10 | 11 => {
+            }
+            _ => {
+                return Err("unsupported runtime relocation")
+            }
+        }
+        return patch(image, address, u64.from_bits(value), width)
+    }
+
+    struct RuntimeRelocation {
+        address: u64, kind: u64, target: u64, addend: i64
+    }
+
+    fn runtime_relocation_item(runtime: Runtime, offset: usize, symbols: usize) -> Result<RuntimeRelocation, Text> {
+        let info = link_binary::number(runtime.bytes, offset + 8, 8)?
+        let symbol = symbols + usize.from(info >> 32) * 24
+        return Ok(RuntimeRelocation {
+                address: link_binary::number(runtime.bytes, offset, 8)?, kind: info & 4294967295,
+                target: link_binary::number(runtime.bytes, symbol + 8, 8)?,
+                addend: i64.from_bits(link_binary::number(runtime.bytes, offset + 16, 8)?)
+            })
+    }
+
+    fn got_relocation(image: Image, runtime: Runtime, address: u64) -> Result<i64, Text> {
+        let file_offset = if address >= runtime.data_base {
+            runtime.data_offset + usize.from(address - runtime.data_base)
+        } else {
+            usize.from(address - runtime.base)
+        }
+        let delta = i64.from(i32.from_bits(u32.from(link_binary::number(runtime.bytes, file_offset, 4)?)))
+        let target = u64.from(i64.from(address) + delta + 4)
+        return Ok(i64.from(relocate_address(image, runtime, target)))
+    }
+}

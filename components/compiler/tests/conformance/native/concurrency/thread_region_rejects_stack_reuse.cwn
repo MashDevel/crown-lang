@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    let bytes = Vec<u8>.new()
+    thread_scope {
+        let child = spawn(move bytes)[] {
+        }
+        child
+    }
+    bytes.length()
+    return 0
+}

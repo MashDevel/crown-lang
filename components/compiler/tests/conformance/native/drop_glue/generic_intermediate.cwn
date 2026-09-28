@@ -1,0 +1,45 @@
+resource Guard {
+    id: u32
+    drop {
+        print(id)
+    }
+}
+struct Intermediate<T> {
+    value: T
+}
+struct Second<T> {
+    value: T
+}
+fn consume<T>(value: Intermediate<T>) -> void {
+    value;
+}
+fn inspect<T>(value: Second<T>) -> void {
+    value;
+}
+fn wrap<T>(value: take T) -> void {
+    let intermediate = Intermediate<T> {
+        value: move value
+    }
+    consume(intermediate)
+}
+fn other<T>(value: take T) -> void {
+    let intermediate = Second<T> {
+        value: move value
+    }
+    inspect(intermediate)
+}
+fn main() -> u32 {
+    wrap(7)
+    wrap("owned")
+    wrap(Guard {
+            id: 11
+        })
+    other("second")
+    other(Guard {
+            id: 22
+        })
+    wrap(Guard {
+            id: 33
+        })
+    return 0
+}

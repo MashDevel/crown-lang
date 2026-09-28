@@ -1,0 +1,20 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    if test_encode(x86::MoveSized(x86::MoveSizedArgs {
+                destination: x86::R8(), source: x86::Rbx(), width: x86::Byte(), extension: x86::ZeroExtend()
+            }), bytes) == false {
+        return 1
+    }
+    if test_encode(x86::MoveSized(x86::MoveSizedArgs {
+                destination: x86::Rax(), source: x86::R12(), width: x86::Word(), extension: x86::SignExtend()
+            }), bytes) == false {
+        return 2
+    }
+    let expected: [u8; 8] = [76, 15, 182, 195, 73, 15, 191, 196]
+    loan read expected as values {
+        if test_bytes_equal(bytes, values) == false {
+            return 3
+        }
+    }
+    return 42
+}

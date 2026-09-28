@@ -1,0 +1,100 @@
+module optimize {
+    fn range_comparisons(function: ir::Function) -> Vec<RangeComparison> {
+        var output = Vec<RangeComparison>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(RangeComparison {
+                    present: false, operator: ir::CompareEqual(), left: 0, right: 0
+                })
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        match read function.blocks[block].instructions[index].kind {
+                            ir::InstructionCompare(operator, left, right) => {
+                                output[result] = RangeComparison {
+                                    present: true, operator: operator, left: left, right: right
+                                }
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn range_binaries(function: ir::Function) -> Vec<RangeBinaryDefinition> {
+        var output = Vec<RangeBinaryDefinition>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(RangeBinaryDefinition {
+                    present: false, operator: ir::BinaryAdd(), left: 0, right: 0
+                })
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        match read function.blocks[block].instructions[index].kind {
+                            ir::InstructionBinary(operator, left, right) => {
+                                output[result] = RangeBinaryDefinition {
+                                    present: true, operator: operator, left: left, right: right
+                                }
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn range_definitions(function: ir::Function) -> Vec<Definition> {
+        var output = Vec<Definition>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(Definition {
+                    block: function.blocks.length(), instruction: 0
+                });
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        output[result] = Definition {
+                            block: block, instruction: index
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+}

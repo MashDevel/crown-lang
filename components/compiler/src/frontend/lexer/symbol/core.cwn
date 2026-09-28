@@ -1,0 +1,169 @@
+module frontend {
+    fn lexer_symbol(lexer: write Lexer, value: u8, mark: LexerMark) -> void {
+        if lexer_delimiter(lexer, value, mark) {
+            return
+        }
+        if lexer_simple_operator(lexer, value, mark) {
+            return
+        }
+        lexer_paired_operator(lexer, value, mark)
+    }
+
+    fn lexer_delimiter(lexer: write Lexer, value: u8, mark: LexerMark) -> bool {
+        if value == 40 {
+            lexer_symbol_push(lexer, TokenLeftParen(), mark);
+            return true
+        }
+        if value == 41 {
+            lexer_symbol_push(lexer, TokenRightParen(), mark);
+            return true
+        }
+        if value == 123 {
+            lexer_symbol_push(lexer, TokenLeftBrace(), mark);
+            return true
+        }
+        if value == 125 {
+            lexer_symbol_push(lexer, TokenRightBrace(), mark);
+            return true
+        }
+        if value == 91 {
+            lexer_symbol_push(lexer, TokenLeftBracket(), mark);
+            return true
+        }
+        if value == 93 {
+            lexer_symbol_push(lexer, TokenRightBracket(), mark);
+            return true
+        }
+        if value == 58 {
+            lexer_symbol_push(lexer, TokenColon(), mark);
+            return true
+        }
+        if value == 44 {
+            lexer_symbol_push(lexer, TokenComma(), mark);
+            return true
+        }
+        if value == 59 {
+            lexer_symbol_push(lexer, TokenSemicolon(), mark);
+            return true
+        }
+
+        return false
+    }
+
+    fn lexer_simple_operator(lexer: write Lexer, value: u8, mark: LexerMark) -> bool {
+        if value == 43 {
+            lexer_symbol_push(lexer, TokenPlus(), mark);
+            return true
+        }
+        if value == 42 {
+            lexer_symbol_push(lexer, TokenStar(), mark);
+            return true
+        }
+        if value == 37 {
+            lexer_symbol_push(lexer, TokenPercent(), mark);
+            return true
+        }
+        if value == 94 {
+            lexer_symbol_push(lexer, TokenCaret(), mark);
+            return true
+        }
+        if value == 126 {
+            lexer_symbol_push(lexer, TokenTilde(), mark);
+            return true
+        }
+        if value == 63 {
+            lexer_symbol_push(lexer, TokenQuestion(), mark);
+            return true
+        }
+        if value == 46 {
+            lexer_pair(lexer, SymbolPair {
+                    expected: 46, paired: TokenRange(), single: TokenDot()
+                }, mark)
+            return true
+        }
+        if value == 47 {
+            if lexer_peek_or_zero(lexer) == 47 {
+                lexer_advance(lexer)
+                lexer_line_comment(lexer)
+            } else {
+                lexer_symbol_push(lexer, TokenSlash(), mark)
+            }
+            return true
+        }
+        return false
+    }
+
+    fn lexer_paired_operator(lexer: write Lexer, value: u8, mark: LexerMark) -> void {
+        if value == 45 {
+            lexer_pair(lexer, SymbolPair {
+                    expected: 62, paired: TokenArrow(), single: TokenMinus()
+                }, mark);
+            return
+        }
+        if value == 61 {
+            lexer_equal(lexer, mark);
+            return
+        }
+        if value == 33 {
+            lexer_pair(lexer, SymbolPair {
+                    expected: 61, paired: TokenBangEqual(), single: TokenBang()
+                }, mark);
+            return
+        }
+        if value == 60 {
+            lexer_order(lexer, mark, true);
+            return
+        }
+        if value == 62 {
+            lexer_order(lexer, mark, false);
+            return
+        }
+        if value == 38 {
+            lexer_pair(lexer, SymbolPair {
+                    expected: 38, paired: TokenAndAnd(), single: TokenAmpersand()
+                }, mark);
+            return
+        }
+        if value == 124 {
+            lexer_pair(lexer, SymbolPair {
+                    expected: 124, paired: TokenOrOr(), single: TokenPipe()
+                }, mark);
+            return
+        }
+        lexer_error(lexer, UnexpectedCharacter(), mark)
+    }
+
+    fn lexer_symbol_push(lexer: write Lexer, kind: take TokenKind, mark: LexerMark) -> void {
+        lexer_push(lexer, LexerTokenInput {
+                kind: kind
+                mark: LexerMark {
+                    offset: mark.offset, line: mark.line, column: mark.column
+                }
+                integer: 0
+            })
+    }
+
+    fn lexer_pair(lexer: write Lexer, pair: take SymbolPair, mark: LexerMark) -> void {
+        if lexer_peek_or_zero(lexer) == pair.expected {
+            lexer_advance(lexer)
+            lexer_symbol_push(lexer, pair.paired, mark)
+        } else {
+            lexer_symbol_push(lexer, pair.single, mark)
+        }
+    }
+
+    fn lexer_required_pair(lexer: write Lexer, pair: take SymbolPair, mark: LexerMark) -> void {
+        if lexer_peek_or_zero(lexer) == pair.expected {
+            lexer_advance(lexer)
+            lexer_symbol_push(lexer, pair.paired, mark)
+        } else {
+            lexer_error(lexer, UnexpectedCharacter(), mark)
+        }
+    }
+
+    fn lexer_line_comment(lexer: write Lexer) -> void {
+        while lexer.offset < lexer.length && lexer_peek_or_zero(lexer) != 10 {
+            lexer_advance(lexer)
+        }
+    }
+}

@@ -1,0 +1,5 @@
+module toolchain {
+    fn host_architecture() -> Architecture {
+        return Architecture::Arm64()
+    }
+}

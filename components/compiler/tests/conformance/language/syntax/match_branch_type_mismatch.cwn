@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    let result = match Some(1) {
+        Some(value) => value,
+        None => false
+    }
+    0
+}

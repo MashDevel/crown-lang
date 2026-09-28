@@ -1,0 +1,95 @@
+module sema {
+    fn collect_type_names(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.structs.length() {
+            loan read program.structs[index] as declaration {
+                add_symbol(symbols, SymbolSeed {
+                        view_value: declaration.view_value
+                        name: frontend::name_copy(declaration.name)
+                        kind: Struct()
+                        copy_value: declaration.copy_value
+                        parameters: names_copy(declaration.parameters)
+                    })
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < program.enums.length() {
+            loan read program.enums[index] as declaration {
+                add_symbol(symbols, SymbolSeed {
+                        view_value: false
+                        name: frontend::name_copy(declaration.name)
+                        kind: Enum()
+                        copy_value: declaration.copy_value
+                        parameters: names_copy(declaration.parameters)
+                    })
+            }
+            index = index + 1
+        }
+        collect_resource_names(symbols, program)
+        collect_interface_names(symbols, program)
+    }
+
+    fn collect_resource_names(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.resources.length() {
+            loan read program.resources[index] as declaration {
+                add_symbol(symbols, SymbolSeed {
+                        view_value: false
+                        name: frontend::name_copy(declaration.name)
+                        kind: Resource(declaration.opaque_value, declaration.transferable)
+                        copy_value: false
+                        parameters: names_copy(declaration.parameters)
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn collect_interface_names(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.interfaces.length() {
+            loan read program.interfaces[index] as declaration {
+                add_symbol(symbols, SymbolSeed {
+                        view_value: false
+                        name: frontend::name_copy(declaration.name)
+                        kind: Interface()
+                        copy_value: false
+                        parameters: Vec<frontend::Name>.new()
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn add_symbol(symbols: write Symbols, seed: take SymbolSeed) -> void {
+        symbols.current_span = seed.name.span
+        match builtin(symbols.source, seed.name) {
+            Some(builtin) => {
+                builtin;
+                symbols_error(symbols, "type name conflicts with a built-in type");
+                return
+            }
+            None => {
+            }
+        }
+        match find_symbol(symbols, seed.name) {
+            Some(existing) => {
+                existing;
+                symbols_error(symbols, "duplicate type name");
+                return
+            }
+            None => {
+            }
+        }
+        symbols.types.push(Symbol {
+                view_value: seed.view_value
+                name: frontend::name_copy(seed.name)
+                kind: seed.kind
+                copy_value: seed.copy_value
+                type_parameters: names_copy(seed.parameters)
+                fields: Vec<Field>.new()
+                variants: Vec<Variant>.new()
+            })
+    }
+}

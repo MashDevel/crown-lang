@@ -1,0 +1,10 @@
+fn both(first: scoped fn() -> void, second: scoped fn() -> void) -> void {
+    first();
+    second()
+}
+fn forward(action: scoped fn() -> void) -> void {
+    both(action, action)
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,8 @@
+module native::x11 {
+    fn open() -> Result<std::dylib::Library, std::dylib::Error> {
+        let symbols = std::text::split("XOpenDisplay|XCloseDisplay|XDefaultScreen|XDefaultVisual|XDefaultDepth|XRootWindow|XCreateSimpleWindow|XDestroyWindow|XSelectInput|XMapWindow|XStoreName|XInternAtom|XSetWMProtocols|XCreateGC|XFreeGC|XPending|XNextEvent|XFlush|XLookupKeysym|XCreateImage|XDestroyImage|XPutImage|XClearWindow|XChangeProperty|XSetClassHint|XGrabPointer|XUngrabPointer|XWarpPointer|XCreateBitmapFromData|XCreatePixmapCursor|XFreePixmap|XFreeCursor|XDefineCursor|XUndefineCursor|XNextRequest|XCreatePixmap|XCopyArea", 124)
+        unsafe {
+            return std::dylib::open("libX11.so.6", symbols)
+        }
+    }
+}

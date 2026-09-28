@@ -1,0 +1,7 @@
+const A: usize = B
+const B: usize = A
+fn main() -> u32 {
+    let values: [u32; A] = [];
+    values;
+    return 0
+}

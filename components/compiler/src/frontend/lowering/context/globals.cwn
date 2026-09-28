@@ -1,0 +1,48 @@
+module lowering {
+    fn declare_globals(compiler: write Compiler, analysis: sema::Analysis) -> void {
+        declare_global(compiler, "print_unsigned", "%llu\n\0")
+        declare_global(compiler, "print_signed", "%lld\n\0")
+        let definitions = panic_definitions()
+        for index in 0..definitions.length() {
+            declare_global(compiler, definitions[index].name.clone(), definitions[index].message.clone())
+        }
+        declare_text_literals(compiler, analysis)
+        declare_array_constants(compiler, analysis)
+    }
+
+    fn declare_global(compiler: write Compiler, key: take Text, value: take Text) -> void {
+        var bytes = Vec<u8>.with_capacity(value.length())
+        loan read value as source {
+            var index: usize = 0
+            while index < source.length() {
+                bytes.push(source[index]);
+                index = index + 1
+            }
+        }
+        declare_bytes_global(compiler, move key, move bytes)
+    }
+
+    fn declare_bytes_global(compiler: write Compiler, key: take Text, bytes: take Vec<u8>) -> void {
+        declare_aligned_bytes_global(compiler, move key, move bytes, 1)
+    }
+
+    fn declare_aligned_bytes_global(compiler: write Compiler, key: take Text, bytes: take Vec<u8>, alignment: u32) -> void {
+        var name = "crown_"
+        std::text::append(name, key)
+        let size = u64.from(bytes.length())
+        let global = ir::Global {
+            name: move name
+            bytes: move bytes
+            size: size
+            alignment: alignment
+            kind: ir::GlobalReadOnly()
+            exported: false
+            references: Vec<ir::GlobalReference>.new()
+        }
+        let id = ir::program_add_global(compiler.output, move global)
+        compiler.tables.globals.push(NamedGlobal {
+                name: move key, global: id
+            })
+    }
+
+}

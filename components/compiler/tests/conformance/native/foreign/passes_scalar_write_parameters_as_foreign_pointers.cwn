@@ -1,0 +1,13 @@
+extern "c" {
+    fn next_random(state: write u32) -> i32 = "rand_r"
+}
+fn main() -> u32 {
+    var state = 1
+    unsafe {
+        next_random(state)
+    }
+    if state == 1 {
+        return 1
+    }
+    return 0
+}

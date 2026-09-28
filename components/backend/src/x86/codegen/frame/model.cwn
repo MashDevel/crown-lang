@@ -1,0 +1,129 @@
+module x86 {
+    enum ValueLocation {
+        ValueSlot(i32)
+        ValueRegister(Register)
+        ValueFloatRegister(FloatRegister)
+        ValueStackAddress(i32)
+        ValueGlobalAddress(usize)
+        ValueSymbolAddress
+        ValueFunctionAddress(usize)
+    }
+
+    struct Frame {
+        locations: Vec<Option<ValueLocation>>
+        size: i32
+        saved_registers: Vec<Register>
+    }
+
+    struct SpillSlot {
+        offset: i32
+        size: u64
+        alignment: u32
+        values: Vec<usize>
+    }
+
+    struct FrameBuilder {
+        allocation: RegisterAllocation
+        locations: Vec<Option<ValueLocation>>
+        spill_slots: Vec<SpillSlot>
+        cursor: i32
+    }
+
+    struct ParameterAllocation {
+        value: usize
+        value_type: ir::Type
+    }
+
+    struct AllocationRequirements {
+        size: u64
+        alignment: u32
+    }
+
+    fn codegen_empty_locations(length: usize) -> Vec<Option<ValueLocation>> {
+        var output = Vec<Option<ValueLocation>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_location_copy(location: ValueLocation) -> ValueLocation {
+        match read location {
+            ValueFloatRegister(register) => ValueFloatRegister(register)
+            ValueSlot(offset) => {
+                return ValueSlot(offset)
+            }
+            ValueRegister(register) => {
+                return ValueRegister(register)
+            }
+            ValueStackAddress(offset) => {
+                return ValueStackAddress(offset)
+            }
+            ValueGlobalAddress(global) => {
+                return ValueGlobalAddress(global)
+            }
+            ValueSymbolAddress => {
+                return ValueSymbolAddress()
+            }
+            ValueFunctionAddress(function) => {
+                return ValueFunctionAddress(function)
+            }
+        }
+    }
+
+    fn codegen_frame_location(frame: Frame, value: usize) -> Option<ValueLocation> {
+        if value >= frame.locations.length() {
+            return None()
+        }
+        match read frame.locations[value] {
+            Some(location) => {
+                return Some(codegen_location_copy(location))
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_frame_register(frame: Frame, value: usize) -> Option<Register> {
+        match read frame.locations[value] {
+            Some(location) => {
+                match read location {
+                    ValueRegister(register) => {
+                        return Some(register)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_frame_slot(frame: Frame, value: usize) -> Option<i32> {
+        match read frame.locations[value] {
+            Some(location) => {
+                match read location {
+                    ValueSlot(offset) => {
+                        return Some(offset)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_frame_saved_padding(frame: Frame) -> bool {
+        return frame.saved_registers.length() % 2 != 0
+    }
+}

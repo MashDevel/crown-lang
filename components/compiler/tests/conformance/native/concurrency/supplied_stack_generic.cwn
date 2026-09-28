@@ -1,0 +1,18 @@
+resource Captured<T> {
+    value: T
+    drop { value }
+}
+fn launch<T>(value: take T, base: usize, length: usize) -> Option<usize> {
+    unsafe {
+        return spawn(base, length) move {
+            value
+        }
+    }
+}
+fn main() -> u32 {
+    let created = launch(Captured<Text> { value: "packet" }, 0, 0)
+    return match created {
+        Some(identity) => { identity; 1 },
+        None => 0
+    }
+}

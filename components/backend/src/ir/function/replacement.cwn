@@ -1,0 +1,34 @@
+module ir {
+    fn function_replace_uses_many(function: write Function, replacements: Vec<Option<usize>>) -> void {
+        if replacements.length() == 0 {
+            return
+        }
+        loan read replacements as values {
+            let replacement = Replacement {
+                from: 0, to: 0, values: values, direct: false
+            }
+            function_replace_mapped_uses(function, replacement)
+        }
+    }
+
+    fn function_replace_mapped_uses(function: write Function, replacement: Replacement) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var instruction: usize = 0
+            while instruction < function.blocks[block].instructions.length() {
+                loan write function.blocks[block].instructions[instruction].kind as kind {
+                    instruction_replace_mapped_uses(kind, replacement)
+                }
+                instruction = instruction + 1
+            }
+            match write function.blocks[block].terminator {
+                Some(terminator) => {
+                    terminator_replace_mapped_uses(terminator, replacement)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+    }
+}

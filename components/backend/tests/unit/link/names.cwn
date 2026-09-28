@@ -1,0 +1,49 @@
+fn run() -> Result<void, Text> {
+    direct_library_paths()?
+    let invalid = testing::list("../payload|AppKit.framework/../../payload|/tmp/payload|a\\b|a\nb|@rpath")
+    for index in 0..invalid.length() {
+        let option = std::text::joined("-l", invalid[index])
+        testing::error(elf::library_name(option))?
+        testing::error(macho::libraries(testing::list(option)))?
+        var framework = testing::list("-framework")
+        framework.push(invalid[index].clone())
+        testing::error(macho::libraries(framework))?
+    }
+    testing::expect(std::text::equal(elf::library_name("-lstdc++")?, "libstdc++.so"), "versioned C++ library name")?
+    let libraries = macho::libraries(testing::list("-framework|AppKit|-lobjc"))?
+    return testing::expect(libraries.length() == 3, "ordinary system link names remain valid")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn direct_library_paths() -> Result<void, Text> {
+    let valid = testing::list("/usr/lib/libSystem.B.dylib|/usr/lib/libc++.1.dylib|/System/Library/Frameworks/AppKit.framework/AppKit")
+    for index in 0..valid.length() {
+        testing::expect(macho::system_library_path(valid[index]), "canonical system library path")?
+    }
+    let invalid = testing::list("libSystem.B.dylib|/tmp/payload.dylib|/usr/lib/lib../payload.dylib|/usr/lib/lib.dylib|/System/Library/Frameworks/AppKit.framework/../../payload|/System/Library/Frameworks/AppKit.framework/Foundation")
+    for index in 0..invalid.length() {
+        testing::expect(macho::system_library_path(invalid[index]) == false, "backend rejects arbitrary library paths")?
+        match macho::probe_export(invalid[index], "main") {
+            Ok(value) => {
+                value;
+                return Err("invalid library path reached export probing")
+            }
+            Err(error) => {
+                testing::expect(error == std::dylib::Error::InvalidName(), "export probing rejects paths before loading")?
+            }
+        }
+        match macho::validate_libraries(testing::list(invalid[index])) {
+            Ok(value) => {
+                value;
+                return Err("invalid library path reached validation")
+            }
+            Err(error) => {
+                testing::expect(std::text::starts(error, "invalid system library path:"), "library validation rejects paths before loading")?
+            }
+        }
+    }
+    return Ok(())
+}

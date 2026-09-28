@@ -1,0 +1,94 @@
+module guest {
+    struct Options {
+        socket: Text, command: Text, upload: Text, destination: Text, pid: u64, timeout: u64, execute: bool
+    }
+
+    extern "c" {
+        fn raw_float(source: RawPtr<u8>, end: RawPtr<RawPtr<u8>>) -> f64 = "strtod"
+    }
+
+    fn timeout(value: Text) -> Result<u64, Text> {
+        let encoded = toolchain::cstring(value)?
+        var end = Vec<RawPtr<u8>>.new()
+        end.push(toolchain::null())
+        unsafe {
+            let start = std::cstr::as_raw(encoded)
+            let seconds = raw_float(start, end.as_raw())
+            if end[0] != start.offset(value.length()) || value.length() == 0 {
+                return Err("invalid timeout")
+            }
+            if (seconds > 0.0 && seconds < 18446744073709550.0) == false {
+                return Err("timeout must be positive and finite")
+            }
+            let milliseconds = u64.from(seconds * 1000.0)
+            return Ok(if milliseconds == 0 {
+                    u64.from(1)
+                } else {
+                    milliseconds
+                })
+        }
+    }
+
+    fn option(output: write Options, key: Text, value: Text) -> Result<void, Text> {
+        if std::text::equal(key, "--socket") {
+            output.socket = value.clone();
+            return Ok(())
+        }
+        if std::text::equal(key, "--upload") {
+            output.upload = value.clone();
+            return Ok(())
+        }
+        if std::text::equal(key, "--destination") {
+            output.destination = value.clone();
+            return Ok(())
+        }
+        if std::text::equal(key, "--timeout") {
+            output.timeout = timeout(value)?;
+            return Ok(())
+        }
+        return command_option(output, key, value)
+    }
+
+    fn command_option(output: write Options, key: Text, value: Text) -> Result<void, Text> {
+        if std::text::equal(key, "--execute") {
+            if output.pid != 0 {
+                return Err("execute and wait-pid are mutually exclusive")
+            }
+            output.command = value.clone()
+            output.execute = true
+            return Ok(())
+        }
+        if std::text::equal(key, "--wait-pid") {
+            if output.execute {
+                return Err("execute and wait-pid are mutually exclusive")
+            }
+            output.pid = std::text::unsigned(value)?
+            if output.pid == 0 {
+                return Err("wait-pid must be positive")
+            }
+            return Ok(())
+        }
+        return Err(std::text::joined("unknown guest option: ", key))
+    }
+
+    fn options(arguments: Vec<Text>) -> Result<Options, Text> {
+        var output = Options {
+            socket: "", command: "", upload: "", destination: "", pid: 0, timeout: 300000, execute: false
+        }
+        var index: usize = 1
+        while index < arguments.length() {
+            if index + 1 == arguments.length() {
+                return Err("missing guest option value")
+            }
+            option(output, arguments[index], arguments[index + 1])?
+            index = index + 2
+        }
+        if output.socket.length() == 0 {
+            return Err("--socket is required")
+        }
+        if (output.upload.length() == 0) !=(output.destination.length() == 0) {
+            return Err("--upload and --destination must be specified together")
+        }
+        return Ok(move output)
+    }
+}

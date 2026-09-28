@@ -1,0 +1,13 @@
+fn framework_imports() -> Result<void, Text> {
+    let libraries = std::text::split("/System/Library/Frameworks/AppKit.framework/AppKit|/System/Library/Frameworks/Metal.framework/Metal|/usr/lib/libobjc.dylib|/usr/lib/libSystem.B.dylib", 124)
+    if macho::import_ordinal("MTLCreateSystemDefaultDevice", libraries)? != 2 {
+        return Err("Metal symbol bound to a transitive dependency")
+    }
+    if macho::import_ordinal("objc_msgSend", libraries)? != 1 {
+        return Err("AppKit Objective-C re-export was not resolved")
+    }
+    if macho::import_ordinal("malloc", libraries)? != 4 {
+        return Err("system symbol bound to a transitive dependency")
+    }
+    return Ok(())
+}

@@ -1,0 +1,109 @@
+module elf {
+    fn layout(object: object::CompilerObject) -> Result<Image, Text> {
+        var image = image_new()
+        image.architecture = object.architecture
+        for index in 0..object.sections.length() {
+            image.sections.push(0)
+        }
+        place_sections(image, object, false)?
+        image.entry_offset = reserve(image, 16, startup_size(object.architecture))?
+        layout_imports(image, object)?
+        image.data_offset = reserve(image, PAGE_SIZE, 0)?
+        place_sections(image, object, true)?
+        resolve_symbols(image, object)?
+        return Ok(move image)
+    }
+
+    fn layout_imports(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..object.symbols.length() {
+            image.slots.push(0)
+            image.symbols.push(0)
+            image.dynamic_indices.push(0)
+            if object::symbol_is_import(object.symbols[index].binding) {
+                image.imports.push(index)
+                if object::symbol_is_function(object.symbols[index].kind) {
+                    image.symbols[index] = reserve_stub(image)?
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn place_sections(image: write Image, object: object::CompilerObject, is_writable: bool) -> Result<void, Text> {
+        for index in 0..object.sections.length() {
+            loan read object.sections[index] as section {
+                if writable(section) == is_writable {
+                    let offset = reserve(image, usize.from(section.alignment), usize.from(section.memory_size))?
+                    for byte in 0..section.data.length() {
+                        image.bytes[offset + byte] = section.data[byte]
+                    }
+                    image.sections[index] = IMAGE_BASE + u64.from(offset)
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn resolve_symbols(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..object.symbols.length() {
+            match read object.symbols[index].section {
+                Some(section) => {
+                    image.symbols[index] = image.sections[section] + object.symbols[index].offset
+                }
+                None => {
+                    image.slots[index] = IMAGE_BASE + u64.from(reserve(image, 8, 8)?)
+                    if object::symbol_is_function(object.symbols[index].kind) {
+                        write_stub(image, index)?
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn write_stub(image: write Image, symbol: usize) -> Result<void, Text> {
+        if image.architecture == object::ArchitectureArm64() {
+            return write_arm_stub(image, symbol)
+        }
+        let address = image.symbols[symbol]
+        let offset = usize.from(address - IMAGE_BASE)
+        image.bytes[offset] = 255
+        image.bytes[offset + 1] = 37
+        let delta = relative(image.slots[symbol], address + 6)?
+        link_binary::put(image.bytes, offset + 2, u64.from_bits(delta), 4)
+        return Ok(())
+    }
+
+    fn reserve_stub(image: write Image) -> Result<u64, Text> {
+        let arm = image.architecture == object::ArchitectureArm64()
+        let alignment: usize = if arm {
+            4
+        } else {
+            2
+        }
+        let size: usize = if arm {
+            12
+        } else {
+            6
+        }
+        return Ok(IMAGE_BASE + u64.from(reserve(image, alignment, size)?))
+    }
+
+    fn relative(target: u64, address: u64) -> Result<i64, Text> {
+        if target > 9223372036854775807 {
+            return Err("invalid ELF relocation target")
+        }
+        return relative_value(i64.from(target), address)
+    }
+
+    fn relative_value(target: i64, address: u64) -> Result<i64, Text> {
+        if address > 9223372036854775807 {
+            return Err("invalid ELF relocation address")
+        }
+        let value = link_binary::signed_subtract(target, i64.from(address))?
+        if value < -2147483648 || value > 2147483647 {
+            return Err("ELF relative relocation exceeds signed 32-bit range")
+        }
+        return Ok(value)
+    }
+}

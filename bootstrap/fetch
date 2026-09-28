@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+. "$(dirname -- "$0")/assets"
+destination="$root/bootstrap/$host"
+name="crown-bootstrap-$host"
+existing() {
+    verify "$destination/manifest.json" manifest_sha256
+    verify "$destination/compiler.s" assembly_sha256
+}
+if [ -e "$destination" ]; then
+    existing
+    exit 0
+fi
+prepare_download
+download "$name.s.gz"
+download "$name.json"
+verify "$stage/$name.s.gz" archive_sha256
+verify "$stage/$name.json" manifest_sha256
+mkdir "$stage/seed"
+gzip -dc "$stage/$name.s.gz" > "$stage/seed/compiler.s"
+verify "$stage/seed/compiler.s" assembly_sha256
+mv "$stage/$name.json" "$stage/seed/manifest.json"
+install_directory seed

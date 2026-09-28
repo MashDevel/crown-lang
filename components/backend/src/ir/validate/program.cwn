@@ -1,0 +1,153 @@
+module ir {
+    fn validate_program_structure(program: Program) -> Result<void, ValidationError> {
+        match validate_entry(program) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return validate_names(program)
+    }
+
+    fn validate_entry(program: Program) -> Result<void, ValidationError> {
+        match program_entry(program) {
+            None => {
+                return Ok(())
+            }
+            Some(entry) => {
+                if entry >= program.functions.length() {
+                    return Err(validation_program_error(ValidationUnknownEntry()))
+                }
+                loan read program.functions[entry] as function {
+                    if function_is_import(function) {
+                        return Err(validation_program_error(ValidationImportedEntry()))
+                    }
+                }
+                return Ok(())
+            }
+        }
+    }
+
+    fn validate_names(program: Program) -> Result<void, ValidationError> {
+        var function: usize = 0
+        while function < program.functions.length() {
+            if name_duplicate_function(program, function) {
+                return Err(validation_program_error(ValidationDuplicateSymbol()))
+            }
+            function = function + 1
+        }
+        var global: usize = 0
+        while global < program.globals.length() {
+            if name_duplicate_global(program, global) {
+                return Err(validation_program_error(ValidationDuplicateSymbol()))
+            }
+            loan read program.globals[global] as value {
+                if valid_global(program, value) == false {
+                    return Err(validation_program_error(ValidationInvalidGlobal()))
+                }
+            }
+            global = global + 1
+        }
+        return Ok(())
+    }
+
+    fn name_duplicate_function(program: Program, index: usize) -> bool {
+        var prior: usize = 0
+        while prior < index {
+            loan read program.functions[prior] as left {
+                loan read program.functions[index] as right {
+                    if std::text::equal(left.name, right.name) {
+                        return true
+                    }
+                }
+            }
+            prior = prior + 1
+        }
+        return false
+    }
+
+    fn name_duplicate_global(program: Program, index: usize) -> bool {
+        var function: usize = 0
+        while function < program.functions.length() {
+            loan read program.functions[function] as left {
+                loan read program.globals[index] as right {
+                    if std::text::equal(left.name, right.name) {
+                        return true
+                    }
+                }
+            }
+            function = function + 1
+        }
+        var prior: usize = 0
+        while prior < index {
+            loan read program.globals[prior] as left {
+                loan read program.globals[index] as right {
+                    if std::text::equal(left.name, right.name) {
+                        return true
+                    }
+                }
+            }
+            prior = prior + 1
+        }
+        return false
+    }
+
+    fn valid_global(program: Program, global: Global) -> bool {
+        if valid_alignment(global.alignment) == false {
+            return false
+        }
+        if u64.from(global.bytes.length()) > global.size {
+            return false
+        }
+        var index: usize = 0
+        while index < global.references.length() {
+            loan read global.references[index] as reference {
+                if valid_global_reference(program, global, reference) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn valid_global_reference(program: Program, global: Global, reference: GlobalReference) -> bool {
+        if reference.offset > 18446744073709551607 {
+            return false
+        }
+        if reference.offset + 8 > global.size {
+            return false
+        }
+        if global_zero_fill(global.kind) {
+            return false
+        }
+        match read reference.target {
+            GlobalReferenceFunction(target) => {
+                return target < program.functions.length()
+            }
+            GlobalReferenceGlobal(target) => {
+                return target < program.globals.length()
+            }
+        }
+    }
+
+    fn global_zero_fill(kind: GlobalKind) -> bool {
+        match read kind {
+            GlobalZeroFill => {
+                return true
+            }
+            GlobalReadOnly => {
+                return false
+            }
+            GlobalWritable => {
+                return false
+            }
+        }
+    }
+
+    fn valid_alignment(alignment: u32) -> bool {
+        return alignment != 0 &&(alignment &(alignment - 1)) == 0
+    }
+}

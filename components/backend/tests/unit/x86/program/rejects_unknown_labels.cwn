@@ -1,0 +1,33 @@
+fn main() -> u32 {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::Jump(x86::BlockLabel(99)))
+    let function = x86::function_new("main", move instructions)
+    var program = x86::program_new("main")
+    match x86::program_add_function(program, move function) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    loan read program.functions[0] as source_function {
+        match x86::encode_function(program, source_function, 0) {
+            Ok(encoded) => {
+                encoded;
+                return 2
+            }
+            Err(error) => {
+                match read error.kind {
+                    x86::UnknownLabel => {
+                        return 42
+                    }
+                    _ => {
+                        return 3
+                    }
+                }
+            }
+        }
+    }
+}

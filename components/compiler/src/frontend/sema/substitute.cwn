@@ -1,0 +1,64 @@
+module sema {
+    fn substitute(value_type: Type, values: Vec<Type>) -> Type {
+        match read value_type {
+            ParameterType(parameter) => {
+                if parameter < values.length() {
+                    loan read values[parameter] as value {
+                        return type_copy(value)
+                    }
+                }
+                return Infer()
+            }
+            BuiltinType(builtin, arguments) => {
+                return BuiltinType(builtin, substitute_types(arguments, values))
+            }
+            NamedType(symbol, arguments) => {
+                return NamedType(symbol, substitute_types(arguments, values))
+            }
+            ArrayType(element, length) => {
+                loan read element as value {
+                    return ArrayType(Box.new(substitute(value, values)), length)
+                }
+            }
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return ScopedFunction(Box.new(substitute(value, values)))
+                }
+            }
+            FunctionType(parameters, result) => {
+                return substitute_function(parameters, result, values)
+            }
+            _ => {
+                return type_copy(value_type)
+            }
+        }
+    }
+
+    fn substitute_types(types: Vec<Type>, values: Vec<Type>) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(types.length())
+        var index: usize = 0
+        while index < types.length() {
+            loan read types[index] as value {
+                output.push(substitute(value, values))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn substitute_function(parameters: Vec<ParameterType>, result: Box<Type>, values: Vec<Type>) -> Type {
+        var output = Vec<ParameterType>.with_capacity(parameters.length())
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                output.push(ParameterType {
+                        mode: parameter.mode, value_type: substitute(parameter.value_type, values)
+                    })
+            }
+            index = index + 1
+        }
+        loan read result as value {
+            return FunctionType(move output, Box.new(substitute(value, values)))
+        }
+    }
+}

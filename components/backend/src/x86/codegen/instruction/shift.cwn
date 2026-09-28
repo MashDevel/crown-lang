@@ -1,0 +1,81 @@
+module x86 {
+    fn codegen_dynamic_shift(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<void, CodegenError> {
+        var result: usize = 0
+        match read input.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match codegen_value_type(program, compiler, result) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                match codegen_width(value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(raw_width) => {
+                        let width = codegen_zeroing_width(input.operator, raw_width)
+                        match codegen_load_shift_operands(program, compiler, input) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(done) => {
+                                done
+                            }
+                        }
+                        codegen_emit_shift(compiler, input.operator, width)
+                        return codegen_store_sized_result(program, compiler, SizedResultStore {
+                                result: result
+                                source: Rax()
+                                width: width
+                            })
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_load_shift_operands(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<void, CodegenError> {
+        let left = ValueAccess {
+            value: input.left, register: Rax()
+        }
+        var result: Result<void, CodegenError> = Ok(())
+        if codegen_binary_is_signed(input.operator) {
+            result = codegen_load_signed(program, compiler, move left)
+        } else {
+            result = codegen_load_value(program, compiler, move left)
+        }
+        match move result {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        return codegen_load_value(program, compiler, ValueAccess {
+                value: input.right, register: Rcx()
+            })
+    }
+
+    fn codegen_emit_shift(compiler: write FunctionCompiler, operator: ir::BinaryOperator, width: Width) -> void {
+        match read operator {
+            ir::BinaryShiftLeft => {
+                codegen_emit(compiler, ShiftLeftSized(Rax(), width))
+            }
+            ir::BinaryShiftRightSigned => {
+                codegen_emit(compiler, ShiftRightArithmeticSized(Rax(), width))
+            }
+            ir::BinaryShiftRightUnsigned => {
+                codegen_emit(compiler, ShiftRightLogicalSized(Rax(), width))
+            }
+            _ => {
+            }
+        }
+    }
+}

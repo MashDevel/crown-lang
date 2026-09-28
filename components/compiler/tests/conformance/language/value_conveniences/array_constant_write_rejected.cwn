@@ -1,0 +1,5 @@
+const VALUES: [u32; 2] = [1, 2]
+fn main() -> u32 {
+    VALUES[0] = 3;
+    return 0
+}

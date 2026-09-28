@@ -1,0 +1,48 @@
+fn main() -> u32 {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeFloat(ir::FloatWidth64()))
+    parameters.push(ir::TypePointer())
+    let signature = ir::signature_new(move parameters, ir::TypeVoid())
+    let locations = match x86::abi_locations(signature) {
+        Err(error) => {
+            error;
+            return 1
+        }
+        Ok(value) => move value
+    }
+    if locations.length() != 3 {
+        return 2
+    }
+    match read locations[0] {
+        x86::ArgumentInteger(register) => {
+            if x86::register_code(register) != 7 {
+                return 3
+            }
+        }
+        _ => {
+            return 4
+        }
+    }
+    match read locations[1] {
+        x86::ArgumentFloat(register) => {
+            if x86::float_register_code(register) != 0 {
+                return 5
+            }
+        }
+        _ => {
+            return 6
+        }
+    }
+    match read locations[2] {
+        x86::ArgumentInteger(register) => {
+            if x86::register_code(register) != 6 {
+                return 7
+            }
+        }
+        _ => {
+            return 8
+        }
+    }
+    return 42
+}

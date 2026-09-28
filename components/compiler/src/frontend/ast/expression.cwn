@@ -1,0 +1,76 @@
+module frontend {
+    struct Expression {
+        kind: ExpressionKind
+        span: Span
+        depth: u32
+    }
+
+    enum ExpressionKind {
+        ExpressionInteger(u64)
+        ExpressionFloat(Span)
+        ExpressionCharacter(Span)
+        ExpressionBoolean(bool)
+        ExpressionUnit
+        ExpressionText(Span)
+        ExpressionPath(Path)
+        ExpressionMove(Path)
+        ExpressionCall(Name, Vec<Expression>)
+        ExpressionStaticCall(TypeRef, Name, Vec<Expression>)
+        ExpressionMethodCall(Box<Expression>, Name, Vec<Expression>)
+        ExpressionStruct(TypeRef, Vec<FieldValue>)
+        ExpressionBinary(Box<Expression>, BinaryOperator, Box<Expression>)
+        ExpressionTry(Box<Expression>)
+        ExpressionUnsafe(Vec<Statement>)
+        ExpressionNegate(Box<Expression>)
+        ExpressionBitwiseNot(Box<Expression>)
+        ExpressionArray(Vec<Expression>)
+        ExpressionArrayRepeat(Box<Expression>, ArrayLength)
+        ExpressionIndex(Box<Expression>, Box<Expression>)
+        ExpressionSlice(Box<Expression>, Box<Expression>, Box<Expression>)
+        ExpressionField(Box<Expression>, Name)
+        ExpressionClosure(Vec<ClosureCapture>, Vec<Name>, Vec<Statement>)
+        ExpressionSpawn(Vec<Expression>, Vec<Statement>)
+        ExpressionScopedSpawn(Vec<Expression>, Vec<ClosureCapture>, Vec<Statement>)
+        ExpressionConditional(ConditionalExpression)
+        ExpressionMatch(Box<MatchExpression>)
+    }
+
+    struct ClosureCapture {
+        mode: Mode
+        name: Name
+    }
+
+    struct FieldValue {
+        name: Name
+        value: Expression
+        span: Span
+    }
+
+    struct Path {
+        segments: Vec<Name>
+        span: Span
+    }
+
+    struct ConditionalExpression {
+        condition: Box<Expression>
+        then_body: Vec<Statement>
+        else_body: Vec<Statement>
+        span: Span
+    }
+    fn expression_integer_value(expression: Expression) -> Option<u64> {
+        match read expression.kind {
+            ExpressionInteger(value) => Some(value)
+            _ => None()
+        }
+    }
+    fn expression_is_true(expression: Expression) -> bool {
+        match read expression.kind {
+            ExpressionBoolean(value) => {
+                return value
+            }
+            _ => {
+            }
+        }
+        return false
+    }
+}

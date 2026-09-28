@@ -1,0 +1,63 @@
+fn counted_case(bound: u64, strength: bool, closed: bool) -> Result<void, u32> {
+    var fixture = counted_loop(bound)?
+    if closed == false {
+        optimize::phi(fixture.function)
+    }
+    if strength {
+        safety_require(optimize::induction_strength(fixture.function) == 1, 1)?
+    } else {
+        let expected: usize = if bound <= 8 {
+            1
+        } else {
+            0
+        }
+        safety_require(optimize::unroll(fixture.function) == expected, 2)?
+        if expected == 1 {
+            let loops = optimize::find_loops(fixture.function)
+            safety_require(loops.length() == 0, 3)?
+        }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, ir::function_take(fixture.function))
+    return safety_execute(move program)
+}
+
+fn counted_cases() -> Result<void, u32> {
+    counted_case(0, false, false)?
+    counted_case(1, false, false)?
+    counted_case(4, false, false)?
+    counted_case(8, false, false)?
+    counted_case(9, false, false)?
+    counted_case(4, true, false)?
+    counted_case(4, false, true)?
+    counted_stack_slot()?
+    counted_multiple_loops()?
+    return Ok(())
+}
+
+fn counted_multiple_loops() -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    var selected = Vec<bool>.new()
+    for block in 0..fixture.function.blocks.length() {
+        selected.push(true)
+    }
+    let mapping = optimize::loop_clone_mapping(fixture.function, selected)
+    optimize::loop_clone_blocks(fixture.function, selected, mapping)
+    fixture.function.blocks[fixture.exit].terminator = Some(ir::TerminatorBranch(mapping.blocks[0]))
+    optimize::function(fixture.function)
+    let loops = optimize::find_loops(fixture.function)
+    safety_require(loops.length() == 0, 5)?
+    var program = ir::program_new()
+    ir::program_add_function(program, ir::function_take(fixture.function))
+    return safety_execute(move program)
+}
+
+fn counted_stack_slot() -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    safety_append(fixture.function, fixture.body, ir::InstructionStackSlot(8, 8))?
+    return safety_require(optimize::unroll(fixture.function) == 0, 4)
+}
+
+fn main() -> u32 {
+    return safety_status(counted_cases())
+}

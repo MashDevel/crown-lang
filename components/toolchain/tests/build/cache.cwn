@@ -1,0 +1,146 @@
+fn cache_tests(root: Text) -> Result<void, Text> {
+    let source = testing::write_file(root, "source.cwn", "first")?
+    let output = testing::write_file(root, "program", "binary")?
+    var paths = Vec<Text>.new();
+    paths.push(source.clone())
+    let options = testing::list("native")
+    let checksum = toolchain::fingerprint(paths, options)?
+    testing::expect(toolchain::fresh(output, checksum) == false, "missing cache record")?
+    toolchain::record(output, checksum)?
+    testing::expect(toolchain::fresh(output, checksum), "valid cache record")?
+    testing::expect(std::text::equal(checksum, toolchain::fingerprint(paths, testing::list("different"))?) == false, "cache options")?
+    cache_invalidation(source, output, checksum, paths, options)?
+    return Ok(())
+}
+
+fn hash_tests(root: Text) -> Result<void, Text> {
+    testing::expect(std::text::equal(toolchain::digest_text("abc")?, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"), "SHA-256 known answer")?
+    testing::expect(std::text::equal(toolchain::digest_text("")?, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"), "SHA-256 empty input")?
+    let values = testing::list("|abc|é λ|123456789")
+    for index in 0..values.length() {
+        let path = testing::write_file(root, "checksum", values[index])?
+        let request = testing::list(std::text::joined("cksum|", path))
+        let result = toolchain::capture(toolchain::command(move request), root)?
+        let expected = std::text::joined(toolchain::checksum(toolchain::text_bytes(values[index])), " ")
+        testing::expect(result.status == 0 && std::text::starts(result.stdout, expected), "POSIX checksum agreement")?
+    }
+    return Ok(())
+}
+
+fn bootstrap_record(root: Text) -> Result<void, Text> {
+    let binary = testing::write_file(root, "bootstrap-compiler", "binary")?
+    let input = toolchain::digest_text("inputs")?
+    let seed = toolchain::digest_text("assembly")?
+    toolchain::record_build(binary, input, Some(seed.clone()))?
+    testing::expect(toolchain::fresh(binary, input), "bootstrap record remains a valid build cache")?
+    let path = std::text::joined(binary, ".crown-build")
+    verify_bootstrap_record(binary, path, seed)?
+    return record_failures(binary, path, input)
+}
+
+fn verify_bootstrap_record(binary: Text, path: Text, seed: Text) -> Result<void, Text> {
+    let record = toolchain::json(toolchain::read_text(path)?)?
+    let recorded = toolchain::json_text(record, toolchain::json_required(record, record.root, "seed")?)?
+    testing::expect(std::text::equal(seed, recorded), "build record stores seed digest")?
+    testing::expect(toolchain::exists(std::text::joined(binary, ".cksum")) == false, "no executable checksum sidecar")?
+    return testing::expect(toolchain::exists(std::text::joined(binary, ".seed.cksum")) == false, "no seed checksum sidecar")
+}
+
+fn record_failures(binary: Text, path: Text, input: Text) -> Result<void, Text> {
+    toolchain::remove_file(path)?
+    toolchain::make_directory(path)?
+    testing::error(toolchain::record(binary, input))?
+    toolchain::remove_file(binary)?
+    return testing::error(toolchain::record(binary, input))
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    cache_tests(root)?;
+    hash_tests(root)?
+    bootstrap_record(root)?
+    interpreter_cache(root)?
+    record_symlinks(root)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn cache_invalidation(source: Text, output: Text, checksum: Text, paths: Vec<Text>, options: Vec<Text>) -> Result<void, Text> {
+    toolchain::write_text(source, "second")?
+    testing::expect(toolchain::fresh(output, toolchain::fingerprint(paths, options)?) == false, "changed source")?
+    toolchain::write_text(output, "corrupted")?
+    testing::expect(toolchain::fresh(output, checksum) == false, "corrupted output")?
+    toolchain::write_text(std::text::joined(output, ".crown-build"), "invalid json")?
+    testing::expect(toolchain::fresh(output, checksum) == false, "malformed record")?
+    toolchain::remove_file(output)?
+    testing::expect(toolchain::fresh(output, checksum) == false, "missing binary")?
+    return Ok(())
+}
+
+fn interpreter_cache(root: Text) -> Result<void, Text> {
+    let source = testing::write_file(root, "interpreter-source.cwn", "fn main() -> u32 { 0 }")?
+    let compiler = testing::write_file(root, "fingerprint-compiler", "#!/bin/sh\ncat \"${0%/*}/link-inputs.json\"\n")?
+    toolchain::executable(compiler)?
+    let inputs = testing::write_file(root, "link-inputs.json", "[]")?
+    let project = toolchain::Project {
+        manifest: source.clone(), name: "test", sources: testing::list(source), links: Vec<Text>.new(), output: "program"
+    }
+    let request = toolchain::BuildRequest {
+        compiler: compiler.clone(), project: move project, output: "program", objects: Vec<Text>.new(), links: Vec<Text>.new(),
+        max_instances: 128, coverage: "", optimization: toolchain::optimization_options(),
+        target: toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux())
+    }
+    environment_cache(request, "CROWN_LINUX_INTERPRETER")?
+    environment_cache(request, "CROWN_LINUX_LIBRARY_PATH")?
+    return library_cache(root, request, inputs)
+}
+
+fn library_cache(root: Text, request: toolchain::BuildRequest, inputs: Text) -> Result<void, Text> {
+    let library = testing::write_file(root, "libfixture.so", "first library")?
+    toolchain::write_text(inputs, std::text::joined(std::text::joined("[", toolchain::json_quoted(library)), "]"))?
+    let first = toolchain::build_fingerprint(request)?
+    toolchain::write_text(library, "second library")?
+    let second = toolchain::build_fingerprint(request)?
+    testing::expect(std::text::equal(first, second) == false, "changing a target library invalidates the build cache")?
+    toolchain::write_text(inputs, "invalid json")?
+    return testing::error(toolchain::build_fingerprint(request))
+}
+
+fn environment_cache(request: toolchain::BuildRequest, name: Text) -> Result<void, Text> {
+    let previous = toolchain::environment(name)
+    toolchain::set_environment(name, "/first")?
+    let first = toolchain::build_fingerprint(request)?
+    toolchain::set_environment(name, "/second")?
+    let second = toolchain::build_fingerprint(request)?
+    toolchain::set_environment(name, previous)?
+    return testing::expect(std::text::equal(first, second) == false, "changing Linux link configuration invalidates the build cache")
+}
+
+extern "c" {
+    fn make_symlink(target: RawPtr<u8>, path: RawPtr<u8>) -> i32 = "symlink"
+}
+
+fn record_symlinks(root: Text) -> Result<void, Text> {
+    let binary = testing::write_file(root, "symlink-program", "binary")?
+    let victim = testing::write_file(root, "unrelated", "preserved")?
+    let path = std::text::joined(binary, ".crown-build")
+    let target = toolchain::cstring(victim)?
+    let link = toolchain::cstring(path)?
+    unsafe {
+        testing::expect(make_symlink(std::cstr::as_raw(target), std::cstr::as_raw(link)) == 0, "create record symlink")?
+    }
+    toolchain::record(binary, "input")?
+    testing::expect(std::text::equal(toolchain::read_text(victim)?, "preserved"), "record publication preserves symlink target")?
+    testing::expect(toolchain::fresh(binary, "input"), "record replaces symlink with valid metadata")?
+    toolchain::remove_file(path)?
+    toolchain::remove_file(victim)?
+    unsafe {
+        testing::expect(make_symlink(std::cstr::as_raw(target), std::cstr::as_raw(link)) == 0, "create dangling record symlink")?
+    }
+    toolchain::record(binary, "next")?
+    testing::expect(toolchain::exists(victim) == false, "record publication does not create symlink target")?
+    return testing::expect(toolchain::fresh(binary, "next"), "record replaces dangling symlink")
+}

@@ -1,0 +1,62 @@
+module frontend {
+    fn parser_pattern_control(parser: write Parser, start: Span, looping: bool) -> Statement {
+        let matched = parser_pattern_match(parser, start, looping)
+        let span = matched.span
+        let result = statement(StatementMatch(move matched), span)
+        if looping == false {
+            return move result
+        }
+        var repeated = Vec<Statement>.new()
+        repeated.push(move result)
+        return statement(StatementWhile(expression(ExpressionBoolean(true), start), move repeated), span)
+    }
+    fn parser_pattern_match(parser: write Parser, start: Span, looping: bool) -> MatchExpression {
+        let pattern = parser_pattern(parser)
+        parser_expect(parser, TokenEqual())
+        var access: Option<LoanMode> = None()
+        if parser_at(parser, TokenRead()) || parser_at(parser, TokenWrite()) {
+            access = Some(parser_loan_mode(parser))
+        }
+        let value = parser_condition(parser)
+        let body = parser_block(parser)
+        let body_end = parser_previous_span(parser)
+        parser_skip_breaks(parser)
+        var otherwise = Vec<Statement>.new()
+        if looping {
+            otherwise.push(statement(StatementBreak(), start))
+        }
+        if looping == false && parser_consumed(parser, TokenElse()) {
+            otherwise = parser_block(parser)
+        }
+        let span = span_through(start, parser_previous_span(parser))
+        var choices = Vec<PatternKind>.new()
+        choices.push(PatternWildcard())
+        let fallback = Pattern {
+            choices: move choices, bindings: Vec<Name>.new(), span: start
+        }
+        var arms = Vec<MatchArm>.new()
+        let body_span = parser_pattern_body_span(body, body_end)
+        let other_span = parser_pattern_body_span(otherwise, parser_previous_span(parser))
+        arms.push(MatchArm {
+                pattern: move pattern, body: move body, span: body_span
+            })
+        arms.push(MatchArm {
+                pattern: move fallback, body: move otherwise, span: other_span
+            })
+        return MatchExpression {
+            access: access, value: move value, arms: move arms, span: span
+        }
+    }
+    fn parser_pattern_value(parser: write Parser, start: Span) -> Expression {
+        var matched = parser_pattern_match(parser, start, false)
+        parser_value_arms(matched.arms)
+        let span = matched.span
+        return expression(ExpressionMatch(Box.new(move matched)), span)
+    }
+    fn parser_pattern_body_span(body: Vec<Statement>, fallback: Span) -> Span {
+        if body.length() != 0 {
+            return body[0].span
+        }
+        return fallback
+    }
+}

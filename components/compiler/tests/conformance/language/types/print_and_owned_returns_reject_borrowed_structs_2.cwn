@@ -1,0 +1,9 @@
+struct Item {
+    value: u32
+}
+fn identity(item: read Item) -> Item {
+    return item
+}
+fn main() -> u32 {
+    return 0
+}

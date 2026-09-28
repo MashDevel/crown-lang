@@ -1,0 +1,38 @@
+module sema {
+    fn checker_option_try(checker: write Checker, value: Box<frontend::Expression>, expected: Type) -> Option<ExpressionInfo> {
+        var success = Infer()
+        if type_is_infer(expected) == false {
+            success = type_copy(expected)
+        }
+        var arguments = Vec<Type>.new()
+        arguments.push(move success)
+        let hint = BuiltinType(Option(), move arguments)
+        loan read value as expression {
+            match checker_expression_expected(checker, expression, hint) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    return checker_finish_option_try(checker, move info)
+                }
+            }
+        }
+    }
+    fn checker_finish_option_try(checker: write Checker, info: take ExpressionInfo) -> Option<ExpressionInfo> {
+        if value_is_borrowed(info.value) {
+            checker_error(checker, "'?' requires an owned Option in an Option-returning function")
+            return None()
+        }
+        match read info.value_type {
+            BuiltinType(builtin, arguments) => {
+                if builtin == Option() && arguments.length() == 1 {
+                    return Some(checker_type_info(checker, type_copy(arguments[0])))
+                }
+            }
+            _ => {
+            }
+        }
+        checker_error(checker, "'?' requires an owned Option in an Option-returning function")
+        return None()
+    }
+}

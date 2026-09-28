@@ -1,0 +1,56 @@
+resource Message {
+    value: u32
+    text: Text
+    drop {
+        print(value)
+    }
+}
+
+fn next(queue: Channel<Message>) -> Message {
+    match queue.try_receive() {
+        Some(value) => {
+            return move value
+        }
+        None => {
+            return Message {
+                value: 99, text: "missing"
+            }
+        }
+    }
+}
+
+fn enqueue(queue: Channel<Message>) -> Message {
+    for index in 0..9 {
+        queue.send(Message {
+                value: u32.from(index), text: "nested"
+            })
+    }
+    return Message {
+        value: 42, text: "last"
+    }
+}
+
+fn main() -> u32 {
+    let queue = Channel<Message>.new()
+    let alias = queue.share()
+    queue.send(Message {
+            value: 20, text: "first"
+        })
+    queue.send(next(alias))
+    let first = next(queue)
+    if first.value != 20 || first.text.length() != 5 {
+        return 1
+    }
+    queue.send(enqueue(alias))
+    for index in 0..9 {
+        let value = next(queue)
+        if value.value != u32.from(index) || value.text.length() != 6 {
+            return 2
+        }
+    }
+    let last = next(queue)
+    if last.value != 42 || last.text.length() != 4 {
+        return 3
+    }
+    return 42
+}

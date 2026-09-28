@@ -1,0 +1,15 @@
+module lowering {
+    fn return_node(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementReturn(value, implicit) => {
+                if implicit && sema::type_is_unit(compiler.result) {
+                    return discard_statement(compiler, analysis, value)
+                }
+                return return_statement(compiler, analysis, value)
+            }
+            _ => {
+                return Err(72)
+            }
+        }
+    }
+}

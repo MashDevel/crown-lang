@@ -1,0 +1,244 @@
+module optimize {
+    struct SwitchCase {
+        value: usize
+        constant: u64
+        target: usize
+        next: usize
+    }
+
+    struct SwitchRewrite {
+        block: usize
+        terminator: ir::Terminator
+        chain: Vec<usize>
+    }
+
+    struct SwitchAnalysis {
+        predecessors: Vec<usize>
+        uses: Vec<usize>
+    }
+
+    fn switch(function: write ir::Function) -> usize {
+        let analysis = SwitchAnalysis {
+            predecessors: ir::predecessor_counts(function), uses: value_uses(function)
+        }
+        var covered = false_values(function.blocks.length())
+        var rewrites = Vec<SwitchRewrite>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            if covered[block] == false {
+                match switch_rewrite(function, block, analysis) {
+                    Some(rewrite) => {
+                        var index: usize = 0
+                        while index < rewrite.chain.length() {
+                            covered[rewrite.chain[index]] = true;
+                            index = index + 1
+                        }
+                        rewrites.push(move rewrite)
+                    }
+                    None => {
+                    }
+                }
+            }
+            block = block + 1
+        }
+        var index: usize = 0
+        while index < rewrites.length() {
+            loan read rewrites[index] as rewrite {
+                function.blocks[rewrite.block].terminator = Some(ir::terminator_copy(rewrite.terminator))
+            }
+            index = index + 1
+        }
+        return rewrites.length()
+    }
+
+    struct SwitchBuilder {
+        root: usize
+        current: usize
+        cases: Vec<ir::SwitchCase>
+        chain: Vec<usize>
+        switched: Option<usize>
+    }
+
+    fn switch_rewrite(function: ir::Function, root: usize, analysis: SwitchAnalysis) -> Option<SwitchRewrite> {
+        var builder = SwitchBuilder {
+            root: root, current: root, cases: Vec<ir::SwitchCase>.new(), chain: Vec<usize>.new(), switched: None()
+        }
+        while switch_extend(function, analysis, builder) {
+        }
+        if builder.cases.length() < 3 || switch_has_phis(function, builder.current) {
+            return None()
+        }
+        let value = match builder.switched {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let cases = replace(builder.cases, Vec<ir::SwitchCase>.new())
+        let chain = replace(builder.chain, Vec<usize>.new())
+        Some(SwitchRewrite {
+                block: root, terminator: ir::TerminatorSwitch(value, move cases, builder.current), chain: move chain
+            })
+    }
+
+    fn switch_extend(function: ir::Function, analysis: SwitchAnalysis, builder: write SwitchBuilder) -> bool {
+        let value = match switch_branch_case(function, builder.current, analysis.uses) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        if builder.current != builder.root && function.blocks[builder.current].instructions.length() != 1 {
+            return false
+        }
+        if switch_conflict(builder, value) {
+            return false
+        }
+        if switch_has_phis(function, value.target) || analysis.predecessors[value.next] != 1 {
+            return false
+        }
+        builder.switched = Some(value.value)
+        builder.cases.push(ir::SwitchCase {
+                value: value.constant, block: value.target
+            })
+        builder.chain.push(builder.current)
+        builder.current = value.next
+        true
+    }
+
+    fn switch_conflict(builder: SwitchBuilder, value: SwitchCase) -> bool {
+        match builder.switched {
+            Some(existing) => {
+                if existing != value.value {
+                    return true
+                }
+            }
+            None => {
+            }
+        }
+        var index: usize = 0
+        while index < builder.cases.length() {
+            if builder.cases[index].value == value.constant {
+                return true
+            }
+            index = index + 1
+        }
+        false
+    }
+
+    fn switch_branch_case(function: ir::Function, block: usize, uses: Vec<usize>) -> Option<SwitchCase> {
+        if block >= function.blocks.length() || function.blocks[block].instructions.length() == 0 {
+            return None()
+        }
+        let branch = match ir::block_conditional(function.blocks[block]) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let condition = branch.condition
+        if uses[condition] != 1 {
+            return None()
+        }
+        let last = function.blocks[block].instructions.length() - 1
+        match read function.blocks[block].instructions[last].result {
+            Some(result) => {
+                if result != condition {
+                    return None()
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+        switch_condition(function, function.blocks[block].instructions[last], branch)
+    }
+
+    fn switch_compared_constant(function: ir::Function, left: usize, right: usize) -> Option<SwitchConstant> {
+        match switch_integer(function, right) {
+            Some(value) => {
+                return Some(SwitchConstant {
+                        value: left, constant: value
+                    })
+            }
+            None => {
+                match switch_integer(function, left) {
+                    Some(value) => {
+                        return Some(SwitchConstant {
+                                value: right, constant: value
+                            })
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+        }
+    }
+
+    fn switch_integer(function: ir::Function, value: usize) -> Option<u64> {
+        match ir::function_constant_value(function, value) {
+            Some(constant) => {
+                match move constant {
+                    ir::ConstantInteger(integer) => {
+                        return Some(integer)
+                    }
+                    ir::ConstantNull => {
+                        return Some(0)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn switch_has_phis(function: ir::Function, block: usize) -> bool {
+        if block >= function.blocks.length() || function.blocks[block].instructions.length() == 0 {
+            return false
+        }
+        loan read function.blocks[block].instructions[0].kind as kind {
+            return ir::instruction_is_phi(kind)
+        }
+    }
+
+    fn switch_condition(function: ir::Function, instruction: ir::Instruction, branch: ir::ConditionalBranch) -> Option<SwitchCase> {
+        match read instruction.kind {
+            ir::InstructionCompare(operator, left, right) => {
+                match switch_compared_constant(function, left, right) {
+                    None => {
+                        return None()
+                    }
+                    Some(compared) => {
+                        match read operator {
+                            ir::CompareEqual => {
+                                return Some(SwitchCase {
+                                        value: compared.value, constant: compared.constant, target: branch.then_block, next: branch.else_block
+                                    })
+                            }
+                            ir::CompareNotEqual => {
+                                return Some(SwitchCase {
+                                        value: compared.value, constant: compared.constant, target: branch.else_block, next: branch.then_block
+                                    })
+                            }
+                            _ => {
+                                return None()
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    copy struct SwitchConstant {
+        value: usize, constant: u64
+    }
+}

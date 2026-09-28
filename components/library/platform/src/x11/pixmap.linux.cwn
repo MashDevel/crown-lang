@@ -1,0 +1,29 @@
+module native::x11 {
+    copy struct Pixmap {
+        display: RawPtr<u8>, drawable: u64, width: u32, height: u32, depth: u32
+    }
+    copy struct CopyArea {
+        display: RawPtr<u8>, source: u64, destination: u64, gc: RawPtr<u8>, width: u32, height: u32
+    }
+
+    unsafe fn create_pixmap(library: std::dylib::Library, request: Pixmap) -> u64 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read u32, read u32, read u32) -> u64>.cast(std::dylib::slot(library, 35)).read()
+            return action(request.display, request.drawable, request.width, request.height, request.depth)
+        }
+    }
+
+    unsafe fn free_pixmap(library: std::dylib::Library, display: RawPtr<u8>, pixmap: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 30)).read()
+            return action(display, pixmap)
+        }
+    }
+
+    unsafe fn copy_area(library: std::dylib::Library, request: CopyArea) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read u64, read RawPtr<u8>, read i32, read i32, read u32, read u32, read i32, read i32) -> i32>.cast(std::dylib::slot(library, 36)).read()
+            return action(request.display, request.source, request.destination, request.gc, 0, 0, request.width, request.height, 0, 0)
+        }
+    }
+}

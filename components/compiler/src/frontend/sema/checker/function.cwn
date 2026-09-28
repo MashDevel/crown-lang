@@ -1,0 +1,162 @@
+module sema {
+    struct FunctionSetup {
+        parameters: Vec<NamedParameter>
+        result: Type
+        type_parameters: Vec<frontend::Name>
+    }
+
+    fn checker_check_program(checker: write Checker, program: frontend::Program) -> void {
+        checker_check_constants(checker, program)
+        evaluate_constants(checker, program)
+        evaluate_array_constants(checker, program)
+        checker_check_free_functions(checker, program)
+        checker_check_implementations(checker, program)
+        checker_check_resources(checker, program)
+    }
+
+    fn checker_check_constants(checker: write Checker, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.constants.length() {
+            loan read program.constants[index] as constant {
+                checker.current_span = constant.name.span
+                match find_constant(checker.symbols, constant.name) {
+                    None => {
+                        checker_error(checker, "invalid function or constant declaration")
+                    }
+                    Some(symbol) => {
+                        var expected = Invalid()
+                        loan read checker.symbols.constants[symbol] as semantic {
+                            expected = type_copy(semantic.value_type)
+                        }
+                        checker_value(checker, constant.value, expected)
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_check_free_functions(checker: write Checker, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                match find_function(checker.symbols, function.name) {
+                    None => {
+                        checker_error(checker, "invalid function or constant declaration")
+                    }
+                    Some(symbol) => {
+                        checker_check_function(checker, symbol, function.body)
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_check_function(checker: write Checker, function: usize, body: Vec<frontend::Statement>) -> void {
+        checker.current_span = checker.symbols.functions[function].symbol
+        let setup = checker_function_setup(checker, function)
+        checker_begin_function(checker, function, move setup)
+        checker_statements(checker, body)
+        if type_is_unit(checker.result) == false && checker.continuing {
+            checker_error(checker, "function does not return a value on every path")
+        }
+    }
+
+    fn checker_function_setup(checker: Checker, function: usize) -> FunctionSetup {
+        loan read checker.symbols.functions[function] as signature {
+            return FunctionSetup {
+                parameters: named_parameters_copy(signature.parameters)
+                result: type_copy(signature.result)
+                type_parameters: names_copy(signature.type_parameters)
+            }
+        }
+    }
+
+    fn named_parameters_copy(values: Vec<NamedParameter>) -> Vec<NamedParameter> {
+        var output = Vec<NamedParameter>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as parameter {
+                output.push(NamedParameter {
+                        name: frontend::name_copy(parameter.name)
+                        mode: parameter.mode
+                        value_type: type_copy(parameter.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn checker_begin_function(checker: write Checker, function: usize, setup: take FunctionSetup) -> void {
+        loan read checker.symbols.functions[function] as signature {
+            checker.module_name = frontend::namespace_module_at(checker.symbols.modules, signature.name.span)
+        }
+        checker.scopes = Vec<Scope>.new()
+        checker.place_loans = Vec<PlaceLoan>.new()
+        checker.thread_regions = Vec<ThreadRegion>.new()
+        checker_push_scope(checker)
+        checker.current_function = Some(function)
+        checker.current_resource = None()
+        checker.result = type_copy(setup.result)
+        checker.type_parameters = names_copy(setup.type_parameters)
+        checker.unsafe_depth = 0
+        checker.returns_allowed = true
+        checker.continuing = true
+        checker.loop_states = Vec<LoopState>.new()
+        var index: usize = 0
+        while index < setup.parameters.length() {
+            loan read setup.parameters[index] as parameter {
+                checker_add_variable(checker, parameter_variable(checker.symbols, parameter))
+            }
+            index = index + 1
+        }
+    }
+
+    fn parameter_variable(symbols: Symbols, parameter: NamedParameter) -> Variable {
+        var access = mode_access(parameter.mode)
+        let copy_value = type_is_copy_with_symbols(symbols, parameter.value_type)
+        if copy_value {
+            access = OwnedAccess()
+        }
+        if type_is_scoped_function(parameter.value_type) {
+            access = WriteAccess()
+        }
+        return Variable {
+            name: frontend::name_copy(parameter.name)
+            value_type: type_copy(parameter.value_type)
+            copy_value: copy_value
+            mutable_value: mode_is_write(parameter.mode) || type_is_scoped_function(parameter.value_type)
+            state: Available()
+            access: access
+            state_span: parameter.name.span
+            span: parameter.name.span
+        }
+    }
+
+    fn mode_access(mode: frontend::Mode) -> VariableAccess {
+        match read mode {
+            frontend::ModeRead => {
+                return ReadAccess()
+            }
+            frontend::ModeWrite => {
+                return WriteAccess()
+            }
+            frontend::ModeTake => {
+                return OwnedAccess()
+            }
+        }
+    }
+
+    fn mode_is_write(mode: frontend::Mode) -> bool {
+        match read mode {
+            frontend::ModeWrite => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

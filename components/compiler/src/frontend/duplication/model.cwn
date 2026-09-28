@@ -1,0 +1,86 @@
+module duplication {
+    copy struct Symbol {
+        value: usize, file: usize, line: usize, code_line: usize
+    }
+    struct File {
+        path: Text, start: usize, end: usize, first_line: usize, lines: usize
+    }
+    struct Corpus {
+        symbols: Vec<Symbol>, files: Vec<File>, lines: usize
+    }
+    copy struct Window {
+        start: usize, next: Option<usize>
+    }
+    struct Index {
+        heads: std::map::Map<usize, usize>, windows: Vec<Window>
+    }
+    copy struct Clone {
+        first: usize, second: usize, tokens: usize
+    }
+    struct Findings {
+        clones: Vec<Clone>, duplicated: Vec<u8>
+    }
+
+    fn identity(value: usize) -> usize {
+        return value
+    }
+    fn equal(first: usize, second: usize) -> bool {
+        return first == second
+    }
+
+    fn corpus(paths: Vec<Text>) -> Result<Corpus, Text> {
+        var output = Corpus {
+            symbols: Vec<Symbol>.new(), files: Vec<File>.new(), lines: 0
+        }
+        var names: std::map::TextMap<usize> = std::map::new_text()
+        for index in 0..paths.length() {
+            add_file(output, names, paths[index])?
+        }
+        return Ok(move output)
+    }
+
+    fn add_file(corpus: write Corpus, names: write std::map::TextMap<usize>, path: Text) -> Result<void, Text> {
+        let source = toolchain::read_text(path)?
+        let bytes = toolchain::text_bytes(source)
+        let length = bytes.length()
+        var lexer = frontend::lexer_new(Shared.new(move bytes), length, 0)
+        let start = corpus.symbols.length()
+        let first_line = corpus.lines
+        var previous_line: usize = 0
+        while lexer.offset < lexer.length {
+            let offset = lexer.offset
+            let line = lexer.line
+            frontend::lexer_scan(lexer)
+            let value = std::text::slice(source, offset, lexer.offset)
+            if offset + 1 == lexer.offset && frontend::text_byte(source, offset) <= 32 {
+                continue
+            }
+            if line != previous_line {
+                corpus.lines = corpus.lines + 1;
+                previous_line = line
+            }
+            corpus.symbols.push(Symbol {
+                    value: intern(names, value), file: corpus.files.length(), line: line, code_line: corpus.lines - 1
+                })
+        }
+        corpus.files.push(File {
+                path: path.clone(), start: start, end: corpus.symbols.length(), first_line: first_line, lines: corpus.lines - first_line
+            })
+        return Ok(())
+    }
+
+    fn intern(names: write std::map::TextMap<usize>, value: Text) -> usize {
+        loan read value as bytes {
+            match std::map::with_text_value(names, bytes, identity) {
+                Some(found) => {
+                    return found
+                }
+                None => {
+                }
+            }
+        }
+        let index = std::map::text_length(names)
+        std::map::text_insert(names, value.clone(), index)
+        return index
+    }
+}

@@ -1,0 +1,33 @@
+module lowering {
+    fn index_expressions(tables: write Tables, expressions: Vec<sema::ExpressionRecord>) -> void {
+        var entries = Vec<ir::IndexEntry>.with_capacity(expressions.length())
+        var index: usize = 0
+        while index < expressions.length() {
+            loan read expressions[index] as expression {
+                entries.push(ir::IndexEntry {
+                        group: u64.from(expression.span.source), key: u64.from(expression.span.start), value: index
+                    })
+            }
+            index = index + 1
+        }
+        ir::index_sort(entries)
+        tables.expressions = move entries
+    }
+
+    fn expression_record(compiler: FunctionCompiler, analysis: sema::Analysis, span: frontend::Span) -> Option<usize> {
+        loan read compiler.tables.expressions as entries {
+            var index = ir::index_lower_bound(entries, u64.from(span.source), u64.from(span.start))
+            while index < entries.length() {
+                if entries[index].group != u64.from(span.source) || entries[index].key != u64.from(span.start) {
+                    break
+                }
+                let record = entries[index].value
+                if analysis.checker.expressions[record].span.end == span.end {
+                    return Some(record)
+                }
+                index = index + 1
+            }
+        }
+        return None()
+    }
+}

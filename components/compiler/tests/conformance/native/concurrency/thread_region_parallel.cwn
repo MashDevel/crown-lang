@@ -1,0 +1,35 @@
+fn wait_for(value: Shared<Mutex<u32>>, expected: u32) -> void {
+    while true {
+        value.lock write as state {
+            if state == expected {
+                return
+            }
+        }
+    }
+}
+fn release(value: Shared<Mutex<u32>>) -> void {
+    value.lock write as state {
+        state = 1
+    }
+}
+fn main() -> u32 {
+    let flag = Shared.new(Mutex.new(0))
+    thread_scope {
+        let first = spawn[read flag] {
+            wait_for(flag, 1)
+        }
+        let second = spawn[read flag] {
+            release(flag)
+        }
+        if second.started() == false {
+            release(flag);
+            return 1
+        }
+        if first.started() == false {
+            return 2
+        }
+        first.join()
+        second.join()
+    }
+    return 0
+}

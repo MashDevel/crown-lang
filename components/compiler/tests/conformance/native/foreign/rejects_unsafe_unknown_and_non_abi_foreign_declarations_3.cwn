@@ -1,0 +1,6 @@
+extern "mystery" {
+    fn call() -> u32
+}
+fn main() -> u32 {
+    return 0
+}

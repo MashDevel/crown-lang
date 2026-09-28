@@ -1,0 +1,157 @@
+module x86 {
+    fn emit_binary(output: write Vec<u8>, opcode: u8, registers: u16) -> void {
+        let destination = first_register(registers)
+        let source = second_register(registers)
+        output.push(rex(source, 0, destination))
+        output.push(opcode)
+        output.push(modrm(3, source, destination))
+    }
+
+    fn emit_binary_sized(output: write Vec<u8>, byte_opcode: u8, registers: u32) -> void {
+        let destination = sized_first_register(registers)
+        let source = sized_second_register(registers)
+        let width = sized_width(registers)
+        if width == 1 {
+            output.push(102)
+        }
+        if width == 3 {
+            output.push(rex(source, 0, destination))
+        } else {
+            output.push(rex_narrow(source, 0, destination))
+        }
+        if width == 0 {
+            output.push(byte_opcode)
+        } else {
+            output.push(byte_opcode + 1)
+        }
+        output.push(modrm(3, source, destination))
+    }
+
+    fn emit_immediate(output: write Vec<u8>, encoding: take ImmediateEncoding) -> void {
+        output.push(rex(encoding.group, 0, encoding.register))
+        output.push(129)
+        output.push(modrm(3, encoding.group, encoding.register))
+        emit_i32(output, encoding.value)
+    }
+
+    fn encode_sized_immediate(values: ImmediateArgs, output: write Vec<u8>) -> void {
+        let group = immediate_group(values.operator)
+        emit_sized_immediate(output, SizedImmediateEncoding {
+                group: group
+                register: register_code(values.destination)
+                value: values.value
+                width: width_code(values.width)
+            })
+    }
+
+    fn emit_sized_immediate(output: write Vec<u8>, encoding: take SizedImmediateEncoding) -> void {
+        if encoding.width == 1 {
+            output.push(102)
+        }
+        if encoding.width == 3 {
+            output.push(rex(encoding.group, 0, encoding.register))
+        } else {
+            output.push(rex_narrow(encoding.group, 0, encoding.register))
+        }
+        if encoding.width == 0 {
+            output.push(128)
+        } else {
+            output.push(129)
+        }
+        output.push(modrm(3, encoding.group, encoding.register))
+        if encoding.width == 0 {
+            output.push(u8.from(u32.from_bits(encoding.value) & 255))
+        }
+        if encoding.width == 1 {
+            emit_i16(output, i16.from_bits(u16.from(u32.from_bits(encoding.value) & 65535)))
+        }
+        if encoding.width >= 2 {
+            emit_i32(output, encoding.value)
+        }
+    }
+
+    fn emit_group(output: write Vec<u8>, opcode: u8, encoding: u16) -> void {
+        let register = u8.from(encoding & 255)
+        let group = u8.from(encoding >> 8)
+        output.push(rex(group, 0, register))
+        output.push(opcode)
+        output.push(modrm(3, group, register))
+    }
+
+    fn emit_group_sized(output: write Vec<u8>, opcode: u8, encoding: u32) -> void {
+        let register = u8.from(encoding & 255)
+        let group = u8.from((encoding >> 8) & 255)
+        let width = u8.from((encoding >> 16) & 255)
+        if width == 1 {
+            output.push(102)
+        }
+        if width == 3 {
+            output.push(rex(group, 0, register))
+        } else {
+            output.push(rex_narrow(group, 0, register))
+        }
+        if width == 0 {
+            output.push(opcode - 1)
+        } else {
+            output.push(opcode)
+        }
+        output.push(modrm(3, group, register))
+    }
+
+    fn emit_shift(output: write Vec<u8>, encoding: take ShiftEncoding) -> void {
+        let packed = u32.from(encoding.register) |(u32.from(encoding.group) << 8) |(u32.from(encoding.width) << 16)
+        emit_group_sized(output, 193, packed)
+        output.push(encoding.value)
+    }
+
+    fn emit_multiply(output: write Vec<u8>, registers: u16) -> void {
+        let destination = first_register(registers)
+        let source = second_register(registers)
+        output.push(rex(destination, 0, source))
+        output.push(15)
+        output.push(175)
+        output.push(modrm(3, destination, source))
+    }
+
+    fn emit_multiply_sized(output: write Vec<u8>, registers: u32) -> void {
+        let destination = sized_first_register(registers)
+        let source = sized_second_register(registers)
+        let width = sized_width(registers)
+        if width == 1 {
+            output.push(102)
+        }
+        if width == 3 {
+            output.push(rex(destination, 0, source))
+        } else {
+            output.push(rex_narrow(destination, 0, source))
+        }
+        output.push(15)
+        output.push(175)
+        output.push(modrm(3, destination, source))
+    }
+
+    fn emit_multiply_immediate(output: write Vec<u8>, register: u8, value: i32) -> void {
+        output.push(rex(register, 0, register))
+        output.push(105)
+        output.push(modrm(3, register, register))
+        emit_i32(output, value)
+    }
+
+    fn emit_multiply_immediate_sized(output: write Vec<u8>, encoding: take SizedImmediateEncoding) -> void {
+        if encoding.width == 1 {
+            output.push(102)
+        }
+        if encoding.width == 3 {
+            output.push(rex(encoding.register, 0, encoding.register))
+        } else {
+            output.push(rex_narrow(encoding.register, 0, encoding.register))
+        }
+        output.push(105)
+        output.push(modrm(3, encoding.register, encoding.register))
+        if encoding.width == 1 {
+            emit_i16(output, i16.from_bits(u16.from(u32.from_bits(encoding.value) & 65535)))
+        } else {
+            emit_i32(output, encoding.value)
+        }
+    }
+}

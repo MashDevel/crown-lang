@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    var value = "a"
+    loan read value as view {
+        replace(value, "b")
+    }
+    return 0
+}

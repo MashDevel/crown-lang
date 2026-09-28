@@ -1,0 +1,3 @@
+[package]
+name = "crown-guest"
+sources = ["main.cwn", "src", "../../../../toolchain/src", "../../../../library/src"]

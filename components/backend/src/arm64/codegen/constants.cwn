@@ -1,0 +1,49 @@
+module arm64 {
+    fn value_constants(function: ir::Function) -> Vec<Option<ir::WideInteger>> {
+        var output = Vec<Option<ir::WideInteger>>.with_capacity(function.values.length())
+        for index in 0..function.values.length() {
+            index;
+            output.push(None())
+        }
+        for index in 0..function.constants.length() {
+            loan read function.constants[index] as constant {
+                let normalized = ir::constant_normalized(constant.value, constant.value_type)
+                output[constant.id] = Some(constant_bits(normalized))
+            }
+        }
+        return move output
+    }
+
+    fn load_constant(compiler: write Compiler, value: usize, register: u32, high: bool) -> bool {
+        if value >= compiler.constants.length() {
+            return false
+        }
+        let bits = match read compiler.constants[value] {
+            Some(constant) => constant
+            None => {
+                return false
+            }
+        }
+        immediate(compiler, register, if high {
+                bits.high
+            } else {
+                bits.low
+            })
+        return true
+    }
+
+    fn constant_bits(value: ir::Constant) -> ir::WideInteger {
+        match read value {
+            ir::ConstantInteger(bits) | ir::ConstantFloat64(bits) => ir::WideInteger {
+                low: bits, high: 0
+            }
+            ir::ConstantFloat32(bits) => ir::WideInteger {
+                low: u64.from(bits), high: 0
+            }
+            ir::ConstantWideInteger(bits) => bits
+            ir::ConstantNull => ir::WideInteger {
+                low: 0, high: 0
+            }
+        }
+    }
+}

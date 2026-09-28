@@ -1,0 +1,65 @@
+module optimize {
+    fn load_offsets(function: ir::Function) -> Vec<Option<ir::AddressOffset>> {
+        var output = none_load_offsets(function.values.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    None => {
+                    }
+                    Some(result) => {
+                        output[result] = ir::instruction_offset(function.blocks[block].instructions[index].kind)
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn none_load_offsets(length: usize) -> Vec<Option<ir::AddressOffset>> {
+        var output = Vec<Option<ir::AddressOffset>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn load_offsets_copy(values: Vec<Option<ir::AddressOffset>>) -> Vec<Option<ir::AddressOffset>> {
+        var output = Vec<Option<ir::AddressOffset>>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            match read values[index] {
+                Some(value) => {
+                    output.push(Some(value))
+                }
+                None => {
+                    output.push(None())
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn load_resolve(value: usize, replacements: Vec<Option<usize>>) -> usize {
+        var output = value
+        var count: usize = 0
+        while output < replacements.length() && count < replacements.length() {
+            match read replacements[output] {
+                Some(next) => {
+                    output = next
+                }
+                None => {
+                    return output
+                }
+            }
+            count = count + 1
+        }
+        return output
+    }
+}

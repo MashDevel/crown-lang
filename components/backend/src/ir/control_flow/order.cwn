@@ -1,0 +1,112 @@
+module ir {
+    struct TraversalStep {
+        block: usize
+        finish: bool
+    }
+
+    struct TraversalState {
+        visited: Vec<bool>
+        pending: Vec<TraversalStep>
+        finished: Vec<usize>
+    }
+
+    fn reverse_postorder(function: Function) -> Vec<usize> {
+        var state = TraversalState {
+            visited: Vec<bool>.new(), pending: Vec<TraversalStep>.new(), finished: Vec<usize>.new()
+        }
+        var index: usize = 0
+        while index < function.blocks.length() {
+            state.visited.push(false);
+            index = index + 1
+        }
+        if state.visited.length() != 0 {
+            state.pending.push(TraversalStep {
+                    block: 0, finish: false
+                })
+        }
+        while state.pending.length() != 0 {
+            match state.pending.pop() {
+                Some(step) => {
+                    visit_traversal_step(function, state, move step)
+                }
+                None => {
+                }
+            }
+        }
+        var output = Vec<usize>.with_capacity(state.finished.length())
+        while state.finished.length() != 0 {
+            match state.finished.pop() {
+                Some(block) => {
+                    output.push(block)
+                }
+                None => {
+                }
+            }
+        }
+        return move output
+    }
+
+    fn all_reverse_postorder(function: Function) -> Vec<usize> {
+        var order = reverse_postorder(function)
+        let reached = order_membership(function.blocks.length(), order)
+        var index: usize = 0
+        while index < reached.length() {
+            if reached[index] == false {
+                order.push(index)
+            }
+            index = index + 1
+        }
+        return move order
+    }
+
+    fn order_membership(count: usize, order: Vec<usize>) -> Vec<bool> {
+        var reached = Vec<bool>.with_capacity(count)
+        var index: usize = 0
+        while index < count {
+            reached.push(false);
+            index = index + 1
+        }
+        index = 0
+        while index < order.length() {
+            reached[order[index]] = true;
+            index = index + 1
+        }
+        return move reached
+    }
+
+    fn visit_traversal_step(function: Function, state: write TraversalState, step: take TraversalStep) -> void {
+        if step.finish {
+            state.finished.push(step.block);
+            return
+        }
+        if state.visited[step.block] {
+            return
+        }
+        state.visited[step.block] = true
+        state.pending.push(TraversalStep {
+                block: step.block, finish: true
+            })
+        push_traversal_successors(function, step.block, state.pending)
+    }
+
+    fn push_traversal_successors(function: Function, block: usize, pending: write Vec<TraversalStep>) -> void {
+        var targets = Vec<usize>.new()
+        match read function.blocks[block].terminator {
+            Some(terminator) => {
+                targets = terminator_targets(terminator)
+            }
+            None => {
+                return
+            }
+        }
+        var index = targets.length()
+        while index != 0 {
+            index = index - 1
+            if targets[index] < function.blocks.length() {
+                pending.push(TraversalStep {
+                        block: targets[index], finish: false
+                    })
+            }
+        }
+    }
+}

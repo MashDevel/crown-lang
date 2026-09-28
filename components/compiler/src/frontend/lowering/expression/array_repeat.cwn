@@ -1,0 +1,44 @@
+module lowering {
+    struct ArrayRepeat {
+        destination: usize, source: usize, value_type: sema::Type
+    }
+    fn array_repeat_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let source = array_repeat_initializer(compiler, analysis, expression)?
+        let request = ArrayRepeat {
+            destination: address, source: source, value_type: sema::type_copy(value_type)
+        }
+        array_repeat_fill(compiler, analysis.checker.symbols, request)?
+        return Ok(AddressValue(address, move value_type))
+    }
+
+    fn array_repeat_initializer(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        match read expression.kind {
+            frontend::ExpressionArrayRepeat(value, length) => {
+                length;
+                loan read value as item {
+                    let initial = function_expression(compiler, analysis, item)?
+                    return argument_address(compiler, analysis.checker.symbols, move initial)
+                }
+            }
+            _ => {
+                return Err(70)
+            }
+        }
+    }
+
+    fn array_repeat_fill(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ArrayRepeat) -> Result<void, u32> {
+        match read request.value_type {
+            sema::ArrayType(element, length) => {
+                loan read element as value {
+                    let layout = layout(symbols, value)?
+                    return array_repeat_loop(compiler, symbols, request, layout.size, length)
+                }
+            }
+            _ => {
+                return Err(69)
+            }
+        }
+    }
+}

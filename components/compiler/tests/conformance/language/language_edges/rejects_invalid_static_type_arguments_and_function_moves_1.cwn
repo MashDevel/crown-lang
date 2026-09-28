@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let values = Vec<Missing>.new()
+    return 0
+}

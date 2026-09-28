@@ -1,0 +1,10 @@
+struct Wrapper<T> {
+    value: T
+}
+struct Values {
+    optional: Option<Option<u32>>
+    wrapped: Wrapper<Wrapper<u32>>
+}
+fn main() -> u32 {
+    return 0
+}

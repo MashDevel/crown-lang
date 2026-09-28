@@ -1,0 +1,96 @@
+fn outcomes(fixture: testing_group::Fixture) -> Result<void, Text> {
+    testing::expect(testing_group::execute(fixture, "", "")? == 1, "group failures propagate")?
+    let document = testing_group::results(fixture, 4)?
+    failed_outcomes(document)?
+    return testing_group::binaries(fixture.root, 1)
+}
+
+fn failed_outcomes(document: toolchain::Json) -> Result<void, Text> {
+    let rows = toolchain::json_array_values(document, document.root)?
+    let failure = toolchain::json_text(document, toolchain::json_required(document, rows[2], "error")?)?
+    let timeout = toolchain::json_text(document, toolchain::json_required(document, rows[3], "error")?)?
+    testing::expect(std::text::contains(failure, "unexpected execution status"), "individual assertion failure")?
+    return testing::expect(std::text::contains(timeout, "timed out"), "individual timeout")
+}
+
+fn filtered(fixture: testing_group::Fixture) -> Result<void, Text> {
+    testing::expect(testing_group::execute(fixture, "good_second", "")? == 0, "filter selects one grouped test")?
+    let document = testing_group::results(fixture, 1)?
+    let rows = toolchain::json_array_values(document, document.root)?
+    let name = toolchain::json_text(document, toolchain::json_required(document, rows[0], "name")?)?
+    testing::expect(std::text::equal(name, "good_second"), "selected test identity is preserved")?
+    return testing_group::binaries(fixture.root, 1)
+}
+
+fn changed_member(fixture: testing_group::Fixture) -> Result<void, Text> {
+    let path = toolchain::path_join(fixture.root, "first.cwn")
+    let original = toolchain::read_text(path)?
+    toolchain::write_text(path, std::text::joined(original, "\n"))?
+    testing::expect(testing_group::execute(fixture, "good_second", "")? == 0, "changed group member rebuilds")?
+    testing_group::binaries(fixture.root, 2)?
+    toolchain::write_text(path, original)?
+    testing::expect(testing_group::execute(fixture, "good_second", "")? == 0, "restored group reuses its earlier executable")?
+    return testing_group::binaries(fixture.root, 2)
+}
+
+fn covered(fixture: testing_group::Fixture) -> Result<void, Text> {
+    let directory = toolchain::path_join(fixture.root, "coverage")
+    testing::expect(testing_group::execute(fixture, "good_", directory)? == 0, "grouped tests run with coverage")?
+    let groups = toolchain::directory_entries(toolchain::path_join(directory, "groups"))?
+    testing::expect(groups.length() == 1, "one coverage layout for the group")?
+    let entries = toolchain::directory_entries(groups[0])?
+    var runs: usize = 0
+    for index in 0..entries.length() {
+        if std::text::starts(toolchain::file_name(entries[index]), "run.") {
+            runs = runs + 1
+        }
+    }
+    return testing::expect(runs == 2, "each selected test records fresh coverage")
+}
+
+fn registry_snapshot(fixture: testing_group::Fixture) -> Result<void, Text> {
+    let previous = toolchain::environment("CROWN_TEST_MUTATE_REGISTRY")
+    toolchain::set_environment("CROWN_TEST_MUTATE_REGISTRY", fixture.registry)?
+    let result: Result<u32, Text> = testing_group::execute(fixture, "good_", "")
+    toolchain::set_environment("CROWN_TEST_MUTATE_REGISTRY", previous)?
+    let status = match move result {
+        Ok(value) => value
+        Err(error) => {
+            return Err(move error)
+        }
+    }
+    testing::expect(status == 0, "workers use the suite registry snapshot")?
+    return testing::expect(std::text::equal(toolchain::read_text(fixture.registry)?, "changed during execution"), "original registry changed while workers ran")
+}
+
+fn run(executable: Text) -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let fixture = testing_group::fixture(toolchain::temporary_path(temporary), executable)?
+    outcomes(fixture)?
+    filtered(fixture)?
+    changed_member(fixture)?
+    covered(fixture)?
+    return registry_snapshot(fixture)
+}
+
+fn worker(arguments: Vec<Text>) -> Result<u32, Text> {
+    let registry = toolchain::environment("CROWN_TEST_MUTATE_REGISTRY")
+    if registry.length() != 0 {
+        toolchain::write_text(registry, "changed during execution")?
+    }
+    return harness::run_case_worker(arguments)
+}
+
+fn main(arguments: Arguments) -> u32 {
+    let values = toolchain::arguments(arguments)
+    if values.length() > 1 {
+        return match worker(values) {
+            Ok(status) => status
+            Err(error) => {
+                toolchain::failure(error);
+                1
+            }
+        }
+    }
+    return testing::done(run(values[0]))
+}

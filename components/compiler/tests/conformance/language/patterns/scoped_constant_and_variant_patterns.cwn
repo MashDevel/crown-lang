@@ -1,0 +1,39 @@
+copy enum Operation {
+    Present, Remove
+}
+module gpu {
+    const FIRST: u8 = 7
+    copy enum Update {
+        Present, Remove
+    }
+    fn value(input: Update) -> u32 {
+        match input {
+            Present => 1,
+            Remove => 2
+        }
+    }
+    module decoder {
+        const LAST: u8 = 9
+        fn value(input: u8) -> u32 {
+            match input {
+                FIRST | LAST => 3,
+                _ => 4
+            }
+        }
+    }
+}
+fn main() -> u32 {
+    if gpu::value(gpu::Update::Present()) != 1 {
+        return 1
+    }
+    if gpu::value(gpu::Update::Remove()) != 2 {
+        return 2
+    }
+    if gpu::decoder::value(7) != 3 || gpu::decoder::value(9) != 3 {
+        return 3
+    }
+    if gpu::decoder::value(8) != 4 {
+        return 4
+    }
+    return 0
+}

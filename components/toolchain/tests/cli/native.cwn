@@ -1,0 +1,34 @@
+fn native_build_errors(root: Text) -> Result<void, Text> {
+    let source = testing::project_fixture(root)?
+    let runtime = testing::write_file(root, "runtime.elf", "invalid runtime header with enough bytes for the identity checks")?
+    toolchain::set_environment("CROWN_BEDROCK_RUNTIME", runtime)?
+    let arguments = std::text::joined("build|", source)
+    let target = "|--target|x86_64-bedrock"
+    let missing_output = testing::failed_call(root, std::text::joined(arguments, target))?
+    testing::expect(std::text::contains(missing_output.stderr, "a single source file requires -o"), "missing output diagnostic")?
+    let output = toolchain::path_join(root, "program.elf")
+    let build = std::text::joined(std::text::joined(arguments, "|-o|"), output)
+    invalid_native_runtime(root, build, target, output)?
+    toolchain::write_text(source, "fn main() -> u32 { return true }")?
+    let invalid_source = testing::failed_call(root, std::text::joined(build, target))?
+    testing::expect(std::text::contains(invalid_source.stderr, "type check failed"), "shared type checker diagnostic")?
+    return Ok(())
+}
+
+fn invalid_native_runtime(root: Text, build: Text, target: Text, output: Text) -> Result<void, Text> {
+    let invalid_runtime = testing::failed_call(root, std::text::joined(build, target))?
+    testing::expect(std::text::contains(invalid_runtime.stderr, "runtime"), "native runtime linker diagnostic")?
+    testing::expect(toolchain::exists(output) == false, "failed build does not create an executable")?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    let temporary = match toolchain::temporary(toolchain::temporary_directory()) {
+        Ok(value) => move value
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
+    return testing::done(native_build_errors(toolchain::temporary_path(temporary)))
+}

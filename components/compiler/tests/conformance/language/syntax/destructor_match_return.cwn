@@ -1,0 +1,20 @@
+resource Item {
+    value: u32
+    drop {
+        let choice: Option<u32> = Some(value)
+        let ignored = match choice {
+            Some(number) => {
+                number;
+                return
+            },
+            None => 0
+        }
+        ignored
+    }
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    };
+    0
+}

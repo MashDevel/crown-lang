@@ -1,0 +1,71 @@
+struct CountedLoop {
+    function: ir::Function
+    header: usize
+    body: usize
+    exit: usize
+    total: usize
+    expected: usize
+}
+
+fn counted_loop(bound: u64) -> Result<CountedLoop, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let blocks = safety_blocks(function, 4)?
+    let entry = blocks[0]
+    let header = blocks[1]
+    let body = blocks[2]
+    let exit = blocks[3]
+    let zero = safety_integer(function, ir::IntegerWidth64(), 0)
+    let one = safety_integer(function, ir::IntegerWidth64(), 1)
+    let three = safety_integer(function, ir::IntegerWidth64(), 3)
+    let end = safety_integer(function, ir::IntegerWidth64(), bound)
+    let next = ir::function_new_value(function, value_type)
+    let total = ir::function_new_value(function, value_type)
+    let index = counted_phi(function, header, ir::PhiIncoming {
+            block: entry, value: zero
+        }, ir::PhiIncoming {
+            block: body, value: next
+        })?
+    let accumulated = counted_phi(function, header, ir::PhiIncoming {
+            block: entry, value: zero
+        }, ir::PhiIncoming {
+            block: body, value: total
+        })?
+    let condition = safety_append(function, header, ir::InstructionCompare(ir::CompareUnsignedLess(), index, end))?
+    let scaled = safety_append(function, body, ir::InstructionBinary(ir::BinaryMultiply(), index, three))?
+    function.blocks[body].instructions.push(ir::Instruction {
+            result: Some(total), kind: ir::InstructionBinary(ir::BinaryAdd(), accumulated, scaled)
+        })
+    function.blocks[body].instructions.push(ir::Instruction {
+            result: Some(next), kind: ir::InstructionBinary(ir::BinaryAdd(), index, one)
+        })
+    counted_control(function, blocks, condition)?
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(ir::PhiIncoming {
+            block: header, value: accumulated
+        })
+    let result = safety_append(function, exit, ir::InstructionPhi(value_type, move incoming))?
+    let previous: u64 = if bound == 0 {
+        0
+    } else {
+        bound - 1
+    }
+    let expected = safety_integer(function, ir::IntegerWidth64(), bound * previous / 2 * 3)
+    safety_return_equal(function, exit, result, expected)?
+    return Ok(CountedLoop {
+            function: move function, header: header, body: body, exit: exit, total: total, expected: expected
+        })
+}
+
+fn counted_phi(function: write ir::Function, block: usize, first: ir::PhiIncoming, second: ir::PhiIncoming) -> Result<usize, u32> {
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(first)
+    incoming.push(second)
+    return safety_append(function, block, ir::InstructionPhi(ir::TypeInteger(ir::IntegerWidth64()), move incoming))
+}
+
+fn counted_control(function: write ir::Function, blocks: Vec<usize>, condition: usize) -> Result<void, u32> {
+    safety_terminate(function, blocks[0], ir::TerminatorBranch(blocks[1]))?
+    safety_terminate(function, blocks[1], ir::TerminatorConditional(condition, blocks[2], blocks[3]))?
+    return safety_terminate(function, blocks[2], ir::TerminatorBranch(blocks[1]))
+}

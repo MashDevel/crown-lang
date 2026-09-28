@@ -1,0 +1,84 @@
+module lowering {
+    struct ChannelReceiveState {
+        channel: LockedChannel
+        result: usize
+        result_type: sema::Type
+    }
+
+    fn channel_receive(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var channel = LockedChannel {
+            state: 0, mutex: 0, element: sema::Invalid()
+        }
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 0 || sema::name_is(analysis.checker.symbols.source, method, "try_receive") == false {
+                    return Err(300)
+                }
+                loan read receiver as value {
+                    channel = lock_channel(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(301)
+            }
+        }
+        let result_type = function_expression_type(compiler, analysis, expression)?
+        let result = function_zeroed_stack(compiler, analysis.checker.symbols, result_type)?
+        let state = ChannelReceiveState {
+            channel: locked_channel_copy(channel), result: result, result_type: sema::type_copy(result_type)
+        }
+        branch_channel_receive(compiler, analysis.checker.symbols, move state)?
+        call_lock(compiler, "pthread_mutex_unlock", channel.mutex)?
+        return Ok(AddressValue(result, move result_type))
+    }
+
+    fn branch_channel_receive(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ChannelReceiveState) -> Result<void, u32> {
+        let length_address = function_offset(compiler, state.channel.state, 24)?
+        let load = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, load)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, value_type, 0)
+        let present = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), length, zero))?
+        let receive = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(present, receive, ready))?
+        function_select_block(compiler, receive)
+        let item = ChannelReceiveState {
+            channel: locked_channel_copy(state.channel), result: state.result, result_type: sema::type_copy(state.result_type)
+        }
+        receive_channel_item(compiler, symbols, move item)?
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, ready)
+        return Ok(())
+    }
+
+    fn receive_channel_item(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ChannelReceiveState) -> Result<void, u32> {
+        let data = function_load_pointer_field(compiler, state.channel.state, 16)?
+        let tag_type = ir::TypeInteger(ir::IntegerWidth32())
+        let some = function_integer(compiler, tag_type, 1)
+        let tag = StoreRequest {
+            address: state.result, value: some, value_type: sema::builtin_leaf(sema::U32())
+        }
+        function_store(compiler, symbols, tag)?
+        let layout = layout(symbols, state.channel.element)?
+        let target = function_offset(compiler, state.result, align_to(4, layout.alignment))?
+        let head = channel_load_field(compiler, symbols, state.channel.state, 40)?
+        let item = channel_element(compiler, symbols, ChannelItem {
+                data: data, index: head, element: sema::type_copy(state.channel.element)
+            })?
+        let value = AddressValue(item, sema::type_copy(state.channel.element))
+        let transfer = CopyRequest {
+            destination: target, value: move value
+        }
+        function_copy(compiler, symbols, transfer)?
+        return channel_advance(compiler, symbols, state.channel.state)
+    }
+
+    fn locked_channel_copy(channel: LockedChannel) -> LockedChannel {
+        return LockedChannel {
+            state: channel.state, mutex: channel.mutex, element: sema::type_copy(channel.element)
+        }
+    }
+}

@@ -1,0 +1,19 @@
+resource Item { value: u32, drop { print(value) } }
+
+fn choose(flag: read bool) -> Item {
+    return if flag {
+        let temporary = Item { value: 1 }
+        let selected = Item { value: 2 }
+        move selected
+    } else {
+        let temporary = Item { value: 3 }
+        let selected = Item { value: 4 }
+        move selected
+    }
+}
+
+fn main() -> u32 {
+    let first = choose(true)
+    let second = choose(false)
+    return 42
+}

@@ -1,0 +1,97 @@
+module optimize {
+    struct Task {
+        index: usize
+        function: ir::Function
+        report: Report
+        effects: Shared<Vec<MemoryEffect>>
+    }
+
+    struct Work {
+        pending: Vec<Task>
+        completed: Vec<Task>
+    }
+
+    fn parallel_functions(program: write ir::Program, enable_gvn: bool, report: write Report) -> void {
+        let workers = ir::parallel_workers(program.functions.length())
+        if workers == 1 {
+            sequential_functions(program, enable_gvn, report);
+            return
+        }
+        let work = Shared.new(Mutex.new(pending_functions(program)))
+        var threads = Vec<Thread>.new()
+        var index: usize = 1
+        while index < workers {
+            let queue = work.share()
+            threads.push(spawn move {
+                    worker(queue, enable_gvn)
+                })
+            index = index + 1
+        }
+        worker(work, enable_gvn)
+        index = 0
+        while index < threads.length() {
+            loan write threads[index] as thread {
+                thread.join()
+            }
+            index = index + 1
+        }
+        work.lock write as state {
+            collect_functions(program, state, report)
+        }
+    }
+
+    fn pending_functions(program: write ir::Program) -> Work {
+        let effects = memory_effects(program)
+        var tasks = Vec<Task>.with_capacity(program.functions.length())
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan write program.functions[index] as function {
+                if ir::function_is_import(function) == false {
+                    tasks.push(Task {
+                            index: index, function: ir::function_take(function), report: report_new(), effects: effects.share()
+                        })
+                }
+            }
+            index = index + 1
+        }
+        return Work {
+            pending: move tasks, completed: Vec<Task>.new()
+        }
+    }
+
+    fn worker(work: Shared<Mutex<Work>>, enable_gvn: bool) -> void {
+        while true {
+            var task: Option<Task> = None()
+            work.lock write as state {
+                task = state.pending.pop()
+            }
+            match move task {
+                Some(value) => {
+                    complete_task(work, enable_gvn, move value)
+                }
+                None => {
+                    return
+                }
+            }
+        }
+    }
+
+    fn collect_functions(program: write ir::Program, work: write Work, report: write Report) -> void {
+        var index: usize = 0
+        while index < work.completed.length() {
+            loan write work.completed[index] as result {
+                report_merge(report, result.report)
+                program.functions[result.index] = ir::function_take(result.function)
+            }
+            index = index + 1
+        }
+    }
+
+    fn complete_task(work: Shared<Mutex<Work>>, enable_gvn: bool, task: take Task) -> void {
+        var current = move task
+        current.report = function_effects(current.function, enable_gvn, current.effects)
+        work.lock write as state {
+            state.completed.push(move current)
+        }
+    }
+}

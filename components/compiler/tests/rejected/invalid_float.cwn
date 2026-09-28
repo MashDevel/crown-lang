@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value: f64 = 1e309
+    return 0
+}

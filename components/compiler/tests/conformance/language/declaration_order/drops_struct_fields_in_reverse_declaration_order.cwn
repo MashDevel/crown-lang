@@ -1,0 +1,21 @@
+resource Leaf {
+    code: u32
+    drop {
+        print(code)
+    }
+}
+struct Container {
+    zebra: Leaf
+    alpha: Leaf
+}
+fn main() -> u32 {
+    let value = Container {
+        zebra: Leaf {
+            code: 1
+        }
+        alpha: Leaf {
+            code: 2
+        }
+    }
+    return 0
+}

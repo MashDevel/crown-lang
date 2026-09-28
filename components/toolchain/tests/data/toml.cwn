@@ -1,0 +1,38 @@
+fn strings() -> Result<void, Text> {
+    let sources = testing::list("key='literal λ'|key=\"basic \\U0001F600\"|key=\"\"\"\nmultiline\ntext\"\"\"|key='''\nliteral\ntext'''|key=\"\"\"trim\\\n  med\"\"\"|key=\"\\u0041\"|key=\"a\\tb\"|key=\"a\\\"b\"|key=\"\"\"a\"\"\"\"|key=\"\"\"a\"\"\"\"\"")
+    let expected = testing::list("literal λ|basic 😀|multiline\ntext|literal\ntext|trimmed|A|a\tb|a\"b|a\"|a\"\"")
+    for index in 0..sources.length() {
+        let parsed = toolchain::toml(sources[index].clone())?
+        let value = toolchain::json_text(parsed.document, toolchain::json_required(parsed.document, parsed.document.root, "key")?)?
+        testing::expect(std::text::equal(value, expected[index]), "TOML string forms")?
+    }
+    let invalid = testing::list("key='unterminated|key=\"\\uD800\"|key=\"\\U00110000\"|key=\"\\/\"|key=[1,,2]|key={name='a',}|[package]\n[package]|name='a'\nname='b'|.name='bad'|key=\"\"\"a\"\"\"\"\"\"|key=\"\"\"a\\  b\"\"\"|key=\"a\nb\"|key=\"\\u00G0\"|'a.b'=1|key=1 other=2")
+    for index in 0..invalid.length() {
+        testing::error(toolchain::toml(invalid[index].clone()))?
+    }
+    toolchain::toml("key=1 # trailing comment")?
+    let nested = std::text::joined("key=", std::text::joined(std::text::repeat("[", 65), std::text::joined("0", std::text::repeat("]", 65))))
+    testing::error(toolchain::toml(move nested))?
+    return Ok(())
+}
+
+fn manifest_forms(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "src/main.cwn", "fn main() -> u32 { 0 }")?
+    let forms = testing::list("[\"package\"]\n'name'='demo'\nsources=[\n'src', # source tree\n]\n|package = { name = 'demo', sources = ['src'] }|package . name = 'demo'\npackage . source = 'src'|[package]\nname=\"\"\"demo\"\"\"\nsource='''src'''")
+    for index in 0..forms.length() {
+        let path = testing::write_file(root, "Crown.toml", forms[index])?
+        let project = toolchain::load_project(path, toolchain::host_target())?
+        testing::expect(std::text::equal(project.name, "demo") && project.sources.length() == 1, "equivalent manifest syntax")?
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    strings()?;
+    manifest_forms(toolchain::temporary_path(temporary))?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}

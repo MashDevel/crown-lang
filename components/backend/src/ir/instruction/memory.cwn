@@ -1,0 +1,78 @@
+module ir {
+    enum MemoryInstruction {
+        MemoryStackSlot(u64, u32)
+        MemoryLoad(usize, Type, u32, bool)
+        MemoryStore(usize, usize, u32, bool)
+        MemoryOffset(usize, usize)
+        MemoryGlobalAddress(usize)
+        MemorySymbolAddress(Text)
+        MemoryFunctionAddress(usize)
+        MemoryCopy(usize, usize, usize)
+        MemorySet(usize, usize, usize)
+        MemoryRepeat(usize, usize, usize, usize)
+    }
+
+    fn InstructionStackSlot(size: u64, alignment: u32) -> InstructionKind {
+        InstructionMemory(MemoryStackSlot(size, alignment))
+    }
+    fn InstructionLoad(address: usize, value_type: Type, alignment: u32, volatile: bool) -> InstructionKind {
+        InstructionMemory(MemoryLoad(address, value_type, alignment, volatile))
+    }
+    fn InstructionStore(address: usize, value: usize, alignment: u32, volatile: bool) -> InstructionKind {
+        InstructionMemory(MemoryStore(address, value, alignment, volatile))
+    }
+    fn InstructionOffset(base: usize, offset: usize) -> InstructionKind {
+        InstructionMemory(MemoryOffset(base, offset))
+    }
+    fn InstructionGlobalAddress(global: usize) -> InstructionKind {
+        InstructionMemory(MemoryGlobalAddress(global))
+    }
+    fn InstructionSymbolAddress(symbol: take Text) -> InstructionKind {
+        InstructionMemory(MemorySymbolAddress(move symbol))
+    }
+    fn InstructionFunctionAddress(function: usize) -> InstructionKind {
+        InstructionMemory(MemoryFunctionAddress(function))
+    }
+    fn InstructionMemoryCopy(destination: usize, source: usize, size: usize) -> InstructionKind {
+        InstructionMemory(MemoryCopy(destination, source, size))
+    }
+    fn InstructionMemorySet(destination: usize, value: usize, size: usize) -> InstructionKind {
+        InstructionMemory(MemorySet(destination, value, size))
+    }
+    fn InstructionMemoryRepeat(destination: usize, source: usize, size: usize, count: usize) -> InstructionKind {
+        InstructionMemory(MemoryRepeat(destination, source, size, count))
+    }
+
+    fn memory_instruction_copy(kind: MemoryInstruction) -> MemoryInstruction {
+        match read kind {
+            MemoryStackSlot(size, alignment) => MemoryStackSlot(size, alignment)
+            MemoryLoad(address, value_type, alignment, volatile) => MemoryLoad(address, value_type, alignment, volatile)
+            MemoryStore(address, value, alignment, volatile) => MemoryStore(address, value, alignment, volatile)
+            MemoryOffset(base, offset) => MemoryOffset(base, offset)
+            MemoryGlobalAddress(global) => MemoryGlobalAddress(global)
+            MemorySymbolAddress(symbol) => MemorySymbolAddress(symbol.clone())
+            MemoryFunctionAddress(function) => MemoryFunctionAddress(function)
+            MemoryCopy(destination, source, size) => MemoryCopy(destination, source, size)
+            MemorySet(destination, value, size) => MemorySet(destination, value, size)
+            MemoryRepeat(destination, source, size, count) => MemoryRepeat(destination, source, size, count)
+        }
+    }
+
+    copy struct AddressOffset {
+        base: usize, offset: usize
+    }
+
+    fn instruction_offset(kind: InstructionKind) -> Option<AddressOffset> {
+        match read kind {
+            InstructionMemory(memory) => {
+                match read memory {
+                    MemoryOffset(base, offset) => Some(AddressOffset {
+                            base: base, offset: offset
+                        })
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+}

@@ -1,0 +1,181 @@
+module optimize {
+    fn inline_remap_instruction(kind: ir::InstructionKind, mapping: InlineMapping) -> ir::InstructionKind {
+        match read kind {
+            ir::InstructionVectorSplat(value, target) => {
+                return ir::InstructionVectorSplat(inline_mapped_value(mapping, value), target)
+            }
+            _ => {
+            }
+        }
+        var output = ir::instruction_kind_copy(kind)
+        inline_remap_basic(output, mapping)
+        inline_remap_memory(output, mapping)
+        inline_remap_call(output, mapping)
+        return move output
+    }
+
+    fn inline_remap_basic(kind: write ir::InstructionKind, mapping: InlineMapping) -> void {
+        match write kind {
+            ir::InstructionBinary(operator, left, right) => {
+                operator;
+                inline_remap_pair(left, right, mapping)
+            }
+            ir::InstructionUnary(operator, value) => {
+                operator;
+                value = inline_mapped_value(mapping, value)
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                operator;
+                inline_remap_pair(left, right, mapping)
+            }
+            ir::InstructionCast(operator, value, target) => {
+                operator;
+                target;
+                value = inline_mapped_value(mapping, value)
+            }
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match write instruction_memory_kind {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        address = inline_mapped_value(mapping, address)
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        inline_remap_pair(address, value, mapping)
+                    }
+                    ir::MemoryOffset(base, offset) => {
+                        inline_remap_pair(base, offset, mapping)
+                    }
+                    _ => {
+                    }
+                }
+            }
+
+            _ => {
+            }
+        }
+    }
+
+    fn inline_remap_memory(kind: write ir::InstructionKind, mapping: InlineMapping) -> void {
+        match write kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match write instruction_memory_kind {
+                    ir::MemoryCopy(destination, source, size) => {
+                        destination = inline_mapped_value(mapping, destination)
+                        source = inline_mapped_value(mapping, source)
+                        size = inline_mapped_value(mapping, size)
+                    }
+                    ir::MemorySet(destination, value, size) => {
+                        destination = inline_mapped_value(mapping, destination)
+                        value = inline_mapped_value(mapping, value)
+                        size = inline_mapped_value(mapping, size)
+                    }
+                    ir::MemoryRepeat(destination, source, size, count) => {
+                        destination = inline_mapped_value(mapping, destination)
+                        source = inline_mapped_value(mapping, source)
+                        size = inline_mapped_value(mapping, size)
+                        count = inline_mapped_value(mapping, count)
+                    }
+                    _ => {
+                    }
+                }
+            }
+
+            _ => {
+            }
+        }
+    }
+
+    fn inline_remap_call(kind: write ir::InstructionKind, mapping: InlineMapping) -> void {
+        match write kind {
+            ir::InstructionCall(function, arguments, result) => {
+                function;
+                result;
+                inline_remap_values(arguments, mapping)
+            }
+            ir::InstructionCallIndirect(function, signature, arguments) => {
+                signature
+                function = inline_mapped_value(mapping, function)
+                inline_remap_values(arguments, mapping)
+            }
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                var index: usize = 0
+                while index < incoming.length() {
+                    incoming[index].block = mapping.blocks[incoming[index].block]
+                    incoming[index].value = inline_mapped_value(mapping, incoming[index].value)
+                    index = index + 1
+                }
+            }
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                condition = inline_mapped_value(mapping, condition)
+                then_value = inline_mapped_value(mapping, then_value)
+                else_value = inline_mapped_value(mapping, else_value)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn inline_remap_pair(left: write usize, right: write usize, mapping: InlineMapping) -> void {
+        left = inline_mapped_value(mapping, left)
+        right = inline_mapped_value(mapping, right)
+    }
+
+    fn inline_remap_values(values: write Vec<usize>, mapping: InlineMapping) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            values[index] = inline_mapped_value(mapping, values[index])
+            index = index + 1
+        }
+    }
+
+    fn inline_mapped_value(mapping: InlineMapping, value: usize) -> usize {
+        match read mapping.values[value] {
+            Some(result) => {
+                return result
+            }
+            None => {
+                return value
+            }
+        }
+    }
+
+    fn inline_remap_terminator(terminator: ir::Terminator, mapping: InlineMapping) -> ir::Terminator {
+        var output = ir::terminator_copy(terminator)
+        match write output {
+            ir::TerminatorBranch(target) => {
+                target = mapping.blocks[target]
+            }
+            ir::TerminatorConditional(condition, then_block, else_block) => {
+                condition = inline_mapped_value(mapping, condition)
+                then_block = mapping.blocks[then_block]
+                else_block = mapping.blocks[else_block]
+            }
+            ir::TerminatorSwitch(value, cases, default) => {
+                value = inline_mapped_value(mapping, value)
+                var index: usize = 0
+                while index < cases.length() {
+                    cases[index].block = mapping.blocks[cases[index].block];
+                    index = index + 1
+                }
+                default = mapping.blocks[default]
+            }
+            ir::TerminatorReturn(value) => {
+                match write value {
+                    Some(result) => {
+                        result = inline_mapped_value(mapping, result)
+                    }
+                    None => {
+                    }
+                }
+            }
+            ir::TerminatorUnreachable => {
+            }
+        }
+        return move output
+    }
+}

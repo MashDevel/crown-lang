@@ -1,0 +1,42 @@
+module toolchain {
+    fn bootstrap_driver() -> Text {
+        let configured = environment("CC")
+        if configured.length() != 0 {
+            return move configured
+        }
+        return if host_target().platform == Platform::Macos() {
+            "clang"
+        } else {
+            "cc"
+        }
+    }
+
+    fn bootstrap_link(assembly: Text, output: Text) -> Result<void, Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(bootstrap_driver())
+        arguments.push(assembly.clone())
+        let flags = bootstrap_flags(host_target())?
+        for index in 0..flags.length() {
+            arguments.push(flags[index].clone())
+        }
+        arguments.push("-o")
+        arguments.push(output.clone())
+        return require_command(move arguments)
+    }
+
+    fn bootstrap_flags(target: Target) -> Result<Vec<Text>, Text> {
+        if target.platform == Platform::Linux() {
+            return Ok(std::text::split("-no-pie|-Wl,--fatal-warnings|-Wl,--build-id=none|-Wl,--discard-all|-Wl,-z,noexecstack|-lm|-pthread|-ldl", 124))
+        }
+        if target.platform != Platform::Macos() {
+            return Err("this target cannot host the Crown bootstrap")
+        }
+        var flags = std::text::split("-Wl,-fatal_warnings|-Wl,-dead_strip|-Wl,-x|-arch", 124)
+        flags.push(if target.architecture == Architecture::Arm64() {
+                "arm64"
+            } else {
+                "x86_64"
+            })
+        return Ok(move flags)
+    }
+}

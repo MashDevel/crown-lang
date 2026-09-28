@@ -1,0 +1,27 @@
+module lowering {
+    fn argument_address(compiler: write FunctionCompiler, symbols: sema::Symbols, value: take Value) -> Result<usize, u32> {
+        match copy_argument_place(symbols, value) {
+            Some(place) => {
+                return snapshot_place(compiler, symbols, place)
+            }
+            None => {
+                return value_address(compiler, symbols, move value)
+            }
+        }
+    }
+
+    fn copy_argument_place(symbols: sema::Symbols, value: Value) -> Option<Place> {
+        match read value {
+            AddressValue(address, value_type) => {
+                if sema::type_is_copy_with_symbols(symbols, value_type) {
+                    return Some(Place {
+                            address: address, value_type: sema::type_copy(value_type)
+                        })
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+}

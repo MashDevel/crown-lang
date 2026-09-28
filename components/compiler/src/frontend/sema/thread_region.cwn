@@ -1,0 +1,99 @@
+module sema {
+    struct ThreadRegion {
+        depth: usize
+        loops: usize
+        loans: Vec<PlaceLoan>
+    }
+    fn checker_thread_scope(checker: write Checker, body: Vec<frontend::Statement>) -> void {
+        checker_push_scope(checker)
+        checker.thread_regions.push(ThreadRegion {
+                depth: checker.scopes.length(), loops: checker.loop_states.length(), loans: Vec<PlaceLoan>.new()
+            })
+        checker_statements(checker, body)
+        checker.thread_regions.pop()
+        checker_pop_scope(checker)
+    }
+    fn thread_regions_copy(values: Vec<ThreadRegion>) -> Vec<ThreadRegion> {
+        var output = Vec<ThreadRegion>.new()
+        for index in 0..values.length() {
+            output.push(ThreadRegion {
+                    depth: values[index].depth, loops: values[index].loops, loans: place_loans_copy(values[index].loans)
+                })
+        }
+        return move output
+    }
+    fn validate_thread_loans(checker: write Checker, path: frontend::Path, usage: PathUse) -> bool {
+        for region in 0..checker.thread_regions.length() {
+            var conflict = false
+            loan read checker.thread_regions[region] as state {
+                conflict = thread_loan_conflicts(checker.symbols.source, state.loans, ThreadAccess {
+                        path: frontend::path_copy(path), usage: usage
+                    })
+            }
+            if conflict {
+                checker_error(checker, "scoped thread capture remains borrowed until thread_scope exits")
+                return false
+            }
+        }
+        return true
+    }
+    struct ThreadAccess {
+        path: frontend::Path
+        usage: PathUse
+    }
+    fn thread_loan_conflicts(source: Shared<Vec<u8>>, loans: Vec<PlaceLoan>, access: take ThreadAccess) -> bool {
+        for index in 0..loans.length() {
+            let compatible = path_is_read(access.usage) && loan_is_read(loans[index].mode)
+            if compatible == false && paths_overlap(source, loans[index].path, access.path) {
+                return true
+            }
+        }
+        return false
+    }
+    fn thread_root_has_loan(checker: Checker, name: frontend::Name) -> bool {
+        for region in 0..checker.thread_regions.length() {
+            for index in 0..checker.thread_regions[region].loans.length() {
+                loan read checker.thread_regions[region].loans[index].path.segments[0] as root {
+                    if names_equal(checker.symbols.source, root, name) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+    fn spawn_capture_access(kind: CaptureKind) -> VariableAccess {
+        if kind == CaptureRead() {
+            return ReadAccess()
+        }
+        if kind == CaptureWrite() {
+            return WriteAccess()
+        }
+        return OwnedAccess()
+    }
+    fn capture_is_borrowed(kind: CaptureKind) -> bool {
+        return kind == CaptureRead() || kind == CaptureWrite()
+    }
+}
+module sema {
+    fn thread_loan_recorded(loans: Vec<PlaceLoan>, candidate: PlaceLoan) -> bool {
+        for index in 0..loans.length() {
+            let origin = loans[index].origin
+            if origin.source == candidate.origin.source && origin.start == candidate.origin.start && origin.end == candidate.origin.end {
+                return true
+            }
+        }
+        return false
+    }
+    fn merge_thread_region_loans(target: write Vec<ThreadRegion>, source: Vec<ThreadRegion>) -> void {
+        for region in 0..source.length() {
+            if region < target.length() {
+                for index in 0..source[region].loans.length() {
+                    if thread_loan_recorded(target[region].loans, source[region].loans[index]) == false {
+                        target[region].loans.push(place_loan_copy(source[region].loans[index]))
+                    }
+                }
+            }
+        }
+    }
+}

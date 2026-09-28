@@ -1,0 +1,13 @@
+fn touch(value: write Text) -> usize {
+    value.push('x');
+    return 0
+}
+fn use_view(view: TextView, value: usize) -> void {
+    view;
+    value;
+}
+fn main() -> u32 {
+    var text = "x";
+    use_view(text, touch(text));
+    return 0
+}

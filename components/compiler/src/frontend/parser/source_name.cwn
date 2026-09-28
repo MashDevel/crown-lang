@@ -1,0 +1,50 @@
+module frontend {
+    fn parser_name_is(parser: Parser, name: Name, expected: take Text) -> bool {
+        return sema::name_is(parser.source, name, move expected)
+    }
+
+    fn parser_type_name(parser: Parser, name: Name) -> bool {
+        var start = name.span.start
+        var index = start
+        while index < name.span.end {
+            if source_byte(parser.source, index) == 58 {
+                start = index + 1
+            }
+            index = index + 1
+        }
+        let first = source_byte(parser.source, start)
+        if first >= 65 && first <= 90 {
+            return true
+        }
+        return parser_integer_name(parser, name) || parser_scalar_name(parser, name)
+    }
+
+    fn parser_integer_name(parser: Parser, name: Name) -> bool {
+        if parser_name_is(parser, name, "i8") || parser_name_is(parser, name, "i16") {
+            return true
+        }
+        if parser_name_is(parser, name, "i32") || parser_name_is(parser, name, "i64") {
+            return true
+        }
+        if parser_name_is(parser, name, "u8") || parser_name_is(parser, name, "u16") {
+            return true
+        }
+        if parser_name_is(parser, name, "u32") || parser_name_is(parser, name, "u64") {
+            return true
+        }
+        return false
+    }
+
+    fn parser_scalar_name(parser: Parser, name: Name) -> bool {
+        if parser_name_is(parser, name, "isize") || parser_name_is(parser, name, "usize") {
+            return true
+        }
+        if parser_name_is(parser, name, "f32") || parser_name_is(parser, name, "f64") {
+            return true
+        }
+        if parser_name_is(parser, name, "bool") || parser_name_is(parser, name, "char") {
+            return true
+        }
+        return parser_name_is(parser, name, "void")
+    }
+}

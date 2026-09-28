@@ -1,0 +1,109 @@
+module x86 {
+    fn codegen_interference(function: ir::Function, eligible: take Vec<bool>, blocks: take Vec<ir::BlockLiveness>) -> InterferenceState {
+        var state = InterferenceState {
+            eligible: move eligible
+            blocks: move blocks
+            graph: ir::bitset_graph(function.values.length())
+            forbidden: codegen_empty_forbidden(function.values.length())
+            live: ir::bitset_new(function.values.length())
+        }
+        let preferred = codegen_parameter_preferences(function)
+        var index: usize = 0
+        while index < function.parameters.length() {
+            let value = function.parameters[index]
+            loan read preferred[value] as allowed {
+                state.forbidden[value] = state.forbidden[value] | codegen_parameter_forbidden(allowed)
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < function.blocks.length() {
+            codegen_scan_interference(function, index, state)
+            index = index + 1
+        }
+        return move state
+    }
+
+    fn codegen_scan_interference(function: ir::Function, block_index: usize, state: write InterferenceState) -> void {
+        var live = ir::bitset_new(0)
+        loan read state.blocks[block_index].live_out as source {
+            live = ir::bitset_copy(source)
+        }
+        state.live = move live
+        match read function.blocks[block_index].terminator {
+            Some(terminator) => {
+                let operands = ir::terminator_operands(terminator)
+                codegen_add_state_live(operands, state)
+                codegen_forbid_state(codegen_terminator_clobbers(terminator), state)
+            }
+            None => {
+            }
+        }
+        var cursor = function.blocks[block_index].instructions.length()
+        while cursor > 0 {
+            cursor = cursor - 1
+            loan read function.blocks[block_index].instructions[cursor] as instruction {
+                codegen_scan_instruction(function, instruction, state)
+            }
+        }
+        if block_index == 0 {
+            codegen_parameter_edges(function, state)
+        }
+    }
+
+    fn codegen_scan_instruction(function: ir::Function, instruction: ir::Instruction, state: write InterferenceState) -> void {
+        let operands = ir::instruction_operands(instruction.kind)
+        let clobbers = codegen_instruction_clobbers(function, instruction)
+        if clobbers != 0 {
+            var affected = ir::bitset_copy(state.live)
+            match read instruction.result {
+                Some(value) => {
+                    ir::bitset_remove(affected, value)
+                }
+                None => {
+                }
+            }
+            codegen_add_live(operands, state.eligible, affected)
+            codegen_forbid(affected, clobbers, state.forbidden)
+        }
+        codegen_add_definition_edges(instruction.result, state)
+        if codegen_instruction_is_phi(instruction.kind) == false {
+            codegen_add_state_live(operands, state)
+        }
+    }
+
+    fn codegen_instruction_is_phi(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_add_live(operands: Vec<usize>, eligible: Vec<bool>, live: write ir::BitSet) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            let value = operands[index]
+            if eligible[value] {
+                ir::bitset_insert(live, value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn codegen_add_state_live(operands: Vec<usize>, state: write InterferenceState) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            let value = operands[index]
+            if state.eligible[value] {
+                ir::bitset_insert(state.live, value)
+            }
+            index = index + 1
+        }
+    }
+}

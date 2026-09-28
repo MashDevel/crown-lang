@@ -1,0 +1,167 @@
+module sema {
+    fn inference_values(count: usize) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(count)
+        var index: usize = 0
+        while index < count {
+            output.push(Infer());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn infer_type(schema: Type, actual: Type, values: write Vec<Type>) -> void {
+        match read schema {
+            ParameterType(parameter) => infer_parameter(parameter, actual, values)
+            BuiltinType(builtin, schemas) => infer_builtin(actual, builtin, schemas, values)
+            NamedType(symbol, schemas) => infer_named(actual, symbol, schemas, values)
+            ArrayType(element, length) => infer_array(actual, element, length, values)
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    infer_type(value, callable_type(actual), values)
+                }
+            }
+            FunctionType(parameters, result) => infer_function(actual, parameters, result, values)
+            _ => {
+            }
+        }
+    }
+
+    fn infer_parameter(parameter: usize, actual: Type, values: write Vec<Type>) -> void {
+        if parameter >= values.length() {
+            return
+        }
+        if type_is_infer(values[parameter]) {
+            values[parameter] = concrete(actual)
+        }
+    }
+
+    fn infer_builtin(actual: Type, builtin: Builtin, schemas: Vec<Type>, values: write Vec<Type>) -> void {
+        match read actual {
+            BuiltinType(actual_builtin, arguments) => {
+                if builtin == actual_builtin {
+                    infer_many(schemas, arguments, values)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn infer_named(actual: Type, symbol: usize, schemas: Vec<Type>, values: write Vec<Type>) -> void {
+        match read actual {
+            NamedType(actual_symbol, arguments) => {
+                if symbol == actual_symbol {
+                    infer_many(schemas, arguments, values)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn infer_array(actual: Type, element: Box<Type>, length: usize, values: write Vec<Type>) -> void {
+        match read actual {
+            ArrayType(actual_element, actual_length) => {
+                if length != actual_length {
+                    return
+                }
+                loan read element as schema {
+                    loan read actual_element as value {
+                        infer_type(schema, value, values)
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn infer_many(schemas: Vec<Type>, actual: Vec<Type>, values: write Vec<Type>) -> void {
+        var index: usize = 0
+        while index < schemas.length() && index < actual.length() {
+            infer_type(schemas[index], actual[index], values)
+            index = index + 1
+        }
+    }
+
+    fn inference_complete(symbols: Symbols, values: Vec<Type>) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            var concrete = false
+            var temporary = false
+            loan read values[index] as value {
+                concrete = type_is_inferred(value)
+                temporary = type_contains_view(symbols, value)
+            }
+            if concrete == false || temporary {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn type_is_inferred(value_type: Type) -> bool {
+        match read value_type {
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return type_is_inferred(value)
+                }
+            }
+            Infer => {
+                return false
+            }
+            Invalid => {
+                return false
+            }
+            BuiltinType(builtin, arguments) => {
+                builtin;
+                return types_are_inferred(arguments)
+            }
+            NamedType(symbol, arguments) => {
+                symbol;
+                return types_are_inferred(arguments)
+            }
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return type_is_inferred(value)
+                }
+            }
+            FunctionType(parameters, result) => {
+                return function_is_inferred(parameters, result)
+            }
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn types_are_inferred(values: Vec<Type>) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if type_is_inferred(value) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn function_is_inferred(parameters: Vec<ParameterType>, result: Box<Type>) -> bool {
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                if type_is_inferred(parameter.value_type) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        loan read result as value {
+            return type_is_inferred(value)
+        }
+    }
+}

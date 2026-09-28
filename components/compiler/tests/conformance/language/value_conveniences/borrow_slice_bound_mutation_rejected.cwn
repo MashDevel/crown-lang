@@ -1,0 +1,13 @@
+fn mutate(bytes: write Vec<u8>) -> usize {
+    bytes.push(0);
+    return 0
+}
+fn inspect(bytes: Slice<u8>) -> void {
+    bytes;
+}
+fn main() -> u32 {
+    var bytes = Vec<u8>.new();
+    bytes.push(1);
+    inspect(bytes[mutate(bytes)..1]);
+    return 0
+}

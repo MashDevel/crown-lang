@@ -1,0 +1,9 @@
+struct Item {
+    value: u32
+}
+struct Item {
+    other: u32
+}
+fn main() -> u32 {
+    return 0
+}

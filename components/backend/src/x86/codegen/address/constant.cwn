@@ -1,0 +1,104 @@
+module x86 {
+    fn codegen_fused_constant_memory(program: ir::Program, compiler: FunctionCompiler, position: SequencePosition) -> Option<MemoryFusion> {
+        loan read program.functions[compiler.id] as function {
+            return codegen_constant_memory_start(function, compiler, function.blocks[codegen_current_block(compiler)], position)
+        }
+    }
+
+    fn codegen_constant_memory_start(function: ir::Function, compiler: FunctionCompiler, block: ir::BasicBlock, position: SequencePosition) -> Option<MemoryFusion> {
+        match read block.instructions[position.index].kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryOffset(base, offset) => {
+                        offset
+                        let address = match block.instructions[position.index].result {
+                            Some(value) => value
+                            None => {
+                                return None()
+                            }
+                        }
+                        codegen_constant_memory_chain(function, compiler, block, ConstantMemorySearch {
+                                index: position.index
+                                limit: position.limit
+                                base: base
+                                address: address
+                                offset: 0
+                            })
+                    }
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    struct ConstantMemorySearch {
+        index: usize
+        limit: usize
+        base: usize
+        address: usize
+        offset: i32
+    }
+
+    fn codegen_constant_memory_chain(function: ir::Function, compiler: FunctionCompiler, block: ir::BasicBlock, search: take ConstantMemorySearch) -> Option<MemoryFusion> {
+        let start = search.index
+        var current = move search
+        while current.index < current.limit {
+            if compiler.uses[current.address] != 1 {
+                return None()
+            }
+            let offset = match ir::instruction_offset(block.instructions[current.index].kind) {
+                Some(value) => value
+                None => {
+                    let pattern = MemoryPattern {
+                        address: current.address, base: current.base, offset: MemoryImmediate(current.offset)
+                    }
+                    return codegen_fuse_memory_pattern(function, block.instructions[current.index], move pattern, current.index - start + 1)
+                }
+            }
+            let first = current.index == start
+            if codegen_accumulate_offset(function, current, offset.base, offset.offset, first) == false {
+                return None()
+            }
+            current.address = match block.instructions[current.index].result {
+                Some(value) => value
+                None => {
+                    return None()
+                }
+            }
+            current.index = current.index + 1
+        }
+        None()
+    }
+
+    fn codegen_accumulate_offset(function: ir::Function, current: write ConstantMemorySearch, base: usize, offset: usize, first: bool) -> bool {
+        if first == false && base != current.address {
+            return false
+        }
+        match codegen_constant_offset_value(function, current.offset, offset) {
+            Some(value) => {
+                current.offset = value;
+                true
+            }
+            None => false
+        }
+    }
+
+    fn codegen_constant_offset_value(function: ir::Function, current: i32, value: usize) -> Option<i32> {
+        match codegen_offset_constant(function, value) {
+            None => {
+                return None()
+            }
+            Some(constant) => {
+                if constant < -2147483648 || constant > 2147483647 {
+                    return None()
+                }
+                let sum = i64.from(current) + constant
+                if sum < -2147483648 || sum > 2147483647 {
+                    return None()
+                }
+                return Some(i32.from(sum))
+            }
+        }
+    }
+}

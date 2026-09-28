@@ -1,0 +1,171 @@
+fn declaration_analysis() -> Option<sema::Analysis> {
+    let source = frontend_test_source("struct Pair { value: u32 }\ninterface Show { fn show(self: read Self) -> u32 }\nimpl Show for Pair { fn show(self: read Pair) -> u32 { return self.value } }\nextern \"c\" { fn allocate(size: read usize) -> RawPtr<u8> = \"malloc\" }\nfn identity<T>(value: take T) -> T { return move value }\nfn helper(value: read u32) -> u32 { return value }\nfn main() -> u32 { return helper(identity(42)) }\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return None()
+        }
+        Ok(program) => {
+            let analysis = sema::analyze(source.bytes.share(), program)
+            if analysis.errors != 0 {
+                return None()
+            }
+            return Some(move analysis)
+        }
+    }
+}
+
+fn exported_main(compiler: lowering::Compiler, analysis: sema::Analysis) -> bool {
+    var index: usize = 0
+    while index < analysis.checker.symbols.functions.length() {
+        if lowering::semantic_function_is_main(analysis.checker.symbols, index) {
+            let arguments = Vec<sema::Type>.new()
+            let binding = match lowering::find_function(compiler, index, arguments) {
+                Some(value) => move value
+                None => {
+                    return false
+                }
+            }
+            return match read compiler.output.functions[binding.function].linkage {
+                ir::LinkageExport => true
+                _ => false
+            }
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn import_is_deduplicated(compiler: read lowering::Compiler) -> bool {
+    if compiler.tables.imports.length() != 1 || compiler.tables.runtime_imports.length() != 27 {
+        return false
+    }
+    let foreign = compiler.tables.imports[0].function
+    var matches: usize = 0
+    var index: usize = 0
+    while index < compiler.tables.runtime_imports.length() {
+        loan read compiler.tables.runtime_imports[index] as runtime {
+            let expected = "malloc"
+            if std::text::equal(runtime.name, expected) {
+                if runtime.function != foreign {
+                    return false
+                }
+                matches = matches + 1
+            }
+        }
+        index = index + 1
+    }
+    return matches == 1
+}
+
+fn text_literal_decoding_works() -> bool {
+    let source = frontend_test_source("\"a\\n\\0\"")
+    let span = frontend::Span {
+        source: 0, start: 0, end: 7, line: 1, column: 1
+    }
+    let shared = source.bytes.share()
+    let bytes = frontend::text_literal_bytes(shared, span)
+    return bytes.length() == 3 && bytes[0] == 97 && bytes[1] == 10 && bytes[2] == 0
+}
+
+fn output_has_function(compiler: read lowering::Compiler, expected: read Text) -> bool {
+    var index: usize = 0
+    while index < compiler.output.functions.length() {
+        loan read compiler.output.functions[index] as function {
+            if std::text::equal(function.name, expected) {
+                return true
+            }
+        }
+        index = index + 1
+    }
+    return false
+}
+
+fn output_has_global(compiler: read lowering::Compiler, expected: read Text) -> bool {
+    var index: usize = 0
+    while index < compiler.output.globals.length() {
+        loan read compiler.output.globals[index] as global {
+            if std::text::equal(global.name, expected) {
+                return true
+            }
+        }
+        index = index + 1
+    }
+    return false
+}
+
+fn canonical_names_are_emitted(compiler: read lowering::Compiler) -> bool {
+    let instance = "crown_instance_8_6964656e74697479_3_753332"
+    let method = "crown_implementation_4_53686f77_4_50616972_4_73686f77"
+    let implementation_drop = "crown_implementation_drop_4_53686f77_4_50616972"
+    let drop_name = "crown_drop_4_50616972"
+    let table = "crown_implementation_table_4_53686f77_4_50616972"
+    let panic_name = "crown_panic_invalid_arena_handle"
+    let panic_message = "crown_invalid_arena_handle"
+    if output_has_function(compiler, panic_name) == false {
+        return false
+    }
+    if output_has_global(compiler, panic_message) == false {
+        return false
+    }
+    if output_has_function(compiler, instance) == false {
+        return false
+    }
+    if output_has_function(compiler, method) == false {
+        return false
+    }
+    if output_has_function(compiler, implementation_drop) == false {
+        return false
+    }
+    if output_has_function(compiler, drop_name) == false {
+        return false
+    }
+    return output_has_global(compiler, table) && output_has_function(compiler, "crown_arena_identity")
+}
+
+fn main() -> u32 {
+    let analysis = match declaration_analysis() {
+        Some(value) => move value
+        None => {
+            return 1
+        }
+    }
+    var compiler = lowering::compiler_new()
+    match lowering::declare_program(compiler, analysis) {
+        Err(error) => {
+            return error
+        }
+        Ok(value) => {
+            value
+        }
+    }
+    check_declarations(compiler, analysis)
+}
+
+fn check_declarations(compiler: lowering::Compiler, analysis: sema::Analysis) -> u32 {
+    if compiler.tables.functions.length() != 4 {
+        return 2
+    }
+    if compiler.output.functions.length() != 42 + compiler.drop_types.length() {
+        return 3
+    }
+    if import_is_deduplicated(compiler) == false {
+        return 4
+    }
+    if exported_main(compiler, analysis) == false {
+        return 5
+    }
+    if compiler.tables.generated_functions.length() != 11 + compiler.drop_types.length() {
+        return 6
+    }
+    if compiler.output.globals.length() != 13 || compiler.tables.globals.length() != 13 {
+        return 7
+    }
+    if text_literal_decoding_works() == false {
+        return 8
+    }
+    if canonical_names_are_emitted(compiler) == false {
+        return 9
+    }
+    42
+}

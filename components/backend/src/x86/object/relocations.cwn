@@ -1,0 +1,57 @@
+module x86 {
+    struct PendingRelocation {
+        function_offset: u64
+        reference_offset: u64
+        name: Text
+        kind: object::RelocationKind
+    }
+
+    fn add_function_relocations(object: write object::CompilerObject, state: ObjectState, encoded: Vec<EncodedFunction>) -> Result<void, EncodeError> {
+        var index: usize = 0
+        while index < encoded.length() {
+            add_named_references(object, state, encoded[index].calls, encoded[index].offset, object::RelocationPcRelativeCall32())?
+            add_named_references(object, state, encoded[index].references, encoded[index].offset, object::RelocationPcRelative32())?
+            index = index + 1
+        }
+        Ok(())
+    }
+
+    fn add_named_references(object: write object::CompilerObject, state: ObjectState, references: Vec<NamedReference>, offset: u64, kind: object::RelocationKind) -> Result<void, EncodeError> {
+        var index: usize = 0
+        while index < references.length() {
+            add_named_relocation(object, state, PendingRelocation {
+                    function_offset: offset
+                    reference_offset: references[index].offset
+                    name: references[index].name.clone()
+                    kind: if references[index].indirect {
+                        object::RelocationGotLoadPcRelative32()
+                    } else {
+                        kind
+                    }
+                })?
+            index = index + 1
+        }
+        Ok(())
+    }
+
+    fn add_named_relocation(object: write object::CompilerObject, state: ObjectState, pending: take PendingRelocation) -> Result<void, EncodeError> {
+        var symbol: usize = 0
+        match object_symbol(state, pending.name) {
+            Some(value) => {
+                symbol = value
+            }
+            None => {
+                return Err(named_error(UnknownSymbol(), pending.name.clone()))
+            }
+        }
+        object::add_relocation(object, object::Relocation {
+                section: state.text_section
+                offset: pending.function_offset + pending.reference_offset
+                kind: pending.kind
+                symbol: symbol
+                subtract: None()
+                addend: -4
+            })
+        return Ok(())
+    }
+}

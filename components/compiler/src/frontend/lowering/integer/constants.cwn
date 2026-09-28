@@ -1,0 +1,36 @@
+module lowering {
+    fn integer_mask(symbols: sema::Symbols, value_type: sema::Type) -> Result<u64, u32> {
+        let layout = layout(symbols, value_type)?
+        let bits = layout.size * 8
+        if bits == 64 {
+            return Ok(18446744073709551615)
+        }
+        return Ok((u64.from(1) << bits) - 1)
+    }
+
+    fn integer_minimum_bits(symbols: sema::Symbols, value_type: sema::Type) -> Result<u64, u32> {
+        let layout = layout(symbols, value_type)?
+        return Ok(u64.from(1) <<(layout.size * 8 - 1))
+    }
+
+    fn integer_minimum_value(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<usize, u32> {
+        let bits = integer_minimum_bits(symbols, value_type)?
+        let ir_type = ir_type(symbols, value_type)?
+        return Ok(function_integer(compiler, ir_type, bits))
+    }
+
+    fn integer_mask_value(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<usize, u32> {
+        let mask = integer_mask(symbols, value_type)?
+        let ir_type = ir_type(symbols, value_type)?
+        return Ok(function_integer(compiler, ir_type, mask))
+    }
+
+    fn integer_boolean(compiler: write FunctionCompiler, value: bool) -> usize {
+        var bits: u64 = 0
+        if value {
+            bits = 1
+        }
+        let value_type = ir::TypeInteger(ir::IntegerWidth1())
+        return function_integer(compiler, value_type, bits)
+    }
+}

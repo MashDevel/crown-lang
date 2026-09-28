@@ -1,0 +1,58 @@
+module x86 {
+    fn codegen_allocate_parameter(input: take ParameterAllocation, abi: ir::ParameterAbi, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        match read abi {
+            ir::ParameterDirect => {
+                return codegen_allocate_value(input.value, input.value_type, builder)
+            }
+            ir::ParameterAggregate(aggregate) => {
+                return codegen_allocate_aggregate_parameter(input.value, aggregate, builder)
+            }
+            ir::ParameterReturn(aggregate) => {
+                match read aggregate {
+                    ir::AggregateMemory(size, alignment) => {
+                        size;
+                        alignment
+                        return codegen_allocate_value(input.value, input.value_type, builder)
+                    }
+                    ir::AggregateRegisters(size, alignment, components) => {
+                        components
+                        let requirements = AllocationRequirements {
+                            size: size, alignment: alignment
+                        }
+                        return codegen_allocate_parameter_address(input.value, requirements, builder)
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_allocate_aggregate_parameter(value: usize, aggregate: ir::AggregateAbi, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        match read aggregate {
+            ir::AggregateMemory(size, alignment) => {
+                let requirements = AllocationRequirements {
+                    size: size, alignment: alignment
+                }
+                return codegen_allocate_parameter_address(value, requirements, builder)
+            }
+            ir::AggregateRegisters(size, alignment, components) => {
+                components
+                let requirements = AllocationRequirements {
+                    size: size, alignment: alignment
+                }
+                return codegen_allocate_parameter_address(value, requirements, builder)
+            }
+        }
+    }
+
+    fn codegen_allocate_parameter_address(value: usize, requirements: AllocationRequirements, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        match codegen_allocate_bytes(requirements, builder) {
+            Ok(offset) => {
+                builder.locations[value] = Some(ValueStackAddress(offset))
+                return Ok(())
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+    }
+}

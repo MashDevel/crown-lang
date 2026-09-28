@@ -1,0 +1,18 @@
+module sema {
+    fn checker_unsafe_expression(checker: write Checker, body: Vec<frontend::Statement>, expected: Type) -> Option<ExpressionInfo> {
+        checker.unsafe_depth = checker.unsafe_depth + 1
+        let result = checker_value_block(checker, body, expected)
+        checker.unsafe_depth = checker.unsafe_depth - 1
+        if checker.continuing == false {
+            var value_type = type_copy(expected)
+            if type_is_infer(value_type) {
+                value_type = builtin_leaf(Unit())
+            }
+            if type_is_copy_with_symbols(checker.symbols, value_type) {
+                return Some(copy_info(move value_type))
+            }
+            return Some(owned_info(move value_type))
+        }
+        return move result
+    }
+}

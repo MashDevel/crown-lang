@@ -1,0 +1,3 @@
+[package]
+name = "source_capture_multifile"
+sources = ["main.cwn", "δεύτερο.cwn"]

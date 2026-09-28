@@ -1,0 +1,4 @@
+module std {
+    fn discard<T>(value: take T) -> void {
+    }
+}

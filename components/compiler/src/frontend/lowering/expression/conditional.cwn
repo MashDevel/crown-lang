@@ -1,0 +1,106 @@
+module lowering {
+    view struct ConditionalBranch {
+        body: Slice<frontend::Statement>
+        destination: usize
+        merge: usize
+    }
+
+    fn conditional_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::ConditionalExpression, checked_span: frontend::Span) -> Result<Value, u32> {
+        var condition_value: usize = 0
+        loan read expression.condition as value {
+            condition_value = function_condition(compiler, analysis, value)?
+        }
+        let value_type = function_span_type(compiler, analysis, checked_span)?
+        let destination = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let blocks = conditional_blocks(compiler, condition_value)?
+        let before = bindings_copy(compiler.bindings)
+        function_select_block(compiler, blocks.then_block)
+        var then_active = false
+        loan read expression.then_body as body {
+            let request = ConditionalBranch {
+                body: body, destination: destination, merge: blocks.merge
+            }
+            then_active = conditional_branch(compiler, analysis, request)?
+        }
+        let after_then = bindings_copy(compiler.bindings)
+        compiler.bindings = bindings_copy(before)
+        function_select_block(compiler, blocks.else_block)
+        var else_active = false
+        loan read expression.else_body as body {
+            let request = ConditionalBranch {
+                body: body, destination: destination, merge: blocks.merge
+            }
+            else_active = conditional_branch(compiler, analysis, request)?
+        }
+        if then_active {
+            compiler.bindings = bindings_copy(after_then)
+        }
+        if then_active == false && else_active == false {
+            return Err(111)
+        }
+        function_select_block(compiler, blocks.merge)
+        return block_result(compiler, analysis, destination, value_type)
+    }
+
+    fn conditional_branch(compiler: write FunctionCompiler, analysis: sema::Analysis, target: ConditionalBranch) -> Result<bool, u32> {
+        function_push_scope(compiler)
+        conditional_contents(compiler, analysis, target)?
+        function_pop_scope(compiler)?
+        return function_branch_if_active(compiler, target.merge)
+    }
+
+    fn conditional_contents(compiler: write FunctionCompiler, analysis: sema::Analysis, target: ConditionalBranch) -> Result<void, u32> {
+        if target.body.length() == 0 {
+            return Ok(())
+        }
+        let last = target.body.length() - 1
+        for index in 0..last {
+            match compiler.block {
+                None => {
+                    return Ok(())
+                }
+                Some(value) => {
+                    value
+                }
+            }
+            loan read target.body[index] as statement {
+                function_statement(compiler, analysis, statement)?
+            }
+        }
+        match compiler.block {
+            None => {
+                return Ok(())
+            }
+            Some(value) => {
+                value
+            }
+        }
+        var result: Option<Value> = None()
+        loan read target.body[last] as statement {
+            result = conditional_last(compiler, analysis, statement)?
+        }
+        match move result {
+            Some(value) => {
+                let request = CopyRequest {
+                    destination: target.destination, value: move value
+                }
+                return function_copy(compiler, analysis.checker.symbols, request)
+            }
+            None => {
+                return Ok(())
+            }
+        }
+    }
+
+    fn conditional_last(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<Option<Value>, u32> {
+        match read statement.kind {
+            frontend::StatementExpression(expression) => {
+                return Ok(Some(function_expression(compiler, analysis, expression)?))
+            }
+            _ => {
+                function_statement(compiler, analysis, statement)?;
+                return Ok(None())
+            }
+        }
+    }
+}

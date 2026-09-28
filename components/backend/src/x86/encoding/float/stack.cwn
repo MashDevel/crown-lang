@@ -1,0 +1,135 @@
+module x86 {
+    fn encode_float_stack(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            LoadFloatStack(base, offset) => {
+                emit_float_stack_memory(output, FloatStackMemory {
+                        opcode: 217, group: 0, base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            LoadDoubleStack(base, offset) => {
+                emit_float_stack_memory(output, FloatStackMemory {
+                        opcode: 221, group: 0, base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            StoreFloatStack(base, offset) => {
+                emit_float_stack_memory(output, FloatStackMemory {
+                        opcode: 217, group: 3, base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            StoreDoubleStack(base, offset) => {
+                emit_float_stack_memory(output, FloatStackMemory {
+                        opcode: 221, group: 3, base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            FloatStackUnary(operator) => {
+                emit_float_stack_unary(operator, output);
+                return true
+            }
+            FloatStackAtan2 => {
+                output.push(217);
+                output.push(243);
+                return true
+            }
+            FloatStackPower => {
+                output.push(217);
+                output.push(241);
+                emit_float_stack_exponential(output);
+                return true
+            }
+            FloatStackRemainder => {
+                emit_float_remainder(output);
+                return true
+            }
+            FloatStackPop => {
+                output.push(221);
+                output.push(216);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    struct FloatStackMemory {
+        opcode: u8
+        group: u8
+        base: u8
+        offset: i32
+    }
+
+    fn emit_float_stack_memory(output: write Vec<u8>, values: take FloatStackMemory) -> void {
+        if values.base >= 8 {
+            output.push(65)
+        }
+        output.push(values.opcode)
+        output.push(128 |((values.group & 7) << 3) |(values.base & 7))
+        if values.base & 7 == 4 {
+            output.push(36)
+        }
+        emit_i32(output, values.offset)
+    }
+
+    fn emit_float_stack_unary(operator: FloatStackUnaryOperator, output: write Vec<u8>) -> void {
+        match read operator {
+            FloatStackSine => {
+                output.push(217);
+                output.push(254)
+            }
+            FloatStackCosine => {
+                output.push(217);
+                output.push(255)
+            }
+            FloatStackTangent => {
+                output.push(217);
+                output.push(242);
+                output.push(221);
+                output.push(216)
+            }
+            FloatStackExponential => {
+                output.push(217);
+                output.push(234);
+                output.push(222);
+                output.push(201);
+                emit_float_stack_exponential(output)
+            }
+        }
+    }
+
+    fn emit_float_stack_exponential(output: write Vec<u8>) -> void {
+        output.push(217);
+        output.push(192);
+        output.push(217);
+        output.push(252);
+        output.push(217);
+        output.push(201)
+        output.push(216);
+        output.push(225);
+        output.push(217);
+        output.push(240);
+        output.push(217);
+        output.push(232)
+        output.push(222);
+        output.push(193);
+        output.push(217);
+        output.push(253);
+        output.push(221);
+        output.push(217)
+    }
+
+    fn emit_float_remainder(output: write Vec<u8>) -> void {
+        output.push(217);
+        output.push(248);
+        output.push(223);
+        output.push(224);
+        output.push(246)
+        output.push(196);
+        output.push(4);
+        output.push(117);
+        output.push(247)
+    }
+}

@@ -1,0 +1,112 @@
+module ir {
+    fn predecessors(function: Function) -> Vec<Vec<usize>> {
+        var output = Vec<Vec<usize>>.with_capacity(function.blocks.length())
+        var index: usize = 0
+        while index < function.blocks.length() {
+            output.push(Vec<usize>.new())
+            index = index + 1
+        }
+        var source: usize = 0
+        while source < function.blocks.length() {
+            match read function.blocks[source].terminator {
+                Some(terminator) => {
+                    add_predecessors(output, source, terminator_targets(terminator))
+                }
+                None => {
+                }
+            }
+            source = source + 1
+        }
+        return move output
+    }
+
+    fn add_predecessors(output: write Vec<Vec<usize>>, source: usize, targets: take Vec<usize>) -> void {
+        var index: usize = 0
+        while index < targets.length() {
+            let target = targets[index]
+            if target < output.length() {
+                var found = false
+                loan read output[target] as values {
+                    found = values_contains(values, source)
+                }
+                if found == false {
+                    output[target].push(source)
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn values_contains(values: Slice<usize>, expected: usize) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index] == expected {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn reachable_blocks(predecessors: Vec<Vec<usize>>) -> Vec<bool> {
+        var successors = successors(predecessors)
+        var reachable = Vec<bool>.with_capacity(predecessors.length())
+        var index: usize = 0
+        while index < predecessors.length() {
+            reachable.push(false)
+            index = index + 1
+        }
+        if reachable.length() == 0 {
+            return move reachable
+        }
+        reachable[0] = true
+        var pending = Vec<usize>.new()
+        pending.push(0)
+        while pending.length() > 0 {
+            match pending.pop() {
+                Some(source) => {
+                    loan read successors[source] as values {
+                        reach_successors(reachable, pending, values)
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return move reachable
+    }
+
+    fn successors(predecessors: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
+        var output = Vec<Vec<usize>>.with_capacity(predecessors.length())
+        var index: usize = 0
+        while index < predecessors.length() {
+            output.push(Vec<usize>.new())
+            index = index + 1
+        }
+        var target: usize = 0
+        while target < predecessors.length() {
+            var source: usize = 0
+            while source < predecessors[target].length() {
+                let value = predecessors[target][source]
+                if value < output.length() {
+                    output[value].push(target)
+                }
+                source = source + 1
+            }
+            target = target + 1
+        }
+        return move output
+    }
+
+    fn reach_successors(reachable: write Vec<bool>, pending: write Vec<usize>, successors: Slice<usize>) -> void {
+        var index: usize = 0
+        while index < successors.length() {
+            let target = successors[index]
+            if reachable[target] == false {
+                reachable[target] = true
+                pending.push(target)
+            }
+            index = index + 1
+        }
+    }
+}

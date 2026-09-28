@@ -1,0 +1,47 @@
+module ir {
+    fn signature_signed_parameter(signature: Signature, index: usize) -> bool {
+        for position in 0..signature.signed_parameters.length() {
+            if signature.signed_parameters[position] == index {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn signature_variadic(signature: Signature, index: usize) -> bool {
+        match signature.variadic_start {
+            Some(start) => index >= start
+            None => false
+        }
+    }
+
+    fn shift_variadic_start(start: Option<usize>, slot: usize) -> Option<usize> {
+        match start {
+            Some(index) => Some(if index >= slot {
+                    index + 1
+                } else {
+                    index
+                })
+            None => None()
+        }
+    }
+
+    fn signature_attributes_valid(signature: Signature) -> bool {
+        if signature.result_signed && type_is_integer(signature.result) == false {
+            return false
+        }
+        for position in 0..signature.signed_parameters.length() {
+            let index = signature.signed_parameters[position]
+            if index >= signature.parameters.length() {
+                return false
+            }
+            if type_is_integer(signature.parameters[index]) == false {
+                return false
+            }
+        }
+        match signature.variadic_start {
+            Some(start) => start > 0 && start <= signature.parameters.length()
+            None => true
+        }
+    }
+}

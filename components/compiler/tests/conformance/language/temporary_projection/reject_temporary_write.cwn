@@ -1,0 +1,12 @@
+copy struct Record {
+    address: usize
+}
+fn record() -> Record {
+    return Record {
+        address: 7
+    }
+}
+fn main() -> u32 {
+    record().address = 9
+    return 0
+}

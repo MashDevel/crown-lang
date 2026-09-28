@@ -1,0 +1,106 @@
+module lowering {
+    struct DynamicMetadata {
+        address: usize
+        interface_symbol: usize
+        concrete: sema::Type
+    }
+
+    fn store_dynamic_metadata(compiler: write FunctionCompiler, symbols: sema::Symbols, metadata: take DynamicMetadata) -> Result<void, u32> {
+        let drop_address = function_offset(compiler, metadata.address, 8)?
+        let drop_name = implementation_drop_key(metadata.interface_symbol, metadata.concrete)
+        var drop_function: usize = 0
+        match function_named_id(compiler.tables.generated_functions, drop_name) {
+            Some(value) => {
+                drop_function = value
+            }
+            None => {
+                return Err(336)
+            }
+        }
+        let drop_pointer = function_append_value(compiler, ir::InstructionFunctionAddress(drop_function))?
+        function_store_pointer(compiler, drop_address, drop_pointer)?
+        let table_address = function_offset(compiler, metadata.address, 16)?
+        let table_name = implementation_table_key(metadata.interface_symbol, metadata.concrete)
+        var table_global: usize = 0
+        match function_global_id(compiler, table_name) {
+            Some(value) => {
+                table_global = value
+            }
+            None => {
+                return Err(337)
+            }
+        }
+        let table = function_append_value(compiler, ir::InstructionGlobalAddress(table_global))?
+        symbols
+        return function_store_pointer(compiler, table_address, table)
+    }
+
+    fn drop_dynamic(compiler: write FunctionCompiler, address: usize) -> Result<void, u32> {
+        let data = function_load_pointer(compiler, address)?
+        let drop_address = function_offset(compiler, address, 8)?
+        let function = function_load_pointer(compiler, drop_address)?
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypeVoid())
+        var arguments = Vec<usize>.new()
+        arguments.push(data)
+        match function_append(compiler, ir::InstructionCallIndirect(function, move signature, move arguments)) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+
+    fn lower_interface_drops(compiler: write Compiler, input: ProgramInput) -> Result<void, u32> {
+        var index: usize = 0
+        while index < input.analysis.checker.symbols.implementations.length() {
+            loan read input.analysis.checker.symbols.implementations[index] as implementation {
+                let name = implementation_drop_key(implementation.interface_symbol, implementation.target)
+                var function = generated_function_compiler(compiler, name)?
+                let status = lower_interface_drop_body(function, implementation.target)
+                swap(compiler.tables, function.tables)
+                match status {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+                var target: usize = 0
+                match find_generated_function(compiler, name) {
+                    Some(value) => {
+                        target = value
+                    }
+                    None => {
+                        return Err(339)
+                    }
+                }
+                if target >= compiler.output.functions.length() {
+                    return Err(340)
+                }
+                compiler.output.functions[target] = take_function_ir(function)
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn lower_interface_drop_body(state: write FunctionCompiler, value_type: sema::Type) -> Result<void, u32> {
+        function_start(state)?
+        if state.ir.parameters.length() != 1 {
+            return Err(338)
+        }
+        let value_drop = Place {
+            address: state.ir.parameters[0], value_type: sema::type_copy(value_type)
+        }
+        drop_value(state, value_drop)?
+        free_pointer(state, state.ir.parameters[0])?
+        function_finish(state, ir::TerminatorReturn(None()))?
+        return Ok(())
+    }
+}

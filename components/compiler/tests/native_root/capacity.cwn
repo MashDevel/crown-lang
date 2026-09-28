@@ -1,0 +1,58 @@
+extern "c" {
+    fn reserve(output: RawPtr<usize>, factory: usize, kind: usize) -> i32 = "crown_root_declare"
+}
+
+fn request(output: write[usize; 3], factory: usize, kind: usize) -> i32 {
+    unsafe {
+        return reserve(output.as_raw(), factory, kind)
+    }
+}
+
+struct Reservation {
+    factory: usize, kind: usize, status: i32, tag: usize, slot: usize
+}
+
+fn verify(expected: Reservation) -> Result<void, u32> {
+    var output: [usize; 3] = [0, 0, 0]
+    if request(output, expected.factory, expected.kind) != expected.status {
+        return Err(1)
+    }
+    if output[0] != expected.tag || output[1] != expected.slot || output[2] != 0 {
+        return Err(2)
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, u32> {
+    verify(Reservation {
+            factory: 1, kind: 1, status: 1, tag: 1, slot: 0
+        })?
+    verify(Reservation {
+            factory: 1, kind: 1, status: 2, tag: 0, slot: 2
+        })?
+    verify(Reservation {
+            factory: 1, kind: 2, status: 1, tag: 1, slot: 1
+        })?
+    for index in 2..1024 {
+        verify(Reservation {
+                factory: index, kind: 1, status: 1, tag: 1, slot: index
+            })?
+    }
+    verify(Reservation {
+            factory: 1024, kind: 1, status: 4, tag: 0, slot: 4
+        })?
+    verify(Reservation {
+            factory: 1, kind: 1, status: 2, tag: 0, slot: 2
+        })?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(value) => {
+            value;
+            0
+        },
+        Err(error) => error
+    }
+}

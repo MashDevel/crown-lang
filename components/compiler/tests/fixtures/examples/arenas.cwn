@@ -1,0 +1,23 @@
+struct Process {
+    id: u32
+    ready: bool
+}
+
+fn main() -> u32 {
+    var processes = Arena<Process>.new()
+    let handle = processes.insert(Process {
+        id: 40
+        ready: false
+    })
+    processes.with(handle) as write process {
+        process.id = process.id + 2
+        process.ready = true
+    }
+    processes.with(handle) as read process {
+        print(process.ready)
+    }
+    match processes.remove(handle) {
+        Some(process) => { return process.id }
+        None => { return 0 }
+    }
+}

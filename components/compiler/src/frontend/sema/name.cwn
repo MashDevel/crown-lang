@@ -1,0 +1,69 @@
+module sema {
+    fn name_length(name: frontend::Name) -> usize {
+        if name.text.length() != 0 {
+            return name.text.length()
+        }
+        return name.span.end - name.span.start
+    }
+
+    fn name_byte(source: Shared<Vec<u8>>, name: frontend::Name, index: usize) -> u8 {
+        if name.text.length() != 0 {
+            return frontend::text_byte(name.text, index)
+        }
+        return frontend::source_byte(source, name.span.start + index)
+    }
+
+    fn name_text(source: Shared<Vec<u8>>, name: frontend::Name) -> Text {
+        if name.text.length() != 0 {
+            return name.text.clone()
+        }
+        var output = Text.new()
+        var index: usize = 0
+        while index < name_length(name) {
+            output.push(char.from(u32.from(name_byte(source, name, index))))
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn name_is(source: Shared<Vec<u8>>, name: frontend::Name, expected: TextView) -> bool {
+        if name_length(name) != expected.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < expected.length() {
+            if name_byte(source, name, index) != expected[index] {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn names_equal(source: Shared<Vec<u8>>, left: frontend::Name, right: frontend::Name) -> bool {
+        if name_length(left) != name_length(right) {
+            return false
+        }
+        var index: usize = 0
+        while index < name_length(left) {
+            if name_byte(source, left, index) != name_byte(source, right, index) {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn find_name(source: Shared<Vec<u8>>, values: Vec<frontend::Name>, expected: frontend::Name) -> Option<usize> {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if names_equal(source, value, expected) {
+                    return Some(index)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+}

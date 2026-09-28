@@ -1,0 +1,5 @@
+const A: u32 = B + 1
+const B: u32 = A
+fn main() -> u32 {
+    0
+}

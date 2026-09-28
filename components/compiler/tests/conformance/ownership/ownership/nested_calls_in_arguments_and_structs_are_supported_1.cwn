@@ -1,0 +1,14 @@
+struct Item {
+    value: u32
+}
+fn make() -> Item {
+    return Item {
+        value: 1
+    }
+}
+fn consume(item: take Item) -> u32 {
+    return item.value
+}
+fn main() -> u32 {
+    return consume(make())
+}

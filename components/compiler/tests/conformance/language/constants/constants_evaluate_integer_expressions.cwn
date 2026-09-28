@@ -1,0 +1,7 @@
+const VALUE: u32 = 1 + 2
+fn main() -> u32 {
+    if VALUE != 3 {
+        return 1
+    }
+    return 0
+}

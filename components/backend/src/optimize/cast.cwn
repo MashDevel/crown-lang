@@ -1,0 +1,193 @@
+module optimize {
+    struct CastDefinition {
+        present: bool
+        sign: bool
+        value: usize
+    }
+
+    struct CastRewrite {
+        block: usize
+        instruction: usize
+        result: usize
+        replacement: usize
+        remove: bool
+        operator: ir::CastOperator
+        target: ir::Type
+    }
+
+    fn cast(function: write ir::Function) -> usize {
+        let definitions = cast_definitions(function)
+        let rewrites = cast_rewrites(function, definitions)
+        if rewrites.length() == 0 {
+            return 0
+        }
+        var replacements = none_usize(function.values.length())
+        var index: usize = 0
+        while index < rewrites.length() {
+            loan read rewrites[index] as rewrite {
+                if rewrite.remove {
+                    replacements[rewrite.result] = Some(rewrite.replacement)
+                }
+                else {
+                    function.blocks[rewrite.block].instructions[rewrite.instruction].kind = ir::InstructionCast(
+                        rewrite.operator, rewrite.replacement, rewrite.target
+                    )
+                }
+            }
+            index = index + 1
+        }
+        ir::function_replace_uses_many(function, replacements)
+        remove_results(function, replacements, ir::value_present)
+        return rewrites.length()
+    }
+
+    fn cast_definitions(function: ir::Function) -> Vec<CastDefinition> {
+        var output = Vec<CastDefinition>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(CastDefinition {
+                    present: false, sign: false, value: 0
+                })
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        cast_add_definition(output, result, function.blocks[block].instructions[index].kind)
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn cast_add_definition(output: write Vec<CastDefinition>, result: usize, kind: ir::InstructionKind) -> void {
+        match read kind {
+            ir::InstructionCast(operator, value, target) => {
+                target
+                match read operator {
+                    ir::CastZeroExtend => {
+                        output[result] = CastDefinition {
+                            present: true, sign: false, value: value
+                        }
+                    }
+                    ir::CastSignExtend => {
+                        output[result] = CastDefinition {
+                            present: true, sign: true, value: value
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn cast_rewrites(function: ir::Function, definitions: Vec<CastDefinition>) -> Vec<CastRewrite> {
+        var output = Vec<CastRewrite>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    match cast_rewrite(function, definitions, instruction) {
+                        Some(rewrite) => {
+                            var value = move rewrite;
+                            value.block = block;
+                            value.instruction = index;
+                            output.push(move value)
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn cast_rewrite(function: ir::Function, definitions: Vec<CastDefinition>, instruction: ir::Instruction) -> Option<CastRewrite> {
+        var result: usize = 0
+        match read instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionCast(operator, value, target) => {
+                match read operator {
+                    ir::CastTruncate => {
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+                if value >= definitions.length() || definitions[value].present == false {
+                    return None()
+                }
+                match ir::function_value_type(function, definitions[value].value) {
+                    None => {
+                        return None()
+                    }
+                    Some(source) => {
+                        loan read definitions[value] as inner {
+                            return composed_cast(inner, source, target, result)
+                        }
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn composed_cast(inner: CastDefinition, source: ir::Type, target: ir::Type, result: usize) -> Option<CastRewrite> {
+        match read source {
+            ir::TypeInteger(source_width) => {
+                match read target {
+                    ir::TypeInteger(target_width) => {
+                        let source_bits = ir::integer_width_bits(source_width)
+                        let target_bits = ir::integer_width_bits(target_width)
+                        if target_bits == source_bits {
+                            return Some(CastRewrite {
+                                    block: 0, instruction: 0, result: result, replacement: inner.value, remove: true, operator: ir::CastTruncate(), target: ir::TypeVoid()
+                                })
+                        }
+                        var operator = ir::CastTruncate()
+                        if target_bits > source_bits {
+                            if inner.sign {
+                                operator = ir::CastSignExtend()
+                            } else {
+                                operator = ir::CastZeroExtend()
+                            }
+                        }
+                        return Some(CastRewrite {
+                                block: 0, instruction: 0, result: result, replacement: inner.value, remove: false, operator: operator, target: target
+                            })
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

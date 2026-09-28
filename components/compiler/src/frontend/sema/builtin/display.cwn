@@ -1,0 +1,131 @@
+module sema {
+    fn builtin_type_name(builtin: Builtin) -> Text {
+        let kind = builtin
+        if kind == ScopedThread() {
+            return "ScopedThread"
+        }
+        if kind == NativeRoot() {
+            return "NativeRoot"
+        }
+        if kind == RootToken() {
+            return "RootToken"
+        }
+        if kind == RootLease() {
+            return "RootLease"
+        }
+        if builtin_is_signed(kind) {
+            return signed_type_name(kind)
+        }
+        if builtin_is_integer(kind) {
+            return unsigned_type_name(kind)
+        }
+        if builtin_is_scalar(kind) {
+            return scalar_type_name(kind)
+        }
+        if builtin_is_basic_container(kind) {
+            return container_type_name(kind)
+        }
+        return managed_type_name(kind)
+    }
+
+    fn signed_type_name(kind: Builtin) -> Text {
+        if kind == I8() {
+            return "i8"
+        }
+        if kind == I16() {
+            return "i16"
+        }
+        if kind == I32() {
+            return "i32"
+        }
+        if kind == I64() {
+            return "i64"
+        }
+        return "isize"
+    }
+
+    fn unsigned_type_name(kind: Builtin) -> Text {
+        if kind == U8() {
+            return "u8"
+        }
+        if kind == U16() {
+            return "u16"
+        }
+        if kind == U32() {
+            return "u32"
+        }
+        if kind == U64() {
+            return "u64"
+        }
+        return "usize"
+    }
+
+    fn scalar_type_name(kind: Builtin) -> Text {
+        if kind == F32() {
+            return "f32"
+        }
+        if kind == F64() {
+            return "f64"
+        }
+        if kind == Bool() {
+            return "bool"
+        }
+        if kind == Char() {
+            return "char"
+        }
+        return "void"
+    }
+
+    fn container_type_name(kind: Builtin) -> Text {
+        if kind == Text() {
+            return "Text"
+        }
+        if kind == TextView() {
+            return "TextView"
+        }
+        if kind == Arguments() {
+            return "Arguments"
+        }
+        if kind == Thread() {
+            return "Thread"
+        }
+        if kind == Vec() {
+            return "Vec"
+        }
+        if kind == RawPtr() {
+            return "RawPtr"
+        }
+        if kind == Slice() {
+            return "Slice"
+        }
+        return "Box"
+    }
+
+    fn managed_type_name(kind: Builtin) -> Text {
+        if kind == Shared() {
+            return "Shared"
+        }
+        if kind == Mutex() {
+            return "Mutex"
+        }
+        if kind == RwLock() {
+            return "RwLock"
+        }
+        if kind == Arena() {
+            return "Arena"
+        }
+        if kind == Handle() {
+            return "Handle"
+        }
+        if kind == Channel() {
+            return "Channel"
+        }
+        if kind == Option() {
+            return "Option"
+        }
+        if kind == Result() {
+            return "Result"
+        }
+        return Text.new()
+    }
+}

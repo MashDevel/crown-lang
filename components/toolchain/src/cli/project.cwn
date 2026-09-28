@@ -1,0 +1,94 @@
+module toolchain {
+    fn selected_project(paths: Vec<Text>, target: Target) -> Result<Project, Text> {
+        if paths.length() > 1 {
+            return Err("build and run accept one project or source file")
+        }
+        if paths.length() == 0 {
+            return load_project(current_directory()?, target)
+        }
+        if is_directory(paths[0]) == false && std::text::ends(paths[0], ".cwn") {
+            return source_project(paths[0], target)
+        }
+        return load_project(paths[0], target)
+    }
+
+    fn source_project(path: Text, target: Target) -> Result<Project, Text> {
+        let source = absolute(path)?
+        let request = single_source(source, target)
+        let name = file_name(source)
+        let stem = std::text::slice(name, 0, name.length() - 4)
+        return Ok(Project {
+                manifest: source.clone(), name: stem.clone(), sources: require_sources(request)?, links: Vec<Text>.new(), output: path_join(path_join(parent_path(source), "target/debug"), stem)
+            })
+    }
+
+    fn frontend_paths(paths: Vec<Text>, start: usize, target: Target) -> Result<Vec<Text>, Text> {
+        if start == paths.length() {
+            let project = load_project(current_directory()?, target)?;
+            return Ok(std::text::clone_list(project.sources))
+        }
+        var result = Vec<Text>.new()
+        for index in start..paths.length() {
+            append_frontend_path(result, paths[index], target)?
+        }
+        std::text::sort_list(result)
+        return Ok(move result)
+    }
+
+    fn append_frontend_path(output: write Vec<Text>, path: Text, target: Target) -> Result<void, Text> {
+        if is_directory(path) == false && std::text::ends(path, ".cwn") {
+            return append_source_file(output, absolute(path)?, target)
+        }
+        var sources = Vec<Text>.new()
+        if std::text::equal(file_name(path), "Crown.toml") || exists(path_join(path, "Crown.toml")) {
+            let project = load_project(path, target)?
+            sources = std::text::clone_list(project.sources)
+        } else {
+            sources = require_sources(single_source(path, target))?
+        }
+        for index in 0..sources.length() {
+            if std::text::list_contains(output, sources[index]) == false {
+                output.push(sources[index].clone())
+            }
+        }
+        return Ok(())
+    }
+
+    fn append_source_file(output: write Vec<Text>, path: Text, target: Target) -> Result<void, Text> {
+        if std::text::list_contains(output, path) == false && target_source(path, target) {
+            output.push(path.clone())
+        }
+        return Ok(())
+    }
+
+    fn project_build_request(compiler: Text, options: Options) -> Result<BuildRequest, Text> {
+        let project = selected_project(options.paths, options.target)?
+        if std::text::ends(project.manifest, ".cwn") && options.output.length() == 0 && std::text::equal(options.command, "build") {
+            return Err("a single source file requires -o")
+        }
+        let output = if options.output.length() == 0 {
+            project.output.clone()
+        } else {
+            options.output.clone()
+        }
+        return Ok(BuildRequest {
+                compiler: compiler.clone(), project: move project, output: move output, objects: std::text::clone_list(options.objects), links: std::text::clone_list(options.links), max_instances: options.max_instances, coverage: options.coverage.clone(), optimization: optimization_copy(options.optimization), target: options.target
+            })
+    }
+
+    fn bootstrap_directory(root: Text) -> Text {
+        let configured = environment("CROWN_BOOTSTRAP_DIR")
+        if configured.length() != 0 {
+            return move configured
+        }
+        return path_join(root, "target/bootstrap")
+    }
+
+    fn repository_root() -> Result<Text, Text> {
+        let configured = environment("CROWN_ROOT")
+        if configured.length() != 0 {
+            return absolute(configured)
+        }
+        return current_directory()
+    }
+}

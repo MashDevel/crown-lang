@@ -1,0 +1,98 @@
+module frontend {
+    fn statement_depth(kind: StatementKind) -> u32 {
+        match read kind {
+            StatementBind(name, mutable, annotation, value) => {
+                name;
+                mutable;
+                annotation;
+                return value.depth
+            }
+            StatementDestructure(mutable, fields, value) => {
+                mutable;
+                fields;
+                return value.depth
+            }
+            StatementUpdate(target, operator, value) => {
+                operator;
+                return depth_max(target.depth, value.depth)
+            }
+            StatementAssign(target, value) => {
+                return depth_max(target.depth, value.depth)
+            }
+            StatementReturn(value, implicit) => {
+                implicit;
+                return value.depth
+            }
+            StatementPrint(value) => {
+                return value.depth
+            }
+            StatementExpression(value) => {
+                return value.depth
+            }
+            StatementLoan(mode, source, name, body) => {
+                mode;
+                name;
+                return depth_max(source.depth, body_depth(body))
+            }
+            StatementLock(mode, path, name, body) => {
+                mode;
+                path;
+                name;
+                return body_depth(body)
+            }
+            _ => {
+                return control_statement_depth(kind)
+            }
+        }
+    }
+
+    fn control_statement_depth(kind: StatementKind) -> u32 {
+        match read kind {
+            StatementArenaAccess(mode, arena, id, name, body) => {
+                mode;
+                name
+                let values = depth_max(box_depth(arena), box_depth(id))
+                return depth_max(values, body_depth(body))
+            }
+            StatementIf(condition, then_body, else_body) => {
+                let branches = depth_max(body_depth(then_body), body_depth(else_body))
+                return depth_max(condition.depth, branches)
+            }
+            StatementMatch(value) => {
+                return match_depth(value)
+            }
+            StatementThreadScope(body) => {
+                return body_depth(body)
+            }
+            StatementUnsafe(body) => {
+                return body_depth(body)
+            }
+            StatementWhile(condition, body) => {
+                return depth_max(condition.depth, body_depth(body))
+            }
+            StatementFor(name, start, end, body) => {
+                name;
+                return depth_max(depth_max(start.depth, end.depth), body_depth(body))
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn body_depth(body: Vec<Statement>) -> u32 {
+        var depth: u32 = 0
+        for index in 0..body.length() {
+            depth = depth_max(depth, body[index].depth)
+        }
+        return depth
+    }
+
+    fn match_depth(value: MatchExpression) -> u32 {
+        var depth = value.value.depth
+        for index in 0..value.arms.length() {
+            depth = depth_max(depth, body_depth(value.arms[index].body))
+        }
+        return depth
+    }
+}

@@ -1,0 +1,60 @@
+fn unique_codes<T>(operators: Slice<T>, code: fn(T) -> Option<u32>) -> bool {
+    var seen = Vec<bool>.new()
+    var index: usize = 0
+    while index <= operators.length() {
+        seen.push(false);
+        index = index + 1
+    }
+    index = 0
+    while index < operators.length() {
+        let identity = match code(operators[index]) {
+            Some(value) => usize.from(value)
+            None => {
+                return false
+            }
+        }
+        if identity == 0 || identity > operators.length() {
+            return false
+        }
+        if seen[identity] {
+            return false
+        }
+        seen[identity] = true
+        index = index + 1
+    }
+    true
+}
+
+fn binary_identities() -> bool {
+    let operators = [ir::BinaryAdd(), ir::BinarySubtract(), ir::BinaryMultiply(), ir::BinarySignedDivide(), ir::BinaryUnsignedDivide(), ir::BinarySignedRemainder(), ir::BinaryUnsignedRemainder(), ir::BinaryAnd(), ir::BinaryOr(), ir::BinaryXor(), ir::BinaryShiftLeft(), ir::BinaryShiftRightSigned(), ir::BinaryShiftRightUnsigned(), ir::BinaryFloatAdd(), ir::BinaryFloatSubtract(), ir::BinaryFloatMultiply(), ir::BinaryFloatDivide(), ir::BinaryFloatRemainder()]
+    loan read operators as values {
+        return unique_codes(values, optimize::gvn_binary_code)
+    }
+}
+
+fn compare_identities() -> bool {
+    let operators = [ir::CompareEqual(), ir::CompareNotEqual(), ir::CompareSignedLess(), ir::CompareSignedLessEqual(), ir::CompareSignedGreater(), ir::CompareSignedGreaterEqual(), ir::CompareUnsignedLess(), ir::CompareUnsignedLessEqual(), ir::CompareUnsignedGreater(), ir::CompareUnsignedGreaterEqual(), ir::CompareFloatOrderedEqual(), ir::CompareFloatOrderedNotEqual(), ir::CompareFloatUnorderedNotEqual(), ir::CompareFloatOrderedLess(), ir::CompareFloatOrderedLessEqual(), ir::CompareFloatOrderedGreater(), ir::CompareFloatOrderedGreaterEqual()]
+    loan read operators as values {
+        return unique_codes(values, optimize::gvn_compare_code)
+    }
+}
+
+fn cast_identities() -> bool {
+    let operators = [ir::CastTruncate(), ir::CastZeroExtend(), ir::CastSignExtend(), ir::CastSignedIntegerToFloat(), ir::CastUnsignedIntegerToFloat(), ir::CastFloatToSignedInteger(), ir::CastFloatToUnsignedInteger(), ir::CastFloatExtend(), ir::CastFloatTruncate(), ir::CastPointerToInteger(), ir::CastIntegerToPointer(), ir::CastBitcast()]
+    loan read operators as values {
+        return unique_codes(values, optimize::gvn_cast_code)
+    }
+}
+
+fn main() -> u32 {
+    if binary_identities() == false {
+        return 1
+    }
+    if compare_identities() == false {
+        return 2
+    }
+    if cast_identities() == false {
+        return 3
+    }
+    42
+}

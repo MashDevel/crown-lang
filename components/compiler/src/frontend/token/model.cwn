@@ -1,0 +1,120 @@
+module frontend {
+    copy enum TokenKind {
+        TokenIdentifier
+        TokenInteger
+        TokenFloat
+        TokenCharacter
+        TokenText
+        TokenStruct
+        TokenEnum
+        TokenOpaque
+        TokenResource
+        TokenDrop
+        TokenUnsafe
+        TokenThreadScope, TokenSpawn
+        TokenWhile
+        TokenBreak
+        TokenContinue
+        TokenInterface
+        TokenImpl
+        TokenFor
+        TokenIn
+        TokenDynamic
+        TokenExtern
+        TokenFn
+        TokenLet
+        TokenVar
+        TokenMove
+        TokenRead
+        TokenWrite
+        TokenTake
+        TokenLoan
+        TokenAs
+        TokenReturn
+        TokenIf
+        TokenElse
+        TokenTrue
+        TokenFalse
+        TokenPrint
+        TokenMatch
+        TokenLeftParen
+        TokenRightParen
+        TokenLeftBrace
+        TokenRightBrace
+        TokenLeftBracket
+        TokenRightBracket
+        TokenColon
+        TokenComma
+        TokenDot
+        TokenRange
+        TokenSemicolon
+        TokenArrow
+        TokenFatArrow
+        TokenEqual
+        TokenEqualEqual
+        TokenBang
+        TokenBangEqual
+        TokenLess
+        TokenLessEqual
+        TokenGreater
+        TokenGreaterEqual
+        TokenShiftLeft
+        TokenShiftRight
+        TokenPlus
+        TokenMinus
+        TokenStar
+        TokenSlash
+        TokenPercent
+        TokenAndAnd
+        TokenOrOr
+        TokenAmpersand
+        TokenPipe
+        TokenCaret
+        TokenTilde
+        TokenQuestion
+        TokenNewline
+        TokenConst
+        TokenCopy
+        TokenModule
+        TokenPrivate
+        TokenEnd
+    }
+
+    struct Token {
+        kind: TokenKind
+        span: Span
+        integer: u64
+    }
+
+    struct LexerMark {
+        offset: usize
+        line: usize
+        column: usize
+    }
+
+    struct SymbolPair {
+        expected: u8
+        paired: TokenKind
+        single: TokenKind
+    }
+
+    struct LexerTokenInput {
+        kind: TokenKind
+        mark: LexerMark
+        integer: u64
+    }
+
+    fn lexer_mark_copy(mark: LexerMark) -> LexerMark {
+        return LexerMark {
+            offset: mark.offset, line: mark.line, column: mark.column
+        }
+    }
+
+    fn token_copy(token: Token) -> Token {
+        return Token {
+            kind: token.kind
+            span: token.span
+            integer: token.integer
+        }
+    }
+}

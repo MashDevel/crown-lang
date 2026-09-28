@@ -1,0 +1,102 @@
+module lowering {
+    struct ArgumentMeasure {
+        pointer: usize
+        output: usize
+        header: usize
+        increment: usize
+        complete: usize
+    }
+
+    struct ArgumentIncrement {
+        state: ArgumentMeasure
+        length: usize
+    }
+
+    fn argument_index(compiler: write FunctionCompiler, symbols: sema::Symbols, state: IndexState) -> Result<usize, u32> {
+        let length_address = function_offset(compiler, state.container, 8)?
+        let length_request = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, length_request)?
+        if state.checked {
+            let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), state.index, length))?
+            function_guard_with(compiler, valid, "index_out_of_bounds")?
+        }
+        let values = function_load_pointer(compiler, state.container)?
+        let width_type = ir::TypeInteger(ir::IntegerWidth64())
+        let width = function_integer(compiler, width_type, 8)
+        let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), state.index, width))?
+        let pointer_address = function_append_value(compiler, ir::InstructionOffset(values, offset))?
+        let pointer = function_load_pointer(compiler, pointer_address)?
+        return argument_view(compiler, symbols, pointer)
+    }
+
+    fn argument_view(compiler: write FunctionCompiler, symbols: sema::Symbols, pointer: usize) -> Result<usize, u32> {
+        let value_type = sema::builtin_leaf(sema::TextView())
+        let view = function_stack(compiler, symbols, value_type)?
+        function_store_pointer(compiler, view, pointer)?
+        let output = function_offset(compiler, view, 8)?
+        let zero_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, zero_type, 0)
+        let store = StoreRequest {
+            address: output, value: zero, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        measure_argument_length(compiler, symbols, pointer, output)?
+        return Ok(view)
+    }
+
+    fn measure_argument_length(compiler: write FunctionCompiler, symbols: sema::Symbols, pointer: usize, output: usize) -> Result<void, u32> {
+        let state = ArgumentMeasure {
+            pointer: pointer
+            output: output
+            header: function_new_block(compiler)?
+            increment: function_new_block(compiler)?
+            complete: function_new_block(compiler)?
+        }
+        function_finish(compiler, ir::TerminatorBranch(state.header))?
+        let length = argument_measure_header(compiler, symbols, state)?
+        let increment = ArgumentIncrement {
+            state: argument_measure_copy(state), length: length
+        }
+        argument_measure_increment(compiler, symbols, increment)?
+        function_select_block(compiler, state.complete)
+        return Ok(())
+    }
+
+    fn argument_measure_header(compiler: write FunctionCompiler, symbols: sema::Symbols, state: ArgumentMeasure) -> Result<usize, u32> {
+        function_select_block(compiler, state.header)
+        let length_request = Place {
+            address: state.output, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, length_request)?
+        let address = function_append_value(compiler, ir::InstructionOffset(state.pointer, length))?
+        let byte_request = Place {
+            address: address, value_type: sema::builtin_leaf(sema::U8())
+        }
+        let byte = function_load(compiler, symbols, byte_request)?
+        let byte_type = ir::TypeInteger(ir::IntegerWidth8())
+        let zero = function_integer(compiler, byte_type, 0)
+        let present = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), byte, zero))?
+        function_finish(compiler, ir::TerminatorConditional(present, state.increment, state.complete))?
+        return Ok(length)
+    }
+
+    fn argument_measure_increment(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ArgumentIncrement) -> Result<void, u32> {
+        function_select_block(compiler, request.state.increment)
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), request.length, one))?
+        let store = StoreRequest {
+            address: request.state.output, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        return function_finish(compiler, ir::TerminatorBranch(request.state.header))
+    }
+
+    fn argument_measure_copy(state: ArgumentMeasure) -> ArgumentMeasure {
+        return ArgumentMeasure {
+            pointer: state.pointer, output: state.output, header: state.header, increment: state.increment, complete: state.complete
+        }
+    }
+}

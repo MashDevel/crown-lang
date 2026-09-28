@@ -1,0 +1,14 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    var item = Item {
+        value: 1
+    }
+    loan read item as view {
+        item.value = 2
+    }
+    return item.value
+
+}

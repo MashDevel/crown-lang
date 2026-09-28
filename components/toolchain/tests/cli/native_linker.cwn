@@ -1,0 +1,41 @@
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    toolchain::set_environment("CC", "/usr/bin/false")?
+    let source = testing::write_file(root, "main.cwn", "fn main() -> u32 { print(42); return 0 }")?
+    let output = toolchain::path_join(root, "native program")
+    let command = std::text::joined(std::text::joined("build|", source), std::text::joined("|-o|", output))
+    testing::clean_call(root, command)?
+    verify_execution(root, output)?
+    verify_covered(root, command, output)?
+    return verify_link_failure(root, source, command, output)
+}
+
+fn verify_execution(root: Text, output: Text) -> Result<void, Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push(output.clone())
+    let result = toolchain::capture(toolchain::command(move arguments), root)?
+    testing::expect(result.status == 0, "native program status")?
+    return testing::expect(std::text::equal(result.stdout, "42\n"), "native program output")
+}
+
+fn verify_covered(root: Text, command: Text, output: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "coverage")
+    let covered = std::text::joined(command, std::text::joined("|--coverage|", directory))
+    testing::clean_call(root, covered)?
+    verify_execution(root, output)?
+    let entries = toolchain::directory_entries(directory)?
+    return testing::expect(entries.length() >= 2, "native coverage runtime initialized")
+}
+
+fn verify_link_failure(root: Text, source: Text, command: Text, output: Text) -> Result<void, Text> {
+    let checksum = toolchain::digest(output)?
+    toolchain::write_text(source, "extern \"c\" { fn missing() -> u32 = \"crown_missing_link_symbol\" } fn main() -> u32 { unsafe { return missing() } }")?
+    let result = testing::failed_call(root, command)?
+    testing::expect(std::text::contains(result.stderr, "undefined symbol: crown_missing_link_symbol"), "native unresolved symbol diagnostic")?
+    return testing::expect(std::text::equal(checksum, toolchain::digest(output)?), "link failure preserves existing executable")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

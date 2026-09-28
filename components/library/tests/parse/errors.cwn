@@ -1,0 +1,105 @@
+fn parse_kind(kind: std::parse::ErrorKind) -> u32 {
+    match kind {
+        EndOfInput => {
+            return 1
+        }
+        ExpectedByte => {
+            return 2
+        }
+        ExpectedInteger => {
+            return 3
+        }
+        ExpectedIdentifier => {
+            return 4
+        }
+        Overflow => {
+            return 5
+        }
+        InvalidSpan => {
+            return 6
+        }
+    }
+}
+
+fn parse_failed<T>(result: take Result<T, std::parse::Error>, kind: u32, offset: usize) -> bool {
+    match move result {
+        Ok(value) => {
+            value;
+            return false
+        }
+        Err(error) => {
+            return parse_kind(error.kind) == kind && error.offset == offset
+        }
+    }
+}
+
+fn test_parse_errors() -> u32 {
+    let empty = ""
+    loan read empty as bytes {
+        var parser = std::parse::Parser {
+            data: bytes, position: 0
+        }
+        let result = test_parse_empty(parser)
+        if result != 0 {
+            return result
+        }
+    }
+    let overflow = "18446744073709551616"
+    loan read overflow as bytes {
+        var parser = std::parse::Parser {
+            data: bytes, position: 0
+        }
+        if parse_failed(std::parse::unsigned(parser), 5, 19) == false {
+            return 6
+        }
+        if parser.position != 0 {
+            return 7
+        }
+    }
+    return test_parse_mismatch()
+}
+
+fn test_parse_empty(parser: write std::parse::Parser) -> u32 {
+    if parse_failed(std::parse::read_byte(parser), 1, 0) == false {
+        return 1
+    }
+    if parse_failed(std::parse::expect(parser, 0), 1, 0) == false {
+        return 2
+    }
+    if parse_failed(std::parse::unsigned(parser), 3, 0) == false {
+        return 3
+    }
+    if parse_failed(std::parse::identifier(parser), 4, 0) == false {
+        return 4
+    }
+    if parse_failed(std::parse::take_bytes(parser, 1), 1, 0) == false {
+        return 5
+    }
+    return 0
+}
+
+fn test_parse_mismatch() -> u32 {
+    let input = "!abc"
+    loan read input as bytes {
+        var parser = std::parse::Parser {
+            data: bytes, position: 0
+        }
+        if parse_failed(std::parse::expect(parser, 61), 2, 0) == false {
+            return 8
+        }
+        if parse_failed(std::parse::until(parser, 61), 1, 4) == false {
+            return 9
+        }
+        if parse_failed(std::parse::identifier(parser), 4, 0) == false {
+            return 10
+        }
+        if parser.position != 0 {
+            return 11
+        }
+        parser.position = 5
+        if parse_failed(std::parse::take_bytes(parser, 0), 1, 5) == false {
+            return 12
+        }
+    }
+    return 0
+}

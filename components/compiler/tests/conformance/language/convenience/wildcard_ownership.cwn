@@ -1,0 +1,117 @@
+resource Probe {
+    counter: Shared<Mutex<u32>>
+    drop {
+        counter.lock write as value {
+            value = value + 1
+        }
+    }
+}
+fn payload(counter: Shared<Mutex<u32>>) -> Option<Probe> {
+    return Some(Probe {
+            counter: counter.share()
+        })
+}
+fn count(counter: Shared<Mutex<u32>>) -> u32 {
+    counter.lock write as value {
+        return value
+    }
+}
+fn early(counter: Shared<Mutex<u32>>) -> u32 {
+    match payload(counter) {
+        None => {
+            return 1
+        },
+        _ => {
+            return count(counter)
+        }
+    }
+}
+fn borrowed(counter: Shared<Mutex<u32>>) -> u32 {
+    let value = payload(counter)
+    if let None = read value {
+        return 1
+    }
+    if count(counter) != 3 {
+        return 2
+    }
+    return 0
+}
+fn nested(counter: Shared<Mutex<u32>>) -> u32 {
+    let empty: Option<Probe> = None()
+    match move empty {
+        _ => {
+        }
+    }
+    if count(counter) != 6 {
+        return 1
+    }
+    let outer: Option<Option<Probe>> = Some(payload(counter))
+    match move outer {
+        _ => {
+        }
+    }
+    if count(counter) != 7 {
+        return 2
+    }
+    if let Some(_) = payload(counter) {
+    } else {
+        return 3
+    }
+    return if count(counter) == 8 {
+        0
+    } else {
+        4
+    }
+}
+fn initial(counter: Shared<Mutex<u32>>) -> u32 {
+    if let None = payload(counter) {
+        return 1
+    } else {
+        if count(counter) != 0 {
+            return 2
+        }
+    }
+    if count(counter) != 1 {
+        return 3
+    }
+    let result = if let None = payload(counter) {
+        99
+    } else {
+        count(counter)
+    }
+    if result != 1 || count(counter) != 2 {
+        return 4
+    }
+    return 0
+}
+fn exits(counter: Shared<Mutex<u32>>) -> u32 {
+    if early(counter) != 2 || count(counter) != 3 {
+        return 5
+    }
+    if borrowed(counter) != 0 || count(counter) != 4 {
+        return 6
+    }
+    while let None = payload(counter) {
+        return 7
+    }
+    if count(counter) != 5 {
+        return 8
+    }
+    if let Some(value) = payload(counter) {
+        value
+    } else {
+        return 9
+    }
+    if count(counter) != 6 {
+        return 10
+    }
+    return nested(counter)
+}
+fn main() -> u32 {
+    let counter = Shared.new(Mutex.new(0))
+    let status = initial(counter)
+    if status != 0 {
+        return status
+    }
+    return exits(counter)
+}

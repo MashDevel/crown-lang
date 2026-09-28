@@ -1,0 +1,99 @@
+fn runtime_fixture() -> Vec<u8> {
+    var bytes = std::bytes::filled(512, 0)
+    link_binary::put(bytes, 0, 282584257676671, 8)
+    link_binary::put(bytes, 16, 4063234, 4)
+    link_binary::put(bytes, 32, 64, 8)
+    link_binary::put(bytes, 40, 176, 8)
+    link_binary::put(bytes, 54, 56, 2)
+    link_binary::put(bytes, 56, 2, 2)
+    link_binary::put(bytes, 58, 64, 2)
+    link_binary::put(bytes, 60, 3, 2)
+    runtime_segment(bytes, 64, [0, 368, 368, 4096])
+    runtime_segment(bytes, 120, [368, 8, 16, 8192])
+    link_binary::put(bytes, 244, 2, 4)
+    link_binary::put(bytes, 264, 384, 8)
+    link_binary::put(bytes, 272, 48, 8)
+    link_binary::put(bytes, 280, 2, 4)
+    link_binary::put(bytes, 296, 24, 8)
+    link_binary::put(bytes, 308, 3, 4)
+    link_binary::put(bytes, 328, 432, 8)
+    link_binary::put(bytes, 408, 1, 4)
+    link_binary::put(bytes, 414, 1, 2)
+    link_binary::put(bytes, 416, 4128, 8)
+    bytes[433] = 102
+    return move bytes
+}
+
+fn runtime_segment(bytes: write Vec<u8>, offset: usize, fields: [u64; 4]) -> void {
+    link_binary::put(bytes, offset, 1, 4)
+    link_binary::put(bytes, offset + 8, fields[0], 8)
+    link_binary::put(bytes, offset + 32, fields[1], 8)
+    link_binary::put(bytes, offset + 40, fields[2], 8)
+    link_binary::put(bytes, offset + 16, fields[3], 8)
+}
+
+fn loaded_runtime() -> Result<void, Text> {
+    let runtime = bedrock::runtime(runtime_fixture())?
+    testing::expect(runtime.base == 4096 && runtime.data_base == 8192, "runtime segment addresses")?
+    testing::expect(runtime.text.length() == 368 && runtime.data.length() == 16, "runtime data is zero extended")?
+    let exports = bedrock::runtime_symbols(runtime)?
+    testing::expect(exports.length() == 1, "defined runtime symbol")?
+    testing::expect(std::text::equal(exports[0].name, "f"), "runtime symbol name")?
+    return testing::expect(exports[0].address == 4128, "runtime symbol address")
+}
+
+fn invalid_runtime(offset: usize, value: u64, width: usize) -> Result<void, Text> {
+    var bytes = runtime_fixture()
+    link_binary::put(bytes, offset, value, width)
+    return testing::error(bedrock::runtime(move bytes))
+}
+
+fn invalid_headers() -> Result<void, Text> {
+    let offsets: [usize; 8] = [0, 16, 54, 56, 58, 60, 64, 120]
+    for index in 0..8 {
+        invalid_runtime(offsets[index], 0, 2)?
+    }
+    invalid_runtime(40, 513, 8)?
+    invalid_runtime(60, 6, 2)?
+    invalid_runtime(32, 512, 8)?
+    invalid_runtime(128, 512, 8)?
+    invalid_runtime(96, 513, 8)?
+    invalid_runtime(160, 7, 8)?
+    return invalid_runtime(160, 16777217, 8)
+}
+
+fn truncated_runtime() -> Result<void, Text> {
+    let bytes = runtime_fixture()
+    for size in 0..376 {
+        testing::error(bedrock::runtime(link_binary::part(bytes, 0, size)?))?
+    }
+    return Ok(())
+}
+
+fn invalid_symbols() -> Result<void, Text> {
+    var runtime = bedrock::runtime(runtime_fixture())?
+    link_binary::put(runtime.bytes, 296, 16, 8)
+    testing::error(bedrock::runtime_symbols(runtime))?
+    link_binary::put(runtime.bytes, 296, 24, 8)
+    link_binary::put(runtime.bytes, 272, 47, 8)
+    testing::error(bedrock::runtime_symbols(runtime))?
+    link_binary::put(runtime.bytes, 272, 48, 8)
+    link_binary::put(runtime.bytes, 414, 0, 2)
+    testing::error(bedrock::runtime_symbols(runtime))?
+    link_binary::put(runtime.bytes, 414, 1, 2)
+    link_binary::put(runtime.bytes, 408, 0, 4)
+    testing::error(bedrock::runtime_symbols(runtime))?
+    link_binary::put(runtime.bytes, 408, 512, 4)
+    return testing::error(bedrock::runtime_symbols(runtime))
+}
+
+fn run() -> Result<void, Text> {
+    loaded_runtime()?
+    invalid_headers()?
+    truncated_runtime()?
+    return invalid_symbols()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,100 @@
+module x86 {
+    fn codegen(program: take ir::Program) -> Result<object::CompilerObject, CodegenError> {
+        match ir::validate_program(program) {
+            Err(error) => {
+                var output = codegen_error(CodegenInvalidIr())
+                output.function = error.function
+                output.block = error.block
+                return Err(move output)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return codegen_validated(move program)
+    }
+
+    fn codegen_validated(program: take ir::Program) -> Result<object::CompilerObject, CodegenError> {
+        match codegen_machine_program(move program) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(machine) => {
+                match encode_program(machine) {
+                    Err(error) => {
+                        error;
+                        return Err(codegen_error(CodegenEncodeError()))
+                    }
+                    Ok(object) => {
+                        return Ok(move object)
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_machine_program(program: take ir::Program) -> Result<Program, CodegenError> {
+        match codegen_entry(program) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(entry) => {
+                var machine = program_new(program.functions[entry].name.clone())
+                match codegen_add_globals(program, machine) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+                match codegen_add_wide_runtime(machine) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+                match codegen_add_functions(move program, machine) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+                codegen_add_root_runtime(machine)?
+                codegen_add_stack_runtime(machine)?
+                codegen_add_process_runtime(machine)?
+                codegen_add_arena_runtime(machine)?
+                return Ok(move machine)
+            }
+        }
+    }
+
+    fn codegen_entry(program: ir::Program) -> Result<usize, CodegenError> {
+        match read program.entry {
+            Some(entry) => {
+                if entry < program.functions.length() {
+                    return Ok(entry)
+                }
+                return Err(codegen_error(CodegenMissingSymbol()))
+            }
+            None => {
+                var index: usize = 0
+                while index < program.functions.length() {
+                    var definition = false
+                    loan read program.functions[index] as function {
+                        definition = ir::function_is_import(function) == false
+                    }
+                    if definition {
+                        return Ok(index)
+                    }
+                    index = index + 1
+                }
+                return Err(codegen_error(CodegenMissingSymbol()))
+            }
+        }
+    }
+}

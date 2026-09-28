@@ -1,0 +1,75 @@
+struct Control {
+    dac_enabled: bool
+    enabled: bool
+}
+
+resource Guard {
+    drops: Shared<Mutex<u32>>
+    drop {
+        drops.lock write as count {
+            count = count + 1
+        }
+    }
+}
+
+fn early_exit(drops: Shared<Mutex<u32>>) -> void {
+    let guard = Guard {
+        drops: drops.share()
+    }
+    return
+}
+
+fn set_dac(control: write Control, enabled: bool) -> void {
+    control.dac_enabled = enabled
+    if enabled == false {
+        control.enabled = false
+        return
+    }
+    return;
+}
+
+fn completed() -> Result<void, u32> {
+    return Ok(())
+}
+
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+
+fn invoke(callback: scoped fn() -> void) -> void {
+    callback()
+    return
+}
+
+fn main() -> u32 {
+    var control = Control {
+        dac_enabled: true, enabled: true
+    }
+    set_dac(control, false)
+    if control.dac_enabled || control.enabled {
+        return 1
+    }
+    set_dac(control, true)
+    if control.dac_enabled == false || control.enabled {
+        return 2
+    }
+    match identity(completed()) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            return error
+        }
+    }
+    invoke(fn() {
+            return
+        })
+    let drops = Shared.new(Mutex.new(0))
+    early_exit(drops)
+    drops.lock write as count {
+        if count != 1 {
+            return 3
+        }
+    }
+    return 42
+}

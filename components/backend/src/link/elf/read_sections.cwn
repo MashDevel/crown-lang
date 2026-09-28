@@ -1,0 +1,93 @@
+module elf {
+    fn read_object_sections(reader: write ObjectReader) -> Result<void, Text> {
+        for index in 0..reader.headers.length() {
+            reader.sections.push(None())
+            read_object_section(reader, index)?
+        }
+        if reader.symbol_table == 0 {
+            return Err("ELF object has no symbol table")
+        }
+        return Ok(())
+    }
+
+    fn read_object_section(reader: write ObjectReader, index: usize) -> Result<void, Text> {
+        loan read reader.headers[index] as header {
+            if header.kind == 2 {
+                if reader.symbol_table != 0 {
+                    return Err("multiple ELF symbol tables are not supported")
+                }
+                reader.symbol_table = index
+            }
+            if (header.flags & 2) != 0 {
+                if header.kind == 7 {
+                    return read_note_section(reader.bytes, header, reader.output.architecture)
+                }
+                let section = reader.output.sections.length()
+                reader.output.sections.push(read_allocated_section(reader.bytes, header, index)?)
+                reader.sections[index] = Some(section)
+            }
+        }
+        return Ok(())
+    }
+
+    fn read_allocated_section(bytes: Vec<u8>, header: ObjectSection, index: usize) -> Result<object::Section, Text> {
+        if (header.flags & 3584) != 0 {
+            return Err("ELF TLS, compressed, and grouped sections are not supported")
+        }
+        if header.kind != 1 && header.kind != 8 && header.kind != 1879048193 {
+            return Err("unsupported allocated ELF section kind")
+        }
+        let kind = if header.kind == 8 {
+            object::SectionZeroFill()
+        } else {
+            allocated_section_kind(header.flags)
+        }
+        let data = if header.kind == 8 {
+            Vec<u8>.new()
+        } else {
+            link_binary::part(bytes, header.offset, header.size)?
+        }
+        return Ok(object::Section {
+                name: std::text::decimal(u64.from(index)), kind: move kind,
+                alignment: if header.alignment == 0 {
+                    1
+                } else {
+                    header.alignment
+                },
+                data: move data, memory_size: u64.from(header.size)
+            })
+    }
+
+    fn allocated_section_kind(flags: u64) -> object::SectionKind {
+        if (flags & 4) != 0 {
+            return object::SectionText()
+        }
+        if (flags & 1) != 0 {
+            return object::SectionData()
+        }
+        return object::SectionReadOnlyData()
+    }
+
+    fn object_table(reader: ObjectReader, index: usize, width: usize) -> Result<usize, Text> {
+        if index >= reader.headers.length() {
+            return Err("invalid ELF table index")
+        }
+        loan read reader.headers[index] as header {
+            if header.entry_size != width || header.size % width != 0 {
+                return Err("invalid ELF table entry size")
+            }
+            if header.offset > reader.bytes.length() || header.size > reader.bytes.length() - header.offset {
+                return Err("truncated ELF table")
+            }
+            return Ok(header.size / width)
+        }
+    }
+
+    fn symbol_strings(reader: ObjectReader) -> Result<Vec<u8>, Text> {
+        let index = reader.headers[reader.symbol_table].link
+        if index >= reader.headers.length() || reader.headers[index].kind != 3 {
+            return Err("invalid ELF symbol string table")
+        }
+        return link_binary::part(reader.bytes, reader.headers[index].offset, reader.headers[index].size)
+    }
+}

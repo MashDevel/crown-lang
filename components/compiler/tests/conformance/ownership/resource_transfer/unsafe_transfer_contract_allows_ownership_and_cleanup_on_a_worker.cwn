@@ -1,0 +1,20 @@
+unsafe transferable opaque resource NativeHandle {
+    value: usize, drop {
+        print(u32.from(value))
+    }
+}
+fn make() -> NativeHandle {
+    unsafe {
+        return NativeHandle {
+            value: 42
+        }
+    }
+}
+fn main() -> u32 {
+    let handle = make()
+    var worker = spawn move {
+        handle
+    }
+    worker.join()
+    return 0
+}

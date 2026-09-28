@@ -1,0 +1,18 @@
+struct Pair {
+    left: u32, right: u32
+}
+fn set(first: write u32, second: write u32) -> void {
+    first = 1;
+    second = 2
+}
+fn snapshot(first: u32, second: write u32) -> void {
+    second = first
+}
+fn main() -> u32 {
+    var pair = Pair {
+        left: 0, right: 0
+    };
+    set(pair.left, pair.right);
+    snapshot(pair.left, pair.left);
+    return 0
+}

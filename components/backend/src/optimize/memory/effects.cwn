@@ -1,0 +1,74 @@
+module optimize {
+    fn memory_instruction_effect(kind: ir::InstructionKind, effects: Shared<Vec<MemoryEffect>>) -> u8 {
+        match read kind {
+            ir::InstructionMemory(memory) => memory_operation_effect(memory)
+            ir::InstructionCall(target, arguments, result) => {
+                arguments;
+                result;
+                return memory_call_effect(target, effects)
+            }
+            ir::InstructionCallIndirect(target, signature, arguments) => {
+                target;
+                signature;
+                arguments;
+                return 3
+            }
+            _ => 0
+        }
+    }
+
+    fn memory_call_effect(target: usize, effects: Shared<Vec<MemoryEffect>>) -> u8 {
+        loan read effects as table {
+            if target >= table.length() {
+                return 3
+            }
+            return memory_effect_bits(table[target])
+        }
+    }
+
+    fn memory_operation_effect(memory: ir::MemoryInstruction) -> u8 {
+        match read memory {
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                address;
+                value_type;
+                alignment;
+                return if volatile {
+                    3
+                } else {
+                    1
+                }
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                address;
+                value;
+                alignment;
+                return if volatile {
+                    3
+                } else {
+                    2
+                }
+            }
+            ir::MemoryCopy(destination, source, size) => {
+                destination;
+                source;
+                size;
+                return 3
+            }
+            ir::MemorySet(destination, value, size) => {
+                destination;
+                value;
+                size;
+                return 2
+            }
+            ir::MemoryRepeat(destination, source, size, count) => {
+                destination;
+                source;
+                size;
+                count;
+                return 3
+            }
+            _ => 0
+        }
+    }
+
+}

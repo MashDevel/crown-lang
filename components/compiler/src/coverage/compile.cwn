@@ -1,0 +1,48 @@
+module coverage {
+    fn prepare(bundle: frontend::SourceBundle, program: frontend::Program, directory: Text) -> Result<Option<Shared<lowering::CoverageLayout>>, Text> {
+        if directory.length() == 0 {
+            return Ok(None())
+        }
+        let nodes = inspect::program(program)
+        let layout = layout(bundle.length, nodes)
+        let document = metadata(bundle, layout)?
+        let path = toolchain::path_join(directory, "map.json")
+        toolchain::make_directory(directory)?
+        if toolchain::exists(path) {
+            if std::text::equal(toolchain::read_text(path)?, document) == false {
+                return Err("coverage directory belongs to different source; choose a new directory")
+            }
+        } else {
+            let entries = toolchain::directory_entries(directory)?
+            if entries.length() != 0 {
+                return Err("coverage directory must be empty")
+            }
+            toolchain::write_text(path, document)?
+        }
+        return Ok(Some(Shared.new(move layout)))
+    }
+
+    fn instrumentation_bytes(layout: Option<Shared<lowering::CoverageLayout>>) -> u64 {
+        match read layout {
+            Some(shared) => {
+                loan read shared as value {
+                    return u64.from(bitset_size(value))
+                }
+            }
+            None => {
+                return 0
+            }
+        }
+    }
+
+    fn append_runtime(assembly: Text, directory: Text, target: toolchain::Target, bytes: u64) -> Result<void, Text> {
+        if directory.length() == 0 {
+            return Ok(())
+        }
+        var output = toolchain::read_text(assembly)?
+        let path = toolchain::path_join(directory, "run.XXXXXX")
+        std::text::append(output, runtime_assembly(bytes, path, target)?)
+        std::text::append(output, runtime_sections(target))
+        return toolchain::write_text(assembly, output)
+    }
+}

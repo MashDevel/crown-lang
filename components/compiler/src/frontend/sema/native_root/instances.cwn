@@ -1,0 +1,29 @@
+module sema {
+    fn check_instance_roots(checker: write Checker, instance: FunctionInstance) -> void {
+        check_declared_root_instances(checker, Some(instance.function), None(), instance.arguments)
+        for index in 0..checker.expressions.length() {
+            if resource_owner_matches(checker.expressions[index].function, instance.function) {
+                check_root_instance(checker, index, instance.arguments)
+            }
+        }
+    }
+    fn check_resource_roots(checker: write Checker, instance: ResourceExpansion) -> void {
+        check_declared_root_instances(checker, None(), Some(instance.symbol), instance.arguments)
+        for index in 0..checker.expressions.length() {
+            if resource_owner_matches(checker.expressions[index].resource_owner, instance.symbol) {
+                check_root_instance(checker, index, instance.arguments)
+            }
+        }
+    }
+    fn check_root_instance(checker: write Checker, index: usize, arguments: Vec<Type>) -> void {
+        let value = substitute(checker.expressions[index].value_type, arguments)
+        if type_builtin(value) != NativeRoot() {
+            return
+        }
+        var visiting = Vec<usize>.new()
+        if type_transferable(checker.symbols, value, visiting) == false {
+            checker.current_span = checker.expressions[index].span
+            checker_error(checker, "native roots require transferable owned payloads")
+        }
+    }
+}

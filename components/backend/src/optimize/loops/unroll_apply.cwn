@@ -1,0 +1,126 @@
+module optimize {
+    fn unroll_apply(function: write ir::Function, natural_loop: NaturalLoop, count: UnrollCount) -> void {
+        let header = memory_loop_header(function, natural_loop.preheader)
+        var copies = Vec<InlineMapping>.new()
+        copies.push(loop_identity_mapping(function))
+        for index in 0..count.iterations {
+            let mapping = loop_clone_mapping(function, natural_loop.blocks)
+            loop_clone_blocks(function, natural_loop.blocks, mapping)
+            loop_clone_exit_phis(function, natural_loop.blocks, mapping)
+            copies.push(move mapping)
+        }
+        for index in 0..copies.length() {
+            let current_header = copies[index].blocks[header]
+            if index == 0 {
+                unroll_entry_phis(function.blocks[current_header], natural_loop.preheader)
+            } else {
+                unroll_copy_phis(function.blocks[current_header], natural_loop.preheader, copies[index], copies[index - 1])
+            }
+            if index == count.iterations {
+                function.blocks[current_header].terminator = Some(ir::TerminatorBranch(count.exit))
+            } else {
+                unroll_backedges(function, natural_loop.blocks, copies[index], current_header, copies[index + 1].blocks[header])
+            }
+        }
+        prune_phi_inputs(function)
+        ir::function_prune_unreachable(function)
+    }
+
+    fn loop_identity_mapping(function: ir::Function) -> InlineMapping {
+        var blocks = Vec<usize>.new()
+        for index in 0..function.blocks.length() {
+            blocks.push(index)
+        }
+        return InlineMapping {
+            values: none_usize(function.values.length()), blocks: move blocks
+        }
+    }
+
+    fn unroll_entry_phis(block: write ir::BasicBlock, preheader: usize) -> void {
+        for index in 0..block.instructions.length() {
+            match write block.instructions[index].kind {
+                ir::InstructionPhi(value_type, incoming) => {
+                    value_type;
+                    var output = Vec<ir::PhiIncoming>.new()
+                    for cursor in 0..incoming.length() {
+                        if incoming[cursor].block == preheader {
+                            output.push(incoming[cursor])
+                        }
+                    }
+                    incoming = move output
+                }
+                _ => {
+                }
+            }
+        }
+    }
+
+    fn unroll_copy_phis(block: write ir::BasicBlock, preheader: usize, current: InlineMapping, previous: InlineMapping) -> void {
+        var reverse = loop_reverse_mapping(current, previous)
+        for index in 0..block.instructions.length() {
+            match write block.instructions[index].kind {
+                ir::InstructionPhi(value_type, incoming) => {
+                    value_type;
+                    var output = Vec<ir::PhiIncoming>.new()
+                    for cursor in 0..incoming.length() {
+                        let source = incoming[cursor]
+                        if source.block != preheader {
+                            output.push(ir::PhiIncoming {
+                                    block: reverse.blocks[source.block], value: inline_mapped_value(reverse, source.value)
+                                })
+                        }
+                    }
+                    incoming = move output
+                }
+                _ => {
+                }
+            }
+        }
+    }
+
+    fn loop_reverse_mapping(current: InlineMapping, previous: InlineMapping) -> InlineMapping {
+        var values = none_usize(current.values.length() * 2 + 1)
+        var blocks = Vec<usize>.new()
+        var length = current.blocks.length()
+        for index in 0..current.blocks.length() {
+            if current.blocks[index] >= length {
+                length = current.blocks[index] + 1
+            }
+        }
+        for index in 0..length {
+            blocks.push(index)
+        }
+        for index in 0..current.values.length() {
+            match current.values[index] {
+                Some(value) => {
+                    values[value] = Some(inline_mapped_value(previous, index))
+                }
+                None => {
+                }
+            }
+        }
+        for index in 0..current.blocks.length() {
+            if current.blocks[index] != index {
+                blocks[current.blocks[index]] = previous.blocks[index]
+            }
+        }
+        return InlineMapping {
+            values: move values, blocks: move blocks
+        }
+    }
+
+    fn unroll_backedges(function: write ir::Function, blocks: Vec<bool>, mapping: InlineMapping, header: usize, next: usize) -> void {
+        var edges = loop_identity_mapping(function)
+        edges.blocks[header] = next
+        for block in 0..blocks.length() {
+            if blocks[block] {
+                let target = mapping.blocks[block]
+                let terminator = match read function.blocks[target].terminator {
+                    Some(value) => Some(inline_remap_terminator(value, edges))
+                    None => None()
+                }
+                function.blocks[target].terminator = move terminator
+            }
+        }
+    }
+}

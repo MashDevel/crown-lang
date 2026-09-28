@@ -1,0 +1,116 @@
+fn shared_library(machine: u64) -> Vec<u8> {
+    var bytes = fixture()
+    link_binary::put(bytes, 16, 3, 2)
+    link_binary::put(bytes, 18, machine, 2)
+    fixture_section(bytes, 5, [11, 0, 560, 96, 4, 1, 8, 24])
+    return move bytes
+}
+
+fn exported_names() -> Result<void, Text> {
+    let reader = elf::library_reader(shared_library(62), object::ArchitectureX86_64())?
+    let exports = elf::library_exports(reader, "fixture.so")?
+    testing::expect(exports.length() == 2, "defined dynamic symbols are exported")?
+    testing::expect(std::text::equal(exports[0].symbol, "entry"), "function export")?
+    testing::expect(std::text::equal(exports[1].symbol, "data"), "data export")?
+    testing::expect(exports[0].version.length() == 0, "unversioned dynamic symbol")?
+    let arm = elf::library_reader(shared_library(183), object::ArchitectureArm64())?
+    let arm_exports = elf::library_exports(arm, "fixture.so")?
+    return testing::expect(arm_exports.length() == 2, "ARM64 dynamic symbols")
+}
+
+fn header_rejections() -> Result<void, Text> {
+    let bytes = shared_library(62)
+    for length in 0..656 {
+        let truncated = link_binary::part(bytes, 0, length)?
+        testing::error(elf::library_reader(move truncated, object::ArchitectureX86_64()))?
+    }
+    let offsets: [usize; 4] = [0, 4, 16, 18]
+    for index in 0..4 {
+        var changed = shared_library(62)
+        link_binary::put(changed, offsets[index], 0, 2)
+        testing::error(elf::library_reader(move changed, object::ArchitectureX86_64()))?
+    }
+    return testing::error(elf::library_reader(shared_library(62), object::ArchitectureArm64()))
+}
+
+fn invalid_table(fields: [u64; 8]) -> Result<void, Text> {
+    var bytes = shared_library(62)
+    fixture_section(bytes, 5, fields)
+    return testing::error(elf::library_reader(move bytes, object::ArchitectureX86_64()))
+}
+
+fn table_rejections() -> Result<void, Text> {
+    invalid_table([2, 0, 560, 96, 4, 1, 8, 24])?
+    invalid_table([11, 0, 560, 96, 4, 1, 8, 16])?
+    invalid_table([11, 0, 560, 95, 4, 1, 8, 24])?
+    invalid_table([11, 0, 560, 96, 7, 1, 8, 24])?
+    invalid_table([11, 0, 560, 96, 1, 1, 8, 24])?
+    invalid_table([11, 0, 700, 96, 4, 1, 8, 24])?
+    var bytes = shared_library(62)
+    fixture_section(bytes, 4, [3, 0, 720, 19, 0, 0, 1, 0])
+    return testing::error(elf::library_reader(move bytes, object::ArchitectureX86_64()))
+}
+
+fn symbol_visibility() -> Result<void, Text> {
+    var reader = elf::library_reader(shared_library(62), object::ArchitectureX86_64())?
+    let bindings: [u8; 5] = [0, 16, 32, 48, 160]
+    let exported: [bool; 5] = [false, true, true, false, true]
+    for index in 0..5 {
+        reader.symbols[28] = bindings[index]
+        testing::expect(elf::exported_symbol(reader.symbols, 24)? == exported[index], "ELF symbol binding")?
+    }
+    reader.symbols[28] = 18
+    let visible: [bool; 4] = [true, false, false, true]
+    for visibility in 0..4 {
+        reader.symbols[29] = u8.from(visibility)
+        testing::expect(elf::exported_symbol(reader.symbols, 24)? == visible[visibility], "ELF symbol visibility")?
+    }
+    reader.symbols[29] = 0
+    reader.symbols[30] = 0
+    testing::expect(elf::exported_symbol(reader.symbols, 24)? == false, "undefined symbols are not exports")?
+    reader.symbols[30] = 1
+    link_binary::put(reader.symbols, 24, 4294967295, 4)
+    return testing::error(elf::library_exports(reader, "fixture.so"))
+}
+
+fn version_tables() -> Result<void, Text> {
+    var bytes = shared_library(62)
+    fixture_section(bytes, 6, [1879048191, 0, 656, 8, 0, 0, 2, 2])
+    for index in 0..4 {
+        link_binary::put(bytes, 656 + index * 2, 1, 2)
+    }
+    let reader = elf::library_reader(move bytes, object::ArchitectureX86_64())?
+    let exports = elf::library_exports(reader, "fixture.so")?
+    testing::expect(exports.length() == 2, "version-one symbols remain unversioned")?
+    var bad = shared_library(62)
+    fixture_section(bad, 6, [1879048191, 0, 656, 6, 0, 0, 2, 2])
+    testing::error(elf::library_reader(move bad, object::ArchitectureX86_64()))?
+    return version_bounds()
+}
+
+fn version_bounds() -> Result<void, Text> {
+    let kinds: [u64; 2] = [1879048191, 1879048189]
+    for index in 0..2 {
+        var bytes = shared_library(62)
+        fixture_section(bytes, 6, [kinds[index], 0, 719, 8, 0, 0, 2, 2])
+        testing::error(elf::library_reader(move bytes, object::ArchitectureX86_64()))?
+    }
+    var reader = elf::library_reader(shared_library(62), object::ArchitectureX86_64())?
+    reader.versions = std::bytes::filled(8, 0)
+    let exports = elf::library_exports(reader, "fixture.so")?
+    testing::expect(exports.length() == 0, "local version excludes symbols")?
+    reader.versions = std::bytes::filled(1, 0)
+    return testing::error(elf::library_exports(reader, "fixture.so"))
+}
+
+fn run() -> Result<void, Text> {
+    exported_names()?
+    header_rejections()?
+    table_rejections()?
+    symbol_visibility()?
+    return version_tables()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

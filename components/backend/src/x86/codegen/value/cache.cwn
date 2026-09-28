@@ -1,0 +1,95 @@
+module x86 {
+    fn codegen_invalidate_register(compiler: write FunctionCompiler, register: Register) -> void {
+        var invalidate = false
+        match read compiler.cached_value {
+            Some(cached) => {
+                invalidate = register_equal(cached.register, register)
+            }
+            None => {
+            }
+        }
+        if invalidate {
+            codegen_clear_cache(compiler)
+        }
+    }
+
+    fn codegen_cache_value(program: ir::Program, compiler: write FunctionCompiler, access: ValueAccess) -> Result<void, CodegenError> {
+        match codegen_value_type(program, compiler, access.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                var cache = ir::type_is_float(value_type)
+                match ir::type_size(value_type) {
+                    Some(size) => {
+                        if size == 8 {
+                            cache = true
+                        }
+                    }
+                    None => {
+                    }
+                }
+                if cache {
+                    compiler.cached_value = Some(CachedValue {
+                            value: access.value
+                            register: access.register
+                        })
+                } else {
+                    compiler.cached_value = None()
+                }
+                return Ok(())
+            }
+        }
+    }
+
+    fn codegen_reuse_cached(program: ir::Program, compiler: write FunctionCompiler, access: ValueAccess) -> Result<bool, CodegenError> {
+        match codegen_cached_copy(compiler.cached_value) {
+            Some(cached) => {
+                if cached.value != access.value {
+                    return Ok(false)
+                }
+                if register_equal(cached.register, access.register) == false {
+                    let source = cached.register
+                    codegen_emit(compiler, Move(access.register, source))
+                    match codegen_cache_value(program, compiler, access) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+                return Ok(true)
+            }
+            None => {
+                return Ok(false)
+            }
+        }
+    }
+
+    fn codegen_keep_result_cache(compiler: write FunctionCompiler, result: Option<usize>) -> void {
+        var retained = false
+        match read compiler.cached_value {
+            Some(cached) => {
+                retained = codegen_result_matches(result, cached.value)
+            }
+            None => {
+            }
+        }
+        if retained == false {
+            codegen_clear_cache(compiler)
+        }
+    }
+
+    fn codegen_result_matches(result: Option<usize>, value: usize) -> bool {
+        match read result {
+            Some(expected) => {
+                return expected == value
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}

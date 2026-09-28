@@ -1,0 +1,74 @@
+module arm64 {
+    fn compile_instruction(program: ir::Program, function: ir::Function, compiler: write Compiler, instruction: ir::Instruction) -> Result<void, Text> {
+        prepare_result(compiler, instruction.result)
+        match read instruction.kind {
+            ir::InstructionMemory(memory) => compile_memory(program, function, compiler, instruction.result, memory)
+            ir::InstructionCall(id, arguments, result_type) => {
+                result_type;
+                let stack = call_arguments(function, compiler, program.functions[id].signature, arguments)?
+                call_symbol(compiler, program.functions[id].name)
+                stack_adjust(compiler, stack, false)
+                call_result(function, compiler, program.functions[id].signature, arguments, instruction.result)
+            }
+            ir::InstructionCallIndirect(value, signature, arguments) => {
+                let stack = call_arguments(function, compiler, signature, arguments)?
+                value_load(compiler, value, 16)
+                emit_encoding(compiler, indirect_branch(16, true))
+                stack_adjust(compiler, stack, false)
+                call_result(function, compiler, signature, arguments, instruction.result)
+            }
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                Ok(())
+            }
+            _ => {
+                compile_scalar(function, compiler, instruction.kind)?
+                store_result(function, compiler, instruction.result)
+            }
+        }
+    }
+
+    fn prepare_result(compiler: write Compiler, result: Option<usize>) -> void {
+        compiler.target = 9
+        compiler.result_register = 9
+        compiler.normalized = false
+        match result {
+            Some(value) => {
+                let allocated = frame_register(compiler.frame, value)
+                if allocated != REGISTER_SPILLED {
+                    compiler.target = allocated
+                }
+            }
+            None => {
+            }
+        }
+    }
+    fn compile_scalar(function: ir::Function, compiler: write Compiler, kind: ir::InstructionKind) -> Result<void, Text> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => compile_binary(function, compiler, operator, left, right)
+            ir::InstructionUnary(operator, value) => compile_unary(function, compiler, operator, value)
+            ir::InstructionCompare(operator, left, right) => compile_compare(function, compiler, operator, left, right)
+            ir::InstructionCast(operator, value, target) => compile_cast(function, compiler, operator, value, target)
+            ir::InstructionSelect(condition, yes, no) => compile_select(compiler, condition, yes, no)
+            ir::InstructionVectorSplat(value, target) => vector_splat(compiler, value, target)
+            _ => Err("invalid ARM64 scalar instruction")
+        }
+    }
+    fn compile_select(compiler: write Compiler, condition: usize, yes: usize, no: usize) -> Result<void, Text> {
+        value_load(compiler, condition, 11)
+        emit_encoding(compiler, compare_word(11, 31))
+        value_load(compiler, yes, 9)
+        value_load(compiler, no, 10)
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 9, left: 9, right: 10
+                }, 1))
+        value_high(compiler, yes, 10)
+        value_high(compiler, no, 11)
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 10, left: 10, right: 11
+                }, 1))
+        return Ok(())
+    }
+
+}

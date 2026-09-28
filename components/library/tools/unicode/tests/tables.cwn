@@ -1,0 +1,81 @@
+module unicode_tests {
+    fn tables() -> Result<void, Text> {
+        let source = "const NORMAL0: [u8; 4] = [1, 2, 128, 1];\nconst SINGLETONS0U: [u8; 2] = [0, 1];\nconst SINGLETONS0L: [u8; 1] = [0];"
+        let plane = unicode_tables::plane(source, "0")?
+        testing::expect(plane.length() == 65536, "plane size")?
+        testing::expect(plane[0] == 0 && plane[1] == 0 && plane[2] == 0 && plane[3] == 1, "runs and singleton")?
+        testing::expect(plane[4] == 0 && plane[5] == 0 && plane[65535] == 0, "plane tail")?
+        return printable()
+    }
+
+    fn printable() -> Result<void, Text> {
+        let printable = unicode_tables::printable(printable_source())?
+        testing::expect(printable.length() == 0x110000, "printable size")?
+        ascii(printable)?
+        return printable_ranges(printable)
+    }
+
+    fn ascii(printable: Vec<u8>) -> Result<void, Text> {
+        for index in 0..32 {
+            testing::expect(printable[index] == 0, "hidden ASCII")?
+        }
+        for index in 32..127 {
+            testing::expect(printable[index] == 1, "printable ASCII")?
+        }
+        return Ok(())
+    }
+
+    fn printable_ranges(printable: Vec<u8>) -> Result<void, Text> {
+        testing::expect(printable[0x1ffff] == 1 && printable[0x20000] == 0 && printable[0x20001] == 0 && printable[0x20002] == 1, "excluded range")?
+        testing::expect(printable[0x10ffff] == 1, "printable final scalar")?
+        return graphemes()
+    }
+
+    fn graphemes() -> Result<void, Text> {
+        let values = unicode_tables::grapheme(grapheme_source("768"))?
+        testing::expect(values.length() == 0x110000, "grapheme size")?
+        for index in 0..0x300 {
+            testing::expect(values[index] == 0, "grapheme initial span")?
+        }
+        testing::expect(values[768] == 0 && values[769] == 1 && values[770] == 0, "grapheme offsets")?
+        testing::expect(values[0x10ffff] == 0, "grapheme tail")?
+        return first_run()
+    }
+
+    fn first_run() -> Result<void, Text> {
+        let first = unicode_tables::grapheme(grapheme_source("770"))?
+        testing::expect(first[768] == 1 && first[769] == 1 && first[770] == 0 && first[771] == 1 && first[772] == 0, "first offset run")?
+        return malformed()
+    }
+
+    fn malformed() -> Result<void, Text> {
+        testing::error(unicode_tables::grapheme(""))?
+        testing::error(unicode_tables::runs("ShortOffsetRunHeader::new(0)"))?
+        testing::error(unicode_tables::runs("ShortOffsetRunHeader::new(0, 3), ShortOffsetRunHeader::new(2, 1)"))?
+        return testing::error(unicode_tables::plane_runs("const NORMAL0: [u8; 1] = [128];", "0"))
+    }
+
+    fn output() -> Result<void, Text> {
+        var values = Vec<u8>.new()
+        same(unicode_tables::boundaries(values), "")?
+        values.push(0)
+        values.push(0)
+        same(unicode_tables::boundaries(values), "")?
+        values[0] = 1
+        values[1] = 1
+        same(unicode_tables::boundaries(values), "0,2")?
+        values[0] = 0
+        values.push(0)
+        same(unicode_tables::boundaries(values), "1,2")?
+        var alternating = Vec<u8>.new()
+        for index in 0..30 {
+            alternating.push(u8.from(index % 2))
+        }
+        let rendered = unicode_tables::render("is_test", alternating)
+        testing::expect(std::text::contains(rendered, "const is_test_boundaries: [u32; 30] = ["), "static table")?
+        testing::expect(std::text::contains(rendered, "return boundary_contains(value, is_test_boundaries)"), "shared lookup")?
+        testing::expect(std::text::ends(rendered, "\n") && std::text::contains(rendered, "0xc,\n"), "table wrapping")?
+        let empty = unicode_tables::render("is_empty", Vec<u8>.new())
+        return testing::expect(std::text::contains(empty, "const is_empty_boundaries: [u32; 0] = [\n    ]"), "empty table")
+    }
+}

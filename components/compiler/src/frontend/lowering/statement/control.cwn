@@ -1,0 +1,142 @@
+module lowering {
+    copy struct ConditionalBlocks {
+        then_block: usize, else_block: usize, merge: usize
+    }
+
+    copy struct WhileBlocks {
+        header: usize, body: usize, exit: usize
+    }
+
+    fn conditional_blocks(compiler: write FunctionCompiler, condition: usize) -> Result<ConditionalBlocks, u32> {
+        let then_block = function_new_block(compiler)?
+        let else_block = function_new_block(compiler)?
+        let merge = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(condition, then_block, else_block))?
+        return Ok(ConditionalBlocks {
+                then_block: then_block, else_block: else_block, merge: merge
+            })
+    }
+    fn if_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementIf(condition, then_body, else_body) => {
+                return lower_if(compiler, analysis, condition, then_body, else_body)
+            }
+            _ => {
+                return Err(111)
+            }
+        }
+    }
+
+    fn lower_if(compiler: write FunctionCompiler, analysis: sema::Analysis, condition: frontend::Expression, then_body: Vec<frontend::Statement>, else_body: Vec<frontend::Statement>) -> Result<void, u32> {
+        let condition_value = function_condition(compiler, analysis, condition)?
+        let blocks = conditional_blocks(compiler, condition_value)?
+        let merge = blocks.merge
+        let before = bindings_copy(compiler.bindings)
+        let then_active = lower_if_branch(compiler, analysis, then_body, blocks.then_block, merge)?
+        let after_then = bindings_copy(compiler.bindings)
+        compiler.bindings = bindings_copy(before)
+        let else_active = lower_if_branch(compiler, analysis, else_body, blocks.else_block, merge)?
+        let after_else = bindings_copy(compiler.bindings)
+        if then_active {
+            compiler.bindings = bindings_copy(after_then)
+        }
+        if else_active {
+            compiler.bindings = bindings_copy(after_else)
+        }
+        if then_active || else_active {
+            function_select_block(compiler, merge);
+            return Ok(())
+        }
+        compiler.bindings = move before
+        function_select_block(compiler, merge)
+        function_finish(compiler, ir::TerminatorUnreachable())?
+        return Ok(())
+    }
+
+    fn lower_if_branch(compiler: write FunctionCompiler, analysis: sema::Analysis, body: Vec<frontend::Statement>, block: usize, merge: usize) -> Result<bool, u32> {
+        function_select_block(compiler, block)
+        scope_statements(compiler, analysis, body)?
+        return function_branch_if_active(compiler, merge)
+    }
+
+    fn while_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementWhile(condition, body) => {
+                return lower_while(compiler, analysis, condition, body)
+            }
+            _ => {
+                return Err(112)
+            }
+        }
+    }
+
+    fn lower_while(compiler: write FunctionCompiler, analysis: sema::Analysis, condition: frontend::Expression, body: Vec<frontend::Statement>) -> Result<void, u32> {
+        let before = bindings_copy(compiler.bindings)
+        let header = function_new_block(compiler)?
+        let body_block = function_new_block(compiler)?
+        let exit = function_new_block(compiler)?
+        let blocks = WhileBlocks {
+            header: header, body: body_block, exit: exit
+        }
+        lower_while_condition(compiler, analysis, condition, blocks)?
+        let breaks = lower_while_body(compiler, analysis, body, blocks)?
+        compiler.bindings = move before
+        function_select_block(compiler, exit)
+        if frontend::expression_is_true(condition) && breaks == false {
+            function_finish(compiler, ir::TerminatorUnreachable())?
+        }
+        return Ok(())
+    }
+
+    fn lower_while_condition(compiler: write FunctionCompiler, analysis: sema::Analysis, condition: frontend::Expression, blocks: WhileBlocks) -> Result<void, u32> {
+        function_finish(compiler, ir::TerminatorBranch(blocks.header))?
+        function_select_block(compiler, blocks.header)
+        let value = function_condition(compiler, analysis, condition)?
+        return function_finish(compiler, ir::TerminatorConditional(value, blocks.body, blocks.exit))
+    }
+
+    fn lower_while_body(compiler: write FunctionCompiler, analysis: sema::Analysis, body: Vec<frontend::Statement>, blocks: WhileBlocks) -> Result<bool, u32> {
+        function_select_block(compiler, blocks.body)
+        function_push_scope(compiler)
+        compiler.loops.push(LoopTarget {
+                continue_block: blocks.header, break_block: blocks.exit, breaks: false, scope_depth: compiler.scope_depth
+            })
+        function_statements(compiler, analysis, body)?
+        let breaks = compiler.loops[compiler.loops.length() - 1].breaks
+        compiler.loops.pop()
+        function_pop_scope(compiler)?
+        function_branch_if_active(compiler, blocks.header)?
+        return Ok(breaks)
+    }
+
+    fn loop_exit(compiler: write FunctionCompiler, continuing: bool) -> Result<void, u32> {
+        if compiler.loops.length() == 0 {
+            return Err(113)
+        }
+        let index = compiler.loops.length() - 1
+        function_cleanup_from(compiler, compiler.loops[index].scope_depth)?
+        var block = compiler.loops[index].break_block
+        if continuing {
+            block = compiler.loops[index].continue_block
+        } else {
+            compiler.loops[index].breaks = true
+        }
+        return function_finish(compiler, ir::TerminatorBranch(block))
+    }
+
+    fn function_branch_if_active(compiler: write FunctionCompiler, target: usize) -> Result<bool, u32> {
+        var active = false
+        match read compiler.block {
+            Some(value) => {
+                value;
+                active = true
+            }
+            None => {
+            }
+        }
+        if active {
+            function_finish(compiler, ir::TerminatorBranch(target))?
+        }
+        return Ok(active)
+    }
+}

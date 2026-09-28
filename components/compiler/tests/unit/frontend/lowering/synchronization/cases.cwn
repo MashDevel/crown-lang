@@ -1,0 +1,100 @@
+struct SyncCase {
+    body: Text
+    operation: Text
+}
+
+fn sync_cases() -> Vec<SyncCase> {
+    var cases = Vec<SyncCase>.new()
+    sync_lock_cases(cases, "Mutex", "pthread_mutex", "write")
+    sync_lock_cases(cases, "RwLock", "pthread_rwlock", "read")
+    cases.push(SyncCase {
+            body: "var value = RwLock.new(42)\nvalue.lock write as item { item = 7\nmark() }",
+            operation: "pthread_rwlock_wrlock"
+        })
+    sync_shared_cases(cases, "Shared", "42", "")
+    sync_shared_cases(cases, "Channel<u32>", "", "value.send(42)")
+    sync_operation_cases(cases, "let value = Channel<u32>.new()\nvalue.try_receive()")
+    sync_operation_cases(cases, "let value = Channel<u32>.new()\nvalue.send(42)")
+    sync_exit_cases(cases)
+    sync_drop_cases(cases)
+    return move cases
+}
+
+fn sync_lock_cases(cases: write Vec<SyncCase>, kind: Text, prefix: Text, mode: Text) -> void {
+    let create = std::text::joined(std::text::joined("var value = ", kind), ".new(42)\n")
+    let access = std::text::joined(std::text::joined("value.lock ", mode), " as item { item\nmark() }")
+    let suffix = if std::text::equal(kind, "Mutex") {
+        "_lock"
+    } else {
+        "_rdlock"
+    }
+    cases.push(SyncCase {
+            body: create.clone(), operation: std::text::joined(prefix, "_init")
+        })
+    cases.push(SyncCase {
+            body: std::text::joined(create, access), operation: std::text::joined(prefix, suffix)
+        })
+    let scope = std::text::joined(std::text::joined("if true {\n", create), "}\n")
+    cases.push(SyncCase {
+            body: scope.clone(), operation: std::text::joined(prefix, "_destroy")
+        })
+    let unlock = std::text::joined(std::text::joined(create, "value.lock "), std::text::joined(mode, " as item { item }\n"))
+    cases.push(SyncCase {
+            body: move unlock, operation: std::text::joined(prefix, "_unlock")
+        })
+}
+
+fn sync_operation_cases(cases: write Vec<SyncCase>, body: Text) -> void {
+    cases.push(SyncCase {
+            body: body.clone(), operation: "pthread_mutex_lock"
+        })
+    cases.push(SyncCase {
+            body: body.clone(), operation: "pthread_mutex_unlock"
+        })
+}
+
+fn sync_shared_cases(cases: write Vec<SyncCase>, kind: Text, argument: Text, setup: Text) -> void {
+    var create = std::text::joined(std::text::joined("let value = ", kind), ".new(")
+    std::text::append(create, std::text::joined(argument, ")\n"))
+    cases.push(SyncCase {
+            body: create.clone(), operation: "pthread_mutex_init"
+        })
+    sync_operation_cases(cases, std::text::joined(create, "let alias = value.share()\nalias"))
+    let scope = std::text::joined(std::text::joined("if true {\n", create), std::text::joined(setup, "\n}\n"))
+    sync_operation_cases(cases, std::text::joined(std::text::joined("if true {\n", create), "}\n"))
+    cases.push(SyncCase {
+            body: scope.clone(), operation: "pthread_mutex_destroy"
+        })
+}
+
+fn sync_exit_cases(cases: write Vec<SyncCase>) -> void {
+    let opening = "var value = Mutex.new(42)\nvalue.lock write as item { item\n"
+    cases.push(SyncCase {
+            body: std::text::joined(opening, "return Ok(()) }\n"), operation: "pthread_mutex_unlock"
+        })
+    cases.push(SyncCase {
+            body: std::text::joined(opening, "fail()? }\n"), operation: "pthread_mutex_unlock"
+        })
+}
+
+fn sync_source(body: Text) -> Text {
+    var source = "extern \"c\" { fn raw_write(fd: i32, value: RawPtr<u8>, length: usize) -> isize = \"write\" }\n"
+    std::text::append(source, "fn mark() -> void { unsafe { raw_write(1, \"continued\\n\".as_raw(), 10) } }\n")
+    std::text::append(source, "resource Tracked { drop { mark() } }\n")
+    std::text::append(source, "fn fail() -> Result<void, u32> { Err(7) }\nfn probe() -> Result<void, u32> {\n")
+    std::text::append(source, body)
+    std::text::append(source, "\nOk(()) }\nfn main() -> u32 { match probe() { Ok(done) => { done } Err(error) => { error } }\nmark()\nreturn 0 }\n")
+    return move source
+}
+
+fn sync_drop_cases(cases: write Vec<SyncCase>) -> void {
+    cases.push(SyncCase {
+            body: "if true { let value = Shared.new(Tracked {}) }", operation: "pthread_mutex_destroy"
+        })
+    cases.push(SyncCase {
+            body: "if true { let value = Channel<Tracked>.new()\nvalue.send(Tracked {}) }", operation: "pthread_mutex_destroy"
+        })
+    cases.push(SyncCase {
+            body: "if true { let value = Mutex.new(Tracked {}) }", operation: "pthread_mutex_destroy"
+        })
+}

@@ -1,0 +1,131 @@
+module sema {
+    fn evaluate_constants(checker: write Checker, program: frontend::Program) -> void {
+        if checker.errors != 0 || checker.symbols.errors != 0 {
+            return
+        }
+        loan read program.constants as declarations {
+            loan read checker.expressions as expressions {
+                let context = ConstantContext {
+                    declarations: declarations, expressions: expressions
+                }
+                for index in 0..declarations.length() {
+                    if constant_type_valid(checker.symbols.constants[index].value_type) == false {
+                        continue
+                    }
+                    checker.symbols.current_span = declarations[index].name.span
+                    match constant_evaluate(checker.symbols, context, index) {
+                        Ok(value) => {
+                            value
+                        }
+                        Err(error) => {
+                            symbols_error(checker.symbols, move error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn constant_evaluate(symbols: write Symbols, context: ConstantContext, index: usize) -> Result<ConstantScalar, Text> {
+        match symbols.constants[index].value {
+            ConstantResolved(value) => {
+                return Ok(value)
+            }
+            ConstantEvaluating => {
+                return Err("constant reference cycle")
+            }
+            ConstantArrayResolved => {
+                return Err("constant expression requires a scalar type")
+            }
+            ConstantFailed => {
+                return Err("constant depends on an invalid constant")
+            }
+            ConstantPending => {
+            }
+        }
+        symbols.constants[index].value = ConstantEvaluating()
+        let result = constant_expression(symbols, context, context.declarations[index].value)
+        match read result {
+            Ok(value) => {
+                symbols.constants[index].value = ConstantResolved(value)
+            }
+            Err(error) => {
+                error;
+                symbols.constants[index].value = ConstantFailed()
+            }
+        }
+        return move result
+    }
+
+    fn constant_expression(symbols: write Symbols, context: ConstantContext, expression: frontend::Expression) -> Result<ConstantScalar, Text> {
+        if symbols.constant_depth >= frontend::SYNTAX_DEPTH_LIMIT {
+            return Err("constant evaluation depth exceeds the syntax limit")
+        }
+        symbols.constant_depth = symbols.constant_depth + 1
+        let result = constant_expression_value(symbols, context, expression)
+        symbols.constant_depth = symbols.constant_depth - 1
+        return move result
+    }
+
+    fn constant_expression_value(symbols: write Symbols, context: ConstantContext, expression: frontend::Expression) -> Result<ConstantScalar, Text> {
+        match read expression.kind {
+            frontend::ExpressionPath(path) => {
+                return constant_reference(symbols, context, path)
+            }
+            frontend::ExpressionBinary(left, operator, right) => {
+                left;
+                operator;
+                right;
+                return constant_binary_expression(symbols, context, expression)
+            }
+            frontend::ExpressionNegate(value) => {
+                loan read value as inner {
+                    return constant_negate(symbols, context, inner)
+                }
+            }
+            frontend::ExpressionBitwiseNot(value) => {
+                loan read value as inner {
+                    let scalar = constant_expression(symbols, context, inner)?
+                    return Ok(ConstantScalar {
+                            builtin: scalar.builtin, bits: ~scalar.bits & constant_mask(scalar.builtin)
+                        })
+                }
+            }
+            _ => {
+                return constant_literal(symbols, context, expression)
+            }
+        }
+    }
+
+    fn constant_reference(symbols: write Symbols, context: ConstantContext, path: frontend::Path) -> Result<ConstantScalar, Text> {
+        if path.segments.length() != 1 {
+            return Err("constant expression requires a constant name")
+        }
+        match find_constant(symbols, path.segments[0]) {
+            Some(index) => {
+                return constant_evaluate(symbols, context, index)
+            }
+            None => {
+                return Err("constant expression requires a constant name")
+            }
+        }
+    }
+
+    fn constant_expression_builtin(context: ConstantContext, span: frontend::Span) -> Result<Builtin, Text> {
+        for index in 0..context.expressions.length() {
+            let record = context.expressions[index].span
+            if record.source == span.source && record.start == span.start && record.end == span.end {
+                match read context.expressions[index].value_type {
+                    BuiltinType(builtin, arguments) => {
+                        arguments;
+                        return Ok(builtin)
+                    }
+                    _ => {
+                        return Err("constant expression requires a scalar type")
+                    }
+                }
+            }
+        }
+        return Err("constant expression has no resolved type")
+    }
+}

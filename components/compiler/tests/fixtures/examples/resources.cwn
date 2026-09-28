@@ -1,0 +1,17 @@
+resource Guard {
+    code: u32
+
+    drop {
+        print(code)
+    }
+}
+
+fn main() -> u32 {
+    let outer = Guard { code: 1 }
+    if true {
+        let inner = Guard { code: 2 }
+        inner.code
+    }
+    outer.code
+    return 42
+}

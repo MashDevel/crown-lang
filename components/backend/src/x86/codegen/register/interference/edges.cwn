@@ -1,0 +1,77 @@
+module x86 {
+    fn codegen_forbid(values: ir::BitSet, registers: u16, forbidden: write Vec<u16>) -> void {
+        if registers == 0 {
+            return
+        }
+        var cursor: usize = 0
+        while cursor < values.length {
+            var index: usize = 0
+            match ir::bitset_next(values, cursor) {
+                Some(value) => {
+                    index = value
+                }
+                None => {
+                    return
+                }
+            }
+            forbidden[index] = forbidden[index] | registers
+            cursor = index + 1
+        }
+    }
+
+    fn codegen_forbid_state(registers: u16, state: write InterferenceState) -> void {
+        codegen_forbid(state.live, registers, state.forbidden)
+    }
+
+    fn codegen_add_definition_edges(result: Option<usize>, state: write InterferenceState) -> void {
+        match read result {
+            Some(value) => {
+                if state.eligible[value] == false {
+                    return
+                }
+                ir::bitset_remove(state.live, value)
+                codegen_connect_live(value, state)
+            }
+            None => {
+            }
+        }
+    }
+
+    fn codegen_connect_live(value: usize, state: write InterferenceState) -> void {
+        var cursor: usize = 0
+        while cursor < state.live.length {
+            var index: usize = 0
+            match ir::bitset_next(state.live, cursor) {
+                Some(next) => {
+                    index = next
+                }
+                None => {
+                    return
+                }
+            }
+            ir::bitset_insert(state.graph[value], index)
+            ir::bitset_insert(state.graph[index], value)
+            cursor = index + 1
+        }
+    }
+
+    fn codegen_parameter_edges(function: ir::Function, state: write InterferenceState) -> void {
+        var cursor = function.parameters.length()
+        while cursor > 0 {
+            cursor = cursor - 1
+            let parameter = Some(function.parameters[cursor])
+            codegen_add_definition_edges(parameter, state)
+        }
+    }
+
+    fn codegen_liveness(function: ir::Function, eligible: take Vec<bool>) -> RegisterAnalysis {
+        var liveness = ir::value_liveness(function, eligible)
+        var state = codegen_interference(function, move eligible, replace(liveness.blocks, Vec<ir::BlockLiveness>.new()))
+        return RegisterAnalysis {
+            used: replace(liveness.used, Vec<bool>.new())
+            graph: replace(state.graph, Vec<ir::BitSet>.new())
+            forbidden: replace(state.forbidden, Vec<u16>.new())
+            preferred: codegen_preferences(function)
+        }
+    }
+}

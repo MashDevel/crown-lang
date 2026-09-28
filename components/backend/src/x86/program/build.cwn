@@ -1,0 +1,59 @@
+module x86 {
+    fn program_add_function(program: write Program, function: take Function) -> Result<void, EncodeError> {
+        if program_has_data(program, function.name) || program_has_import(program, function.name) {
+            return Err(named_error(DuplicateSymbol(), function.name.clone()))
+        }
+        if program_has_function(program, function.name) {
+            return Err(named_error(DuplicateFunction(), function.name.clone()))
+        }
+        program.functions.push(move function)
+        return Ok(())
+    }
+
+    fn program_add_data(program: write Program, data: take Data) -> Result<void, EncodeError> {
+        if program_has_function(program, data.name) || program_has_import(program, data.name) {
+            return Err(named_error(DuplicateSymbol(), data.name.clone()))
+        }
+        if program_has_data(program, data.name) {
+            return Err(named_error(DuplicateData(), data.name.clone()))
+        }
+        program.data.push(move data)
+        return Ok(())
+    }
+
+    fn program_add_import(program: write Program, name: take Text) -> Result<void, EncodeError> {
+        return program_add_typed_import(program, move name, object::SymbolFunction())
+    }
+
+    fn program_add_typed_import(program: write Program, name: take Text, kind: object::SymbolKind) -> Result<void, EncodeError> {
+        if program_has_function(program, name) || program_has_data(program, name) {
+            return Err(named_error(DuplicateSymbol(), name.clone()))
+        }
+        for index in 0..program.imports.length() {
+            if std::text::equal(program.imports[index].name, name) {
+                if program.imports[index].kind != kind {
+                    return Err(named_error(DuplicateSymbol(), name.clone()))
+                }
+                return Ok(())
+            }
+        }
+        program.imports.push(Import {
+                name: move name, kind: kind
+            })
+        return Ok(())
+    }
+
+    fn program_remove_import(program: write Program, name: Text) -> bool {
+        if program_has_import(program, name) == false {
+            return false
+        }
+        var imports = Vec<Import>.with_capacity(program.imports.length() - 1)
+        for index in 0..program.imports.length() {
+            if std::text::equal(program.imports[index].name, name) == false {
+                imports.push(import_clone(program.imports[index]))
+            }
+        }
+        program.imports = move imports
+        return true
+    }
+}

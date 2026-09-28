@@ -1,0 +1,49 @@
+fn main() -> u32 {
+    var object = object::new()
+    var bytes = Vec<u8>.new()
+    bytes.push(195)
+    var section: usize = 0
+    match object::add_section(object, object::Section {
+            name: ".text"
+            kind: object::SectionText()
+            alignment: 16
+            data: move bytes
+            memory_size: 1
+        }) {
+        Ok(value) => {
+            section = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    var symbol: usize = 0
+    match object::add_symbol(object, object::Symbol {
+            name: "main"
+            kind: object::SymbolFunction()
+            binding: object::SymbolGlobal()
+            section: Some(section)
+            offset: 0
+            size: 1
+        }) {
+        Ok(value) => {
+            symbol = value
+        }
+        Err(error) => {
+            error;
+            return 2
+        }
+    }
+    object::set_entry(object, symbol)
+    match object::finish(move object) {
+        Ok(value) => {
+            value;
+            return 42
+        }
+        Err(error) => {
+            error;
+            return 3
+        }
+    }
+}

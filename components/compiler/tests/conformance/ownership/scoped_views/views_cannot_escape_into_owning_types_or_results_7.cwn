@@ -1,0 +1,14 @@
+view struct Parser {
+    data: TextView
+}
+interface Readable {
+    fn length(self: read Self) -> u32
+}
+impl Readable for Parser {
+    fn length(self: read Self) -> u32 {
+        return 0
+    }
+}
+fn main() -> u32 {
+    return 0
+}

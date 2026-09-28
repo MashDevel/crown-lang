@@ -1,0 +1,68 @@
+module optimize {
+    fn range(function: write ir::Function, enable_relations: bool) -> usize {
+        if range_has_comparisons(function) == false {
+            return 0
+        }
+        let ranges = infer_ranges(function)
+        let comparisons = range_comparisons(function)
+        let constraints = range_control(function, ranges, comparisons)
+        let state = RangeProofState {
+            inferred: move ranges
+            constraints: move constraints
+            comparisons: move comparisons
+            binaries: range_binaries(function)
+            definitions: range_definitions(function)
+            enable_relations: enable_relations
+        }
+        let proven = prove_ranges(function, state)
+        if proven.length() == 0 {
+            return 0
+        }
+        var replacements = none_usize(function.values.length())
+        let boolean_type = ir::TypeInteger(ir::IntegerWidth1())
+        var index: usize = 0
+        while index < proven.length() {
+            var raw: u64 = 0
+            if proven[index].value {
+                raw = 1
+            }
+            let constant = ir::ConstantInteger(raw)
+            replacements[proven[index].result] = Some(ir::function_constant(function, boolean_type, constant))
+            index = index + 1
+        }
+        ir::function_replace_uses_many(function, replacements)
+        remove_results(function, replacements, ir::value_present)
+        return proven.length()
+    }
+
+    fn range_has_comparisons(function: ir::Function) -> bool {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            loan read function.blocks[block] as body {
+                if block_has_comparisons(body) {
+                    return true
+                }
+            }
+            block = block + 1
+        }
+        return false
+    }
+
+    fn block_has_comparisons(block: ir::BasicBlock) -> bool {
+        var index: usize = 0
+        while index < block.instructions.length() {
+            match read block.instructions[index].kind {
+                ir::InstructionCompare(operator, left, right) => {
+                    operator;
+                    left;
+                    right;
+                    return true
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+}

@@ -1,0 +1,3 @@
+fn native_library_name() -> Text {
+    return "/usr/lib/libSystem.B.dylib"
+}

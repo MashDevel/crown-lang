@@ -1,0 +1,87 @@
+fn register_encodings() -> bool {
+    let integers = [x86::Rax(), x86::Rcx(), x86::Rdx(), x86::Rbx(), x86::Rsp(), x86::Rbp(), x86::Rsi(), x86::Rdi(), x86::R8(), x86::R9(), x86::R10(), x86::R11(), x86::R12(), x86::R13(), x86::R14(), x86::R15()]
+    let floats = [x86::Xmm0(), x86::Xmm1(), x86::Xmm2(), x86::Xmm3(), x86::Xmm4(), x86::Xmm5(), x86::Xmm6(), x86::Xmm7(), x86::Xmm8(), x86::Xmm9(), x86::Xmm10(), x86::Xmm11(), x86::Xmm12(), x86::Xmm13(), x86::Xmm14(), x86::Xmm15()]
+    var index: usize = 0
+    while index < 16 {
+        if x86::register_code(integers[index]) != u8.from(index) {
+            return false
+        }
+        if x86::float_register_code(floats[index]) != u8.from(index) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn condition_encodings() -> bool {
+    let values = [x86::Overflow(), x86::NotOverflow(), x86::Equal(), x86::NotEqual(), x86::Less(), x86::LessOrEqual(), x86::Greater(), x86::GreaterOrEqual(), x86::Below(), x86::BelowOrEqual(), x86::Above(), x86::AboveOrEqual(), x86::Parity(), x86::NotParity()]
+    let codes: [u8; 14] = [0, 1, 4, 5, 12, 14, 15, 13, 2, 6, 7, 3, 10, 11]
+    var index: usize = 0
+    while index < 14 {
+        if x86::condition_code(values[index]) != codes[index] {
+            return false
+        }
+        let inverse = x86::normalize_invert_condition(values[index])
+        if x86::condition_code(inverse) != codes[index] ^ 1 {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn allocation_order() -> bool {
+    let codes: [u8; 12] = [3, 12, 13, 14, 15, 7, 6, 8, 9, 10, 0, 2]
+    var index: usize = 0
+    while index < 12 {
+        match x86::codegen_allocatable_register(index) {
+            None => {
+                return false
+            }
+            Some(register) => {
+                if x86::register_code(register) != codes[index] {
+                    return false
+                }
+                if x86::codegen_register_is_allocatable(register) == false {
+                    return false
+                }
+            }
+        }
+        index = index + 1
+    }
+    match x86::codegen_allocatable_register(12) {
+        Some(value) => {
+            value;
+            return false
+        }
+        None => {
+        }
+    }
+    if x86::codegen_register_is_allocatable(x86::Rcx()) {
+        return false
+    }
+    if x86::codegen_register_is_allocatable(x86::Rsp()) {
+        return false
+    }
+    if x86::codegen_register_is_allocatable(x86::Rbp()) {
+        return false
+    }
+    if x86::codegen_register_is_allocatable(x86::R11()) {
+        return false
+    }
+    true
+}
+
+fn main() -> u32 {
+    if register_encodings() == false {
+        return 1
+    }
+    if condition_encodings() == false {
+        return 2
+    }
+    if allocation_order() == false {
+        return 3
+    }
+    42
+}

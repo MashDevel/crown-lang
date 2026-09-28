@@ -1,0 +1,61 @@
+module optimize {
+    fn inline(program: write ir::Program) -> usize {
+        var candidates = inline_candidates(program)
+        var inlined: usize = 0
+        var caller: usize = 0
+        while caller < program.functions.length() {
+            inlined = inlined + inline_caller(program, candidates, caller)
+            caller = caller + 1
+        }
+        return inlined
+    }
+
+    fn inline_candidates(program: ir::Program) -> Vec<InlineCandidate> {
+        var output = Vec<InlineCandidate>.with_capacity(program.functions.length())
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                output.push(inline_candidate(function))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn inline_caller(program: write ir::Program, candidates: write Vec<InlineCandidate>, caller: usize) -> usize {
+        var count: usize = 0
+        var active = true
+        while active && count < 64 {
+            var site: Option<InlineSite> = None()
+            loan read program.functions[caller] as function {
+                site = find_inline_site(function, caller, candidates)
+            }
+            match move site {
+                None => {
+                    active = false
+                }
+                Some(selected) => {
+                    var callee = ir::function_new("", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+                    loan write program.functions[selected.callee] as source {
+                        callee = ir::function_take(source)
+                    }
+                    var success = false
+                    loan write program.functions[caller] as function {
+                        success = inline_call(function, selected, callee)
+                    }
+                    program.functions[selected.callee] = move callee
+                    if success {
+                        loan read program.functions[caller] as function {
+                            candidates[caller] = inline_candidate(function)
+                        }
+                        count = count + 1
+                    }
+                    else {
+                        active = false
+                    }
+                }
+            }
+        }
+        return count
+    }
+}

@@ -1,0 +1,25 @@
+module optimize {
+    fn remove_results<T>(function: write ir::Function, selection: Vec<T>, selected: fn(T) -> bool) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var output = Vec<ir::Instruction>.new()
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                let remove = match read function.blocks[block].instructions[index].result {
+                    Some(result) => selected(selection[result])
+                    None => false
+                }
+                if remove == false {
+                    output.push(ir::instruction_copy(function.blocks[block].instructions[index]))
+                }
+                index = index + 1
+            }
+            function.blocks[block].instructions = move output
+            block = block + 1
+        }
+    }
+
+    fn result_marked(value: bool) -> bool {
+        value
+    }
+}

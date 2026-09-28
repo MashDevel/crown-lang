@@ -1,0 +1,152 @@
+module x86 {
+    fn normalize_fallthrough(instructions: take Vec<Instruction>) -> Vec<Instruction> {
+        let inverted = normalize_invert_fallthrough(move instructions)
+        var pending = normalize_reverse(move inverted)
+        var output = Vec<Instruction>.new()
+        while pending.length() > 0 {
+            match pending.pop() {
+                None => {
+                }
+                Some(instruction) => {
+                    var remove = false
+                    loan read instruction as current {
+                        match read current {
+                            Jump(target) => {
+                                remove = normalize_falls_through_to(target, pending, 0)
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    match normalize_retain_instruction(move instruction, remove == false) {
+                        Some(value) => {
+                            output.push(move value)
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return move output
+    }
+
+    fn normalize_invert_fallthrough(instructions: take Vec<Instruction>) -> Vec<Instruction> {
+        var pending = normalize_reverse(move instructions)
+        var output = Vec<Instruction>.new()
+        while pending.length() > 0 {
+            let instruction = match pending.pop() {
+                Some(value) => move value
+                None => {
+                    return move output
+                }
+            }
+            let replacement = normalize_inverted_jump(instruction, pending)
+            let replaced = normalize_instruction_present(replacement)
+            let selected = normalize_select_instruction(move instruction, move replacement)
+            if replaced {
+                match pending.pop() {
+                    Some(discarded) => {
+                        discarded
+                    }
+                    None => {
+                    }
+                }
+            }
+            output.push(move selected)
+        }
+        move output
+    }
+
+    fn normalize_inverted_jump(current: Instruction, pending: Vec<Instruction>) -> Option<Instruction> {
+        if pending.length() == 0 {
+            return None()
+        }
+        match read current {
+            JumpIf(condition, taken) => {
+                if normalize_falls_through_to(taken, pending, 1) == false {
+                    return None()
+                }
+                match read pending[pending.length() - 1] {
+                    Jump(other) => Some(JumpIf(normalize_invert_condition(condition), local_label_copy(other)))
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn normalize_falls_through_to(target: LocalLabel, pending: Vec<Instruction>, skip: usize) -> bool {
+        if pending.length() < skip {
+            return false
+        }
+        var cursor = pending.length() - skip
+        while cursor > 0 {
+            cursor = cursor - 1
+            match read pending[cursor] {
+                Label(label) => {
+                    if local_label_equal(label, target) {
+                        return true
+                    }
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    fn normalize_invert_condition(condition: Condition) -> Condition {
+        Condition {
+            code: condition_code(condition) ^ 1
+        }
+    }
+
+    fn normalize_reverse(instructions: take Vec<Instruction>) -> Vec<Instruction> {
+        var input = move instructions
+        var output = Vec<Instruction>.with_capacity(input.length())
+        while input.length() > 0 {
+            match input.pop() {
+                Some(instruction) => {
+                    output.push(move instruction)
+                }
+                None => {
+                }
+            }
+        }
+        return move output
+    }
+
+    fn normalize_retain_instruction(instruction: take Instruction, keep: bool) -> Option<Instruction> {
+        if keep {
+            return Some(move instruction)
+        }
+        instruction
+        return None()
+    }
+
+    fn normalize_instruction_present(instruction: Option<Instruction>) -> bool {
+        match read instruction {
+            Some(value) => {
+                value;
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn normalize_select_instruction(instruction: take Instruction, replacement: take Option<Instruction>) -> Instruction {
+        match move replacement {
+            Some(value) => {
+                instruction;
+                return move value
+            }
+            None => {
+                return move instruction
+            }
+        }
+    }
+}

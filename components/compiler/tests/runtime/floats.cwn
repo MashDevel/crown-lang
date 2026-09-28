@@ -1,0 +1,58 @@
+fn arithmetic() -> u32 {
+    let sum = 40.0 + 2.0
+    if sum != 42.0 {
+        return 1
+    }
+    let difference = 44.0 - 2.0
+    if difference != 42.0 {
+        return 2
+    }
+    let product = 21.0 * 2.0
+    if product != 42.0 {
+        return 3
+    }
+    let quotient = 84.0 / 2.0
+    if quotient != 42.0 {
+        return 4
+    }
+    let negative = -42.0
+    if negative >= 0.0 {
+        return 5
+    }
+    return 42
+}
+
+fn conversions() -> u32 {
+    let from_integer = f64.from(42)
+    if from_integer != 42.0 {
+        return 6
+    }
+    let to_integer = u32.from(42.75)
+    if to_integer != 42 {
+        return 7
+    }
+    let narrow = f32.from(42)
+    if narrow != 42.0 {
+        return 8
+    }
+    let wide = f64.from(narrow)
+    if wide != 42.0 {
+        return 9
+    }
+    let high_bit = u64.from(1) << 63
+    if f64.from(high_bit) != 9223372036854775808.0 {
+        return 10
+    }
+    if u64.from(9223372036854775808.0) != high_bit {
+        return 11
+    }
+    return 42
+}
+
+fn main() -> u32 {
+    let result = arithmetic()
+    if result != 42 {
+        return result
+    }
+    conversions()
+}

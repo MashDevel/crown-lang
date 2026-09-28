@@ -1,0 +1,5 @@
+module frontend {
+    fn token_kind_equal(left: TokenKind, right: TokenKind) -> bool {
+        left == right
+    }
+}

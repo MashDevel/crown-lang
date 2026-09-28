@@ -1,0 +1,1 @@
+fn main() -> u32 { var value = false; value |= true; return 0 }

@@ -1,0 +1,127 @@
+module sema {
+    struct ArenaAccess {
+        root: frontend::Name
+        key: VariableKey
+        element: Type
+    }
+
+    fn checker_arena_access(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                handle;
+                alias;
+                body
+                let usage = loan_usage(mode)
+                var arena_info: Option<ExpressionInfo> = None()
+                loan read arena as value {
+                    arena_info = checker_place(checker, value, usage)
+                }
+                match move arena_info {
+                    None => {
+                    }
+                    Some(info) => {
+                        match arena_element(info.value_type) {
+                            None => {
+                                checker_error(checker, "arena access requires a matching handle and a scoped loan")
+                            }
+                            Some(element) => {
+                                checker_prepare_arena(checker, statement, move element)
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "arena access requires a matching handle and a scoped loan")
+            }
+        }
+    }
+
+    fn arena_element(value_type: Type) -> Option<Type> {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                if builtin == Arena() && arguments.length() == 1 {
+                    loan read arguments[0] as element {
+                        return Some(type_copy(element))
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn checker_prepare_arena(checker: write Checker, statement: frontend::Statement, element: take Type) -> void {
+        match read statement.kind {
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                alias;
+                body
+                var handle_types = Vec<Type>.new()
+                handle_types.push(type_copy(element))
+                let expected = BuiltinType(Handle(), move handle_types)
+                loan read handle as value {
+                    loan read arena as target {
+                        check_place_operand(checker, target, value, expected)
+                    }
+                }
+                var root: Option<frontend::Name> = None()
+                loan read arena as value {
+                    root = expression_root(value)
+                }
+                match move root {
+                    None => {
+                        checker_error(checker, "arena access requires a matching handle and a scoped loan")
+                    }
+                    Some(root_name) => {
+                        match checker_find_variable(checker, root_name) {
+                            None => {
+                                checker_error(checker, "arena access requires a matching handle and a scoped loan")
+                            }
+                            Some(key) => {
+                                let access = ArenaAccess {
+                                    root: frontend::name_copy(root_name), key: key, element: type_copy(element)
+                                }
+                                checker_open_arena(checker, statement, move access)
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "arena access requires a matching handle and a scoped loan")
+            }
+        }
+    }
+
+    fn checker_open_arena(checker: write Checker, statement: frontend::Statement, access: take ArenaAccess) -> void {
+        match read statement.kind {
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                arena;
+                handle
+                loan read arena as value {
+                    begin_place_loan(checker, value, mode)
+                }
+                checker_push_scope(checker)
+                let variable = Variable {
+                    name: frontend::name_copy(alias)
+                    value_type: type_copy(access.element)
+                    copy_value: type_is_copy_with_symbols(checker.symbols, access.element)
+                    mutable_value: loan_is_write(mode)
+                    state: Available()
+                    access: loan_access(mode)
+                    state_span: statement.span
+                    span: statement.span
+                }
+                checker_add_variable(checker, move variable)
+                checker_statements(checker, body)
+                checker_pop_scope(checker)
+                checker.place_loans.pop()
+            }
+            _ => {
+                checker_error(checker, "arena access requires a matching handle and a scoped loan")
+            }
+        }
+    }
+}

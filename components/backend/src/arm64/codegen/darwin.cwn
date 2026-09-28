@@ -1,0 +1,21 @@
+module arm64 {
+    fn extend_argument(function: ir::Function, compiler: write Compiler, input: CallArgument, signed: bool) -> void {
+        if compiler.variant != AbiVariant::Darwin() {
+            return
+        }
+        match input.argument.location {
+            AbiLocation::General(start, count) => {
+                if count == 1 {
+                    normalize(compiler, function.values[input.value], start, signed)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn outgoing_partial(compiler: write Compiler, register: u32, offset: u64, size: u64) -> Result<void, Text> {
+        outgoing_address(compiler, 17, offset)?
+        return store_partial(compiler, register, 17, 0, size)
+    }
+}

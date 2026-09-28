@@ -1,0 +1,120 @@
+module coverage {
+    fn load_reports(directories: Vec<Text>) -> Result<Report, Text> {
+        let profile = combined_profile(directories)?
+        var output = Report {
+            files: Vec<FileReport>.new(), packages: Vec<PackageReport>.new(), counts: counts(), test_counts: counts(), runs: profile.runs
+        }
+        for index in 0..profile.files.length() {
+            record_source(profile.files[index], output)
+        }
+        finish_report(output)
+        return Ok(move output)
+    }
+
+    fn record_source(source: SourceProfile, output: write Report) -> void {
+        let destination = file_index(output.files, source.path.clone())
+        loan write output.files[destination] as file {
+            for point in 0..source.points.length() {
+                record_point(source.points[point], file)
+            }
+        }
+    }
+
+    fn report_size(document: toolchain::Json, points: usize) -> Result<usize, Text> {
+        if integer(document, document.root, "version")? != 2 {
+            return Err("unsupported coverage map version")
+        }
+        let size = integer(document, document.root, "bytes")?
+        if size !=(points + 63) / 64 * 8 || size == 0 {
+            return Err("invalid coverage map size")
+        }
+        return Ok(size)
+    }
+
+    fn integer(document: toolchain::Json, object: usize, field: Text) -> Result<usize, Text> {
+        return Ok(usize.from(toolchain::json_integer(document, toolchain::json_required(document, object, field)?)?))
+    }
+
+    fn read_hits(directory: Text, size: usize, runs: write usize) -> Result<Vec<u8>, Text> {
+        var output = std::bytes::filled(size, 0)
+        let entries = toolchain::directory_entries(directory)?
+        for index in 0..entries.length() {
+            if std::text::starts(toolchain::file_name(entries[index]), "run.") {
+                let data = toolchain::read_bytes(entries[index])?
+                if data.length() != size {
+                    return Err(std::text::joined("invalid coverage data size: ", entries[index]))
+                }
+                for byte in 0..size {
+                    output[byte] = output[byte] | data[byte]
+                }
+                runs = runs + 1
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn record_point(point: ProfilePoint, file: write FileReport) -> void {
+        if point.kind == 0 {
+            record_line(file.lines, point.line, point.hit)
+        } else {
+            record_branch(point, file)
+        }
+    }
+
+    fn record_line(lines: write Vec<u8>, line: usize, hit: bool) -> void {
+        while lines.length() <= line {
+            lines.push(0)
+        }
+        if hit {
+            lines[line] = 2;
+            return
+        }
+        if lines[line] == 0 {
+            lines[line] = 1
+        }
+    }
+
+    fn record_branch(point: ProfilePoint, file: write FileReport) -> void {
+        file.counts.branches = file.counts.branches + 1
+        if point.hit {
+            file.counts.covered_branches = file.counts.covered_branches + 1;
+            return
+        }
+        if file.missed_branches.length() != 0 {
+            file.missed_branches.push(',')
+        }
+        file.missed_branches.push('{')
+        std::text::append(file.missed_branches, "\"line\":")
+        std::text::append(file.missed_branches, std::text::decimal(u64.from(point.line)))
+        inspect::number_field(file.missed_branches, "column", point.column)
+        inspect::number_field(file.missed_branches, "kind", point.kind)
+        file.missed_branches.push('}')
+        return
+    }
+
+    fn finish_report(report: write Report) -> void {
+        for index in 0..report.files.length() {
+            var subtotal = counts()
+            var package = ""
+            loan write report.files[index] as file {
+                for line in 0..file.lines.length() {
+                    if file.lines[line] != 0 {
+                        file.counts.lines = file.counts.lines + 1
+                    }
+                    if file.lines[line] == 2 {
+                        file.counts.covered_lines = file.counts.covered_lines + 1
+                    }
+                }
+                subtotal = file.counts
+                package = package_path(file.path)
+            }
+            if test_source(report.files[index].path) {
+                sum(report.test_counts, subtotal)
+                continue
+            }
+            sum(report.counts, subtotal)
+            let group = package_index(report.packages, move package)
+            sum(report.packages[group].counts, subtotal)
+        }
+    }
+}

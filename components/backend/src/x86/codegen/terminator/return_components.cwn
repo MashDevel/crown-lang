@@ -1,0 +1,103 @@
+module x86 {
+    struct ReturnRegisters {
+        integer: usize
+        float: usize
+    }
+
+    fn codegen_load_next_return_component(compiler: write FunctionCompiler, component: ir::AbiComponent, registers: write ReturnRegisters) -> Result<void, CodegenError> {
+        if ir::type_is_float(component.value_type) {
+            codegen_load_float_return_component(compiler, component, registers.float)?
+            registers.float = registers.float + 1
+            return Ok(())
+        }
+        let register = match codegen_return_integer_register(registers.integer) {
+            Some(value) => value
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        codegen_load_return_component(compiler, component, register)?
+        registers.integer = registers.integer + 1
+        return Ok(())
+    }
+
+    fn codegen_abi_components_copy(components: Vec<ir::AbiComponent>) -> Vec<ir::AbiComponent> {
+        var output = Vec<ir::AbiComponent>.with_capacity(components.length())
+        var index: usize = 0
+        while index < components.length() {
+            loan read components[index] as component {
+                output.push(ir::abi_component_copy(component))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_return_integer_register(index: usize) -> Option<Register> {
+        if index == 0 {
+            return Some(Rax())
+        }
+        if index == 1 {
+            return Some(Rdx())
+        }
+        return None()
+    }
+
+    fn codegen_return_float_register(index: usize) -> Option<FloatRegister> {
+        if index == 0 {
+            return Some(Xmm0())
+        }
+        if index == 1 {
+            return Some(Xmm1())
+        }
+        return None()
+    }
+
+    fn codegen_load_return_component(compiler: write FunctionCompiler, component: ir::AbiComponent, destination: take Register) -> Result<void, CodegenError> {
+        if component.offset > 2147483647 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        match codegen_width(component.value_type) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(width) => {
+                codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                            destination: destination
+                            base: R11()
+                            offset: i32.from(component.offset)
+                            width: width
+                            extension: ZeroExtend()
+                        }))
+                return Ok(())
+            }
+        }
+    }
+
+    fn codegen_load_float_return_component(compiler: write FunctionCompiler, component: ir::AbiComponent, index: usize) -> Result<void, CodegenError> {
+        match codegen_load_return_component(compiler, component, R10()) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_return_float_register(index) {
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+            Some(register) => {
+                match codegen_float_width(component.value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, MoveToFloat(width, register, R10()))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,6 @@
+copy struct Container<T> {
+    values: Vec<T>
+}
+fn main() -> u32 {
+    return 0
+}

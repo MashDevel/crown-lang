@@ -1,0 +1,90 @@
+module toolchain {
+    extern "c" {
+        fn raw_getenv(name: RawPtr<u8>) -> RawPtr<u8> = "getenv"
+        fn raw_setenv(name: RawPtr<u8>, value: RawPtr<u8>, replace: i32) -> i32 = "setenv"
+        fn raw_strlen(value: RawPtr<u8>) -> usize = "strlen"
+        fn raw_free(value: RawPtr<u8>) -> void = "free"
+        fn raw_write(descriptor: i32, data: RawPtr<u8>, count: usize) -> isize = "write"
+    }
+
+    fn null() -> RawPtr<u8> {
+        unsafe {
+            return RawPtr<u8>.from_address(0)
+        }
+    }
+
+    fn cstring(value: Text) -> Result<std::cstr::CString, Text> {
+        loan read value as view {
+            match std::cstr::new(view) {
+                Some(encoded) => {
+                    return Ok(move encoded)
+                }
+                None => {
+                    return Err("text contains a NUL byte")
+                }
+            }
+        }
+    }
+
+    unsafe fn pointer_text(pointer: RawPtr<u8>) -> Text {
+        if pointer == null() {
+            return ""
+        }
+        var bytes = Vec<u8>.new()
+        unsafe {
+            let length = raw_strlen(pointer)
+            for index in 0..length {
+                bytes.push(pointer.offset(index).read())
+            }
+        }
+        return std::text::from_bytes_lossy(bytes)
+    }
+
+    fn environment(name: Text) -> Text {
+        match cstring(name) {
+            Err(error) => {
+                error;
+                return ""
+            }
+            Ok(encoded) => {
+                unsafe {
+                    return pointer_text(raw_getenv(std::cstr::as_raw(encoded)))
+                }
+            }
+        }
+    }
+
+    fn set_environment(name: Text, value: Text) -> Result<void, Text> {
+        let key = cstring(name)?
+        let content = cstring(value)?
+        unsafe {
+            if raw_setenv(std::cstr::as_raw(key), std::cstr::as_raw(content), 1) != 0 {
+                return Err("could not set environment variable")
+            }
+        }
+        return Ok(())
+    }
+
+    fn write_stream(descriptor: i32, value: Text) -> void {
+        var offset: usize = 0
+        unsafe {
+            while offset < value.length() {
+                let count = raw_write(descriptor, value.as_raw().offset(offset), value.length() - offset)
+                if count <= 0 {
+                    return
+                }
+                offset = offset + usize.from(count)
+            }
+        }
+    }
+
+    fn say(value: Text) -> void {
+        write_stream(1, value);
+        write_stream(1, "\n")
+    }
+    fn failure(value: Text) -> void {
+        write_stream(2, "error: ");
+        write_stream(2, value);
+        write_stream(2, "\n")
+    }
+}

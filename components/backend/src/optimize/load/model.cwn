@@ -1,0 +1,63 @@
+module optimize {
+    struct LoadEntry {
+        address: usize
+        value_type: ir::Type
+        alignment: u32
+        result: usize
+    }
+
+    struct LoadBlockEntry {
+        reached: bool
+        available: Vec<LoadEntry>
+    }
+
+    struct LoadScan {
+        definitions: Vec<Definition>
+        offsets: Vec<Option<ir::AddressOffset>>
+        roots: Vec<MemoryRoot>
+        effects: Shared<Vec<MemoryEffect>>
+        available: Vec<LoadEntry>
+        replacements: Vec<Option<usize>>
+        removed: Vec<bool>
+        eliminate: bool
+    }
+
+    struct LoadStore {
+        address: usize
+        value: usize
+    }
+
+    struct LoadRegion {
+        root: usize
+        term: Option<usize>
+        start: i64
+        end: i64
+    }
+
+    fn load_entry_copy(value: LoadEntry) -> LoadEntry {
+        return LoadEntry {
+            address: value.address
+            value_type: value.value_type
+            alignment: value.alignment
+            result: value.result
+        }
+    }
+
+    fn load_entries_copy(values: Vec<LoadEntry>) -> Vec<LoadEntry> {
+        loan read values as view {
+            return load_entry_slice_copy(view)
+        }
+    }
+
+    fn load_entry_slice_copy(values: Slice<LoadEntry>) -> Vec<LoadEntry> {
+        var output = Vec<LoadEntry>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(load_entry_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

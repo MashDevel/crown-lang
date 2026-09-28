@@ -1,0 +1,15 @@
+unsafe fn write_register(address: read usize, value: read u32) -> void {
+    unsafe {
+        let register = RawPtr<u32>.from_address(address)
+        register.write_volatile(value)
+        return
+    }
+}
+
+fn main() -> u32 {
+    unsafe {
+        let pointer = RawPtr<u32>.from_address(0)
+        pointer
+    }
+    return 0
+}

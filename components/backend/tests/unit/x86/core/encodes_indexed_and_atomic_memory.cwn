@@ -1,0 +1,19 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    test_encode(x86::LoadIndexed(x86::LoadIndexedArgs {
+                destination: x86::R8(), base: x86::Rbx(), index: x86::R9(), scale: 4, width: x86::Dword(), extension: x86::ZeroExtend()
+            }), bytes)
+    test_encode(x86::StoreIndexed(x86::StoreIndexedArgs {
+                base: x86::R12(), index: x86::Rcx(), scale: 1, source: x86::R9(), width: x86::Word()
+            }), bytes)
+    test_encode(x86::CompareExchangeMemory(x86::CompareExchangeMemoryArgs {
+                address: x86::R11(), value: x86::Rdx(), width: x86::Qword()
+            }), bytes)
+    let expected: [u8; 14] = [70, 139, 4, 139, 102, 69, 137, 12, 12, 240, 73, 15, 177, 19]
+    loan read expected as values {
+        if test_bytes_equal(bytes, values) == false {
+            return 1
+        }
+    }
+    return 42
+}

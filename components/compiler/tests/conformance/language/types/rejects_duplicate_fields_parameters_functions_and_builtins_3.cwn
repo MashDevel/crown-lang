@@ -1,0 +1,9 @@
+fn same() -> u32 {
+    return 1
+}
+fn same() -> u32 {
+    return 2
+}
+fn main() -> u32 {
+    return 0
+}

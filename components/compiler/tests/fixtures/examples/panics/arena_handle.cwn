@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    var arena = Arena<u32>.new()
+    let handle = arena.insert(42)
+    arena.remove(handle)
+    arena.with(handle) as read value { print(value) }
+    return 0
+}

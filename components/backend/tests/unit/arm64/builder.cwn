@@ -1,0 +1,50 @@
+fn checked_encoding() -> Result<void, Text> {
+    var compiler = arm64::runtime_compiler(0)
+    arm64::immediate(compiler, 9, 42)
+    arm64::finish_encoding(compiler)?
+    testing::expect(compiler.bytes.length() == 4, "valid instructions are emitted")?
+    arm64::frame_access(compiler, 17, 0, 8, true)
+    arm64::immediate(compiler, 31, 1)
+    testing::expect(std::text::equal(compiler.error, "ARM64 frame access reserves register 17 for addresses"), "first encoding error is retained")?
+    testing::error(arm64::finish_encoding(compiler))?
+    var object = object::new()
+    object.architecture = object::ArchitectureArm64()
+    testing::error(arm64::runtime_finish(object, compiler, "invalid"))?
+    return testing::expect(object.sections.length() == 0, "failed encoding cannot publish machine code")
+}
+
+fn branch_bounds() -> Result<void, Text> {
+    var compiler = arm64::runtime_compiler(0)
+    arm64::patch_branch(compiler, 0, 4)
+    testing::error(arm64::finish_encoding(compiler))?
+    var distant = arm64::runtime_compiler(0)
+    arm64::emit(distant, 0)
+    arm64::patch_branch(distant, 0, 134217728)
+    return testing::error(arm64::finish_encoding(distant))
+}
+
+fn indexed_symbols() -> Result<void, Text> {
+    var object = object::new()
+    let first = arm64::symbol_index(object, "first", object::SymbolFunction())
+    var symbols = arm64::symbol_map(object)
+    let known = arm64::SymbolFixup {
+        offset: 0, name: "first", kind: object::RelocationArmBranch26()
+    }
+    testing::expect(arm64::indexed_symbol(object, symbols, known) == first, "existing symbols retain their indices")?
+    let new_symbol = arm64::SymbolFixup {
+        offset: 4, name: "next", kind: object::RelocationArmBranch26()
+    }
+    let added = arm64::indexed_symbol(object, symbols, new_symbol)
+    testing::expect(added == arm64::indexed_symbol(object, symbols, new_symbol), "new imports are cached")?
+    return testing::expect(object.symbols.length() == 2, "symbol lookup does not duplicate imports")
+}
+
+fn run() -> Result<void, Text> {
+    checked_encoding()?
+    branch_bounds()?
+    return indexed_symbols()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

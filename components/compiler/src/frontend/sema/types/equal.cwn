@@ -1,0 +1,193 @@
+module sema {
+    fn types_equal(left: Type, right: Type) -> bool {
+        match read left {
+            BuiltinType(builtin, arguments) => {
+                return builtin_type_equal(builtin, arguments, right)
+            }
+            NamedType(symbol, arguments) => {
+                return named_type_equal(symbol, arguments, right)
+            }
+            ArrayType(element, length) => {
+                return array_type_equal(element, length, right)
+            }
+            FunctionType(parameters, result) => {
+                return function_type_equal(parameters, result, right)
+            }
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return scoped_function_equal(value, right)
+                }
+            }
+            DynamicType(interface_symbol) => {
+                return dynamic_type_equal(interface_symbol, right)
+            }
+            ParameterType(parameter) => {
+                return parameter_equal(parameter, right)
+            }
+            IntegerLiteral(value) => {
+                return integer_literal_equal(value, right)
+            }
+            FloatLiteral | Infer | Invalid => {
+                return unresolved_types_equal(left, right)
+            }
+        }
+    }
+
+    fn unresolved_types_equal(left: Type, right: Type) -> bool {
+        return (type_is_float_literal(left) && type_is_float_literal(right)) ||(type_is_infer(left) && type_is_infer(right)) ||(type_is_invalid(left) && type_is_invalid(right))
+    }
+
+    fn builtin_type_equal(builtin: Builtin, arguments: Vec<Type>, right: Type) -> bool {
+        match read right {
+            BuiltinType(other, other_arguments) => {
+                return builtin == other && type_vectors_equal(arguments, other_arguments)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn named_type_equal(symbol: usize, arguments: Vec<Type>, right: Type) -> bool {
+        match read right {
+            NamedType(other, other_arguments) => {
+                return symbol == other && type_vectors_equal(arguments, other_arguments)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn array_type_equal(element: Box<Type>, length: usize, right: Type) -> bool {
+        match read right {
+            ArrayType(other, other_length) => {
+                if length != other_length {
+                    return false
+                }
+                loan read element as left_value {
+                    loan read other as right_value {
+                        return types_equal(left_value, right_value)
+                    }
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn function_type_equal(parameters: Vec<ParameterType>, result: Box<Type>, right: Type) -> bool {
+        match read right {
+            FunctionType(other_parameters, other_result) => {
+                if parameters.length() != other_parameters.length() {
+                    return false
+                }
+                var index: usize = 0
+                while index < parameters.length() {
+                    if parameter_types_equal(parameters[index], other_parameters[index]) == false {
+                        return false
+                    }
+                    index = index + 1
+                }
+                loan read result as left_value {
+                    loan read other_result as right_value {
+                        return types_equal(left_value, right_value)
+                    }
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn parameter_types_equal(left: ParameterType, right: ParameterType) -> bool {
+        return left.mode == right.mode && types_equal(left.value_type, right.value_type)
+    }
+
+    fn type_vectors_equal(left: Vec<Type>, right: Vec<Type>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < left.length() {
+            loan read left[index] as left_value {
+                loan read right[index] as right_value {
+                    if types_equal(left_value, right_value) == false {
+                        return false
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn dynamic_type_equal(interface_symbol: usize, right: Type) -> bool {
+        match read right {
+            DynamicType(other) => {
+                return interface_symbol == other
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn parameter_equal(parameter: usize, right: Type) -> bool {
+        match read right {
+            ParameterType(other) => {
+                return parameter == other
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn integer_literal_equal(value: u64, right: Type) -> bool {
+        match read right {
+            IntegerLiteral(other) => {
+                return value == other
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_float_literal(value: Type) -> bool {
+        match read value {
+            FloatLiteral => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_infer(value: Type) -> bool {
+        match read value {
+            Infer => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_invalid(value: Type) -> bool {
+        match read value {
+            Invalid => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+}

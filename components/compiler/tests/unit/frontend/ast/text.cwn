@@ -1,0 +1,17 @@
+fn main() -> u32 {
+    let values = ["", "ascii", "é", "λ", "😀", "a\0b"]
+    for index in 0..6 {
+        let output = frontend::namespace_qualify("prefix", values[index])
+        let expected = std::text::joined("prefix::", values[index])
+        if !std::text::equal(output, expected) {
+            return 1
+        }
+    }
+    if !std::text::equal(frontend::namespace_parent("λ::é::child"), "λ::é") {
+        return 2
+    }
+    if !std::text::equal(frontend::namespace_parent("root"), "") {
+        return 3
+    }
+    return 0
+}

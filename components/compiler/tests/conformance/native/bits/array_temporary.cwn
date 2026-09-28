@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    unsafe {
+        let p = [1, 2].as_raw();
+        p;
+    }
+    return 0
+}

@@ -1,0 +1,15 @@
+resource Marker<T> {
+    value: T
+    marker: u32
+    drop { value; print(marker) }
+}
+fn launch<T>(value: take T) -> void {
+    var worker = spawn move { inspect(value) }
+    worker.join()
+}
+fn inspect<T>(value: T) -> void { value; print(7) }
+fn main() -> u32 {
+    launch(Marker<Text> { value: "first", marker: 11 })
+    launch(Marker<u32> { value: 3, marker: 22 })
+    return 0
+}

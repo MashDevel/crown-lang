@@ -1,0 +1,4 @@
+const VALUE: u32 = 1
+fn main() -> u32 {
+    return move VALUE
+}

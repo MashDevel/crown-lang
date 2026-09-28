@@ -1,0 +1,125 @@
+module formatting {
+    struct State {
+        output: Text
+        delimiters: Vec<frontend::TokenKind>
+        fresh: bool
+        breaks: usize
+        previous: frontend::TokenKind
+        end: usize
+        colon_pair: bool
+        rules: toolchain::FormatRules
+    }
+
+    fn source(value: Text, rules: toolchain::FormatRules) -> Result<Text, Text> {
+        let bytes = toolchain::text_bytes(value)
+        let length = bytes.length()
+        let shared = Shared.new(move bytes)
+        let tokens = match frontend::lex(shared.share(), length, 0) {
+            Ok(tokens) => move tokens
+            Err(errors) => {
+                errors
+                return Err("cannot format source with lexical errors")
+            }
+        }
+        let starts = line_starts(shared.share(), length)?
+        var state = State {
+            output: "", delimiters: Vec<frontend::TokenKind>.new(), fresh: true, breaks: 0
+            previous: frontend::TokenKind::TokenEnd(), end: 0
+            colon_pair: false, rules: rules
+        }
+        for index in 0..tokens.length() {
+            loan read tokens[index] as item {
+                token(state, value, item, starts[item.span.start] != 0, compound_token(tokens, index))
+            }
+        }
+        finish(state)
+        validate_output(state.output)?
+        return Ok(replace(state.output, Text.new()))
+    }
+
+    fn finish(state: write State) -> void {
+        if state.output.length() == 0 {
+            return
+        }
+        if state.rules.final_newline {
+            if state.fresh == false {
+                state.output.push('\n')
+            }
+        } else {
+            if state.fresh {
+                state.output = std::text::slice(state.output, 0, state.output.length() - 1)
+            }
+        }
+    }
+
+    fn token(state: write State, source: Text, token: frontend::Token, starts_line: bool, compound: bool) -> void {
+        let kind = token.kind
+        if kind == frontend::TokenKind::TokenEnd() {
+            return
+        }
+        if kind == frontend::TokenKind::TokenNewline() {
+            newline(state)
+            return
+        }
+        if breaks_before(state.previous, kind, starts_line) {
+            line_break(state)
+        }
+        if closing(kind) {
+            state.delimiters.pop()
+        }
+        indentation(state, kind, token.span.start > state.end || compound)
+        std::text::append(state.output, std::text::slice(source, token.span.start, token.span.end))
+        state.fresh = false
+        state.breaks = 0
+        state.colon_pair = kind == frontend::TokenKind::TokenColon() && state.previous == frontend::TokenKind::TokenColon()
+        state.previous = kind
+        state.end = token.span.end
+        if opening(kind) {
+            state.delimiters.push(kind)
+        }
+        if breaks_after(state, kind) {
+            line_break(state)
+        }
+    }
+
+    fn indentation(state: write State, kind: frontend::TokenKind, gap: bool) -> void {
+        if state.fresh {
+            let blanks = if state.breaks > 0 {
+                state.breaks - 1
+            } else {
+                0
+            }
+            let count = if blanks > state.rules.max_blank_lines {
+                state.rules.max_blank_lines
+            } else {
+                blanks
+            }
+            for index in 0..count {
+                index
+                state.output.push('\n')
+            }
+            for index in 0..state.delimiters.length() * state.rules.indent_width {
+                index
+                state.output.push(' ')
+            }
+        } else {
+            if space_before(state, kind, gap) {
+                state.output.push(' ')
+            }
+        }
+    }
+
+    fn line_break(state: write State) -> void {
+        if state.fresh == false {
+            state.output.push('\n')
+            state.fresh = true
+        }
+    }
+
+    fn newline(state: write State) -> void {
+        line_break(state)
+        if state.output.length() != 0 {
+            state.breaks = state.breaks + 1
+        }
+    }
+}

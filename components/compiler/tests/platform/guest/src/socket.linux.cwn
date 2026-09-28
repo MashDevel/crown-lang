@@ -1,0 +1,12 @@
+module guest {
+    const SOCKET_LEVEL: i32 = 1
+    const RECEIVE_TIMEOUT: i32 = 20
+    const SEND_TIMEOUT: i32 = 21
+    const NO_SIGNAL: i32 = 16384
+
+    fn socket_address(path: Text) -> Result<Vec<u8>, Text> {
+        var address = socket_path(path, 110)?
+        address[0] = 1
+        return Ok(move address)
+    }
+}

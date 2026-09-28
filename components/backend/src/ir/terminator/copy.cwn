@@ -1,0 +1,33 @@
+module ir {
+    fn terminator_copy(terminator: Terminator) -> Terminator {
+        match read terminator {
+            TerminatorBranch(target) => {
+                return TerminatorBranch(target)
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                return TerminatorConditional(condition, then_block, else_block)
+            }
+            TerminatorSwitch(value, cases, default) => {
+                return TerminatorSwitch(value, switch_cases_copy(cases), default)
+            }
+            TerminatorReturn(result) => {
+                return TerminatorReturn(result)
+            }
+            TerminatorUnreachable => {
+                return TerminatorUnreachable()
+            }
+        }
+    }
+
+    fn switch_cases_copy(values: Vec<SwitchCase>) -> Vec<SwitchCase> {
+        var output = Vec<SwitchCase>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(SwitchCase {
+                    value: values[index].value, block: values[index].block
+                })
+            index = index + 1
+        }
+        return move output
+    }
+}

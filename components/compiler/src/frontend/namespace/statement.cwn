@@ -1,0 +1,195 @@
+module frontend {
+    fn namespace_block(resolver: write NamespaceResolver, body: write Vec<Statement>) -> void {
+        let previous = sema::names_copy(resolver.locals)
+        var index: usize = 0
+        while index < body.length() {
+            loan write body[index] as statement {
+                namespace_statement(resolver, statement)
+            }
+            index = index + 1
+        }
+        resolver.locals = move previous
+    }
+
+    fn namespace_statement(resolver: write NamespaceResolver, statement: write Statement) -> void {
+        if namespace_value_statement(statement.kind) == false {
+            namespace_control_statement(resolver, statement);
+            return
+        }
+        match write statement.kind {
+            StatementBind(name, mutable_value, annotation, value) => {
+                mutable_value
+                namespace_annotation(resolver, annotation)
+                namespace_expression(resolver, value)
+                resolver.locals.push(name_copy(name))
+            }
+            StatementDestructure(mutable, fields, value) => {
+                mutable;
+                namespace_expression(resolver, value)
+                for index in 0..fields.length() {
+                    resolver.locals.push(name_copy(fields[index].binding))
+                }
+            }
+            StatementUpdate(target, operator, value) => {
+                operator;
+                namespace_expression(resolver, target);
+                namespace_expression(resolver, value)
+            }
+            StatementAssign(target, value) => {
+                namespace_expression(resolver, target);
+                namespace_expression(resolver, value)
+            }
+            StatementReturn(value, implicit) => {
+                implicit;
+                namespace_expression(resolver, value)
+            }
+            StatementPrint(value) => {
+                namespace_expression(resolver, value)
+            }
+            StatementExpression(value) => {
+                namespace_expression(resolver, value)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn namespace_alias_body(resolver: write NamespaceResolver, alias: Name, body: write Vec<Statement>) -> void {
+        resolver.locals.push(name_copy(alias))
+        namespace_block(resolver, body)
+        resolver.locals.pop()
+    }
+
+    fn namespace_arms(resolver: write NamespaceResolver, arms: write Vec<MatchArm>) -> void {
+        var index: usize = 0
+        while index < arms.length() {
+            loan write arms[index] as arm {
+                namespace_pattern(resolver, arm.pattern)
+                namespace_closure(resolver, arm.pattern.bindings, arm.body)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_match(resolver: write NamespaceResolver, value: write MatchExpression) -> void {
+        namespace_expression(resolver, value.value)
+        namespace_arms(resolver, value.arms)
+    }
+
+    fn namespace_control_statement(resolver: write NamespaceResolver, statement: write Statement) -> void {
+        match write statement.kind {
+            StatementLoan(mode, source, alias, body) => {
+                mode;
+                namespace_expression(resolver, source);
+                namespace_alias_body(resolver, alias, body)
+            }
+            StatementLock(mode, source, alias, body) => {
+                mode;
+                namespace_path(resolver, source);
+                namespace_alias_body(resolver, alias, body)
+            }
+            StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                namespace_box(resolver, arena);
+                namespace_box(resolver, handle);
+                namespace_alias_body(resolver, alias, body)
+            }
+            StatementIf(condition, yes, no) => {
+                namespace_expression(resolver, condition);
+                namespace_block(resolver, yes);
+                namespace_block(resolver, no)
+            }
+            StatementWhile(condition, body) => {
+                namespace_expression(resolver, condition);
+                namespace_block(resolver, body)
+            }
+            StatementFor(name, start, end, body) => {
+                namespace_expression(resolver, start);
+                namespace_expression(resolver, end);
+                namespace_alias_body(resolver, name, body)
+            }
+            StatementThreadScope(body) => {
+                namespace_block(resolver, body)
+            }
+            StatementUnsafe(body) => {
+                namespace_block(resolver, body)
+            }
+            StatementMatch(value) => {
+                namespace_match(resolver, value)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn namespace_annotation(resolver: NamespaceResolver, annotation: write Option<TypeRef>) -> void {
+        match write annotation {
+            Some(value_type) => {
+                namespace_type(resolver, value_type)
+            }
+            None => {
+            }
+        }
+    }
+
+    fn namespace_pattern(resolver: NamespaceResolver, pattern: write Pattern) -> void {
+        for index in 0..pattern.choices.length() {
+            match write pattern.choices[index] {
+                PatternVariant(name) => {
+                    let text = sema::name_text(resolver.source, name)
+                    let parent = namespace_parent(text)
+                    if parent.length() != 0 {
+                        namespace_value_name(resolver, name)
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+    }
+
+    fn namespace_value_statement(kind: StatementKind) -> bool {
+        match read kind {
+            StatementBind(name, mutable_value, annotation, value) => {
+                name;
+                mutable_value;
+                annotation;
+                value;
+                return true
+            }
+            StatementDestructure(mutable, fields, value) => {
+                mutable;
+                fields;
+                value;
+                return true
+            }
+            StatementUpdate(target, operator, value) => {
+                target;
+                operator;
+                value;
+                return true
+            }
+            StatementAssign(target, value) => {
+                target;
+                value;
+                return true
+            }
+            StatementReturn(value, implicit) => {
+                implicit;
+                value;
+                return true
+            }
+            StatementPrint(value) => {
+                value;
+                return true
+            }
+            StatementExpression(value) => {
+                value;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

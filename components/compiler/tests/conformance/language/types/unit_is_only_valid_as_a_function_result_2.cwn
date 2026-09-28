@@ -1,0 +1,5 @@
+fn invalid(value: read void) -> void {
+}
+fn main() -> u32 {
+    return 0
+}

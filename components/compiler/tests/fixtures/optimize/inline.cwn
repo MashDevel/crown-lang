@@ -1,0 +1,64 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn test_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) { Ok(value) => { return value } Err(error) => { error; return function.blocks.length() } }
+}
+
+fn test_callee(value_type: read ir::Type) -> ir::Function {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("increment", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    let block = test_block(function)
+    let one_constant = ir::ConstantInteger(u64.from(1))
+    let one = ir::function_constant(function, value_type, one_constant)
+    let result = test_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), function.parameters[0], one))
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) { Ok(value) => { value } Err(error) => { error } }
+    return move function
+}
+
+fn test_caller(value_type: read ir::Type) -> ir::Function {
+    var function = ir::function_new("caller", ir::signature_new(Vec<ir::Type>.new(), value_type), ir::LinkageExport())
+    let block = test_block(function)
+    let forty_one_constant = ir::ConstantInteger(u64.from(41))
+    let forty_one = ir::function_constant(function, value_type, forty_one_constant)
+    var arguments = Vec<usize>.new()
+    arguments.push(forty_one)
+    let result = test_append(function, block, ir::InstructionCall(0, move arguments, value_type))
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) { Ok(value) => { value } Err(error) => { error } }
+    return move function
+}
+
+fn test_has_call(function: read ir::Function) -> bool {
+    var block: usize = 0
+    while block < function.blocks.length() {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            match read function.blocks[block].instructions[index].kind {
+                ir::InstructionCall(target, arguments, result) => { target; arguments; result; return true }
+                _ => {}
+            }
+            index = index + 1
+        }
+        block = block + 1
+    }
+    return false
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    var program = ir::program_new()
+    ir::program_add_function(program, test_callee(value_type))
+    let caller = ir::program_add_function(program, test_caller(value_type))
+    ir::program_set_entry(program, caller)
+    optimize::generated(program)
+    loan read program.functions[caller] as function {
+        if test_has_call(function) { return 1 }
+    }
+    match ir::validate_program(program) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    return 42
+}

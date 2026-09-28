@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let pointer = RawPtr<u32>.from_address(0)
+    return 0
+}

@@ -1,0 +1,95 @@
+module sema {
+    fn checker_exchange(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                let replacing = name_is(checker.symbols.source, name, "replace")
+                return exchange_arguments(checker, arguments, replacing)
+            }
+            _ => {
+                checker_error(checker, "replace and swap require writable, non-overlapping places of the same type");
+                return None()
+            }
+        }
+    }
+
+    fn is_exchange(source: Shared<Vec<u8>>, name: frontend::Name) -> bool {
+        return name_is(source, name, "replace") || name_is(source, name, "swap")
+    }
+
+    fn exchange_arguments(checker: write Checker, arguments: Vec<frontend::Expression>, replacing: bool) -> Option<ExpressionInfo> {
+        if arguments.length() != 2 {
+            checker_error(checker, "replace and swap require writable, non-overlapping places of the same type");
+            return None()
+        }
+        var expected = Invalid()
+        loan read arguments[0] as target {
+            match checker_assignment_type(checker, target) {
+                Some(value) => {
+                    expected = move value
+                }
+                None => {
+                    return None()
+                }
+            }
+        }
+        if checker_require_storable(checker, expected) == false {
+            return None()
+        }
+        if replacing {
+            return replace_arguments(checker, arguments, expected)
+        }
+        swap_arguments(checker, arguments, expected)
+        return Some(copy_info(builtin_leaf(Unit())))
+    }
+
+    fn replace_arguments(checker: write Checker, arguments: Vec<frontend::Expression>, expected: Type) -> Option<ExpressionInfo> {
+        let usage = WritePath()
+        loan read arguments[1] as value {
+            checker_value(checker, value, expected)
+        }
+        loan read arguments[0] as target {
+            checker_place(checker, target, usage)
+        }
+        return Some(checker_type_info(checker, type_copy(expected)))
+    }
+
+    fn swap_arguments(checker: write Checker, arguments: Vec<frontend::Expression>, expected: Type) -> void {
+        let usage = WritePath()
+        loan read arguments[0] as target {
+            checker_place(checker, target, usage)
+        }
+        let loan_count = checker.place_loans.length()
+        let mode = frontend::LoanRead()
+        loan read arguments[0] as target {
+            begin_temporary_loan(checker, target, mode, LoanCallEnd())
+        }
+        loan read arguments[1] as target {
+            swap_second_place(checker, target, expected)
+        }
+        while checker.place_loans.length() > loan_count {
+            checker.place_loans.pop()
+        }
+        loan read arguments[1] as target {
+            match place_path(target) {
+                Some(path) => {
+                    checker_path(checker, path, usage)
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn swap_second_place(checker: write Checker, target: frontend::Expression, expected: Type) -> void {
+        let usage = ReadPath()
+        match checker_place(checker, target, usage) {
+            Some(info) => {
+                if types_equal(info.value_type, expected) == false {
+                    checker_error(checker, "replace and swap require writable, non-overlapping places of the same type")
+                }
+            }
+            None => {
+            }
+        }
+    }
+}

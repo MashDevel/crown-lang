@@ -1,0 +1,6 @@
+enum Choice<T, T> {
+    Value(T)
+}
+fn main() -> u32 {
+    return 0
+}

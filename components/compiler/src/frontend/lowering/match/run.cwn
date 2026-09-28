@@ -1,0 +1,70 @@
+module lowering {
+    fn match_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression) -> Result<void, u32> {
+        let flow = prepare_match(compiler, analysis, expression)?
+        compiler.matches.push(move flow)
+        lower_match(compiler, analysis, expression)?
+        compiler.matches.pop()
+        return Ok(())
+    }
+
+    fn match_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression, checked_span: frontend::Span) -> Result<Value, u32> {
+        let value_type = function_span_type(compiler, analysis, checked_span)?
+        let destination = function_stack(compiler, analysis.checker.symbols, value_type)?
+        var flow = prepare_match(compiler, analysis, expression)?
+        flow.result = Some(destination)
+        compiler.matches.push(move flow)
+        lower_match(compiler, analysis, expression)?
+        compiler.matches.pop()
+        let result = Place {
+            address: destination, value_type: move value_type
+        }
+        return match_result_value(compiler, analysis.checker.symbols, result)
+    }
+
+    fn lower_match(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression) -> Result<void, u32> {
+        let index = compiler.matches.length() - 1
+        if sema::match_is_text(compiler.matches[index].value_type) {
+            match_text_dispatch(compiler, analysis, expression)?
+        } else {
+            let cases = match_cases(compiler, analysis.checker.symbols, expression)?
+            let tag = compiler.matches[index].tag
+            let default = match_default(compiler, expression)
+            function_finish(compiler, ir::TerminatorSwitch(tag, move cases, default))?
+        }
+        let active = lower_match_bodies(compiler, analysis, expression)?
+        let invalid = compiler.matches[index].invalid
+        let merge = compiler.matches[index].merge
+        function_select_block(compiler, invalid)
+        function_panic_now(compiler, "invalid_enum_tag")?
+        function_select_block(compiler, merge)
+        if active == false {
+            function_finish(compiler, ir::TerminatorUnreachable())?
+        }
+        return Ok(())
+    }
+
+    fn lower_match_bodies(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression) -> Result<bool, u32> {
+        let before = bindings_copy(compiler.bindings)
+        var after = Vec<Binding>.new()
+        var active = false
+        var index: usize = 0
+        while index < expression.arms.length() {
+            compiler.bindings = bindings_copy(before)
+            let flow = compiler.matches.length() - 1
+            function_select_block(compiler, compiler.matches[flow].blocks[index])
+            match_arm(compiler, analysis, expression.arms[index])?
+            if function_branch_if_active(compiler, compiler.matches[flow].merge)? {
+                if active == false {
+                    after = bindings_copy(compiler.bindings);
+                    active = true
+                }
+            }
+            index = index + 1
+        }
+        compiler.bindings = bindings_copy(before)
+        if active {
+            compiler.bindings = bindings_copy(after)
+        }
+        return Ok(active)
+    }
+}

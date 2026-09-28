@@ -1,0 +1,43 @@
+module integration::audio {
+    fn buffer_frames(requested: u64, capacity_bytes: u32) -> u32 {
+        let available = u64.from(capacity_bytes / 8)
+        let desired: u64 = if requested == 0 {
+            1024
+        } else {
+            requested
+        }
+        let limited: u64 = if desired > 4096 {
+            4096
+        } else {
+            desired
+        }
+        return u32.from(if limited > available {
+                available
+            } else {
+                limited
+            })
+    }
+
+    fn audio_format(rate: u32) -> Vec<u32> {
+        var output = Vec<u32>.new()
+        output.push(128)
+        output.push(15)
+        output.push(262147)
+        output.push(3)
+        format_property(output, 1, 3, 1)
+        format_property(output, 2, 3, 1)
+        format_property(output, 65537, 3, 283)
+        format_property(output, 65539, 4, rate)
+        format_property(output, 65540, 4, 2)
+        return move output
+    }
+
+    fn format_property(output: write Vec<u32>, key: u32, kind: u32, value: u32) -> void {
+        output.push(key)
+        output.push(0)
+        output.push(4)
+        output.push(kind)
+        output.push(value)
+        output.push(0)
+    }
+}

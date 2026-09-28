@@ -1,0 +1,17 @@
+[quality]
+max_file_lines = 300
+max_function_lines = 60
+max_cyclomatic = 10
+max_cognitive = 15
+max_nesting = 4
+max_parameters = 5
+
+[quality.duplication]
+max_percent = 3
+min_lines = 6
+min_tokens = 50
+
+[format]
+indent_width = 4
+max_blank_lines = 1
+final_newline = true

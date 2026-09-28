@@ -1,0 +1,6 @@
+struct Bad {
+    value: Slice<u8>
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,266 @@
+module x86 {
+    fn assembly_emit_globals(object: object::CompilerObject, output: write AssemblyOutput) -> void {
+        var index: usize = 0
+        while index < object.symbols.length() {
+            match read object.symbols[index].binding {
+                object::SymbolGlobal => {
+                    assembly_append(output, ".globl ")
+                    assembly_append_symbol(output, object.symbols[index].name)
+                    output.text.push('\n')
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn assembly_emit_section(object: object::CompilerObject, position: write AssemblyPosition, output: write AssemblyOutput) -> Result<void, u32> {
+        loan read object.sections[position.section] as section {
+            assembly_section_header(object, position.section, output)
+            while position.offset < section.memory_size {
+                assembly_emit_labels(object, position, output)
+                match assembly_relocation_at(position, position.offset) {
+                    Some(relocation) => {
+                        match assembly_emit_relocation(object, relocation, output) {
+                            Err(error) => {
+                                return Err(error)
+                            }
+                            Ok(width) => {
+                                position.offset = position.offset + width
+                            }
+                        }
+                    }
+                    None => {
+                        assembly_emit_section_data(object, position, output)
+                    }
+                }
+            }
+            assembly_emit_labels(object, position, output)
+        }
+        return Ok(())
+    }
+
+    fn assembly_section_has_relocations(object: object::CompilerObject, section_id: usize) -> bool {
+        var index: usize = 0
+        while index < object.relocations.length() {
+            if object.relocations[index].section == section_id {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn assembly_emit_section_data(object: object::CompilerObject, position: write AssemblyPosition, output: write AssemblyOutput) -> void {
+        loan read object.sections[position.section] as section {
+            if object::section_is_zero_fill(section.kind) {
+                let next = assembly_next_symbol(object, position, section.memory_size)
+                assembly_append(output, ".zero ")
+                assembly_append_u64(output, next - position.offset)
+                output.text.push('\n')
+                position.offset = next
+                return
+            }
+            if assembly_emit_call(object, position, output) {
+                return
+            }
+            if assembly_emit_symbol_address(object, position, output) {
+                return
+            }
+            var next = assembly_next_event(object, position, section.memory_size)
+            if next <= position.offset {
+                next = position.offset + 1
+            }
+            assembly_emit_bytes(section, position, output, next)
+        }
+    }
+
+    fn assembly_emit_bytes(section: object::Section, position: write AssemblyPosition, output: write AssemblyOutput, next: u64) -> void {
+        if position.offset < u64.from(section.data.length()) {
+            assembly_append(output, ".ascii \"")
+            while position.offset < next && position.offset < u64.from(section.data.length()) {
+                assembly_append_byte(output, section.data[usize.from(position.offset)])
+                position.offset = position.offset + 1
+            }
+            output.text.push('"')
+        } else {
+            assembly_append(output, ".zero ")
+            assembly_append_u64(output, next - position.offset)
+            position.offset = next
+        }
+        output.text.push('\n')
+    }
+
+    fn assembly_next_event(object: object::CompilerObject, position: AssemblyPosition, limit: u64) -> u64 {
+        let next = assembly_next_symbol(object, position, limit)
+        return assembly_next_index_event(position.starts, position, next)
+    }
+
+    fn assembly_emit_symbol_address(object: object::CompilerObject, position: write AssemblyPosition, output: write AssemblyOutput) -> bool {
+        let register = match assembly_symbol_address_register(object.sections[position.section], position.offset) {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        match assembly_relocation_at(position, position.offset + 3) {
+            None => {
+                return false
+            }
+            Some(relocation_id) => {
+                match read object.relocations[relocation_id].kind {
+                    object::RelocationPcRelative32 | object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 => {
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+                if object.relocations[relocation_id].addend != -4 {
+                    return false
+                }
+                match read object.relocations[relocation_id].subtract {
+                    Some(symbol) => {
+                        symbol;
+                        return false
+                    }
+                    None => {
+                    }
+                }
+                match read object.relocations[relocation_id].kind {
+                    object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 => {
+                        assembly_append(output, "movq ");
+                        assembly_append_symbol(output, object.symbols[object.relocations[relocation_id].symbol].name);
+                        assembly_append(output, "@GOTPCREL")
+                    }
+                    _ => {
+                        assembly_append(output, "leaq ");
+                        assembly_append_symbol(output, object.symbols[object.relocations[relocation_id].symbol].name)
+                    }
+                }
+                assembly_append(output, "(%rip), ")
+                assembly_append_register(output, register)
+                output.text.push('\n')
+                position.offset = position.offset + 7
+                return true
+            }
+        }
+    }
+
+    fn assembly_append_register(output: write AssemblyOutput, register: u8) -> void {
+        if register >= 8 {
+            assembly_append(output, "%r")
+            assembly_append_u64(output, u64.from(register))
+            return
+        }
+        var names = Vec<Text>.new()
+        names.push("%rax")
+        names.push("%rcx")
+        names.push("%rdx")
+        names.push("%rbx")
+        names.push("%rsp")
+        names.push("%rbp")
+        names.push("%rsi")
+        names.push("%rdi")
+        loan read names[usize.from(register)] as name {
+            assembly_append_view(output, name)
+        }
+    }
+
+    fn assembly_emit_call(object: object::CompilerObject, position: write AssemblyPosition, output: write AssemblyOutput) -> bool {
+        loan read object.sections[position.section] as section {
+            if position.offset >= u64.from(section.data.length()) || section.data[usize.from(position.offset)] != 232 {
+                return false
+            }
+        }
+        match assembly_relocation_at(position, position.offset + 1) {
+            None => {
+                return false
+            }
+            Some(relocation_id) => {
+                match read object.relocations[relocation_id].kind {
+                    object::RelocationPcRelativeCall32 => {
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+                if object.relocations[relocation_id].addend != -4 {
+                    return false
+                }
+                match read object.relocations[relocation_id].subtract {
+                    Some(symbol) => {
+                        symbol;
+                        return false
+                    }
+                    None => {
+                    }
+                }
+                assembly_append(output, "callq ")
+                loan read object.symbols[object.relocations[relocation_id].symbol] as symbol {
+                    assembly_append_symbol(output, symbol.name)
+                }
+                output.text.push('\n')
+                position.offset = position.offset + 5
+                return true
+            }
+        }
+    }
+
+    fn assembly_next_symbol(object: object::CompilerObject, position: AssemblyPosition, limit: u64) -> u64 {
+        object
+        return assembly_next_index_event(position.symbols, position, limit)
+    }
+
+    fn assembly_emit_labels(object: object::CompilerObject, position: AssemblyPosition, output: write AssemblyOutput) -> void {
+        match read object.entry {
+            Some(entry) => {
+                loan read object.symbols[entry] as symbol {
+                    if assembly_symbol_at(symbol, position) {
+                        assembly_append_symbol(output, "main")
+                        assembly_append(output, ":\n")
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        var index = ir::index_lower_bound(position.symbols, u64.from(position.section), position.offset)
+        while index < position.symbols.length() {
+            if position.symbols[index].group != u64.from(position.section) || position.symbols[index].key != position.offset {
+                break
+            }
+            loan read object.symbols[position.symbols[index].value] as symbol {
+                assembly_append_symbol(output, symbol.name)
+                assembly_append(output, ":\n")
+            }
+            index = index + 1
+        }
+    }
+
+    fn assembly_symbol_at(symbol: object::Symbol, position: AssemblyPosition) -> bool {
+        match read symbol.section {
+            Some(section) => {
+                return section == position.section && symbol.offset == position.offset
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn assembly_symbol_address_register(section: object::Section, position: u64) -> Option<u8> {
+        if position + 7 > u64.from(section.data.length()) {
+            return None()
+        }
+        let offset = usize.from(position)
+        let prefix = section.data[offset]
+        if prefix != 72 && prefix != 76 {
+            return None()
+        }
+        if (section.data[offset + 1] != 141 && section.data[offset + 1] != 139) || section.data[offset + 2] & 7 != 5 {
+            return None()
+        }
+        Some(((prefix >> 2) & 1) * 8 +((section.data[offset + 2] >> 3) & 7))
+    }
+}

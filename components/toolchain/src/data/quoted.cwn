@@ -1,0 +1,98 @@
+module toolchain {
+    fn quoted(input: write Cursor) -> Result<Text, Text> {
+        require_byte(input, 34)?
+        var output = ""
+        var start = input.position
+        while input.position < input.source.length() {
+            let byte = peek(input)
+            if byte == 34 {
+                std::text::append(output, std::text::slice(input.source, start, input.position));
+                input.position = input.position + 1;
+                return Ok(move output)
+            }
+            if byte < 32 {
+                return Err(parse_error(input, "control byte in string"))
+            }
+            if byte == 92 {
+                std::text::append(output, std::text::slice(input.source, start, input.position))
+                input.position = input.position + 1
+                output.push(escaped_scalar(input)?)
+                start = input.position
+            } else {
+                input.position = input.position + 1
+            }
+        }
+        return Err(parse_error(input, "unterminated string"))
+    }
+
+    fn escaped_scalar(input: write Cursor) -> Result<char, Text> {
+        let byte = peek(input)
+        input.position = input.position + 1
+        if byte == 34 || byte == 47 || byte == 92 {
+            return Ok(char.from(u32.from(byte)))
+        }
+        if byte == 98 {
+            return Ok(char.from(8))
+        }
+        if byte == 102 {
+            return Ok(char.from(12))
+        }
+        if byte == 110 {
+            return Ok('\n')
+        }
+        if byte == 114 {
+            return Ok('\r')
+        }
+        if byte == 116 {
+            return Ok('\t')
+        }
+        if byte == 117 {
+            return unicode_scalar(input)
+        }
+        return Err(parse_error(input, "invalid string escape"))
+    }
+
+    fn unicode_scalar(input: write Cursor) -> Result<char, Text> {
+        let first = unicode_word(input)?
+        if first >= 56320 && first <= 57343 {
+            return Err("unpaired low surrogate")
+        }
+        if first < 55296 || first > 56319 {
+            return Ok(char.from(first))
+        }
+        literal(input, "\\u")?
+        let second = unicode_word(input)?
+        if second < 56320 || second > 57343 {
+            return Err("unpaired high surrogate")
+        }
+        return Ok(char.from(65536 +(first - 55296) * 1024 + second - 56320))
+    }
+
+    fn json_quoted(value: Text) -> Text {
+        var output = "\""
+        var start: usize = 0
+        loan read value as bytes {
+            for index in 0..bytes.length() {
+                let byte = bytes[index]
+                if byte < 32 || byte == 34 || byte == 92 {
+                    std::text::append(output, std::text::slice(value, start, index))
+                    append_json_escape(output, byte)
+                    start = index + 1
+                }
+            }
+        }
+        std::text::append(output, std::text::slice(value, start, value.length()))
+        output.push('"')
+        return move output
+    }
+
+    fn append_json_escape(output: write Text, byte: u8) -> void {
+        if byte == 34 || byte == 92 {
+            output.push('\\');
+            output.push(char.from(u32.from(byte)));
+            return
+        }
+        std::text::append(output, "\\u00")
+        std::text::hex_byte(output, byte)
+    }
+}

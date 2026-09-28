@@ -1,0 +1,132 @@
+fn replacement_instruction() -> ir::InstructionKind {
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(ir::PhiIncoming {
+            block: 0, value: 0
+        })
+    incoming.push(ir::PhiIncoming {
+            block: 1, value: 1
+        })
+    incoming.push(ir::PhiIncoming {
+            block: 2, value: 99
+        })
+    return ir::InstructionPhi(ir::TypePointer(), move incoming)
+}
+fn main() -> u32 {
+    let signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+    var function = ir::function_new("rewrite", move signature, ir::LinkageLocal())
+    var block = ir::basic_block_new()
+    block.instructions.push(ir::Instruction {
+            result: Some(0), kind: replacement_instruction()
+        })
+    block.instructions.push(ir::Instruction {
+            result: Some(1), kind: ir::InstructionSelect(0, 1, 99)
+        })
+    block.instructions.push(ir::Instruction {
+            result: Some(2), kind: ir::InstructionFunctionAddress(0)
+        })
+    block.terminator = Some(ir::TerminatorConditional(0, 0, 1))
+    function.blocks.push(move block)
+    var replacements = Vec<Option<usize>>.new()
+    replacements.push(Some(1))
+    replacements.push(Some(2))
+    replacements.push(None())
+    replacements.push(Some(4))
+    replacements.push(Some(3))
+    ir::function_replace_uses_many(function, replacements)
+    match read function.blocks[0].instructions[0].result {
+        Some(value) => {
+            if value != 0 {
+                return 1
+            }
+        }
+        None => {
+            return 1
+        }
+    }
+    match read function.blocks[0].instructions[0].kind {
+        ir::InstructionPhi(value_type, incoming) => {
+            value_type
+            if incoming[0].value != 2 || incoming[1].value != 2 || incoming[2].value != 99 {
+                return 2
+            }
+            if incoming[0].block != 0 || incoming[1].block != 1 || incoming[2].block != 2 {
+                return 3
+            }
+        }
+        _ => {
+            return 4
+        }
+    }
+    match read function.blocks[0].instructions[1].kind {
+        ir::InstructionSelect(condition, first, second) => {
+            if condition != 2 || first != 2 || second != 99 {
+                return 5
+            }
+        }
+        _ => {
+            return 6
+        }
+    }
+    match read function.blocks[0].instructions[2].kind {
+        ir::InstructionMemory(instruction_memory_kind) => {
+            match read instruction_memory_kind {
+                ir::MemoryFunctionAddress(value) => {
+                    if value != 0 {
+                        return 7
+                    }
+                }
+                _ => {
+                    return 8
+                }
+            }
+        }
+        _ => {
+            return 8
+        }
+    }
+    match read function.blocks[0].terminator {
+        Some(value) => {
+            match read value {
+                ir::TerminatorConditional(condition, first, second) => {
+                    if condition != 2 || first != 0 || second != 1 {
+                        return 9
+                    }
+                }
+                _ => {
+                    return 10
+                }
+            }
+        }
+        None => {
+            return 11
+        }
+    }
+    var cyclic = ir::InstructionUnary(ir::UnaryNot(), usize.from(3))
+    loan read replacements as values {
+        let replacement = ir::Replacement {
+            from: 0, to: 0, values: values, direct: false
+        }
+        ir::instruction_replace_mapped_uses(cyclic, replacement)
+    }
+    match read cyclic {
+        ir::InstructionUnary(operator, value) => {
+            operator;
+            if value != 4 {
+                return 12
+            }
+        }
+        _ => {
+            return 13
+        }
+    }
+    let empty = Vec<Option<usize>>.new()
+    ir::function_replace_uses_many(function, empty)
+    ir::function_replace_uses(function, 2, 42)
+    loan read function.blocks[0].instructions[1].kind as kind {
+        let operands = ir::instruction_operands(kind)
+        if operands[0] != 42 || operands[1] != 42 || operands[2] != 99 {
+            return 14
+        }
+    }
+    return 42
+}

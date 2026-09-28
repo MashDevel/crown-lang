@@ -1,0 +1,251 @@
+module optimize {
+    struct SelectPlan {
+        source: usize
+        join: usize
+        instructions: Vec<ir::Instruction>
+    }
+
+    fn select(function: write ir::Function) -> usize {
+        let predecessors = ir::predecessors(function)
+        let loop_blocks = select_loop_blocks(function)
+        var plans = Vec<SelectPlan>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            if loop_blocks[block] {
+                match select_plan(function, block, predecessors) {
+                    Some(plan) => {
+                        plans.push(move plan)
+                    }
+                    None => {
+                    }
+                }
+            }
+            block = block + 1
+        }
+        var formed: usize = 0
+        var index: usize = 0
+        while index < plans.length() {
+            formed = formed + plans[index].instructions.length()
+            loan read plans[index] as plan {
+                apply_select(function, plan)
+            }
+            index = index + 1
+        }
+        return formed
+    }
+
+    fn select_loop_blocks(function: ir::Function) -> Vec<bool> {
+        let loops = find_loops(function)
+        var output = false_values(function.blocks.length())
+        var index: usize = 0
+        while index < loops.length() {
+            var block: usize = 0
+            while block < function.blocks.length() {
+                if loops[index].blocks[block] {
+                    output[block] = true
+                }
+                block = block + 1
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn select_plan(function: ir::Function, source: usize, predecessors: Vec<Vec<usize>>) -> Option<SelectPlan> {
+        let input = match ir::block_conditional(function.blocks[source]) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if input.then_block == input.else_block {
+            return None()
+        }
+        let join = match select_empty_arm(function, input.then_block, predecessors) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        match select_empty_arm(function, input.else_block, predecessors) {
+            Some(other) => {
+                if other != join {
+                    return None()
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+        let instructions = match select_instructions(function, join, input) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        if select_profitable(function, instructions) == false {
+            return None()
+        }
+        Some(SelectPlan {
+                source: source, join: join, instructions: move instructions
+            })
+    }
+
+    fn select_empty_arm(function: ir::Function, block: usize, predecessors: Vec<Vec<usize>>) -> Option<usize> {
+        if block >= function.blocks.length() || predecessors[block].length() != 1 {
+            return None()
+        }
+        if function.blocks[block].instructions.length() != 0 {
+            return None()
+        }
+        match read function.blocks[block].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorBranch(target) => {
+                        return Some(target)
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+
+    fn select_instructions(function: ir::Function, join: usize, input: ir::ConditionalBranch) -> Option<Vec<ir::Instruction>> {
+        if join >= function.blocks.length() {
+            return None()
+        }
+        var output = Vec<ir::Instruction>.new()
+        var index: usize = 0
+        while index < function.blocks[join].instructions.length() {
+            loan read function.blocks[join].instructions[index] as instruction {
+                if ir::instruction_is_phi(instruction.kind) == false {
+                    return Some(move output)
+                }
+                match select_phi(instruction, input) {
+                    Some(value) => {
+                        output.push(move value)
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            index = index + 1
+        }
+        Some(move output)
+    }
+
+    fn select_phi(instruction: ir::Instruction, input: ir::ConditionalBranch) -> Option<ir::Instruction> {
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                if incoming.length() != 2 {
+                    return None()
+                }
+                let then_value = match select_incoming(incoming, input.then_block) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                let else_value = match select_incoming(incoming, input.else_block) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                Some(ir::Instruction {
+                        result: instruction.result, kind: ir::InstructionSelect(input.condition, then_value, else_value)
+                    })
+            }
+            _ => None()
+        }
+    }
+
+    fn select_incoming(values: Vec<ir::PhiIncoming>, block: usize) -> Option<usize> {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index].block == block {
+                return Some(values[index].value)
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn select_profitable(function: ir::Function, instructions: Vec<ir::Instruction>) -> bool {
+        if instructions.length() != 1 {
+            return false
+        }
+        match read instructions[0].result {
+            None => {
+                return false
+            }
+            Some(result) => {
+                match read instructions[0].kind {
+                    ir::InstructionSelect(condition, then_value, else_value) => {
+                        condition
+                        if then_value == else_value {
+                            return false
+                        }
+                        match ir::function_value_type(function, result) {
+                            Some(value_type) => {
+                                return ir::type_is_integer(value_type) || ir::type_is_pointer(value_type)
+                            }
+                            None => {
+                                return false
+                            }
+                        }
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply_select(function: write ir::Function, plan: SelectPlan) -> void {
+        var results = false_values(function.values.length())
+        var index: usize = 0
+        while index < plan.instructions.length() {
+            match read plan.instructions[index].result {
+                Some(result) => {
+                    results[result] = true
+                }
+                None => {
+                }
+            }
+            loan read plan.instructions[index] as instruction {
+                function.blocks[plan.source].instructions.push(ir::instruction_copy(instruction))
+            }
+            index = index + 1
+        }
+        var output = Vec<ir::Instruction>.new()
+        index = 0
+        while index < function.blocks[plan.join].instructions.length() {
+            loan read function.blocks[plan.join].instructions[index] as instruction {
+                var keep = true
+                match read instruction.result {
+                    Some(result) => {
+                        if results[result] {
+                            keep = false
+                        }
+                    }
+                    None => {
+                    }
+                }
+                if keep {
+                    output.push(ir::instruction_copy(instruction))
+                }
+            }
+            index = index + 1
+        }
+        function.blocks[plan.join].instructions = move output
+        function.blocks[plan.source].terminator = Some(ir::TerminatorBranch(plan.join))
+    }
+}

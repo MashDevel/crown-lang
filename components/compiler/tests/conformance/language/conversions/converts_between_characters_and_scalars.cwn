@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    let letter = char.from(65)
+    if letter != 'A' {
+        return 1
+    }
+    return u32.from(letter)
+}

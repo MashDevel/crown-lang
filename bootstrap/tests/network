@@ -1,0 +1,56 @@
+network_downloads() {
+    fixture
+    seed
+    mkdir "$project/bin"
+    cat > "$project/bin/curl" <<'SH'
+#!/bin/sh
+set -eu
+test "${CROWN_TEST_DOWNLOAD_FAILURE:-0}" = 0
+output=
+pattern=
+directory=
+for argument do
+    case "$argument" in https://*) pattern=${argument##*/} ;; esac
+done
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --output) output=$2; shift ;;
+        --pattern) pattern=$2; shift ;;
+        --dir) directory=$2; shift ;;
+    esac
+    shift
+done
+cp "$CROWN_TEST_ASSETS/$pattern" "${output:-$directory/$pattern}"
+SH
+    cp "$project/bin/curl" "$project/bin/gh"
+    chmod +x "$project/bin/curl" "$project/bin/gh"
+    expect_failure env PATH="$project/bin:$PATH" CROWN_TEST_ASSETS="$assets" CROWN_TEST_DOWNLOAD_FAILURE=1 GH_TOKEN= sh "$project/bootstrap/fetch" "$host"
+    test ! -e "$project/bootstrap/$host"
+    env PATH="$project/bin:$PATH" CROWN_TEST_ASSETS="$assets" GH_TOKEN= sh "$project/bootstrap/fetch" "$host"
+    equal_seed
+    mv "$project/bootstrap/$host" "$project/curl-result"
+    env PATH="$project/bin:$PATH" CROWN_TEST_ASSETS="$assets" GH_TOKEN=fixture sh "$project/bootstrap/fetch" "$host"
+    equal_seed
+}
+host_selection() {
+    fixture
+    mkdir "$project/bin"
+    cat > "$project/bin/uname" <<'SH'
+#!/bin/sh
+case "$1" in
+    -s) printf '%s\n' "$CROWN_TEST_SYSTEM" ;;
+    -m) printf '%s\n' "$CROWN_TEST_MACHINE" ;;
+esac
+SH
+    chmod +x "$project/bin/uname"
+    for entry in Darwin:x86_64:x86_64-macos Darwin:arm64:arm64-macos Linux:x86_64:x86_64-linux Linux:aarch64:arm64-linux; do
+        system=${entry%%:*}
+        rest=${entry#*:}
+        machine=${rest%%:*}
+        expected=${rest#*:}
+        actual=$(env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM="$system" CROWN_TEST_MACHINE="$machine" sh "$project/bootstrap/host")
+        test "$actual" = "$expected"
+    done
+    expect_failure env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM=Windows CROWN_TEST_MACHINE=x86_64 sh "$project/bootstrap/host"
+    expect_failure env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM=Windows sh "$project/bootstrap/checksum" /unavailable
+}

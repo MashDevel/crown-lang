@@ -1,0 +1,186 @@
+module optimize {
+    fn identity(function: write ir::Function) -> usize {
+        var rewrites = Vec<ir::ValueRewrite>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    match identity_rewrite(function, instruction) {
+                        Some(rewrite) => {
+                            rewrites.push(move rewrite)
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        ir::apply_value_rewrites(function, rewrites)
+        return rewrites.length()
+    }
+
+    fn identity_rewrite(function: ir::Function, instruction: ir::Instruction) -> Option<ir::ValueRewrite> {
+        var result: usize = 0
+        match read instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                match identity_operand(function, operator, left, right) {
+                    Some(value) => {
+                        return Some(ir::ValueRewrite {
+                                result: result, replacement: value
+                            })
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                condition
+                if then_value == else_value {
+                    return Some(ir::ValueRewrite {
+                            result: result, replacement: then_value
+                        })
+                }
+                return None()
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn identity_operand(function: ir::Function, operator: ir::BinaryOperator, left: usize, right: usize) -> Option<usize> {
+        let right_value = integer_constant(function, right)
+        if right_identity(operator, right_value) {
+            return Some(left)
+        }
+        let left_value = integer_constant(function, left)
+        if left_identity(operator, left_value) {
+            return Some(right)
+        }
+        return None()
+    }
+
+    fn integer_constant(function: ir::Function, value: usize) -> Option<u64> {
+        match ir::function_constant_value(function, value) {
+            Some(constant) => {
+                match move constant {
+                    ir::ConstantInteger(item) => {
+                        return Some(item)
+                    }
+                    ir::ConstantNull => {
+                        return Some(0)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn right_identity(operator: ir::BinaryOperator, value: Option<u64>) -> bool {
+        match read value {
+            Some(item) => {
+                if item == 0 {
+                    return zero_right_identity(operator)
+                }
+                if item == 1 {
+                    return one_identity(operator)
+                }
+                return false
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn left_identity(operator: ir::BinaryOperator, value: Option<u64>) -> bool {
+        match read value {
+            Some(item) => {
+                if item == 0 {
+                    return zero_left_identity(operator)
+                }
+                if item == 1 {
+                    return one_identity(operator)
+                }
+                return false
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn zero_right_identity(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryAdd => {
+                return true
+            }
+            ir::BinarySubtract => {
+                return true
+            }
+            ir::BinaryOr => {
+                return true
+            }
+            ir::BinaryXor => {
+                return true
+            }
+            ir::BinaryShiftLeft => {
+                return true
+            }
+            ir::BinaryShiftRightSigned => {
+                return true
+            }
+            ir::BinaryShiftRightUnsigned => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn zero_left_identity(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryAdd => {
+                return true
+            }
+            ir::BinaryOr => {
+                return true
+            }
+            ir::BinaryXor => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn one_identity(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryMultiply => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

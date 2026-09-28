@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    match "check" {
+        "parse" => 1,
+        "check" => 42,
+        _ => 0
+    }
+}

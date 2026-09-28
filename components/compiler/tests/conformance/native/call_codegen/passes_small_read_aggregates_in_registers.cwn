@@ -1,0 +1,16 @@
+struct Pair {
+    first: u64
+    second: u32
+}
+fn combine(value: read Pair, offset: read u32) -> u32 {
+    if value.first != 4294967298 {
+        return 1
+    }
+    return value.second + offset
+}
+fn main() -> u32 {
+    let value = Pair {
+        first: 4294967298, second: 17
+    }
+    return combine(value, 25)
+}

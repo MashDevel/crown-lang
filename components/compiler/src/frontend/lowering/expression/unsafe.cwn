@@ -1,0 +1,20 @@
+module lowering {
+    fn unsafe_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, body: Vec<frontend::Statement>, span: frontend::Span) -> Result<Value, u32> {
+        let value_type = function_span_type(compiler, analysis, span)?
+        let destination = function_stack(compiler, analysis.checker.symbols, value_type)?
+        function_push_scope(compiler)
+        var outcome: Result<void, u32> = Ok(())
+        loan read body as statements {
+            let branch = ConditionalBranch {
+                body: statements, destination: destination, merge: 0
+            }
+            outcome = conditional_contents(compiler, analysis, branch)
+        }
+        function_pop_scope(compiler)?
+        outcome?
+        if expression_terminated(compiler) {
+            return Err(EXPRESSION_TERMINATED)
+        }
+        return block_result(compiler, analysis, destination, value_type)
+    }
+}

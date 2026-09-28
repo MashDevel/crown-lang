@@ -1,0 +1,14 @@
+fn main() -> u32 {
+    unsafe {
+        let storage = "A\0\0\0\0"
+        let bytes = storage.as_raw()
+        let word = RawPtr<u32>.cast(bytes)
+        if word.read() != 65 {
+            return 1
+        }
+        if RawPtr<u8>.cast(word).read() != 65 {
+            return 2
+        }
+    }
+    return 0
+}

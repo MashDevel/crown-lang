@@ -1,0 +1,9 @@
+copy struct Cycle {
+    next: Cycle
+}
+fn compare(a: Cycle, b: Cycle) -> bool {
+    return a == b
+}
+fn main() -> u32 {
+    return 0
+}

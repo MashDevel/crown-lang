@@ -1,0 +1,7 @@
+copy struct Point { x: u32 }
+copy struct Row { points: [Point; 2] }
+fn main() -> u32 {
+    let row = Row { points: [Point { x: 20 }, Point { x: 22 }] }
+    let copied = row
+    return copied.points[0].x + row.points[1].x
+}

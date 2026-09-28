@@ -1,0 +1,67 @@
+module optimize {
+    copy enum ReachableItem {
+        ReachableFunction(usize)
+        ReachableGlobal(usize)
+    }
+
+    struct Reachability {
+        functions: Vec<bool>
+        globals: Vec<bool>
+        pending: Vec<ReachableItem>
+    }
+
+    struct ProgramMapping {
+        functions: Vec<usize>
+        globals: Vec<usize>
+    }
+
+    fn reachability_new(program: ir::Program) -> Reachability {
+        var state = Reachability {
+            functions: Vec<bool>.new(), globals: Vec<bool>.new(), pending: Vec<ReachableItem>.new()
+        }
+        var index: usize = 0
+        while index < program.functions.length() {
+            state.functions.push(false);
+            index = index + 1
+        }
+        index = 0
+        while index < program.globals.length() {
+            state.globals.push(false);
+            index = index + 1
+        }
+        return move state
+    }
+
+    fn reach_function(state: write Reachability, function: usize) -> void {
+        if state.functions[function] {
+            return
+        }
+        state.functions[function] = true
+        state.pending.push(ReachableFunction(function))
+    }
+
+    fn reach_global(state: write Reachability, global: usize) -> void {
+        if state.globals[global] {
+            return
+        }
+        state.globals[global] = true
+        state.pending.push(ReachableGlobal(global))
+    }
+
+    fn reach_mapping(used: Vec<bool>) -> Vec<usize> {
+        var output = Vec<usize>.new()
+        var next: usize = 0
+        var index: usize = 0
+        while index < used.length() {
+            if used[index] {
+                output.push(next);
+                next = next + 1
+            }
+            else {
+                output.push(18446744073709551615)
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

@@ -1,0 +1,11 @@
+fn main() -> u32 {
+    var source = Arena<u32>.new()
+    let stale = source.insert(1)
+    source.remove(stale)
+    var text = "value"
+    let taken = move text
+    source.with(stale) as read value {
+        text = "replacement"
+    }
+    return 0
+}

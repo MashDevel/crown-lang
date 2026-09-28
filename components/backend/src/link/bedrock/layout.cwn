@@ -1,0 +1,103 @@
+module bedrock {
+    struct Image {
+        text: Vec<u8>, data: Vec<u8>, offsets: Vec<u64>, writable: Vec<bool>, symbols: Vec<u64>,
+        base: u64, data_base: u64, entry: u64
+    }
+
+    fn layout(runtime: Runtime, object: object::CompilerObject) -> Result<Image, Text> {
+        var image = Image {
+            text: link_binary::part(runtime.text, 0, runtime.text.length())?, data: link_binary::part(runtime.data, 0, runtime.data.length())?,
+            offsets: Vec<u64>.new(), writable: Vec<bool>.new(), symbols: Vec<u64>.new(),
+            base: runtime.base, data_base: 0, entry: 0
+        }
+        for index in 0..object.sections.length() {
+            add_section(image, object.sections[index])?
+        }
+        link_binary::pad(image.text, link_binary::aligned(image.text.length(), 4096))
+        image.data_base = image.base + u64.from(image.text.length())
+        if image.text.length() + image.data.length() > 16777216 {
+            return Err("compiled program exceeds Bedrock image limit")
+        }
+        resolve_symbols(image, runtime, object)?
+        match read object.entry {
+            Some(entry) => {
+                image.entry = image.symbols[entry]
+            }
+            None => {
+                return Err("program has no main function")
+            }
+        }
+        return Ok(move image)
+    }
+
+    fn add_section(image: write Image, section: object::Section) -> Result<void, Text> {
+        if section.memory_size > 16777216 || section.alignment > 4096 {
+            return Err("compiled section exceeds Bedrock limits")
+        }
+        let writable = match read section.kind {
+            object::SectionData | object::SectionZeroFill => true
+            _ => false
+        }
+        image.writable.push(writable)
+        if writable {
+            let offset = link_binary::aligned(image.data.length(), usize.from(section.alignment))
+            image.offsets.push(u64.from(offset))
+            link_binary::pad(image.data, offset)
+            link_binary::append(image.data, section.data)
+            link_binary::pad(image.data, offset + usize.from(section.memory_size))
+        } else {
+            let offset = link_binary::aligned(image.text.length(), usize.from(section.alignment))
+            image.offsets.push(u64.from(offset))
+            link_binary::pad(image.text, offset)
+            link_binary::append(image.text, section.data)
+            link_binary::pad(image.text, offset + usize.from(section.memory_size))
+        }
+        return Ok(())
+    }
+
+    fn section_address(image: Image, section: usize) -> u64 {
+        let base = if image.writable[section] {
+            image.data_base
+        } else {
+            image.base
+        }
+        return base + image.offsets[section]
+    }
+
+    fn relocate_address(image: Image, runtime: Runtime, address: u64) -> u64 {
+        if address == 1350565888 {
+            return image.entry
+        }
+        if address >= runtime.data_base && address < runtime.data_base + u64.from(runtime.data.length()) {
+            return image.data_base + address - runtime.data_base
+        }
+        return address
+    }
+
+    fn resolve_symbols(image: write Image, runtime: Runtime, object: object::CompilerObject) -> Result<void, Text> {
+        let exports = runtime_symbols(runtime)?
+        for index in 0..object.symbols.length() {
+            loan read object.symbols[index] as symbol {
+                match read symbol.section {
+                    Some(section) => {
+                        image.symbols.push(section_address(image, section) + symbol.offset)
+                    }
+                    None => {
+                        let address = export_address(exports, symbol.name)?
+                        image.symbols.push(relocate_address(image, runtime, address))
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn export_address(exports: Vec<Export>, name: Text) -> Result<u64, Text> {
+        for index in 0..exports.length() {
+            if std::text::equal(exports[index].name, name) {
+                return Ok(exports[index].address)
+            }
+        }
+        return Err(std::text::joined("unsupported Bedrock foreign symbol: ", name))
+    }
+}

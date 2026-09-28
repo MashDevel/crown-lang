@@ -1,0 +1,332 @@
+extern "c" {
+    fn begin() -> void = "crown_test_begin"
+    fn live() -> u64 = "crown_test_live"
+    fn allocated() -> u64 = "crown_test_allocated"
+    fn byte_length(pointer: RawPtr<u8>) -> usize = "strlen"
+}
+
+resource Item {
+    value: u32, text: Text, drop {
+        value
+    }
+}
+
+fn send_items(channel: Channel<Item>, start: usize, end: usize) -> void {
+    for index in start..end {
+        channel.send(Item {
+                value: u32.from(index), text: "owned item"
+            })
+    }
+}
+
+fn channel_cycle() -> u32 {
+    let channel = Channel<Item>.new()
+    let shared = channel.share()
+    send_items(channel, 0, 512)
+    for index in 0..400 {
+        match shared.try_receive() {
+            Some(item) => {
+                if item.value != u32.from(index) {
+                    return 1
+                }
+            }
+            None => {
+                return 2
+            }
+        }
+    }
+    send_items(shared, 512, 1024)
+    0
+}
+
+fn container_cycle() -> void {
+    var items = Vec<Item>.new()
+    for index in 0..256 {
+        items.push(Item {
+                value: u32.from(index), text: "vector item"
+            })
+    }
+    let boxed = Box.new(move items)
+    let shared = Shared.new(move boxed)
+    let other = shared.share()
+    other
+}
+
+fn observe(first: Item, second: u32) -> u32 {
+    first.value + second
+}
+
+fn failed_argument() -> Result<u32, void> {
+    Err(())
+}
+
+fn temporary_error() -> Result<u32, void> {
+    let local = Item {
+        value: 1, text: "local before propagation"
+    }
+    let result = observe(Item {
+            value: 2, text: "borrowed call temporary"
+        }, failed_argument()?)
+    local
+    return Ok(result)
+}
+
+fn temporary_cycle() -> u32 {
+    let result = observe(Item {
+            value: 20, text: "ordinary borrowed temporary"
+        }, 22)
+    if result != 42 {
+        return 5
+    }
+    match temporary_error() {
+        Ok(value) => {
+            value;
+            return 6
+        }
+        Err(error) => {
+            error
+        }
+    }
+    return 0
+}
+
+fn raw_text() -> Text {
+    return "crown\0"
+}
+
+fn raw_observe(pointer: RawPtr<u8>, expected_live: u64, expected_length: usize) -> bool {
+    unsafe {
+        if live() != expected_live {
+            return false
+        }
+        return byte_length(pointer) == expected_length
+    }
+}
+
+fn raw_text_values() -> bool {
+    let named = raw_text()
+    unsafe {
+        let baseline = live()
+        let values = raw_observe("crown\0".as_raw(), baseline + 1, 5) && raw_observe(raw_text().as_raw(), baseline + 1, 5) && raw_observe(named.clone().as_raw(), baseline + 1, 5)
+        return values && raw_observe(named.as_raw(), baseline, 5) && raw_text_view() && raw_observe(raw_consume(raw_text(), named.as_raw()), baseline, 5)
+    }
+}
+
+fn raw_text_calls() -> bool {
+    let indirect: fn(RawPtr<u8>, u64, usize) -> bool = raw_observe
+    unsafe {
+        let baseline = live()
+        return raw_take(raw_text().as_raw(), baseline + 1) && indirect(raw_text().as_raw(), baseline + 1, 5) && raw_generic(raw_text().as_raw(), raw_observe, baseline + 1)
+    }
+}
+
+fn raw_take(pointer: take RawPtr<u8>, expected_live: u64) -> bool {
+    return raw_observe(pointer, expected_live, 5)
+}
+
+fn raw_consume(text: take Text, pointer: RawPtr<u8>) -> RawPtr<u8> {
+    text
+    return pointer
+}
+
+fn raw_generic<T>(pointer: take T, inspect: fn(T, u64, usize) -> bool, expected_live: u64) -> bool {
+    return inspect(pointer, expected_live, 5)
+}
+
+fn raw_text_view() -> bool {
+    let text = raw_text()
+    loan read text as view {
+        unsafe {
+            return raw_observe(view.as_raw(), live(), 5)
+        }
+    }
+}
+
+fn raw_text_boundaries() -> bool {
+    unsafe {
+        let baseline = live()
+        let reads = raw_observe("\0".as_raw(), baseline + 1, 0) && raw_observe(raw_text().as_raw().offset(1), baseline + 1, 4) && raw_observe(RawPtr<u8>.cast(raw_text().as_raw()), baseline + 1, 5)
+        return reads && raw_text().as_raw().read() == 99 && Text.new().as_raw() == RawPtr<u8>.from_address(0)
+    }
+}
+
+fn raw_text_error() -> Result<bool, void> {
+    unsafe {
+        return Ok(raw_observe(raw_text().as_raw(), u64.from(failed_argument()?), 5))
+    }
+}
+
+fn raw_text_transfer_error() -> Result<bool, void> {
+    let named = raw_text()
+    unsafe {
+        return Ok(raw_observe(raw_consume(raw_text(), named.as_raw()), u64.from(failed_argument()?), 5))
+    }
+}
+
+fn raw_failed(result: Result<bool, void>) -> bool {
+    match result {
+        Ok(value) => {
+            value;
+            return false
+        }
+        Err(error) => {
+            error;
+            return true
+        }
+    }
+}
+
+fn raw_text_cycle() -> u32 {
+    for index in 0..100 {
+        index
+        if raw_text_values() == false || raw_text_boundaries() == false || raw_text_calls() == false {
+            return 7
+        }
+        if raw_failed(raw_text_error()) == false || raw_failed(raw_text_transfer_error()) == false {
+            return 8
+        }
+        unsafe {
+            if live() != 0 {
+                return 9
+            }
+        }
+    }
+    return 0
+}
+
+fn main() -> u32 {
+    unsafe {
+        begin()
+    }
+    let result = channel_cycle()
+    if result != 0 {
+        return result
+    }
+    container_cycle()
+    let temporary = temporary_cycle()
+    if temporary != 0 {
+        return temporary
+    }
+    let raw = raw_text_cycle()
+    if raw != 0 {
+        return raw
+    }
+    constructor_cycle()
+    let balance = dynamic_cycle()
+    if balance != 0 {
+        return balance
+    }
+    arena_cycle()
+    unsafe {
+        if allocated() < 1024 {
+            return 3
+        }
+        if live() != 0 {
+            return 4
+        }
+    }
+    0
+}
+
+fn absent_payload() -> Option<u32> {
+    return None()
+}
+
+interface AuditedValue {
+    fn value(self: read Self) -> u32
+}
+
+struct AuditedNumber {
+    value: Text
+    marker: u32
+}
+
+impl AuditedValue for AuditedNumber {
+    fn value(self: read AuditedNumber) -> u32 {
+        return u32.from(self.value.length())
+    }
+}
+
+fn interrupted_dynamic() -> Option<u32> {
+    let value: dynamic AuditedValue = AuditedNumber {
+        value: "owned",
+        marker: absent_payload()?
+    }
+    return Some(value.value())
+}
+
+fn dynamic_cycle() -> u32 {
+    unsafe {
+        let before = live()
+        for index in 0..100 {
+            match interrupted_dynamic() {
+                None => {
+                }
+                Some(value) => {
+                    return value + 10
+                }
+            }
+            let value: dynamic AuditedValue = AuditedNumber {
+                value: "owned",
+                marker: u32.from(index)
+            }
+            value
+        }
+        if live() != before {
+            return 12
+        }
+    }
+    return 0
+}
+
+fn interrupted_constructor(kind: u32) -> Option<void> {
+    match kind {
+        0 => {
+            let value = Box.new(absent_payload()?)
+            value
+        }
+        1 => {
+            let value = Shared.new(absent_payload()?)
+            value
+        }
+        2 => {
+            let value = Mutex.new(absent_payload()?)
+            value
+        }
+        _ => {
+            let value = RwLock.new(absent_payload()?)
+            value
+        }
+    }
+    return Some(())
+}
+
+fn constructor_return(stop: bool) -> void {
+    let value = Box.new(if stop {
+            return
+        } else {
+            42
+        })
+    value
+}
+
+fn constructor_cycle() -> void {
+    for index in 0..100 {
+        index
+        for kind in 0..4 {
+            interrupted_constructor(u32.from(kind))
+        }
+        constructor_return(true)
+        constructor_return(false)
+    }
+}
+
+fn arena_cycle() -> void {
+    for index in 0..256 {
+        var arena = Arena<Text>.new()
+        let handle = arena.insert("owned arena item")
+        if index % 2 == 0 {
+            arena.remove(handle)
+        }
+    }
+}

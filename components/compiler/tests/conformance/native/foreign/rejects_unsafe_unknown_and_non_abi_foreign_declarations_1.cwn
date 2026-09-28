@@ -1,0 +1,6 @@
+extern "system" {
+    fn native_call(value: read u32) -> u32
+}
+fn main() -> u32 {
+    return 0
+}

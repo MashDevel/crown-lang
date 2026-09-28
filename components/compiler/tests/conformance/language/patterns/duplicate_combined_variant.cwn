@@ -1,0 +1,12 @@
+copy enum Kind {
+    A, B
+}
+fn f(value: Kind) -> u32 {
+    match value {
+        A | A => 0,
+        B => 1
+    }
+}
+fn main() -> u32 {
+    0
+}

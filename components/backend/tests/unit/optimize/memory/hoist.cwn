@@ -1,0 +1,27 @@
+fn hoist_case(writes: bool, volatile: bool) -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    let slot = safety_append(fixture.function, 0, ir::InstructionStackSlot(8, 8))?
+    let value = safety_append(fixture.function, fixture.header, ir::InstructionLoad(slot, ir::TypeInteger(ir::IntegerWidth64()), 8, volatile))?
+    if writes {
+        safety_append(fixture.function, fixture.body, ir::InstructionStore(slot, value, 8, false))?
+    }
+    let expected: usize = if writes || volatile {
+        0
+    } else {
+        1
+    }
+    let before = fixture.function.blocks[0].instructions.length()
+    safety_require(optimize::hoist_loads(fixture.function, Shared.new(Vec<optimize::MemoryEffect>.new())) == expected, 1)?
+    return safety_require(fixture.function.blocks[0].instructions.length() == before + expected, 2)
+}
+
+fn hoisting() -> Result<void, u32> {
+    hoist_case(false, false)?
+    hoist_case(true, false)?
+    hoist_case(false, true)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(hoisting())
+}

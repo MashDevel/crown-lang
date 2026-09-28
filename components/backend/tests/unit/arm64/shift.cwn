@@ -1,0 +1,42 @@
+fn expect_shift(operation: arm64::ShiftOperation, amount: u32, width: u32, expected: u32) -> Result<void, Text> {
+    let registers = arm64::Registers {
+        destination: 19, left: 20, right: 0
+    }
+    let word = arm64::shift_immediate(operation, registers, amount, width)?
+    return testing::expect(word == expected, "immediate shift matches the assembler encoding")
+}
+
+fn shift_encoding() -> Result<void, Text> {
+    expect_shift(arm64::ShiftOperation::Left(), 0, 32, 1392541331)?
+    expect_shift(arm64::ShiftOperation::Left(), 31, 32, 1392575123)?
+    expect_shift(arm64::ShiftOperation::LogicalRight(), 31, 32, 1394572947)?
+    expect_shift(arm64::ShiftOperation::ArithmeticRight(), 31, 32, 320831123)?
+    expect_shift(arm64::ShiftOperation::Left(), 63, 64, 3544253075)?
+    expect_shift(arm64::ShiftOperation::LogicalRight(), 63, 64, 3548380819)?
+    return expect_shift(arm64::ShiftOperation::ArithmeticRight(), 63, 64, 2474638995)
+}
+
+fn shift_errors() -> Result<void, Text> {
+    let registers = arm64::Registers {
+        destination: 19, left: 20, right: 0
+    }
+    testing::error(arm64::shift_immediate(arm64::ShiftOperation::Left(), registers, 0, 16))?
+    testing::error(arm64::shift_immediate(arm64::ShiftOperation::Left(), registers, 32, 32))?
+    testing::error(arm64::shift_immediate(arm64::ShiftOperation::Left(), registers, 64, 64))?
+    testing::error(arm64::shift_immediate(arm64::ShiftOperation::RotateRight(), registers, 1, 64))?
+    testing::error(arm64::shift_immediate(arm64::ShiftOperation::Left(), arm64::Registers {
+                destination: 32, left: 20, right: 0
+            }, 0, 32))?
+    return testing::error(arm64::shift_immediate(arm64::ShiftOperation::Left(), arm64::Registers {
+                destination: 19, left: 32, right: 0
+            }, 0, 64))
+}
+
+fn run() -> Result<void, Text> {
+    shift_encoding()?
+    return shift_errors()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

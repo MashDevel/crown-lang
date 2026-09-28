@@ -1,0 +1,153 @@
+fn split_inputs(function: write ir::Function, count: usize) -> Result<Vec<usize>, u32> {
+    var values = Vec<usize>.new()
+    let zero = safety_integer(function, ir::IntegerWidth64(), 0)
+    for index in 1..count {
+        let constant = safety_integer(function, ir::IntegerWidth64(), u64.from(index))
+        values.push(safety_append(function, 0, ir::InstructionBinary(ir::BinaryAdd(), zero, constant))?)
+    }
+    return Ok(move values)
+}
+
+fn split_body(function: write ir::Function, body: usize, values: Vec<usize>) -> Result<void, u32> {
+    var total = ir::instruction_copy(function.blocks[body].instructions[1])
+    let original = ir::basic_block_copy(function.blocks[body])
+    function.blocks[body].instructions = Vec<ir::Instruction>.new()
+    function.blocks[body].instructions.push(ir::instruction_copy(original.instructions[0]))
+    function.blocks[body].instructions.push(ir::instruction_copy(original.instructions[2]))
+    var sum = match read total.kind {
+        ir::InstructionBinary(operator, left, right) => {
+            operator;
+            left;
+            right
+        }
+        _ => {
+            return Err(1)
+        }
+    }
+    for index in 0..values.length() {
+        sum = safety_append(function, body, ir::InstructionBinary(ir::BinaryAdd(), sum, values[index]))?
+    }
+    match write total.kind {
+        ir::InstructionBinary(operator, left, right) => {
+            operator;
+            left;
+            right = sum
+        }
+        _ => {
+            return Err(2)
+        }
+    }
+    function.blocks[body].instructions.push(move total)
+    return Ok(())
+}
+
+fn split_exit(function: write ir::Function, exit: usize, values: Vec<usize>) -> Result<void, u32> {
+    let phi = ir::instruction_copy(function.blocks[exit].instructions[0])
+    var sum = match phi.result {
+        Some(value) => value,
+        None => {
+            return Err(3)
+        }
+    }
+    function.blocks[exit].instructions = Vec<ir::Instruction>.new()
+    function.blocks[exit].instructions.push(move phi)
+    function.blocks[exit].terminator = None()
+    safety_append(function, exit, ir::InstructionCall(0, Vec<usize>.new(), ir::TypeVoid()))?
+    for index in 0..values.length() {
+        sum = safety_append(function, exit, ir::InstructionBinary(ir::BinaryAdd(), sum, values[index]))?
+    }
+    let count = u64.from(values.length())
+    let expected = safety_integer(function, ir::IntegerWidth64(), count *(count + 1) / 2 * 5 + 18)
+    return safety_return_equal(function, exit, sum, expected)
+}
+
+fn split_ranges() -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    let values = split_inputs(fixture.function, 7)?
+    split_body(fixture.function, fixture.body, values)?
+    split_exit(fixture.function, fixture.exit, values)?
+    safety_require(x86::codegen_split_ranges(fixture.function) > 0, 4)?
+    var callee = ir::function_new("noop", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    safety_block(callee)?
+    safety_terminate(callee, 0, ir::TerminatorReturn(None()))?
+    safety_require(x86::codegen_split_ranges(callee) == 0, 5)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move callee)
+    ir::program_add_function(program, ir::function_take(fixture.function))
+    program.entry = Some(1)
+    return safety_execute(move program)
+}
+
+fn main() -> u32 {
+    return safety_status(split_cases())
+}
+
+fn split_cases() -> Result<void, u32> {
+    split_ranges()?
+    split_parallel()?
+    var fixture = counted_loop(4)?
+    let values = split_inputs(fixture.function, 41)?
+    split_body(fixture.function, fixture.body, values)?
+    split_exit(fixture.function, fixture.exit, values)?
+    let loops = x86::codegen_loop_analysis(fixture.function)
+    let allocation = x86::codegen_allocate_registers(fixture.function)
+    let candidates = x86::codegen_split_candidates(fixture.function, loops, allocation)
+    return safety_require(candidates.length() == 16, 6)
+}
+
+extern "c" {
+    fn split_environment(name: RawPtr<u8>, value: RawPtr<u8>, overwrite: i32) -> i32 = "setenv"
+}
+
+fn split_preparation_fixture() -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    let imported = ir::function_new("external", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageImport())
+    ir::program_add_function(program, move imported)
+    for index in 0..6 {
+        var fixture = counted_loop(4)?
+        fixture.function.name = std::text::joined("loop", std::text::decimal(u64.from(index)))
+        ir::function_new_value(fixture.function, ir::TypePointer())
+        ir::program_add_function(program, ir::function_take(fixture.function))
+    }
+    return Ok(move program)
+}
+
+fn split_prepared_assembly(program: take ir::Program) -> Result<Text, u32> {
+    let object = match x86::codegen(move program) {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return Err(7)
+        }
+    }
+    match x86::assembly(object, x86::AssemblyFormat::MachO()) {
+        Ok(value) => Ok(move value),
+        Err(error) => {
+            error;
+            return Err(8)
+        }
+    }
+}
+
+fn split_parallel() -> Result<void, u32> {
+    var serial = split_preparation_fixture()?
+    var parallel = split_preparation_fixture()?
+    unsafe {
+        split_environment("CROWN_JOBS\0".as_raw(), "1\0".as_raw(), 1)
+    }
+    x86::codegen_prepare_functions(serial)
+    let expected = split_prepared_assembly(move serial)?
+    unsafe {
+        split_environment("CROWN_JOBS\0".as_raw(), "4\0".as_raw(), 1)
+    }
+    x86::codegen_prepare_functions(parallel)
+    safety_require(ir::function_is_import(parallel.functions[0]), 9)?
+    safety_require(parallel.functions.length() == 7, 10)?
+    let actual = split_prepared_assembly(move parallel)?
+    var empty = ir::program_new()
+    x86::codegen_prepare_functions(empty)
+    unsafe {
+        split_environment("CROWN_JOBS\0".as_raw(), "1\0".as_raw(), 1)
+    }
+    return safety_require(std::text::equal(expected, actual), 11)
+}

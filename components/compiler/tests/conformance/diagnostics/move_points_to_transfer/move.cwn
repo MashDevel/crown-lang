@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let text = "a"
+    let other = move text
+    text.length()
+    return 0
+}

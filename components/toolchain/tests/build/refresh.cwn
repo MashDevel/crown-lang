@@ -1,0 +1,109 @@
+struct Fixture {
+    root: Text, compiler: Text, source: Text, counter: Text
+}
+
+fn fixture(root: Text) -> Result<Fixture, Text> {
+    let repository = toolchain::repository_root()?
+    let source = testing::write_file(root, "components/compiler/src/main.cwn", "fn main() -> u32 { 0 }")?
+    fixture_directories(root)?
+    var entries = Vec<Text>.new()
+    entries.push(toolchain::path_join(repository, "components/toolchain/tests/fixtures/seed_compiler.cwn"))
+    entries.push(toolchain::path_join(repository, "components/toolchain/src"));
+    entries.push(toolchain::path_join(repository, "components/library/src"))
+    let sources = toolchain::require_sources(toolchain::SourcePaths {
+            entries: move entries, excluded: Vec<Text>.new(), target: toolchain::host_target()
+        })?
+    let assembly = toolchain::path_join(root, "stub.s")
+    let binary = toolchain::path_join(root, "stub")
+    toolchain::compile(toolchain::CompileRequest {
+            compiler: testing::compiler()?, assembly: assembly.clone(), sources: move sources, max_instances: 128, coverage: "", optimization: toolchain::optimization_options(), target: toolchain::host_target()
+        })?
+    toolchain::bootstrap_link(assembly, binary)?
+    let counter = toolchain::path_join(root, "counter")
+    stub_environment(assembly, counter, source)?
+    return Ok(Fixture {
+            root: root.clone(), compiler: move binary, source: move source, counter: move counter
+        })
+}
+
+fn prepare(value: Fixture, mode: Text) -> Result<void, Text> {
+    toolchain::set_environment("CROWN_STUB_MODE", mode)?
+    toolchain::write_text(value.counter, "0")?
+    toolchain::write_text(value.source, "fn main() -> u32 { 0 }")?
+    testing::write_file(value.root, toolchain::seed_relative("compiler.s"), "original seed")?
+    testing::write_file(value.root, toolchain::seed_relative("manifest.json"), "original manifest")?
+    return Ok(())
+}
+
+fn successful_refresh(value: Fixture) -> Result<void, Text> {
+    prepare(value, "stable")?
+    toolchain::refresh_seed(value.root, value.compiler)?
+    let assembly = toolchain::verify_seed(value.root)?
+    let manifest = toolchain::json(toolchain::read_text(toolchain::path_join(value.root, toolchain::seed_relative("manifest.json")))?)?
+    verify_manifest(manifest, value.source)?
+    return verify_assembly(manifest, assembly)
+}
+
+fn verify_manifest(manifest: toolchain::Json, source: Text) -> Result<void, Text> {
+    let files = toolchain::json_required(manifest, manifest.root, "source_files")?
+    let checksum = toolchain::json_text(manifest, toolchain::json_required(manifest, files, "components/compiler/src/main.cwn")?)?
+    testing::expect(std::text::equal(checksum, toolchain::digest(source)?), "refresh source provenance")?
+    let host = toolchain::json_text(manifest, toolchain::json_required(manifest, manifest.root, "host")?)?
+    return testing::expect(std::text::equal(host, toolchain::target_name(toolchain::host_target())), "seed host")
+}
+
+fn verify_assembly(manifest: toolchain::Json, assembly: Text) -> Result<void, Text> {
+    let assembly_hash = toolchain::json_text(manifest, toolchain::json_required(manifest, manifest.root, "assembly_sha256")?)?
+    testing::expect(std::text::equal(assembly_hash, toolchain::digest(assembly)?), "manifest provides shell recovery checksum")?
+    return testing::expect(toolchain::exists(std::text::joined(assembly, ".cksum")) == false, "refresh needs no checksum sidecar")
+}
+
+fn failed_refresh(value: Fixture, mode: Text) -> Result<void, Text> {
+    prepare(value, mode)?
+    testing::error(toolchain::refresh_seed(value.root, value.compiler))?
+    testing::expect(std::text::equal(toolchain::read_text(toolchain::path_join(value.root, toolchain::seed_relative("compiler.s")))?, "original seed"), "failed refresh preserves assembly")?
+    testing::expect(std::text::equal(toolchain::read_text(toolchain::path_join(value.root, toolchain::seed_relative("manifest.json")))?, "original manifest"), "failed refresh preserves manifest")?
+    let entries = toolchain::directory_entries(toolchain::parent_path(toolchain::path_join(value.root, toolchain::seed_relative("compiler.s"))))?
+    for index in 0..entries.length() {
+        testing::expect(std::text::starts(entries[index], "crown-") == false, "refresh temporary cleanup")?
+    }
+    return Ok(())
+}
+
+fn first_generation(value: Fixture) -> Result<void, Text> {
+    prepare(value, "first-different")?
+    let sources = toolchain::compiler_sources(value.root)?
+    let directory = toolchain::path_join(value.root, "stages")
+    toolchain::make_directory(directory)?
+    let stage = toolchain::rebuild(value.compiler, sources, directory)?
+    testing::expect(toolchain::exists(stage.binary), "first generation may differ")?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let value = fixture(toolchain::temporary_path(temporary))?
+    successful_refresh(value)?;
+    failed_refresh(value, "mismatch")?;
+    failed_refresh(value, "change-source")?;
+    first_generation(value)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn stub_environment(assembly: Text, counter: Text, source: Text) -> Result<void, Text> {
+    toolchain::set_environment("CROWN_STUB_ASSEMBLY", assembly)?
+    toolchain::set_environment("CROWN_STUB_COUNTER", counter)?
+    toolchain::set_environment("CROWN_STUB_SOURCE", source)?
+    return Ok(())
+}
+
+fn fixture_directories(root: Text) -> Result<void, Text> {
+    toolchain::make_directory(toolchain::path_join(root, "components/backend/src"))?
+    toolchain::make_directory(toolchain::path_join(root, "components/library/src"))?
+    toolchain::make_directory(toolchain::path_join(root, "components/toolchain/src"))?
+    toolchain::make_directory(toolchain::path_join(root, "target/bootstrap"))?
+    return Ok(())
+}

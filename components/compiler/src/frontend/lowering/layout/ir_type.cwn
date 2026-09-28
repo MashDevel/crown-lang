@@ -1,0 +1,91 @@
+module lowering {
+    fn ir_type(symbols: sema::Symbols, value_type: sema::Type) -> Result<ir::Type, u32> {
+        match scalar_ir_type(value_type) {
+            Some(result) => {
+                return Ok(result)
+            }
+            None => {
+            }
+        }
+        match layout(symbols, value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(layout) => {
+                return Ok(ir::TypeAggregate(layout.size, layout.alignment))
+            }
+        }
+    }
+
+    fn scalar_ir_type(value_type: sema::Type) -> Option<ir::Type> {
+        match read value_type {
+            sema::FunctionType(parameters, result) => {
+                parameters;
+                result;
+                Some(ir::TypePointer())
+            }
+            sema::BuiltinType(builtin, arguments) => builtin_ir_type(builtin, arguments.length())
+            _ => None()
+        }
+    }
+
+    fn builtin_ir_type(kind: sema::Builtin, arguments: usize) -> Option<ir::Type> {
+        if kind == sema::RawPtr() && arguments == 1 {
+            return Some(ir::TypePointer())
+        }
+        if arguments != 0 {
+            return None()
+        }
+        if kind == sema::Unit() {
+            return Some(ir::TypeVoid())
+        }
+        if kind == sema::Bool() {
+            return Some(ir::TypeInteger(ir::IntegerWidth1()))
+        }
+        if kind == sema::F32() {
+            return Some(ir::TypeFloat(ir::FloatWidth32()))
+        }
+        if kind == sema::F64() {
+            return Some(ir::TypeFloat(ir::FloatWidth64()))
+        }
+        scalar_integer_ir_type(kind, arguments)
+    }
+
+    fn scalar_integer_ir_type(builtin: sema::Builtin, arguments: usize) -> Option<ir::Type> {
+        if arguments != 0 {
+            return None()
+        }
+        if builtin == sema::Char() {
+            return Some(ir::TypeInteger(ir::IntegerWidth32()))
+        }
+        if sema::builtin_is_integer(builtin) == false {
+            return None()
+        }
+        match sema::builtin_width(builtin) {
+            8 => Some(ir::TypeInteger(ir::IntegerWidth8()))
+            16 => Some(ir::TypeInteger(ir::IntegerWidth16()))
+            32 => Some(ir::TypeInteger(ir::IntegerWidth32()))
+            _ => Some(ir::TypeInteger(ir::IntegerWidth64()))
+        }
+    }
+
+    fn type_is_direct(symbols: sema::Symbols, value_type: sema::Type) -> Result<bool, u32> {
+        match ir_type(symbols, value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(ir_type) => {
+                match read ir_type {
+                    ir::TypeAggregate(size, alignment) => {
+                        size;
+                        alignment;
+                        return Ok(false)
+                    }
+                    _ => {
+                        return Ok(true)
+                    }
+                }
+            }
+        }
+    }
+}

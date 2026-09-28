@@ -1,0 +1,120 @@
+module testing_launcher {
+    fn assembly(status: u32) -> Text {
+        let target = toolchain::host_target()
+        let name = if target.platform == toolchain::Platform::Macos() {
+            "_main"
+        } else {
+            "main"
+        }
+        var output = ".text\n.globl "
+        std::text::append(output, name)
+        std::text::append(output, "\n")
+        std::text::append(output, name)
+        std::text::append(output, ":\n")
+        let arm = target.architecture == toolchain::Architecture::Arm64()
+        std::text::append(output, if arm {
+                "mov w0, #"
+            } else {
+                "movl $"
+            })
+        std::text::append(output, std::text::decimal(u64.from(status)))
+        std::text::append(output, if arm {
+                "\nret\n"
+            } else {
+                ", %eax\nretq\n"
+            })
+        return move output
+    }
+
+    fn seed(root: Text) -> Result<Text, Text> {
+        let path = testing::write_file(root, toolchain::seed_relative("compiler.s"), assembly(23))?
+        let manifest = toolchain::seed_manifest("{}", toolchain::digest(path)?)?
+        testing::write_file(root, toolchain::seed_relative("manifest.json"), manifest)?
+        return Ok(move path)
+    }
+
+    fn fixture(root: Text) -> Result<void, Text> {
+        let configured = toolchain::environment("CROWN_LAUNCHER_UNDER_TEST")
+        let source = if configured.length() == 0 {
+            toolchain::path_join(toolchain::repository_root()?, "bootstrap/crown")
+        } else {
+            configured.clone()
+        }
+        seed(root)?
+        let launcher = toolchain::path_join(root, "bootstrap/crown")
+        toolchain::copy_file(source, launcher)?
+        toolchain::copy_file(toolchain::path_join(toolchain::parent_path(source), "digest.awk"), toolchain::path_join(root, "bootstrap/digest.awk"))?
+        toolchain::executable(launcher)?
+        return Ok(())
+    }
+
+    fn cache(root: Text) -> Result<Text, Text> {
+        let source = testing::write_file(root, "cached.s", assembly(17))?
+        let binary = toolchain::path_join(root, "target/bootstrap/crown")
+        toolchain::make_directory(toolchain::parent_path(binary))?
+        toolchain::bootstrap_link(source, binary)?
+        let seed_path = toolchain::path_join(root, toolchain::seed_relative("compiler.s"))
+        toolchain::record_build(binary, toolchain::digest_text("inputs")?, Some(toolchain::digest(seed_path)?))?
+        return Ok(move binary)
+    }
+
+    fn invoke(root: Text) -> Result<toolchain::ProcessResult, Text> {
+        return invoke_at(root, toolchain::path_join(root, "target/bootstrap"))
+    }
+
+    fn invoke_at(root: Text, directory: Text) -> Result<toolchain::ProcessResult, Text> {
+        var arguments = testing::list("/usr/bin/env")
+        arguments.push(std::text::joined("CROWN_BOOTSTRAP_DIR=", directory))
+        arguments.push(toolchain::path_join(root, "bootstrap/crown"))
+        arguments.push("--version")
+        return toolchain::capture(toolchain::command(move arguments), root)
+    }
+
+    fn changed_record(root: Text, field: Text, value: Text) -> Result<void, Text> {
+        let binary = toolchain::path_join(root, "target/bootstrap/crown")
+        let fields = testing::list("input|output|seed")
+        var values = Vec<Text>.new()
+        values.push(toolchain::digest_text("inputs")?)
+        values.push(toolchain::digest(binary)?)
+        values.push(toolchain::digest(toolchain::path_join(root, toolchain::seed_relative("compiler.s")))?)
+        var record = "{"
+        for index in 0..fields.length() {
+            if index != 0 {
+                record.push(',')
+            }
+            std::text::append(record, toolchain::json_quoted(fields[index]))
+            record.push(':')
+            std::text::append(record, if std::text::equal(field, fields[index]) {
+                    value.clone()
+                } else {
+                    toolchain::json_quoted(values[index])
+                })
+        }
+        record.push('}')
+        return toolchain::write_text(std::text::joined(binary, ".crown-build"), record)
+    }
+
+    fn expect_status(root: Text, status: i32) -> Result<void, Text> {
+        let result = invoke(root)?
+        testing::expect(result.status == status, std::text::joined("launcher status: ", std::text::joined(std::text::signed_decimal(i64.from(result.status)), result.stderr)))?
+        return testing::expect(result.stdout.length() == 0, "fixture launcher output")
+    }
+
+    fn cached_project(root: Text) -> Result<Text, Text> {
+        testing::write_file(root, "components/compiler/src/main.cwn", "fn main() -> u32 { 17 }")?
+        toolchain::make_directory(toolchain::path_join(root, "components/backend/src"))?
+        toolchain::make_directory(toolchain::path_join(root, "components/library/src"))?
+        toolchain::make_directory(toolchain::path_join(root, "components/toolchain/src"))?
+        testing_launcher::seed(root)?
+        return testing_launcher::cache(root)
+    }
+
+    fn matching_seed_manifest(root: Text) -> Result<void, Text> {
+        let sources = toolchain::compiler_sources(root)?
+        let record = toolchain::source_record(root, sources)?
+        let seed = toolchain::verify_seed(root)?
+        let manifest = toolchain::seed_manifest(record, toolchain::digest(seed)?)?
+        testing::write_file(root, toolchain::seed_relative("manifest.json"), manifest)?
+        return Ok(())
+    }
+}

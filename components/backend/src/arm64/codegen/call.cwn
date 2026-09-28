@@ -1,0 +1,116 @@
+module arm64 {
+    fn call_arguments(function: ir::Function, compiler: write Compiler, signature: ir::Signature, arguments: Vec<usize>) -> Result<u64, Text> {
+        let layout = call_layout(signature, compiler.variant)?
+        stack_adjust(compiler, layout.size, true)
+        copy_arguments(compiler, signature, arguments, layout)?
+        for index in 0..arguments.length() {
+            let input = CallArgument {
+                value: arguments[index], argument: layout.locations[index], copy_offset: layout.copies[index]
+            }
+            call_argument(function, compiler, signature.parameter_abi[index], input)?
+            extend_argument(function, compiler, input, ir::signature_signed_parameter(signature, index))
+        }
+        return Ok(layout.size)
+    }
+    fn call_argument(function: ir::Function, compiler: write Compiler, abi: ir::ParameterAbi, input: CallArgument) -> Result<void, Text> {
+        match read abi {
+            ir::ParameterAggregate(aggregate) => {
+                if input.argument.indirect {
+                    return indirect_argument(compiler, input.copy_offset, input.argument.location)
+                }
+                return aggregate_argument(compiler, input.value, input.argument.location, aggregate_type(aggregate))
+            }
+            _ => scalar_argument(function, compiler, input.value, input.argument.location)
+        }
+    }
+
+    fn scalar_argument(function: ir::Function, compiler: write Compiler, value: usize, location: AbiLocation) -> Result<void, Text> {
+        match location {
+            AbiLocation::General(start, count) => {
+                value_load(compiler, value, start)
+                if count == 2 {
+                    value_high(compiler, value, start + 1)
+                }
+            }
+            AbiLocation::Simd(start, count) => {
+                count;
+                simd_argument(function, compiler, value, start)?
+            }
+            AbiLocation::Stack(offset, size) => {
+                value_load(compiler, value, 9)
+                outgoing_partial(compiler, 9, offset, partial_size(size))?
+                if size == 16 {
+                    value_high(compiler, value, 9)
+                    outgoing_store(compiler, 9, offset + 8)?
+                }
+            }
+            AbiLocation::Omitted => {
+            }
+        }
+        return Ok(())
+    }
+    fn simd_argument(function: ir::Function, compiler: write Compiler, value: usize, register: u32) -> Result<void, Text> {
+        if ir::type_is_vector(function.values[value]) {
+            return vector_load(compiler, value, register)
+        }
+        value_load(compiler, value, 9)
+        emit_encoding(compiler, float_move_bits(register, 9, true, ir::type_is_float64(function.values[value])))
+        return Ok(())
+    }
+    fn outgoing_store(compiler: write Compiler, register: u32, offset: u64) -> Result<void, Text> {
+        outgoing_address(compiler, 17, offset)?
+        emit_encoding(compiler, memory_word(register, 17, 0, 8, false))
+        return Ok(())
+    }
+    fn aggregate_argument(compiler: write Compiler, value: usize, location: AbiLocation, shape: AbiValue) -> Result<void, Text> {
+        value_load(compiler, value, 16)
+        match location {
+            AbiLocation::Stack(offset, size) => {
+                var byte: u64 = 0
+                while byte < size {
+                    load_partial(compiler, 9, 16, byte, shape.size)?
+                    outgoing_partial(compiler, 9, offset + byte, partial_size(size - byte))?
+                    byte = byte + 8
+                }
+                Ok(())
+            }
+            _ => aggregate_registers(compiler, shape, location, true)
+        }
+    }
+
+    fn call_result(function: ir::Function, compiler: write Compiler, signature: ir::Signature, arguments: Vec<usize>, result: Option<usize>) -> Result<void, Text> {
+        match signature_return(signature) {
+            Some(returned) => {
+                let location = abi_result(returned.shape)?
+                if location.indirect {
+                    return Ok(())
+                }
+                value_load(compiler, arguments[returned.index], 16)
+                return aggregate_registers(compiler, returned.shape, location.location, false)
+            }
+            None => {
+            }
+        }
+        match result {
+            Some(value) => {
+                scalar_call_result(compiler, function.values[value])?;
+                store_result(function, compiler, result)
+            }
+            None => Ok(())
+        }
+    }
+    fn scalar_call_result(compiler: write Compiler, value_type: ir::Type) -> Result<void, Text> {
+        if ir::type_is_vector(value_type) {
+            return vector_result(compiler)
+        }
+        if ir::type_is_float(value_type) {
+            emit_encoding(compiler, float_move_bits(9, 0, false, ir::type_is_float64(value_type)))
+        }
+        else {
+            emit_registers(compiler, 2852126720, 9, 31, 0)
+            emit_registers(compiler, 2852126720, 10, 31, 1)
+        }
+        return Ok(())
+    }
+
+}

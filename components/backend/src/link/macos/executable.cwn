@@ -1,0 +1,100 @@
+module macho {
+    fn executable(object: object::CompilerObject, libraries: Vec<Text>) -> Result<Vec<u8>, Text> {
+        validate_libraries(libraries)?
+        let ordinals = import_ordinals(object, libraries)?
+        var header_size: usize = 1024
+        for index in 0..libraries.length() {
+            header_size = header_size + link_binary::aligned(24 + libraries[index].length() + 1, 8)
+        }
+        var image = layout(object, header_size)?
+        initialize_coverage(image, object)?
+        relocate(image, object, ordinals)?
+        image.exports = export_trie(object, image)?
+        link_binary::pad(image.data, link_binary::aligned(image.data.length(), page_size(image.architecture)))
+        let metadata = metadata_layout(image)
+        let commands = commands(image, libraries)
+        if commands.bytes.length() + 32 > link_binary::aligned(header_size, page_size(image.architecture)) {
+            return Err("Mach-O load commands exceed reserved header")
+        }
+        write_header(image.text, commands, image.architecture)
+        link_binary::append(image.text, image.data)
+        let linkedit = image.text.length()
+        link_binary::append(image.text, image.rebases)
+        link_binary::pad(image.text, linkedit + metadata.bindings)
+        link_binary::append(image.text, image.bindings)
+        link_binary::pad(image.text, linkedit + metadata.exports)
+        link_binary::append(image.text, image.exports)
+        link_binary::pad(image.text, linkedit + metadata.strings + 1)
+        sign_executable(image)?
+        return Ok(replace(image.text, Vec<u8>.new()))
+    }
+
+    fn initialize_coverage(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..object.symbols.length() {
+            if std::text::equal(object.symbols[index].name, "crown_cov_init") {
+                let offset = link_binary::aligned(image.data.length(), 8)
+                link_binary::pad(image.data, offset + 8)
+                image.initializer = image.data_base + u64.from(offset)
+                patch(image, image.initializer, image.symbols[index], 8)?
+                rebase(image, image.initializer)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn commands(image: Image, libraries: Vec<Text>) -> Commands {
+        var output = Commands {
+            bytes: Vec<u8>.new(), count: 0
+        }
+        let text_size = u64.from(image.text.length())
+        let data_size = u64.from(image.data.length())
+        let link_size = linkedit_size(image)
+        segment(output, Segment {
+                name: "__PAGEZERO", address: 0, offset: 0, size: 4294967296, permissions: 0
+            }, 0, page_size(image.architecture))
+        segment(output, Segment {
+                name: "__TEXT", address: 4294967296, offset: 0, size: text_size, permissions: 5
+            }, 0, page_size(image.architecture))
+        segment(output, Segment {
+                name: "__DATA", address: image.data_base, offset: text_size, size: data_size, permissions: 3
+            }, image.initializer, page_size(image.architecture))
+        segment(output, Segment {
+                name: "__LINKEDIT", address: image.data_base + data_size, offset: text_size + data_size, size: link_size, permissions: 1
+            }, 0, page_size(image.architecture))
+        metadata_commands(output, image, text_size + data_size)
+        loader_commands(output, image, libraries)
+        signature_command(output, image)
+        return move output
+    }
+
+    fn metadata_commands(output: write Commands, image: Image, offset: u64) -> void {
+        let metadata = metadata_layout(image)
+        let info = command(output, 2147483682, 48)
+        link_binary::put(output.bytes, info + 8, offset, 4)
+        link_binary::put(output.bytes, info + 12, u64.from(image.rebases.length()), 4)
+        link_binary::put(output.bytes, info + 16, offset + u64.from(metadata.bindings), 4)
+        link_binary::put(output.bytes, info + 20, u64.from(image.bindings.length()), 4)
+        let exports = offset + u64.from(metadata.exports)
+        link_binary::put(output.bytes, info + 40, exports, 4)
+        link_binary::put(output.bytes, info + 44, u64.from(image.exports.length()), 4)
+        let symbols = command(output, 2, 24)
+        let strings = offset + u64.from(metadata.strings)
+        link_binary::put(output.bytes, symbols + 8, strings, 4)
+        link_binary::put(output.bytes, symbols + 16, strings, 4)
+        link_binary::put(output.bytes, symbols + 20, 1, 4)
+        command(output, 11, 80)
+    }
+
+    fn write_header(bytes: write Vec<u8>, commands: Commands, architecture: object::Architecture) -> void {
+        link_binary::put(bytes, 0, 4277009103, 4)
+        link_binary::put(bytes, 4, cpu_type(architecture), 4)
+        link_binary::put(bytes, 8, cpu_subtype(architecture), 4)
+        link_binary::put(bytes, 12, 2, 4)
+        link_binary::put(bytes, 16, commands.count, 4)
+        link_binary::put(bytes, 20, u64.from(commands.bytes.length()), 4)
+        link_binary::put(bytes, 24, 2097285, 4)
+        for index in 0..commands.bytes.length() {
+            bytes[32 + index] = commands.bytes[index]
+        }
+    }
+}

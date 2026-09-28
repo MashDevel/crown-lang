@@ -1,0 +1,108 @@
+module optimize {
+    fn load_available_entries(function: ir::Function, offsets: Vec<Option<ir::AddressOffset>>, effects: Shared<Vec<MemoryEffect>>) -> Vec<LoadBlockEntry> {
+        var entries = load_empty_block_entries(function.blocks.length())
+        if entries.length() == 0 {
+            return move entries
+        }
+        entries[0].reached = true
+        var scan = load_scan_state(function, offsets, false, effects)
+        let order = ir::reverse_postorder(function)
+        var changed = true
+        while changed {
+            changed = false
+            var cursor: usize = 0
+            while cursor < order.length() {
+                let block = order[cursor]
+                if entries[block].reached {
+                    changed = load_propagate_block(function, entries, block, scan) || changed
+                }
+                cursor = cursor + 1
+            }
+        }
+        return move entries
+    }
+
+    fn load_empty_block_entries(length: usize) -> Vec<LoadBlockEntry> {
+        var output = Vec<LoadBlockEntry>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(LoadBlockEntry {
+                    reached: false, available: Vec<LoadEntry>.new()
+                })
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn load_scan_state(function: ir::Function, offsets: Vec<Option<ir::AddressOffset>>, eliminate: bool, effects: Shared<Vec<MemoryEffect>>) -> LoadScan {
+        return LoadScan {
+            definitions: range_definitions(function)
+            offsets: load_offsets_copy(offsets)
+            roots: memory_roots(function)
+            effects: effects.share()
+            available: Vec<LoadEntry>.new()
+            replacements: none_usize(function.values.length())
+            removed: false_values(function.values.length())
+            eliminate: eliminate
+        }
+    }
+
+    fn load_merge_targets(entries: write Vec<LoadBlockEntry>, targets: Vec<usize>, available: Vec<LoadEntry>) -> bool {
+        var changed = false
+        var index: usize = 0
+        while index < targets.length() {
+            let target = targets[index]
+            var merged = false
+            loan write entries[target] as entry {
+                merged = load_merge_entry(entry, available)
+            }
+            if merged {
+                changed = true
+            }
+            index = index + 1
+        }
+        return changed
+    }
+
+    fn load_merge_entry(target: write LoadBlockEntry, incoming: Vec<LoadEntry>) -> bool {
+        if target.reached == false {
+            target.reached = true
+            target.available = load_entries_copy(incoming)
+            return true
+        }
+        var output = Vec<LoadEntry>.new()
+        var index: usize = 0
+        while index < target.available.length() {
+            loan read target.available[index] as current {
+                match load_find(incoming, current.address, current.value_type, current.alignment) {
+                    Some(result) => {
+                        if result == current.result {
+                            output.push(load_entry_copy(current))
+                        }
+                    }
+                    None => {
+                    }
+                }
+            }
+            index = index + 1
+        }
+        let changed = output.length() != target.available.length()
+        target.available = move output
+        return changed
+    }
+
+    fn load_propagate_block(function: ir::Function, entries: write Vec<LoadBlockEntry>, block: usize, scan: write LoadScan) -> bool {
+        loan read entries[block].available as available {
+            scan.available = load_entry_slice_copy(available)
+        }
+        load_scan_block(function, function.blocks[block], scan)
+        match read function.blocks[block].terminator {
+            Some(terminator) => {
+                let targets = ir::terminator_targets(terminator)
+                return load_merge_targets(entries, targets, scan.available)
+            }
+            None => false
+        }
+    }
+
+}

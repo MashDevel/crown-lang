@@ -1,0 +1,10 @@
+fn length(value: Slice<u32>) -> usize {
+    return value.length()
+}
+fn main() -> u32 {
+    let values: [u32; 2] = [1, 2];
+    if length(values[2..2]) != 0 {
+        return 1
+    };
+    return 0
+}

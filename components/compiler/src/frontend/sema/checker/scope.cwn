@@ -1,0 +1,117 @@
+module sema {
+    copy struct VariableKey {
+        scope: usize, index: usize
+    }
+
+    fn checker_push_scope(checker: write Checker) -> void {
+        checker.scopes.push(scope_new())
+    }
+
+    fn checker_pop_scope(checker: write Checker) -> void {
+        while checker.place_loans.length() != 0 {
+            let index = checker.place_loans.length() - 1
+            if checker.place_loans[index].depth < checker.scopes.length() {
+                break
+            }
+            checker.place_loans.pop()
+        }
+        checker.scopes.pop()
+    }
+
+    fn checker_find_variable(checker: Checker, name: frontend::Name) -> Option<VariableKey> {
+        var scope = checker.scopes.length()
+        while scope > 0 {
+            scope = scope - 1
+            var index: usize = 0
+            while index < checker.scopes[scope].variables.length() {
+                loan read checker.scopes[scope].variables[index] as variable {
+                    if names_equal(checker.symbols.source, variable.name, name) {
+                        return Some(VariableKey {
+                                scope: scope, index: index
+                            })
+                    }
+                }
+                index = index + 1
+            }
+        }
+        return None()
+    }
+
+    fn checker_variable_copy(checker: Checker, key: VariableKey) -> Variable {
+        let scope = key.scope
+        let index = key.index
+        loan read checker.scopes[scope].variables[index] as variable {
+            return Variable {
+                name: frontend::name_copy(variable.name)
+                value_type: type_copy(variable.value_type)
+                copy_value: variable.copy_value
+                mutable_value: variable.mutable_value
+                state: variable.state
+                access: variable.access
+                state_span: variable.state_span
+                span: variable.span
+            }
+        }
+    }
+
+    fn checker_add_variable(checker: write Checker, variable: take Variable) -> bool {
+        match checker_find_variable(checker, variable.name) {
+            Some(existing) => {
+                existing;
+                checker_error(checker, "a binding with this name already exists in the scope");
+                return false
+            }
+            None => {
+            }
+        }
+        if checker.scopes.length() == 0 {
+            checker_push_scope(checker)
+        }
+        let index = checker.scopes.length() - 1
+        checker.scopes[index].variables.push(move variable)
+        return true
+    }
+
+    fn checker_set_state(checker: write Checker, key: VariableKey, state: take VariableState) -> void {
+        let scope = key.scope
+        let index = key.index
+        let previous = checker.scopes[scope].variables[index].state
+        match previous {
+            Available => {
+                checker.scopes[scope].variables[index].state_span = checker.current_span
+            }
+            _ => {
+            }
+        }
+        checker.scopes[scope].variables[index].state = state
+    }
+
+    fn checker_record(checker: write Checker, expression: frontend::Expression, info: ExpressionInfo) -> void {
+        checker.expressions.push(ExpressionRecord {
+                function: checker.current_function
+                resource_owner: checker.current_resource
+                span: expression.span
+                value_type: type_copy(info.value_type)
+                value: info.value
+            })
+    }
+
+    fn copy_info(value_type: take Type) -> ExpressionInfo {
+        return ExpressionInfo {
+            value_type: move value_type, value: CopyValue()
+        }
+    }
+
+    fn owned_info(value_type: take Type) -> ExpressionInfo {
+        return ExpressionInfo {
+            value_type: move value_type, value: OwnedValue()
+        }
+    }
+
+    fn type_value_kind(value_type: Type) -> ValueKind {
+        if type_is_copy(value_type) {
+            return CopyValue()
+        }
+        return OwnedValue()
+    }
+}

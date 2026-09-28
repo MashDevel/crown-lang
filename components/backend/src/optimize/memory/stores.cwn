@@ -1,0 +1,111 @@
+module optimize {
+    struct PendingStore {
+        access: LoadAccess
+        instruction: usize
+    }
+
+    fn dead_stores(function: write ir::Function, effects: Shared<Vec<MemoryEffect>>) -> usize {
+        let offsets = load_offsets(function)
+        let scan = load_scan_state(function, offsets, false, effects)
+        let future = memory_future_stores(function, scan)
+        var removed: usize = 0
+        for block in 0..function.blocks.length() {
+            let successors = memory_successor_stores(function.blocks[block], future)
+            let selected = dead_store_block(function, function.blocks[block], scan, successors)
+            removed = removed + count_true(selected)
+            if count_true(selected) != 0 {
+                remove_instruction_positions(function.blocks[block], selected)
+            }
+        }
+        return removed
+    }
+
+    fn dead_store_block(function: ir::Function, block: ir::BasicBlock, scan: LoadScan, future: Vec<LoadAccess>) -> Vec<bool> {
+        var pending = Vec<PendingStore>.new()
+        var removed = false_values(block.instructions.length())
+        for index in 0..block.instructions.length() {
+            loan read block.instructions[index].kind as kind {
+                match memory_store_access(function, kind) {
+                    Some(access) => {
+                        dead_store_overwrite(function, scan, pending, removed, access)
+                        pending.push(PendingStore {
+                                access: access, instruction: index
+                            })
+                    }
+                    None => {
+                        pending = dead_store_observe(function, scan, pending, kind)
+                    }
+                }
+            }
+        }
+        for index in 0..future.length() {
+            dead_store_overwrite(function, scan, pending, removed, future[index])
+        }
+        return move removed
+    }
+
+    fn memory_store_access(function: ir::Function, kind: ir::InstructionKind) -> Option<LoadAccess> {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        if volatile {
+                            return None()
+                        }
+                        let value_type = ir::function_value_type(function, value)
+                        match value_type {
+                            Some(found) => memory_typed_access(address, found)
+                            None => None()
+                        }
+                    }
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn memory_typed_access(address: usize, value_type: ir::Type) -> Option<LoadAccess> {
+        match ir::type_size(value_type) {
+            Some(size) => Some(LoadAccess {
+                    address: address, size: size
+                })
+            None => None()
+        }
+    }
+
+    fn dead_store_overwrite(function: ir::Function, scan: LoadScan, pending: Vec<PendingStore>, removed: write Vec<bool>, access: LoadAccess) -> void {
+        let region = load_region(function, scan, access.address, access.size)
+        for index in 0..pending.length() {
+            loan read pending[index] as previous {
+                let old = load_region(function, scan, previous.access.address, previous.access.size)
+                if memory_region_covers(region, old) {
+                    removed[previous.instruction] = true
+                }
+            }
+        }
+    }
+
+    fn memory_region_covers(outer: Option<LoadRegion>, inner: Option<LoadRegion>) -> bool {
+        match read outer {
+            Some(left) => {
+                match read inner {
+                    Some(right) => left.root == right.root && left.start <= right.start && left.end >= right.end
+                    None => false
+                }
+            }
+            None => false
+        }
+    }
+
+    fn remove_instruction_positions(block: write ir::BasicBlock, removed: Vec<bool>) -> void {
+        var instructions = Vec<ir::Instruction>.new()
+        for index in 0..block.instructions.length() {
+            if removed[index] == false {
+                instructions.push(ir::instruction_copy(block.instructions[index]))
+            }
+        }
+        block.instructions = move instructions
+    }
+}

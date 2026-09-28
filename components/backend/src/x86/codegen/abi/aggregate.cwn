@@ -1,0 +1,60 @@
+module x86 {
+    fn abi_aggregate(aggregate: ir::AggregateAbi, assignment: write AbiAssignment) -> Result<ArgumentLocation, CodegenError> {
+        match read aggregate {
+            ir::AggregateMemory(size, alignment) => {
+                return abi_memory(size, alignment, assignment)
+            }
+            ir::AggregateRegisters(size, alignment, components) => {
+                let copied = codegen_abi_components_copy(components)
+                return abi_registers(size, alignment, move copied, assignment)
+            }
+        }
+    }
+
+    fn abi_registers(size: u64, alignment: u32, components: take Vec<ir::AbiComponent>, assignment: write AbiAssignment) -> Result<ArgumentLocation, CodegenError> {
+        let saved_integer = assignment.integer
+        let saved_float = assignment.float
+        var output = Vec<AbiComponentLocation>.with_capacity(components.length())
+        var index: usize = 0
+        while index < components.length() {
+            loan read components[index] as component {
+                match abi_component_location(component, assignment) {
+                    Some(location) => {
+                        output.push(AbiComponentLocation {
+                                component: ir::abi_component_copy(component), location: move location
+                            })
+                    }
+                    None => {
+                        assignment.integer = saved_integer
+                        assignment.float = saved_float
+                        return abi_memory(size, alignment, assignment)
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(ArgumentRegisters(move output))
+    }
+
+    fn abi_component_location(component: ir::AbiComponent, assignment: write AbiAssignment) -> Option<ScalarLocation> {
+        if ir::type_is_float(component.value_type) {
+            match abi_take_float(assignment) {
+                Some(register) => {
+                    return Some(ScalarFloat(register))
+                }
+                None => {
+                    return None()
+                }
+            }
+        }
+        match abi_take_integer(assignment) {
+            Some(register) => {
+                return Some(ScalarInteger(register))
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+}

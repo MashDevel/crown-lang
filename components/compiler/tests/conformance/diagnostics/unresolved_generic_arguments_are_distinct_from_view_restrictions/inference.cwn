@@ -1,0 +1,7 @@
+fn empty<T>() -> Vec<T> {
+    return Vec<T>.new()
+}
+fn main() -> u32 {
+    empty();
+    return 0
+}

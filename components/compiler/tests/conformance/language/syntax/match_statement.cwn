@@ -1,0 +1,13 @@
+fn main() -> u32 {
+    var result: u32 = 0
+    let value = "check"
+    match read value {
+        "check" => {
+            result = 42
+        },
+        _ => {
+            result = 1
+        }
+    }
+    result
+}

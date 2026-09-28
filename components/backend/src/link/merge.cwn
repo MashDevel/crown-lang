@@ -1,0 +1,116 @@
+module link_object {
+    fn merge(output: write object::CompilerObject, input: take object::CompilerObject) -> Result<void, Text> {
+        if output.architecture != input.architecture {
+            return Err("cannot link objects for different architectures")
+        }
+        var source = move input
+        let section_base = output.sections.length()
+        append_sections(output, replace(source.sections, Vec<object::Section>.new()))
+        var symbols = reversed(replace(source.symbols, Vec<object::Symbol>.new()))
+        var mapping = Vec<usize>.new()
+        while symbols.length() != 0 {
+            match symbols.pop() {
+                Some(symbol) => {
+                    mapping.push(merge_symbol(output, move symbol, section_base)?)
+                }
+                None => {
+                }
+            }
+        }
+        while source.relocations.length() != 0 {
+            match source.relocations.pop() {
+                Some(relocation) => {
+                    merge_relocation(output, move relocation, mapping, section_base)
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn reversed<T>(values: take Vec<T>) -> Vec<T> {
+        var input = move values
+        var output = Vec<T>.new()
+        while input.length() != 0 {
+            match input.pop() {
+                Some(value) => {
+                    output.push(move value)
+                }
+                None => {
+                }
+            }
+        }
+        return move output
+    }
+
+    fn append_sections(output: write object::CompilerObject, input: take Vec<object::Section>) -> void {
+        var sections = reversed(move input)
+        while sections.length() != 0 {
+            match sections.pop() {
+                Some(section) => {
+                    output.sections.push(move section)
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn merge_symbol(output: write object::CompilerObject, input: take object::Symbol, section_base: usize) -> Result<usize, Text> {
+        var symbol = move input
+        symbol.section = match read symbol.section {
+            Some(section) => Some(section_base + section)
+            None => None()
+        }
+        let local = match read symbol.binding {
+            object::SymbolLocal => true
+            _ => false
+        }
+        if local {
+            symbol.name = std::text::joined(std::text::joined(std::text::decimal(u64.from(section_base)), ":"), symbol.name)
+        } else {
+            match existing_symbol(output, symbol.name) {
+                Some(index) => {
+                    return replace_symbol(output, move symbol, index)
+                }
+                None => {
+                }
+            }
+        }
+        let index = output.symbols.length()
+        output.symbols.push(move symbol)
+        return Ok(index)
+    }
+
+    fn existing_symbol(output: object::CompilerObject, name: Text) -> Option<usize> {
+        for index in 0..output.symbols.length() {
+            if std::text::equal(output.symbols[index].name, name) {
+                return Some(index)
+            }
+        }
+        return None()
+    }
+
+    fn replace_symbol(output: write object::CompilerObject, symbol: take object::Symbol, index: usize) -> Result<usize, Text> {
+        if object::symbol_is_import(symbol.binding) {
+            return Ok(index)
+        }
+        if object::symbol_is_import(output.symbols[index].binding) == false {
+            return Err(std::text::joined("duplicate symbol: ", symbol.name))
+        }
+        output.symbols[index] = move symbol
+        return Ok(index)
+    }
+
+    fn merge_relocation(output: write object::CompilerObject, input: take object::Relocation, mapping: Vec<usize>, section_base: usize) -> void {
+        var relocation = move input
+        relocation.section = relocation.section + section_base
+        relocation.symbol = mapping[relocation.symbol]
+        relocation.subtract = match read relocation.subtract {
+            Some(symbol) => Some(mapping[symbol])
+            None => None()
+        }
+        output.relocations.push(move relocation)
+    }
+}

@@ -1,0 +1,81 @@
+module arm64 {
+    fn wide_binary(compiler: write Compiler, operator: ir::BinaryOperator, left: usize, right: usize) -> Result<void, Text> {
+        value_load(compiler, left, 9)
+        value_high(compiler, left, 10)
+        value_load(compiler, right, 11)
+        value_high(compiler, right, 12)
+        if ir::binary_is_shift(operator) {
+            return wide_shift(compiler, operator)
+        }
+        if ir::binary_may_trap(operator) {
+            return wide_division(compiler, operator)
+        }
+        match operator {
+            ir::BinaryAdd => {
+                emit_registers(compiler, 2868903936, 9, 9, 11)
+                emit_registers(compiler, 2583691264, 10, 10, 12)
+            }
+            ir::BinarySubtract => {
+                emit_registers(compiler, 3942645760, 9, 9, 11)
+                emit_registers(compiler, 3657433088, 10, 10, 12)
+            }
+            ir::BinaryMultiply => {
+                emit_registers(compiler, 2613083136, 13, 9, 11)
+                emit_registers(compiler, 2600500224, 12, 9, 12)
+                emit_registers(compiler, 2600500224, 10, 10, 11)
+                emit_registers(compiler, 2332033024, 10, 10, 12)
+                emit_registers(compiler, 2332033024, 10, 10, 13)
+                emit_registers(compiler, 2600500224, 9, 9, 11)
+            }
+            _ => {
+                wide_bitwise(compiler, operator)?
+            }
+        }
+        return Ok(())
+    }
+    fn wide_bitwise(compiler: write Compiler, operator: ir::BinaryOperator) -> Result<void, Text> {
+        let opcode: u32 = match operator {
+            ir::BinaryAnd => 2315255808
+            ir::BinaryOr => 2852126720
+            ir::BinaryXor => 3388997632
+            _ => {
+                return Err("invalid ARM64 wide binary operation")
+            }
+        }
+        emit_registers(compiler, opcode, 9, 9, 11)
+        emit_registers(compiler, opcode, 10, 10, 12)
+        return Ok(())
+    }
+    fn wide_negate(compiler: write Compiler, low: u32, high: u32) -> void {
+        emit_registers(compiler, 3942645760, low, 31, low)
+        return emit_registers(compiler, 3657433088, high, 31, high)
+    }
+    fn wide_compare(function: ir::Function, compiler: write Compiler, operator: ir::CompareOperator, left: usize, right: usize) -> Result<void, Text> {
+        function;
+        value_load(compiler, left, 9)
+        value_high(compiler, left, 10)
+        value_load(compiler, right, 11)
+        value_high(compiler, right, 12)
+        let low_operator = match operator {
+            ir::CompareSignedLess => ir::CompareUnsignedLess()
+            ir::CompareSignedLessEqual => ir::CompareUnsignedLessEqual()
+            ir::CompareSignedGreater => ir::CompareUnsignedGreater()
+            ir::CompareSignedGreaterEqual => ir::CompareUnsignedGreaterEqual()
+            _ => operator
+        }
+        immediate(compiler, 13, 1)
+        emit_encoding(compiler, compare_word(9, 11))
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 9, left: 13, right: 31
+                }, compare_condition(low_operator)?))
+        emit_encoding(compiler, compare_word(10, 12))
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 14, left: 13, right: 31
+                }, compare_condition(operator)?))
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 9, left: 9, right: 14
+                }, 0))
+        return Ok(())
+    }
+
+}

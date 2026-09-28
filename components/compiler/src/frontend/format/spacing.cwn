@@ -1,0 +1,75 @@
+module formatting {
+    fn space_before(state: State, current: frontend::TokenKind, gap: bool) -> bool {
+        if update_pair(state.previous, current, gap) {
+            return false
+        }
+        if state.previous == frontend::TokenKind::TokenColon() && current != frontend::TokenKind::TokenColon() {
+            return state.colon_pair == false
+        }
+        return separated(state.previous, current, gap)
+    }
+
+    fn update_pair(previous: frontend::TokenKind, current: frontend::TokenKind, gap: bool) -> bool {
+        if gap || current != frontend::TokenKind::TokenEqual() {
+            return false
+        }
+        match frontend::parser_binary_operator(previous) {
+            Some(operator) => {
+                return operator.precedence >= 5
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn opening(kind: frontend::TokenKind) -> bool {
+        match kind {
+            TokenLeftBrace | TokenLeftBracket | TokenLeftParen => true,
+            _ => false
+        }
+    }
+
+    fn closing(kind: frontend::TokenKind) -> bool {
+        match kind {
+            TokenRightBrace | TokenRightBracket | TokenRightParen => true,
+            _ => false
+        }
+    }
+
+    fn separated(previous: frontend::TokenKind, current: frontend::TokenKind, gap: bool) -> bool {
+        match current {
+            TokenDot | TokenRange | TokenComma | TokenSemicolon | TokenRightParen | TokenRightBracket | TokenColon | TokenQuestion => false
+            TokenLeftParen => keyword_gap(previous)
+            TokenLeftBracket => keyword_gap(previous)
+            TokenRightBrace => previous != frontend::TokenKind::TokenLeftBrace()
+            _ => following(previous, current, gap)
+        }
+    }
+
+    fn following(previous: frontend::TokenKind, current: frontend::TokenKind, gap: bool) -> bool {
+        match previous {
+            TokenDot | TokenRange | TokenLeftParen | TokenLeftBracket | TokenTilde | TokenBang => false
+            TokenLess | TokenGreater | TokenShiftRight | TokenShiftLeft | TokenMinus => gap
+            _ => {
+                match current {
+                    TokenLess | TokenGreater | TokenShiftRight | TokenShiftLeft => gap,
+                    _ => true
+                }
+            }
+        }
+    }
+
+    fn keyword_gap(kind: frontend::TokenKind) -> bool {
+        match kind {
+            TokenIf | TokenWhile | TokenReturn | TokenEqual | TokenComma | TokenArrow | TokenFatArrow => true,
+            _ => false
+        }
+    }
+    fn compound_token(tokens: Vec<frontend::Token>, index: usize) -> bool {
+        if index + 1 >= tokens.length() {
+            return false
+        }
+        return update_pair(tokens[index].kind, tokens[index + 1].kind, tokens[index].span.end != tokens[index + 1].span.start)
+    }
+}

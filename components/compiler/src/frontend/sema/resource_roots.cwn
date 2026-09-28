@@ -1,0 +1,30 @@
+module sema {
+    fn root_resource_call(symbols: Symbols, owner: Option<usize>) -> bool {
+        match owner {
+            Some(index) => {
+                return index < symbols.types.length() && symbols.types[index].type_parameters.length() == 0
+            }
+            None => {
+                return true
+            }
+        }
+    }
+    fn has_generic_resources(symbols: Symbols) -> bool {
+        for index in 0..symbols.types.length() {
+            loan read symbols.types[index] as value {
+                match read value.kind {
+                    Resource(opaque_value, transferable) => {
+                        opaque_value;
+                        transferable;
+                        if value.type_parameters.length() != 0 {
+                            return true
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        return false
+    }
+}

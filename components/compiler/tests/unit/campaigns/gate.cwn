@@ -1,0 +1,110 @@
+fn depth_boundaries() -> Result<void, Text> {
+    let names = testing::list("parentheses|unary|binary|type|block|module")
+    let maxima = [126, 126, 126, 127, 127, 128]
+    for index in 0..names.length() {
+        let maximum = usize.from(maxima[index])
+        let accepted = campaign::depth_shape(names[index], maximum)
+        let rejected = campaign::depth_shape(names[index], maximum + 1)
+        let extreme = campaign::depth_shape(names[index], 4096)
+        testing::expect(accepted.rejected == false, "accepted depth boundary")?
+        testing::expect(rejected.rejected, "rejected depth boundary")?
+        testing::expect(extreme.rejected, "extreme depth boundary")?
+    }
+    let cases = campaign::depth_corpus()?
+    testing::expect(cases.length() == 85 && cases[78].rejected == false && cases[79].rejected == false, "wide and sequential inputs")?
+    return Ok(())
+}
+
+fn depth_expectations() -> Result<void, Text> {
+    let message = "source:1:1: error: syntax depth exceeds the limit of 128"
+    campaign::verify_depth(toolchain::ProcessResult {
+            status: 1, stdout: "", stderr: message.clone()
+        }, true)?
+    testing::error(campaign::verify_depth(toolchain::ProcessResult {
+                status: -11, stdout: "", stderr: message.clone()
+            }, true))?
+    testing::error(campaign::verify_depth(toolchain::ProcessResult {
+                status: 0, stdout: "", stderr: ""
+            }, true))?
+    testing::error(campaign::verify_depth(toolchain::ProcessResult {
+                status: 1, stdout: "", stderr: std::text::joined(message, message)
+            }, true))?
+    testing::error(campaign::verify_depth(toolchain::ProcessResult {
+                status: 1, stdout: "", stderr: "source:1:1: error: other"
+            }, true))?
+    testing::error(campaign::verify_depth(toolchain::ProcessResult {
+                status: 0, stdout: "", stderr: "warning"
+            }, false))?
+    campaign::verify_depth(toolchain::ProcessResult {
+            status: 0, stdout: "", stderr: ""
+        }, false)?
+    testing::error(campaign::verify_malformed(toolchain::ProcessResult {
+                status: -11, stdout: "", stderr: message.clone()
+            }))?
+    return Ok(())
+}
+
+fn report_failures() -> Result<void, Text> {
+    var results = harness::report()
+    testing::expect(campaign::release_passed(results, false), "empty failure set")?
+    testing::expect(campaign::release_passed(results, true) == false, "binary change invalidates success")?
+    results.rows.push(harness::Outcome {
+            name: "broken", error: "wrong generated result"
+        });
+    results.failed = 1
+    results.rows.push(harness::Outcome {
+            name: "later", error: ""
+        })
+    let environment = harness::Environment {
+        coverage: "",
+        compiler: "compiler", root: "root", output: "output"
+    }
+    let request = campaign::Release {
+        environment: move environment, seed: 19
+    }
+    let report = campaign::release_report(request, results, campaign::ReleaseRecord {
+            checksum: "hash", changed: false
+        })
+    testing::expect(std::text::contains(report, "wrong generated result") && std::text::contains(report, "later"), "all campaign outcomes retained")?
+    let document = toolchain::json(move report)?
+    testing::expect(toolchain::json_integer(document, toolchain::json_required(document, document.root, "seed")?)? == 19, "reproduction seed in report")?
+    testing::expect(campaign::release_passed(results, false) == false, "campaign failure gate")?
+    return Ok(())
+}
+
+fn continues_after_failure() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let compiler = testing::write_file(root, "compiler", "unused compiler")?
+    let output = toolchain::path_join(root, "reports")
+    let environment = harness::Environment {
+        coverage: "",
+        compiler: move compiler, root: root.clone(), output: output.clone()
+    }
+    let request = campaign::Release {
+        environment: move environment, seed: 17
+    }
+    testing::expect(campaign::run_named(request, testing::list("broken|memory"))? == 1, "failed campaign exits unsuccessfully")?
+    testing::expect(toolchain::is_directory(toolchain::path_join(output, "memory")), "later campaign executed after failure")?
+    return failed_campaign_report(output)
+}
+
+fn failed_campaign_report(output: Text) -> Result<void, Text> {
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(output, "results.json"))?)?
+    let rows = toolchain::json_array_values(document, toolchain::json_required(document, document.root, "campaigns")?)?
+    testing::expect(rows.length() == 2, "all failed campaigns recorded")?
+    let error = toolchain::json_text(document, toolchain::json_required(document, rows[0], "error")?)?
+    testing::expect(std::text::contains(error, "unknown campaign: broken"), "original campaign failure preserved")?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    depth_boundaries()?;
+    depth_expectations()?;
+    report_failures()?;
+    continues_after_failure()?;
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}

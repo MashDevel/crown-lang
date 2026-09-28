@@ -1,0 +1,73 @@
+module harness {
+    fn verify_check(value: Case, result: toolchain::ProcessResult) -> Result<void, Text> {
+        let expected: i32 = if std::text::equal(value.mode, "reject") {
+            1
+        } else {
+            0
+        }
+        if result.status != expected {
+            return Err(std::text::joined("unexpected check status: ", std::text::signed_decimal(i64.from(result.status))))
+        }
+        if expected == 0 && toolchain::clean_result(result) == false {
+            return Err("unexpected compiler output")
+        }
+        if expected == 1 && std::text::contains(result.stderr, ": error: ") == false {
+            return Err("rejection did not report a source error")
+        }
+        if result.stdout.length() != 0 {
+            return Err("unexpected compiler stdout")
+        }
+        require_messages(value.diagnostics, result.stderr)?
+        return verify_diagnostic_details(value, result.stderr)
+    }
+
+    fn verify_diagnostic_details(value: Case, stderr: Text) -> Result<void, Text> {
+        for index in 0..value.absent.length() {
+            if std::text::contains(stderr, value.absent[index]) {
+                return Err(std::text::joined("unexpected diagnostic: ", value.absent[index]))
+            }
+        }
+        match value.error_count {
+            Some(count) => {
+                if std::text::occurrences(stderr, ": error: ") != count {
+                    return Err("unexpected number of source errors")
+                }
+            }
+            None => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn require_messages(messages: Vec<Text>, output: Text) -> Result<void, Text> {
+        for index in 0..messages.length() {
+            if std::text::contains(output, messages[index]) == false {
+                return Err(std::text::joined("missing diagnostic: ", messages[index]))
+            }
+        }
+        return Ok(())
+    }
+
+    fn verify_execution(value: Case, result: toolchain::ProcessResult) -> Result<void, Text> {
+        if value.status != result.status {
+            return Err(std::text::joined("unexpected execution status: ", std::text::signed_decimal(i64.from(result.status))))
+        }
+        match read value.stdout {
+            Some(expected) => {
+                if std::text::equal(expected, result.stdout) == false {
+                    return Err("unexpected runtime stdout")
+                }
+            }
+            None => {
+            }
+        }
+        return require_messages(value.stderr, result.stderr)
+    }
+
+    fn verify_clean(result: toolchain::ProcessResult) -> Result<void, Text> {
+        if toolchain::clean_result(result) {
+            return Ok(())
+        }
+        return Err(std::text::joined("command failed or produced unexpected output\n", std::text::joined(result.stdout, result.stderr)))
+    }
+}

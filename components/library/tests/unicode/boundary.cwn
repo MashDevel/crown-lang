@@ -1,0 +1,29 @@
+module std_unicode_tests {
+    fn check() -> u32 {
+        let printable: [u32; 9] = [0x20, 0x7e, 0xe9, 0x301, 0x4e00, 0x1f600, 0x20000, 0x31350, 0xe0100]
+        for index in 0..9 {
+            if std::unicode::is_printable(printable[index]) == false {
+                return 1
+            }
+        }
+        let hidden: [u32; 12] = [0, 31, 127, 0xa0, 0xad, 0x378, 0x200b, 0xd800, 0x2a6e0, 0x323b0, 0x10ffff, 0x110000]
+        for index in 0..12 {
+            if std::unicode::is_printable(hidden[index]) {
+                return 2
+            }
+        }
+        let extending: [u32; 7] = [0x300, 0x36f, 0x483, 0x200c, 0xfe0f, 0xe0020, 0xe01ef]
+        for index in 0..7 {
+            if std::unicode::is_grapheme_extend(extending[index]) == false {
+                return 3
+            }
+        }
+        let separate: [u32; 9] = [0, 0x61, 0x2ff, 0x370, 0x200d, 0xd800, 0xe01f0, 0x10ffff, 0x110000]
+        for index in 0..9 {
+            if std::unicode::is_grapheme_extend(separate[index]) {
+                return 4
+            }
+        }
+        return 0
+    }
+}

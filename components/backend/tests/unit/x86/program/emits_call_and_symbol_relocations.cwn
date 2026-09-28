@@ -1,0 +1,63 @@
+fn main() -> u32 {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::Call("external"))
+    instructions.push(x86::LoadSymbolAddress(x86::Rax(), "value"))
+    instructions.push(x86::Return())
+    let function = x86::function_new("main", move instructions)
+    var bytes = Vec<u8>.new()
+    bytes.push(42)
+    let data = x86::data_initialized("value", move bytes, x86::DataReadOnly())
+    var program = x86::program_new("main")
+    match x86::program_add_function(program, move function) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    match x86::program_add_data(program, move data) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 2
+        }
+    }
+    match x86::program_add_import(program, "external") {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 3
+        }
+    }
+    match x86::encode_program(program) {
+        Err(error) => {
+            error;
+            return 4
+        }
+        Ok(object) => {
+            return check_object(object)
+        }
+    }
+}
+
+fn check_object(object: object::CompilerObject) -> u32 {
+    if object.sections.length() != 2 || object.symbols.length() != 3 {
+        return 5
+    }
+    if object.relocations.length() != 2 {
+        return 6
+    }
+    if object.relocations[0].offset != 1 || object.relocations[0].addend != -4 {
+        return 7
+    }
+    if object.relocations[1].offset != 8 || object.relocations[1].addend != -4 {
+        return 8
+    }
+    return 42
+}

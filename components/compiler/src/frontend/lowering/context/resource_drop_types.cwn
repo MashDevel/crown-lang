@@ -1,0 +1,19 @@
+module lowering {
+    fn include_resource_expression_types(compiler: write Compiler, analysis: sema::Analysis, expression: sema::ExpressionRecord) -> void {
+        for index in 0..analysis.checker.resource_instances.length() {
+            loan read analysis.checker.resource_instances[index] as instance {
+                match read instance {
+                    sema::NamedType(symbol, arguments) => {
+                        if sema::resource_owner_matches(expression.resource_owner, symbol) {
+                            let values = sema::parameter_values(analysis.checker.symbols.types[symbol].type_parameters, arguments)
+                            let concrete = sema::substitute(expression.value_type, values)
+                            include_drop_type(compiler.drop_types, analysis.checker.symbols, concrete)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+    }
+}

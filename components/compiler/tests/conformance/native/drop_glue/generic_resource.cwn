@@ -1,0 +1,64 @@
+resource Leaf {
+    marker: u32
+    drop {
+        print(marker)
+    }
+}
+resource Envelope<A, B> {
+    first: A
+    second: B
+    marker: u32
+    drop {
+        let pending: Option<Vec<A>> = None()
+        pending
+        inspect(first)
+        inspect(second)
+        print(marker)
+    }
+}
+resource Nest<T> {
+    values: Vec<T>
+    marker: u32
+    drop {
+        inspect(values);
+        print(marker)
+    }
+}
+fn inspect<T>(value: T) -> void {
+    value
+    let pending = Vec<T>.new()
+    pending
+    print(5)
+}
+fn first() -> void {
+    let value = Envelope<Text, Leaf> {
+        first: "owned", second: Leaf {
+            marker: 9
+        }, marker: 11
+    }
+    value
+}
+fn second() -> void {
+    var values = Vec<Text>.new()
+    values.push("nested")
+    let value = Envelope<u32, Vec<Text>> {
+        first: 7, second: move values, marker: 22
+    }
+    value
+}
+fn nested() -> void {
+    var values = Vec<Envelope<Text, u32>>.new()
+    values.push(Envelope<Text, u32> {
+            first: "deep", second: 8, marker: 44
+        })
+    let value = Nest<Envelope<Text, u32>> {
+        values: move values, marker: 33
+    }
+    value
+}
+fn main() -> u32 {
+    first();
+    second();
+    nested();
+    return 0
+}

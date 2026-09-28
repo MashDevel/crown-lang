@@ -1,0 +1,129 @@
+extern "c" {
+    fn abort_test() -> void = "abort"
+}
+
+fn main() -> u32 {
+    test_binary()
+    test_runtime_validation()
+    test_entry_relocation()
+    test_target_sources()
+    print(4)
+    return 0
+}
+
+fn require(value: bool) -> void {
+    if value == false {
+        unsafe {
+            abort_test()
+        }
+    }
+}
+
+fn test_binary() -> void {
+    var bytes = std::bytes::filled(8, 0)
+    link_binary::put(bytes, 0, 123456789, 8)
+    match link_binary::number(bytes, 0, 8) {
+        Ok(value) => {
+            require(value == 123456789)
+        }
+        Err(error) => {
+            error;
+            require(false)
+        }
+    }
+    match link_binary::number(bytes, 7, 2) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            require(false)
+        }
+    }
+    match link_binary::part(bytes, 9, 0) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            require(false)
+        }
+    }
+    require(link_binary::aligned(4096, 4096) == 4096)
+    require(link_binary::aligned(4097, 4096) == 8192)
+}
+
+fn test_runtime_validation() -> void {
+    match bedrock::runtime(Vec<u8>.new()) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            require(false)
+        }
+    }
+    match link_binary::terminated(std::bytes::filled(1, 65), 0) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            require(false)
+        }
+    }
+}
+
+fn test_entry_relocation() -> void {
+    var bytes = std::bytes::filled(128, 0)
+    link_binary::put(bytes, 0, 1342177344, 8)
+    link_binary::put(bytes, 8, 9, 8)
+    link_binary::put(bytes, 16, u64.from_bits(-4), 8)
+    link_binary::put(bytes, 40, 1350565888, 8)
+    link_binary::put(bytes, 64, 4028, 4)
+    let runtime = bedrock::Runtime {
+        bytes: move bytes, text: Vec<u8>.new(), data: std::bytes::filled(8, 0),
+        base: 1342177280, data_base: 1342181376, data_offset: 0, sections: 0, section_count: 0
+    }
+    var image = bedrock::Image {
+        text: std::bytes::filled(8192, 0), data: std::bytes::filled(8, 0),
+        offsets: Vec<u64>.new(), writable: Vec<bool>.new(), symbols: Vec<u64>.new(),
+        base: 1342177280, data_base: 1342185472, entry: 1342177408
+    }
+    match bedrock::runtime_relocation(image, runtime, 0, 32) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            require(false)
+        }
+    }
+    match link_binary::number(image.data, 0, 8) {
+        Ok(value) => {
+            require(value == image.entry)
+        }
+        Err(error) => {
+            error;
+            require(false)
+        }
+    }
+}
+
+fn test_target_sources() -> void {
+    require(toolchain::target_source("main.cwn", toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock())))
+    require(toolchain::target_source("main.bedrock.cwn", toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock())))
+    require(toolchain::target_source("main.linux.cwn", toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock())) == false)
+    require(toolchain::target_source("main.macos.cwn", toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock())) == false)
+    require(toolchain::target_source("main.bedrock.cwn", toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos())) == false)
+    require(toolchain::target_source("main.bedrock.cwn", toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux())) == false)
+    match toolchain::parse_target("x86_64-bedrock") {
+        Ok(target) => {
+            require(target == toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock()))
+        }
+        Err(error) => {
+            error;
+            require(false)
+        }
+    }
+}

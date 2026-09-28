@@ -1,0 +1,7 @@
+fn main(arguments: read Arguments) -> u32 {
+    let thread = spawn move {
+        arguments.length()
+    }
+    thread.join()
+    return 0
+}

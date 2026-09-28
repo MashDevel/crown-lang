@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/crown-bootstrap-tests-XXXXXX")
+trap 'rm -rf "$scratch"' EXIT HUP INT TERM
+fixture_number=0
+. "$root/bootstrap/tests/support"
+. "$root/bootstrap/tests/seeds"
+. "$root/bootstrap/tests/network"
+. "$root/bootstrap/tests/releases"
+. "$root/bootstrap/tests/compilers"
+for file in assets crown checksum fetch fetch-compiler host package-seed package-release publish-release tests/run tests/support tests/seeds tests/network tests/releases tests/compilers; do
+    sh -n "$root/bootstrap/$file"
+done
+for host in x86_64-macos arm64-macos x86_64-linux arm64-linux; do
+    roundtrip
+done
+host=$(sh "$root/bootstrap/host")
+download_failures
+inconsistent_pin
+installation_failures
+invalid_inputs
+host_selection
+network_downloads
+release_package
+release_publication
+compiler_downloads
+compiler_failures
+compiler_installation
+launcher_dispatch
+printf '%s\n' 'Bootstrap tests passed: 16 groups, 0 failures, 0 skipped'

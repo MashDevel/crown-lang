@@ -1,0 +1,91 @@
+struct MemoryCase {
+    size: u64
+    kind: u8
+}
+
+fn memory_program(test: read MemoryCase) -> ir::Program {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeInteger(ir::IntegerWidth8()))
+    let integer = ir::TypeInteger(ir::IntegerWidth64())
+    let signature = ir::signature_new(move parameters, integer)
+    var function = ir::function_new("memory", move signature, ir::LinkageExport())
+    match ir::function_add_block(function) { Ok(block) => { block } Err(error) => { error } }
+    let constant = ir::ConstantInteger(test.size)
+    var size = ir::function_constant(function, integer, constant)
+    if test.kind == 3 { size = function.parameters[2] }
+    var instruction = ir::InstructionMemoryCopy(function.parameters[0], function.parameters[1], size)
+    if test.kind == 1 || test.kind == 2 || test.kind == 4 {
+        let byte_type = ir::TypeInteger(ir::IntegerWidth8())
+        var fill = ir::ConstantInteger(u64.from(165))
+        if test.kind == 1 { fill = ir::ConstantInteger(u64.from(0)) }
+        var byte = ir::function_constant(function, byte_type, fill)
+        if test.kind == 4 { byte = function.parameters[3] }
+        instruction = ir::InstructionMemorySet(function.parameters[0], byte, size)
+    }
+    match ir::function_append(function, 0, move instruction) { Ok(value) => { value } Err(error) => { error } }
+    let zero = ir::ConstantInteger(u64.from(0))
+    let result = ir::function_constant(function, integer, zero)
+    match ir::function_terminate(function, 0, ir::TerminatorReturn(Some(result))) { Ok(value) => { value } Err(error) => { error } }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    ir::program_set_entry(program, 0)
+    return move program
+}
+
+fn check_memory_instructions(instructions: read Vec<x86::Instruction>, test: read MemoryCase) -> bool {
+    var bulk: u32 = 0
+    var loaded: u64 = 0
+    var stored: u64 = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::MoveBytes => { bulk = bulk + 1 }
+            x86::SetBytes => { bulk = bulk + 1 }
+            x86::LoadSized(load) => {
+                if x86::register_code(load.base) == 6 {
+                    if load.offset != i32.from(loaded) { return false }
+                    if x86::register_code(load.destination) != 0 { return false }
+                    loaded = loaded + (u64.from(1) << u64.from(x86::width_code(load.width)))
+                }
+            }
+            x86::StoreSized(store) => {
+                if x86::register_code(store.base) == 7 {
+                    if store.offset != i32.from(stored) { return false }
+                    if x86::register_code(store.source) != 0 { return false }
+                    stored = stored + (u64.from(1) << u64.from(x86::width_code(store.width)))
+                }
+            }
+            _ => {}
+        }
+        index = index + 1
+    }
+    if test.size > 24 || test.kind >= 3 { return bulk == 1 && stored == 0 && loaded == 0 }
+    if bulk != 0 || stored != test.size { return false }
+    if test.kind == 0 { return loaded == test.size }
+    return loaded == 0
+}
+
+fn test_memory_case(test: read MemoryCase) -> bool {
+    let program = memory_program(test)
+    match x86::codegen_compile_function(program, 0) {
+        Ok(instructions) => { return check_memory_instructions(instructions, test) }
+        Err(error) => { error; return false }
+    }
+}
+
+fn main() -> u32 {
+    var size: u64 = 0
+    while size <= 25 {
+        var kind: u8 = 0
+        while kind < 5 {
+            let test = MemoryCase { size: size, kind: kind }
+            if test_memory_case(test) == false { print(u32.from(size)); print(u32.from(kind)); return 1 }
+            kind = kind + 1
+        }
+        size = size + 1
+    }
+    return 42
+}

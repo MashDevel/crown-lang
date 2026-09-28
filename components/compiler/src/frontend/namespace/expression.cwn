@@ -1,0 +1,229 @@
+module frontend {
+    fn namespace_expression(resolver: write NamespaceResolver, expression: write Expression) -> void {
+        namespace_expression_kind(resolver, expression.kind)
+    }
+
+    fn namespace_expression_kind(resolver: write NamespaceResolver, kind: write ExpressionKind) -> void {
+        if namespace_expression_group(kind) != 0 {
+            namespace_compound_expression(resolver, kind);
+            return
+        }
+        match write kind {
+            ExpressionPath(path) => {
+                namespace_path(resolver, path)
+            }
+            ExpressionMove(path) => {
+                namespace_path(resolver, path)
+            }
+            ExpressionCall(name, arguments) => {
+                namespace_value_name(resolver, name);
+                namespace_expressions(resolver, arguments)
+            }
+            ExpressionStaticCall(value_type, method, arguments) => {
+                method;
+                namespace_type(resolver, value_type);
+                namespace_expressions(resolver, arguments)
+            }
+            ExpressionMethodCall(target, method, arguments) => {
+                method;
+                namespace_box(resolver, target);
+                namespace_expressions(resolver, arguments)
+            }
+            ExpressionStruct(value_type, fields) => {
+                namespace_type(resolver, value_type);
+                namespace_field_values(resolver, fields)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn namespace_box(resolver: write NamespaceResolver, value: write Box<Expression>) -> void {
+        loan write value as expression {
+            namespace_expression(resolver, expression)
+        }
+    }
+
+    fn namespace_expressions(resolver: write NamespaceResolver, values: write Vec<Expression>) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan write values[index] as value {
+                namespace_expression(resolver, value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_field_values(resolver: write NamespaceResolver, fields: write Vec<FieldValue>) -> void {
+        var index: usize = 0
+        while index < fields.length() {
+            loan write fields[index] as field {
+                namespace_expression(resolver, field.value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_closure(resolver: write NamespaceResolver, parameters: Vec<Name>, body: write Vec<Statement>) -> void {
+        let previous = sema::names_copy(resolver.locals)
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                resolver.locals.push(name_copy(parameter))
+            }
+            index = index + 1
+        }
+        namespace_block(resolver, body)
+        resolver.locals = move previous
+    }
+
+    fn namespace_compound_expression(resolver: write NamespaceResolver, kind: write ExpressionKind) -> void {
+        if namespace_expression_group(kind) != 1 {
+            namespace_collection_expression(resolver, kind);
+            return
+        }
+        match write kind {
+            ExpressionBinary(left, operator, right) => {
+                operator;
+                namespace_box(resolver, left);
+                namespace_box(resolver, right)
+            }
+            ExpressionTry(value) => {
+                namespace_box(resolver, value)
+            }
+            ExpressionNegate(value) => {
+                namespace_box(resolver, value)
+            }
+            ExpressionBitwiseNot(value) => {
+                namespace_box(resolver, value)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn namespace_collection_expression(resolver: write NamespaceResolver, kind: write ExpressionKind) -> void {
+        match write kind {
+            ExpressionArrayRepeat(value, length) => {
+                namespace_box(resolver, value);
+                namespace_array_length(resolver, length)
+            }
+            ExpressionArray(values) => {
+                namespace_expressions(resolver, values)
+            }
+            ExpressionIndex(target, index) => {
+                namespace_box(resolver, target);
+                namespace_box(resolver, index)
+            }
+            ExpressionSlice(target, start, end) => {
+                namespace_box(resolver, target);
+                namespace_box(resolver, start);
+                namespace_box(resolver, end)
+            }
+            ExpressionField(target, name) => {
+                name;
+                namespace_box(resolver, target)
+            }
+            ExpressionClosure(captures, parameters, body) => {
+                captures;
+                namespace_closure(resolver, parameters, body)
+            }
+            _ => {
+            }
+
+        }
+        namespace_control_expression(resolver, kind)
+    }
+
+    fn namespace_expression_group(kind: ExpressionKind) -> u32 {
+        match read kind {
+            ExpressionPath(path) => {
+                path;
+                return 0
+            }
+            ExpressionMove(path) => {
+                path;
+                return 0
+            }
+            ExpressionCall(name, arguments) => {
+                name;
+                arguments;
+                return 0
+            }
+            ExpressionStaticCall(value_type, method, arguments) => {
+                value_type;
+                method;
+                arguments;
+                return 0
+            }
+            ExpressionMethodCall(target, method, arguments) => {
+                target;
+                method;
+                arguments;
+                return 0
+            }
+            ExpressionStruct(value_type, fields) => {
+                value_type;
+                fields;
+                return 0
+            }
+            _ => {
+                return namespace_compound_group(kind)
+            }
+        }
+    }
+
+    fn namespace_compound_group(kind: ExpressionKind) -> u32 {
+        match read kind {
+            ExpressionBinary(left, operator, right) => {
+                left;
+                operator;
+                right;
+                return 1
+            }
+            ExpressionTry(value) => {
+                value;
+                return 1
+            }
+            ExpressionNegate(value) => {
+                value;
+                return 1
+            }
+            ExpressionBitwiseNot(value) => {
+                value;
+                return 1
+            }
+            _ => {
+                return 2
+            }
+        }
+    }
+    fn namespace_control_expression(resolver: write NamespaceResolver, kind: write ExpressionKind) -> void {
+        match write kind {
+            ExpressionScopedSpawn(stack, captures, body) => {
+                namespace_expressions(resolver, stack);
+                captures;
+                namespace_block(resolver, body)
+            }
+            ExpressionSpawn(configuration, body) => {
+                namespace_expressions(resolver, configuration)
+                namespace_block(resolver, body)
+            }
+            ExpressionUnsafe(body) => {
+                namespace_block(resolver, body)
+            }
+            ExpressionConditional(conditional) => {
+                namespace_box(resolver, conditional.condition)
+                namespace_block(resolver, conditional.then_body)
+                namespace_block(resolver, conditional.else_body)
+            }
+            ExpressionMatch(expression) => {
+                loan write expression as value {
+                    namespace_match(resolver, value)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+}

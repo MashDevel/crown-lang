@@ -1,0 +1,102 @@
+module harness {
+    struct Environment {
+        compiler: Text, root: Text, output: Text, coverage: Text
+    }
+
+    fn check_case(value: Case, environment: Environment) -> Result<void, Text> {
+        toolchain::make_directory(environment.output)?
+        let sources = case_sources(value, environment.root)?
+        if std::text::equal(value.mode, "run") {
+            return run_case(value, environment, sources)
+        }
+        prepare_assembly(value, environment.output)?
+        let result = invoke(frontend_arguments(value, environment, sources), environment.output)?
+        match verify_check(value, result) {
+            Ok(done) => {
+                done;
+                return verify_assembly(value, environment.output)
+            }
+            Err(error) => {
+                return Err(std::text::joined(error, std::text::joined("\n", std::text::joined(result.stdout, result.stderr))))
+            }
+        }
+    }
+
+    fn frontend_arguments(value: Case, environment: Environment, sources: Vec<Text>) -> Vec<Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(environment.compiler.clone());
+        if std::text::equal(value.mode, "compile") {
+            arguments.push("compile")
+            arguments.push(assembly_path(environment.output))
+        } else {
+            arguments.push("check")
+        }
+        arguments.push("--max-instances");
+        arguments.push(std::text::decimal(value.max_instances))
+        for index in 0..sources.length() {
+            arguments.push(sources[index].clone())
+        }
+        return move arguments
+    }
+
+    fn verify_assembly(value: Case, directory: Text) -> Result<void, Text> {
+        if std::text::equal(value.mode, "compile") == false {
+            return Ok(())
+        }
+        let assembly = toolchain::read_text(assembly_path(directory))?
+        if assembly.length() == 0 {
+            return Err("compiler produced empty assembly")
+        }
+        return Ok(())
+    }
+
+    fn assembly_path(directory: Text) -> Text {
+        return toolchain::path_join(directory, "program.s")
+    }
+
+    fn prepare_assembly(value: Case, directory: Text) -> Result<void, Text> {
+        if std::text::equal(value.mode, "compile") == false {
+            return Ok(())
+        }
+        let path = assembly_path(directory)
+        if toolchain::exists(path) {
+            return toolchain::remove_file(path)
+        }
+        return Ok(())
+    }
+
+    fn invoke(arguments: take Vec<Text>, directory: Text) -> Result<toolchain::ProcessResult, Text> {
+        return toolchain::capture(toolchain::command(move arguments), directory)
+    }
+
+    fn run_case(value: Case, environment: Environment, sources: Vec<Text>) -> Result<void, Text> {
+        let binary = build_program(environment, sources, value.max_instances)?
+        return execute_case(value, environment, binary, None())
+    }
+
+    fn execute_case(value: Case, environment: Environment, binary: Text, selected: Option<Text>) -> Result<void, Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(binary.clone())
+        match read selected {
+            Some(name) => {
+                arguments.push(name.clone())
+            }
+            None => {
+            }
+        }
+        for index in 0..value.arguments.length() {
+            arguments.push(value.arguments[index].clone())
+        }
+        var command = toolchain::command(move arguments)
+        command.timeout = value.timeout
+        let result = toolchain::capture(command, environment.output)?
+        match verify_execution(value, result) {
+            Ok(done) => {
+                return Ok(done)
+            }
+            Err(error) => {
+                return Err(std::text::joined(error, std::text::joined("\n", std::text::joined(result.stdout, result.stderr))))
+            }
+        }
+    }
+}

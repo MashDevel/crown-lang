@@ -1,0 +1,160 @@
+module sema {
+    struct InstanceState {
+        output: Vec<FunctionInstance>
+        pending: Vec<FunctionInstance>
+        types: Vec<Type>
+    }
+
+    fn collect_instances(checker: write Checker) -> Vec<FunctionInstance> {
+        var state = InstanceState {
+            output: Vec<FunctionInstance>.new()
+            pending: Vec<FunctionInstance>.new()
+            types: Vec<Type>.new()
+        }
+        initial_instances(checker, state)
+        let resources = has_generic_resources(checker.symbols)
+        if resources {
+            initial_resource_types(checker, state)
+        }
+        var index: usize = 0
+        var type_index: usize = 0
+        while index < state.pending.length() || type_index < state.types.length() {
+            if index < state.pending.length() {
+                let current = instance_copy(state.pending[index])
+                expand_instance(checker, state, current)
+                check_instance_spawns(checker, current)
+                check_instance_roots(checker, current)
+                if resources {
+                    instance_resource_types(checker, state, current)
+                }
+                index = index + 1
+            } else {
+                let current = type_copy(state.types[type_index])
+                expand_resource_type(checker, state, current)
+                type_index = type_index + 1
+            }
+        }
+        return replace(state.output, Vec<FunctionInstance>.new())
+    }
+
+    fn initial_instances(checker: write Checker, state: write InstanceState) -> void {
+        initial_root_instances(checker, state)
+        var index: usize = 0
+        while index < checker.generic_uses.length() {
+            var candidate: Option<FunctionInstance> = None()
+            loan read checker.generic_uses[index] as usage {
+                if checker.symbols.functions[usage.caller].type_parameters.length() == 0 {
+                    let instance = FunctionInstance {
+                        function: usage.callee, arguments: types_copy(usage.arguments)
+                    }
+                    candidate = Some(move instance)
+                }
+            }
+            match move candidate {
+                Some(instance) => {
+                    add_instance(checker, state, move instance)
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn initial_root_instances(checker: write Checker, state: write InstanceState) -> void {
+        for index in 0..checker.generic_calls.length() {
+            var instance: Option<FunctionInstance> = None()
+            loan read checker.generic_calls[index] as call {
+                match call.caller {
+                    Some(caller) => {
+                        caller
+                    }
+                    None => {
+                        if root_resource_call(checker.symbols, call.resource_owner) {
+                            instance = Some(FunctionInstance {
+                                    function: call.function, arguments: types_copy(call.arguments)
+                                })
+                        }
+                    }
+                }
+            }
+            match move instance {
+                Some(value) => {
+                    add_instance(checker, state, move value)
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn expand_instance(checker: write Checker, state: write InstanceState, current: FunctionInstance) -> void {
+        var index: usize = 0
+        while index < checker.generic_uses.length() {
+            var candidate: Option<FunctionInstance> = None()
+            loan read checker.generic_uses[index] as usage {
+                if usage.caller == current.function {
+                    let arguments = substitute_types(usage.arguments, current.arguments)
+                    let instance = FunctionInstance {
+                        function: usage.callee, arguments: move arguments
+                    }
+                    candidate = Some(move instance)
+                }
+            }
+            match move candidate {
+                Some(instance) => {
+                    add_instance(checker, state, move instance)
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn add_instance(checker: write Checker, state: write InstanceState, instance: take FunctionInstance) -> void {
+        if types_are_concrete(instance.arguments) == false {
+            return
+        }
+        if instance_exists(state.output, instance) {
+            return
+        }
+        if state.output.length() >= checker.max_instances {
+            checker_error(checker, "generic instantiation exceeds the configured instance limit or has unresolved types");
+            return
+        }
+        state.output.push(instance_copy(instance))
+        state.pending.push(move instance)
+    }
+
+    fn instance_exists(values: Vec<FunctionInstance>, expected: FunctionInstance) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if value.function == expected.function && type_vectors_equal(value.arguments, expected.arguments) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn instance_copy(value: FunctionInstance) -> FunctionInstance {
+        return FunctionInstance {
+            function: value.function, arguments: types_copy(value.arguments)
+        }
+    }
+
+    fn instances_copy(values: Vec<FunctionInstance>) -> Vec<FunctionInstance> {
+        var output = Vec<FunctionInstance>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(instance_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

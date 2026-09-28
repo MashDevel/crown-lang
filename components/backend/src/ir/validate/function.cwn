@@ -1,0 +1,186 @@
+module ir {
+    struct BlockValidation {
+        definitions: Vec<bool>
+        function_id: usize
+        block: usize
+    }
+
+    fn validate_program(program: Program) -> Result<void, ValidationError> {
+        match validate_program_structure(program) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        var id: usize = 0
+        while id < program.functions.length() {
+            loan read program.functions[id] as function {
+                match validate_function(program, function, id) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+            }
+            id = id + 1
+        }
+        return Ok(())
+    }
+
+    fn validate_function(program: Program, function: Function, id: usize) -> Result<void, ValidationError> {
+        match validate_signature(function, id) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        if function_is_import(function) {
+            if function.blocks.length() == 0 {
+                return Ok(())
+            }
+            return Err(validation_function_error(ValidationImportHasBody(), id))
+        }
+        if function.blocks.length() == 0 {
+            return Err(validation_function_error(ValidationMissingBody(), id))
+        }
+        var validation = BlockValidation {
+            definitions: collect_definitions(function, id)?
+            function_id: id
+            block: 0
+        }
+        while validation.block < function.blocks.length() {
+            match validate_block(program, function, validation) {
+                Err(error) => {
+                    return Err(move error)
+                }
+                Ok(value) => {
+                    value
+                }
+            }
+            validation.block = validation.block + 1
+        }
+        return validate_ssa(function, id)
+    }
+
+    fn validate_block(program: Program, function: Function, validation: BlockValidation) -> Result<void, ValidationError> {
+        var has_terminator = false
+        match read function.blocks[validation.block].terminator {
+            Some(value) => {
+                value;
+                has_terminator = true
+            }
+            None => {
+            }
+        }
+        if has_terminator == false {
+            return Err(validation_block_error(ValidationMissingTerminator(), validation.function_id, validation.block))
+        }
+        var index: usize = 0
+        while index < function.blocks[validation.block].instructions.length() {
+            loan read function.blocks[validation.block].instructions[index] as instruction {
+                if instruction_valid(program, function, instruction) == false {
+                    return Err(validation_location_error(ValidationTypeMismatch(), ValidationLocation {
+                                function: validation.function_id, block: validation.block
+                            }, instruction.result))
+                }
+                match validate_operands(function, instruction_operands(instruction.kind), validation) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+            }
+            index = index + 1
+        }
+        match read function.blocks[validation.block].terminator {
+            Some(terminator) => {
+                return validate_terminator(function, terminator, validation)
+            }
+            None => {
+                return Err(validation_block_error(ValidationMissingTerminator(), validation.function_id, validation.block))
+            }
+        }
+    }
+
+    fn validate_operands(function: Function, operands: take Vec<usize>, validation: BlockValidation) -> Result<void, ValidationError> {
+        var index: usize = 0
+        while index < operands.length() {
+            let value = operands[index]
+            if value >= function.values.length() || value >= validation.definitions.length() || validation.definitions[value] == false {
+                return Err(validation_location_error(ValidationInvalidValue(), ValidationLocation {
+                            function: validation.function_id, block: validation.block
+                        }, Some(value)))
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn validate_terminator(function: Function, terminator: Terminator, validation: BlockValidation) -> Result<void, ValidationError> {
+        let targets = terminator_targets(terminator)
+        var index: usize = 0
+        while index < targets.length() {
+            if targets[index] >= function.blocks.length() {
+                return Err(validation_block_error(ValidationInvalidBlock(), validation.function_id, validation.block))
+            }
+            index = index + 1
+        }
+        match validate_operands(function, terminator_operands(terminator), validation) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        if terminator_type_valid(function, terminator) {
+            return Ok(())
+        }
+        return Err(validation_block_error(ValidationTypeMismatch(), validation.function_id, validation.block))
+    }
+
+    fn terminator_type_valid(function: Function, terminator: Terminator) -> bool {
+        match read terminator {
+            TerminatorBranch(target) => {
+                target;
+                return true
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                then_block;
+                else_block
+                let boolean = TypeInteger(IntegerWidth1())
+                return value_type_equal(function, condition, boolean)
+            }
+            TerminatorSwitch(value, cases, default) => {
+                cases;
+                default;
+                return value_is_integer(function, value)
+            }
+            TerminatorReturn(value) => {
+                return return_type_matches(function, value)
+            }
+            TerminatorUnreachable => {
+                return true
+            }
+        }
+    }
+
+    fn return_type_matches(function: Function, value: Option<usize>) -> bool {
+        match read value {
+            Some(result) => {
+                return value_type_equal(function, result, function.signature.result)
+            }
+            None => {
+                return type_is_void(function.signature.result)
+            }
+        }
+    }
+}

@@ -1,0 +1,101 @@
+module sema {
+    copy struct CallConflict {
+        previous: usize, current: usize
+    }
+
+    fn call_inference_error(checker: write Checker, state: CallState) -> void {
+        for index in 0..state.values.length() {
+            if type_contains_view(checker.symbols, state.values[index]) {
+                checker_error_at(checker, state.span, "temporary views cannot be used as generic type arguments")
+                return
+            }
+        }
+        checker_error_at(checker, state.span, "could not infer every generic type argument from the call")
+    }
+
+    fn call_arity_error(checker: write Checker, request: CallRequest, actual: usize) -> void {
+        var message = "wrong number of arguments: expected "
+        frontend::text_push_usize(message, request.signature.parameters.length())
+        let separator = ", found "
+        std::text::append(message, separator)
+        frontend::text_push_usize(message, actual)
+        checker_error_at(checker, request.span, move message)
+        call_declaration_note(checker, request.signature, "function declared here")
+    }
+
+    fn call_declaration_note(checker: write Checker, signature: CallSignature, message: take Text) -> void {
+        match signature.function {
+            None => {
+                return
+            }
+            Some(index) => {
+                checker_note(checker, checker.symbols.functions[index].name.span, move message)
+            }
+        }
+    }
+
+    fn call_parameter_note(checker: write Checker, signature: CallSignature, index: usize) -> void {
+        match signature.function {
+            None => {
+            }
+            Some(function) => {
+                let span = checker.symbols.functions[function].parameters[index].name.span
+                checker_note(checker, span, "parameter declared here")
+            }
+        }
+    }
+
+    fn checker_alias_pair(checker: write Checker, parameters: Vec<ParameterType>, arguments: Vec<frontend::Expression>, pair: CallConflict) -> void {
+        if modes_conflict(parameters[pair.previous].mode, parameters[pair.current].mode) == false {
+            return
+        }
+        match borrow_argument(checker.symbols, parameters[pair.current], arguments[pair.current]) {
+            None => {
+            }
+            Some(current) => {
+                match borrow_argument(checker.symbols, parameters[pair.previous], arguments[pair.previous]) {
+                    None => {
+                    }
+                    Some(previous) => {
+                        if paths_overlap(checker.symbols.source, previous, current) {
+                            call_alias_error(checker, parameters, arguments, pair)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn call_alias_error(checker: write Checker, parameters: Vec<ParameterType>, arguments: Vec<frontend::Expression>, pair: CallConflict) -> void {
+        var message = "call arguments conflict: argument "
+        frontend::text_push_usize(message, pair.current + 1)
+        let requires = " requires "
+        std::text::append(message, requires)
+        let current = call_mode_name(parameters[pair.current].mode)
+        std::text::append(message, current)
+        let overlaps = " access overlapping argument "
+        std::text::append(message, overlaps)
+        frontend::text_push_usize(message, pair.previous + 1)
+        checker_error_at(checker, arguments[pair.current].span, move message)
+        var note = "earlier argument requires "
+        let previous = call_mode_name(parameters[pair.previous].mode)
+        std::text::append(note, previous)
+        let ending = " access here; the loan ends when this call returns"
+        std::text::append(note, ending)
+        checker_note(checker, arguments[pair.previous].span, move note)
+    }
+
+    fn call_mode_name(mode: frontend::Mode) -> Text {
+        match read mode {
+            frontend::ModeRead => {
+                return "read"
+            }
+            frontend::ModeWrite => {
+                return "write"
+            }
+            frontend::ModeTake => {
+                return "owning"
+            }
+        }
+    }
+}

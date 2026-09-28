@@ -1,0 +1,88 @@
+module x86 {
+    fn codegen_compile_unary(program: ir::Program, compiler: write FunctionCompiler, input: take UnaryInput) -> Result<void, CodegenError> {
+        let float = ir::unary_is_float(input.operator)
+        if float {
+            return codegen_float_negate(program, compiler, move input)
+        }
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: destination
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match read input.operator {
+            ir::UnaryNegate => {
+                codegen_emit(compiler, Negate(destination))
+            }
+            ir::UnaryNot => {
+                if codegen_value_is_boolean(program, compiler, input.value) {
+                    let scratch = codegen_boolean_scratch(destination)
+                    codegen_emit(compiler, MoveImmediate(scratch, 1))
+                    codegen_emit(compiler, Xor(destination, scratch))
+                } else {
+                    codegen_emit(compiler, Not(destination))
+                }
+            }
+            ir::UnaryFloatNegate => {
+            }
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: destination
+            })
+    }
+
+    fn codegen_float_negate(program: ir::Program, compiler: write FunctionCompiler, input: take UnaryInput) -> Result<void, CodegenError> {
+        let value_type = codegen_value_type(program, compiler, input.value)?
+        var mask: i64 = -2147483648
+        match read value_type {
+            ir::TypeFloat(width) => {
+                match read width {
+                    ir::FloatWidth32 => {
+                    }
+                    ir::FloatWidth64 => {
+                        mask = -9223372036854775808
+                    }
+                }
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedType(value_type)))
+            }
+        }
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: destination
+            })?
+        codegen_emit(compiler, MoveImmediate(Rcx(), mask))
+        codegen_emit(compiler, Xor(destination, Rcx()))
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result, source: destination
+            })
+    }
+
+    fn codegen_value_is_boolean(program: ir::Program, compiler: FunctionCompiler, value: usize) -> bool {
+        match codegen_value_type(program, compiler, value) {
+            Ok(value_type) => {
+                return codegen_integer_bits(value_type) == 1
+            }
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+    }
+
+    fn codegen_boolean_scratch(destination: Register) -> Register {
+        if register_code(destination) == 1 {
+            return Rax()
+        }
+        return Rcx()
+    }
+}

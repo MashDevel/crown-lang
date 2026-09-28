@@ -1,0 +1,56 @@
+module x86 {
+    fn codegen_compile_packed(program: ir::Program, compiler: write FunctionCompiler, position: usize, sequence: PackedSequence) -> Result<void, CodegenError> {
+        for index in position..sequence.end {
+            codegen_packed_at(program, compiler, index, sequence)?
+        }
+        codegen_clear_cache(compiler)
+        return Ok(())
+    }
+
+    fn codegen_packed_load(program: ir::Program, compiler: write FunctionCompiler, address: usize, register: FloatRegister) -> Result<void, CodegenError> {
+        codegen_load_value(program, compiler, ValueAccess {
+                value: address, register: Rax()
+            })?
+        codegen_emit(compiler, LoadPackedFloat(LoadFloatMemoryArgs {
+                    width: Float64(), destination: register, base: Rax(), offset: 0
+                }))
+        return Ok(())
+    }
+
+    fn codegen_packed_store(program: ir::Program, compiler: write FunctionCompiler, sequence: PackedSequence) -> Result<void, CodegenError> {
+        let operator = codegen_float_binary_operator(sequence.operator)?
+        codegen_emit(compiler, PackedFloatBinary(FloatBinaryArgs {
+                    operator: move operator, width: Float64(), destination: Xmm0(), source: Xmm1()
+                }))
+        codegen_load_value(program, compiler, ValueAccess {
+                value: sequence.destination, register: Rax()
+            })?
+        codegen_emit(compiler, StorePackedFloat(StoreFloatMemoryArgs {
+                    width: Float64(), source: Xmm0(), base: Rax(), offset: 0
+                }))
+        return Ok(())
+    }
+
+    fn codegen_packed_at(program: ir::Program, compiler: write FunctionCompiler, index: usize, sequence: PackedSequence) -> Result<void, CodegenError> {
+        if index == sequence.left_load {
+            return codegen_packed_load(program, compiler, sequence.left, Xmm0())
+        }
+        if index == sequence.right_load {
+            return codegen_packed_load(program, compiler, sequence.right, Xmm1())
+        }
+        if index == sequence.store {
+            return codegen_packed_store(program, compiler, sequence)
+        }
+        loan read program.functions[compiler.id].blocks[codegen_current_block(compiler)].instructions[index] as instruction {
+            match ir::instruction_offset(instruction.kind) {
+                Some(offset) => {
+                    offset;
+                    return codegen_compile_instruction(program, compiler, instruction)
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+}

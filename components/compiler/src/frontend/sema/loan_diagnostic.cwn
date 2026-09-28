@@ -1,0 +1,78 @@
+module sema {
+    fn validate_place_loans(checker: write Checker, path: frontend::Path, usage: PathUse) -> bool {
+        if validate_thread_loans(checker, path, usage) == false {
+            return false
+        }
+        match conflicting_place_loan(checker, path, usage) {
+            None => {
+                return true
+            }
+            Some(index) => {
+                let current = place_loan_copy(checker.place_loans[index])
+                var message = "cannot "
+                let action = access_action(usage)
+                std::text::append(message, action)
+                let separator = " '"
+                std::text::append(message, separator)
+                let name = path_text(checker.symbols.source, path)
+                std::text::append(message, name)
+                let suffix = "' while an overlapping loan is active"
+                std::text::append(message, suffix)
+                checker_error_at(checker, path.span, move message)
+                checker_note(checker, current.origin, loan_origin_message(current))
+                return false
+            }
+        }
+    }
+
+    fn access_action(usage: PathUse) -> Text {
+        match read usage {
+            ReadPath => {
+                return "read"
+            }
+            MovePath => {
+                return "move"
+            }
+            _ => {
+                return "write"
+            }
+        }
+    }
+
+    fn path_text(source: Shared<Vec<u8>>, path: frontend::Path) -> Text {
+        var result = Text.new()
+        for index in 0..path.segments.length() {
+            if index != 0 {
+                result.push('.')
+            }
+            let name = name_text(source, path.segments[index])
+            std::text::append(result, name)
+        }
+        return move result
+    }
+
+    fn loan_origin_message(value: PlaceLoan) -> Text {
+        var message = if loan_is_write(value.requested) {
+            "write access starts here; "
+        } else {
+            "read access starts here; "
+        }
+        let ending = loan_end_message(value.duration)
+        std::text::append(message, ending)
+        return move message
+    }
+
+    fn loan_end_message(duration: LoanDuration) -> Text {
+        match duration {
+            LoanScopeEnd => {
+                return "the loan ends when this scope exits"
+            }
+            LoanCallEnd => {
+                return "the argument reservation ends when this call returns"
+            }
+            LoanExpressionEnd => {
+                return "the reservation ends after this expression is evaluated"
+            }
+        }
+    }
+}

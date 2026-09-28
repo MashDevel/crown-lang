@@ -1,0 +1,99 @@
+module optimize {
+    fn loop_close_values(function: write ir::Function, natural_loop: NaturalLoop) -> bool {
+        if loop_clone_eligible(function, natural_loop) {
+            return true
+        }
+        let exit = match loop_single_exit(function, natural_loop.blocks) {
+            Some(value) => value,
+            None => {
+                return false
+            }
+        }
+        let predecessors = ir::predecessors(function)
+        for index in 0..predecessors[exit].length() {
+            if natural_loop.blocks[predecessors[exit][index]] == false {
+                return false
+            }
+        }
+        let needed = loop_external_values(function, natural_loop.blocks)
+        if loop_values_dominate_exits(function, needed, predecessors[exit]) == false {
+            return false
+        }
+        var replacements = none_usize(function.values.length())
+        var phis = Vec<ir::Instruction>.new()
+        for value in 0..needed.length() {
+            if needed[value] {
+                let result = ir::function_new_value(function, function.values[value])
+                replacements[value] = Some(result)
+                phis.push(loop_exit_phi(function.values[value], value, result, predecessors[exit]))
+            }
+        }
+        loop_replace_external_values(function, natural_loop.blocks, replacements)
+        for index in 0..function.blocks[exit].instructions.length() {
+            phis.push(ir::instruction_copy(function.blocks[exit].instructions[index]))
+        }
+        function.blocks[exit].instructions = move phis
+        return loop_clone_eligible(function, natural_loop)
+    }
+
+    fn loop_single_exit(function: ir::Function, blocks: Vec<bool>) -> Option<usize> {
+        var exits = Vec<usize>.new()
+        for block in 0..blocks.length() {
+            if blocks[block] {
+                match read function.blocks[block].terminator {
+                    Some(terminator) => {
+                        let targets = ir::terminator_targets(terminator)
+                        loop_collect_exits(targets, blocks, exits)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        if exits.length() == 1 {
+            return Some(exits[0])
+        }
+        return None()
+    }
+
+    fn loop_collect_exits(targets: Vec<usize>, blocks: Vec<bool>, exits: write Vec<usize>) -> void {
+        for index in 0..targets.length() {
+            if blocks[targets[index]] == false {
+                unique_usize(exits, targets[index])
+            }
+        }
+    }
+
+    fn loop_exit_phi(value_type: ir::Type, source: usize, result: usize, predecessors: Vec<usize>) -> ir::Instruction {
+        var incoming = Vec<ir::PhiIncoming>.new()
+        for index in 0..predecessors.length() {
+            incoming.push(ir::PhiIncoming {
+                    block: predecessors[index], value: source
+                })
+        }
+        return ir::Instruction {
+            result: Some(result), kind: ir::InstructionPhi(value_type, move incoming)
+        }
+    }
+
+    fn loop_values_dominate_exits(function: ir::Function, needed: Vec<bool>, predecessors: Vec<usize>) -> bool {
+        let definitions = value_definitions(function)
+        let dominators = ir::dominators(function)
+        for value in 0..needed.length() {
+            if needed[value] {
+                let block = match read definitions[value] {
+                    Some(location) => location.block,
+                    None => {
+                        return false
+                    }
+                }
+                for index in 0..predecessors.length() {
+                    if ir::dominates(dominators, predecessors[index], block) == false {
+                        return false
+                    }
+                }
+            }
+        }
+        return true
+    }
+}

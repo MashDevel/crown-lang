@@ -1,0 +1,9 @@
+fn unwrap<T>(value: take Option<T>, fallback: take T) -> T {
+    match move value {
+        Some(item) => move item,
+        None => move fallback
+    }
+}
+fn main() -> u32 {
+    unwrap(Some(42), 0)
+}

@@ -1,0 +1,119 @@
+module macho {
+    struct Image {
+        architecture: object::Architecture,
+        text: Vec<u8>, data: Vec<u8>, offsets: Vec<u64>, writable: Vec<bool>,
+        symbols: Vec<u64>, slots: Vec<u64>, imports: Vec<usize>,
+        bindings: Vec<u8>, rebases: Vec<u8>, exports: Vec<u8>, data_base: u64, entry: u64,
+        initializer: u64
+    }
+
+    fn layout(object: object::CompilerObject, header_size: usize) -> Result<Image, Text> {
+        match object::validate(object) {
+            Err(error) => {
+                error;
+                return Err("invalid executable object")
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        var image = Image {
+            architecture: object.architecture,
+            text: std::bytes::filled(link_binary::aligned(header_size, page_size(object.architecture)), 0),
+            data: Vec<u8>.new(), offsets: Vec<u64>.new(), writable: Vec<bool>.new(),
+            symbols: Vec<u64>.new(), slots: Vec<u64>.new(), imports: Vec<usize>.new(),
+            bindings: Vec<u8>.new(), rebases: Vec<u8>.new(), exports: Vec<u8>.new(), data_base: 0, entry: 0,
+            initializer: 0
+        }
+        for index in 0..object.sections.length() {
+            layout_section(image, object.sections[index], section_rebases(object, index))?
+        }
+        for index in 0..object.symbols.length() {
+            image.slots.push(0)
+            if object::symbol_is_import(object.symbols[index].binding) {
+                image.imports.push(index)
+            }
+        }
+        let stubs = image.text.length()
+        link_binary::pad(image.text, stubs + image.imports.length() * stub_size(image.architecture))
+        link_binary::pad(image.text, link_binary::aligned(image.text.length(), page_size(image.architecture)))
+        image.data_base = 4294967296 + u64.from(image.text.length())
+        layout_symbols(image, object, stubs)?
+        return Ok(move image)
+    }
+
+    fn layout_section(image: write Image, section: object::Section, rebased: bool) -> Result<void, Text> {
+        if section.memory_size > 2147483647 || section.alignment > u64.from(page_size(image.architecture)) {
+            return Err("Mach-O section exceeds supported address range or alignment")
+        }
+        let writable = (rebased && object::section_is_executable(section.kind) == false) || match read section.kind {
+            object::SectionData | object::SectionZeroFill => true
+            _ => false
+        }
+        image.writable.push(writable)
+        if writable {
+            image.offsets.push(place_section(image.data, section))
+        } else {
+            image.offsets.push(place_section(image.text, section))
+        }
+        return Ok(())
+    }
+
+    fn section_rebases(object: object::CompilerObject, section: usize) -> bool {
+        for index in 0..object.relocations.length() {
+            if object.relocations[index].section == section {
+                match read object.relocations[index].kind {
+                    object::RelocationAbsolute64 => {
+                        return true
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    fn place_section(bytes: write Vec<u8>, section: object::Section) -> u64 {
+        let offset = link_binary::aligned(bytes.length(), usize.from(section.alignment))
+        link_binary::pad(bytes, offset)
+        link_binary::append(bytes, section.data)
+        link_binary::pad(bytes, offset + usize.from(section.memory_size))
+        return u64.from(offset)
+    }
+
+    fn section_address(image: Image, section: usize) -> u64 {
+        let base = if image.writable[section] {
+            image.data_base
+        } else {
+            4294967296
+        }
+        return base + image.offsets[section]
+    }
+
+    fn layout_symbols(image: write Image, object: object::CompilerObject, stubs: usize) -> Result<void, Text> {
+        for index in 0..object.symbols.length() {
+            let address: u64 = match read object.symbols[index].section {
+                Some(section) => section_address(image, section) + object.symbols[index].offset
+                None => 0
+            }
+            image.symbols.push(address)
+        }
+        for index in 0..image.imports.length() {
+            let symbol = image.imports[index]
+            let slot = link_binary::aligned(image.data.length(), 8)
+            link_binary::pad(image.data, slot + 8)
+            image.slots[symbol] = image.data_base + u64.from(slot)
+            let stub = stubs + index * stub_size(image.architecture)
+            image.symbols[symbol] = 4294967296 + u64.from(stub)
+            write_stub(image, symbol, stub)?
+        }
+        image.entry = match read object.entry {
+            Some(index) => image.symbols[index] - 4294967296
+            None => {
+                return Err("program has no main function")
+            }
+        }
+        return Ok(())
+    }
+}

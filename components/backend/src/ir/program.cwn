@@ -1,0 +1,62 @@
+module ir {
+    enum GlobalKind {
+        GlobalReadOnly
+        GlobalWritable
+        GlobalZeroFill
+    }
+
+    enum GlobalReferenceTarget {
+        GlobalReferenceFunction(usize)
+        GlobalReferenceGlobal(usize)
+    }
+
+    struct GlobalReference {
+        offset: u64
+        target: GlobalReferenceTarget
+        addend: i64
+    }
+
+    struct Global {
+        name: Text
+        bytes: Vec<u8>
+        size: u64
+        alignment: u32
+        kind: GlobalKind
+        exported: bool
+        references: Vec<GlobalReference>
+    }
+
+    struct Program {
+        functions: Vec<Function>
+        globals: Vec<Global>
+        entry: Option<usize>
+    }
+
+    fn program_new() -> Program {
+        return Program {
+            functions: Vec<Function>.new()
+            globals: Vec<Global>.new()
+            entry: None()
+        }
+    }
+
+    fn program_add_function(program: write Program, function: take Function) -> usize {
+        let id = program.functions.length()
+        program.functions.push(move function)
+        return id
+    }
+
+    fn program_add_global(program: write Program, global: take Global) -> usize {
+        let id = program.globals.length()
+        program.globals.push(move global)
+        return id
+    }
+
+    fn program_set_entry(program: write Program, entry: usize) -> void {
+        program.entry = Some(entry)
+    }
+
+    fn program_entry(program: Program) -> Option<usize> {
+        return program.entry
+    }
+}

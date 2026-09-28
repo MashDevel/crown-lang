@@ -1,0 +1,66 @@
+module lowering {
+    fn struct_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let address = function_zeroed_stack(compiler, analysis.checker.symbols, value_type)?
+        match read expression.kind {
+            frontend::ExpressionStruct(reference, fields) => {
+                reference
+                var index: usize = 0
+                while index < fields.length() {
+                    loan read fields[index] as field {
+                        initialize_struct_field(compiler, analysis, address, value_type, field)?
+                    }
+                    index = index + 1
+                }
+            }
+            _ => {
+                return Err(67)
+            }
+        }
+        return Ok(AddressValue(address, move value_type))
+    }
+
+    fn array_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        var element = sema::Invalid()
+        match read value_type {
+            sema::ArrayType(value, length) => {
+                length;
+                loan read value as item {
+                    element = sema::type_copy(item)
+                }
+            }
+            _ => {
+                return Err(69)
+            }
+        }
+        let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let layout = layout(analysis.checker.symbols, element)?
+        match read expression.kind {
+            frontend::ExpressionArray(values) => {
+                var index: usize = 0
+                while index < values.length() {
+                    let target = function_offset(compiler, address, layout.size * u64.from(index))?
+                    loan read values[index] as item {
+                        initialize_owned_place(compiler, analysis, item, Place {
+                                address: target, value_type: sema::type_copy(element)
+                            })?
+                    }
+                    index = index + 1
+                }
+            }
+            _ => {
+                return Err(70)
+            }
+        }
+        return Ok(AddressValue(address, move value_type))
+    }
+    fn initialize_struct_field(compiler: write FunctionCompiler, analysis: sema::Analysis, address: usize, value_type: sema::Type, field: frontend::FieldValue) -> Result<void, u32> {
+        let layout = layout_field(analysis.checker.symbols, value_type, field.name)?
+        let target = function_offset(compiler, address, layout.offset)?
+        return initialize_owned_place(compiler, analysis, field.value, Place {
+                address: target, value_type: sema::type_copy(layout.value_type)
+            })
+    }
+
+}

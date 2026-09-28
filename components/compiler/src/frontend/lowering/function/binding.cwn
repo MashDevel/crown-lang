@@ -1,0 +1,141 @@
+module lowering {
+    fn function_push_scope(compiler: write FunctionCompiler) -> void {
+        compiler.scope_depth = compiler.scope_depth + 1
+    }
+
+    fn function_pop_scope(compiler: write FunctionCompiler) -> Result<void, u32> {
+        let depth = compiler.scope_depth
+        function_cleanup_depth(compiler, depth)?
+        while compiler.bindings.length() != 0 {
+            let last = compiler.bindings.length() - 1
+            if compiler.bindings[last].depth < compiler.scope_depth {
+                break
+            }
+            compiler.bindings.pop()
+        }
+        while compiler.exits.length() != 0 {
+            let last = compiler.exits.length() - 1
+            if compiler.exits[last].depth < compiler.scope_depth {
+                break
+            }
+            compiler.exits.pop()
+        }
+        if compiler.scope_depth != 0 {
+            compiler.scope_depth = compiler.scope_depth - 1
+        }
+        return Ok(())
+    }
+
+    fn function_cleanup_depth(compiler: write FunctionCompiler, depth: usize) -> Result<void, u32> {
+        match read compiler.block {
+            None => {
+                return Ok(())
+            }
+            Some(value) => {
+                value
+            }
+        }
+        cleanup_thread_regions(compiler, depth)?
+        emit_temporary_depth(compiler, depth)?
+        var index = compiler.bindings.length()
+        while index != 0 {
+            index = index - 1
+            var binding = Binding {
+                name: frontend::Name {
+                    text: "", span: frontend::Span {
+                        source: 0, start: 0, end: 0, line: 0, column: 0
+                    }
+                }, value_type: sema::Invalid(), address: 0, owned: false, available: false, depth: 0
+            }
+            loan read compiler.bindings[index] as value {
+                binding = binding_copy(value)
+            }
+            if binding.depth == depth && binding.owned && binding.available && type_is_copy(compiler, binding.value_type) == false {
+                let value_drop = Place {
+                    address: binding.address, value_type: sema::type_copy(binding.value_type)
+                }
+                drop_value(compiler, value_drop)?
+            }
+        }
+        return function_cleanup_exits(compiler, depth)
+    }
+
+    fn function_cleanup_exits(compiler: write FunctionCompiler, depth: usize) -> Result<void, u32> {
+        var index = compiler.exits.length()
+        while index != 0 {
+            index = index - 1
+            if compiler.exits[index].depth == depth {
+                let name = compiler.exits[index].name.clone()
+                let argument = compiler.exits[index].argument
+                if std::text::equal(name, "thread_scope") == false {
+                    call_lock(compiler, name.clone(), argument)?
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn function_add_exit(compiler: write FunctionCompiler, name: take Text, argument: usize) -> void {
+        compiler.exits.push(ScopeExit {
+                name: move name, argument: argument, depth: compiler.scope_depth
+            })
+    }
+
+    fn function_cleanup_all(compiler: write FunctionCompiler) -> Result<void, u32> {
+        var depth = compiler.scope_depth + 1
+        while depth != 0 {
+            depth = depth - 1
+            function_cleanup_depth(compiler, depth)?
+        }
+        return Ok(())
+    }
+
+    fn function_cleanup_from(compiler: write FunctionCompiler, first: usize) -> Result<void, u32> {
+        var depth = compiler.scope_depth + 1
+        while depth > first {
+            depth = depth - 1
+            function_cleanup_depth(compiler, depth)?
+        }
+        return Ok(())
+    }
+
+    fn function_add_binding(compiler: write FunctionCompiler, binding: take Binding) -> void {
+        compiler.bindings.push(move binding)
+    }
+
+    fn function_binding_index(compiler: FunctionCompiler, source: Shared<Vec<u8>>, name: frontend::Name) -> Option<usize> {
+        var index = compiler.bindings.length()
+        while index != 0 {
+            index = index - 1
+            loan read compiler.bindings[index] as binding {
+                if sema::names_equal(source, binding.name, name) {
+                    return Some(index)
+                }
+            }
+        }
+        return None()
+    }
+
+    fn binding_copy(binding: Binding) -> Binding {
+        return Binding {
+            name: frontend::name_copy(binding.name)
+            value_type: sema::type_copy(binding.value_type)
+            address: binding.address
+            owned: binding.owned
+            available: binding.available
+            depth: binding.depth
+        }
+    }
+
+    fn bindings_copy(bindings: Vec<Binding>) -> Vec<Binding> {
+        var output = Vec<Binding>.with_capacity(bindings.length())
+        var index: usize = 0
+        while index < bindings.length() {
+            loan read bindings[index] as binding {
+                output.push(binding_copy(binding))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

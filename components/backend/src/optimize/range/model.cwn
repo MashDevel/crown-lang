@@ -1,0 +1,103 @@
+module optimize {
+    struct Range {
+        minimum: u64
+        maximum: u64
+    }
+
+    struct RangeBinary {
+        left: Range
+        right: Range
+        full: Range
+    }
+
+    struct RangeProven {
+        result: usize
+        value: bool
+    }
+
+    struct RangeComparison {
+        present: bool
+        operator: ir::CompareOperator
+        left: usize
+        right: usize
+    }
+
+    struct RangeConstraint {
+        value: usize
+        range: Range
+    }
+
+    struct RangeConstraints {
+        reached: bool
+        values: Vec<RangeConstraint>
+    }
+
+    struct RangeProofState {
+        inferred: Vec<Option<Range>>
+        constraints: Vec<RangeConstraints>
+        comparisons: Vec<RangeComparison>
+        binaries: Vec<RangeBinaryDefinition>
+        definitions: Vec<Definition>
+        enable_relations: bool
+    }
+
+    struct RangeProofQuery {
+        block: usize
+        value: usize
+    }
+
+    struct RangeBinaryDefinition {
+        present: bool
+        operator: ir::BinaryOperator
+        left: usize
+        right: usize
+    }
+
+    struct SignedRange {
+        minimum: ir::WideInteger
+        maximum: ir::WideInteger
+    }
+
+    struct RangeComparisonQuery {
+        block: usize
+        operator: ir::CompareOperator
+        left: usize
+        right: usize
+    }
+
+    fn range_copy(value: Range) -> Range {
+        return Range {
+            minimum: value.minimum, maximum: value.maximum
+        }
+    }
+
+    fn none_ranges(length: usize) -> Vec<Option<Range>> {
+        var output = Vec<Option<Range>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn range_constraint_copy(value: RangeConstraint) -> RangeConstraint {
+        return RangeConstraint {
+            value: value.value, range: range_copy(value.range)
+        }
+    }
+
+    fn range_constraints_copy(value: RangeConstraints) -> RangeConstraints {
+        var values = Vec<RangeConstraint>.with_capacity(value.values.length())
+        var index: usize = 0
+        while index < value.values.length() {
+            loan read value.values[index] as entry {
+                values.push(range_constraint_copy(entry))
+            }
+            index = index + 1
+        }
+        return RangeConstraints {
+            reached: value.reached, values: move values
+        }
+    }
+}

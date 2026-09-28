@@ -1,0 +1,65 @@
+module lowering {
+    fn root_box_type(value_type: sema::Type) -> Result<sema::Type, u32> {
+        match read value_type {
+            sema::BuiltinType(kind, arguments) => {
+                if sema::native_root_kind(kind) && arguments.length() == 1 {
+                    return Ok(sema::root_wrapper(sema::Box(), arguments[0]))
+                }
+            },
+            _ => {
+            }
+        }
+        return Err(760)
+    }
+    fn root_drop_pointer(compiler: write FunctionCompiler, value_type: sema::Type) -> Result<usize, u32> {
+        let boxed = root_box_type(value_type)?
+        let key = drop_function_key(boxed)
+        let target = match function_named_id(compiler.tables.generated_functions, key) {
+            None => {
+                return Err(761)
+            },
+            Some(value) => value
+        }
+        return function_append_value(compiler, ir::InstructionFunctionAddress(target))
+    }
+    fn root_call(compiler: write FunctionCompiler, name: take Text, arguments: take Vec<usize>) -> Result<usize, u32> {
+        var parameters = Vec<ir::Type>.new()
+        for index in 0..arguments.length() {
+            index
+            parameters.push(ir::TypePointer())
+        }
+        let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+        let request = ImportedCall {
+            name: move name, signature: move signature, arguments: move arguments
+        }
+        return match function_imported_call(compiler, request)? {
+            Some(value) => Ok(value),
+            None => Err(770)
+        }
+    }
+    fn root_load_word(compiler: write FunctionCompiler, symbols: sema::Symbols, address: usize) -> Result<usize, u32> {
+        return function_load(compiler, symbols, Place {
+                address: address, value_type: sema::builtin_leaf(sema::USize())
+            })
+    }
+    fn root_loan(compiler: write FunctionCompiler, place: Place) -> Result<LoanValue, u32> {
+        let pointer = function_load_pointer(compiler, place.address)?
+        let data = function_load_pointer(compiler, pointer)?
+        let boxed = root_box_type(place.value_type)?
+        let element = owner_element(boxed)?
+        return Ok(LoanValue {
+                address: data, value_type: move element
+            })
+    }
+    fn drop_native_root(compiler: write FunctionCompiler, address: usize, kind: sema::Builtin) -> Result<void, u32> {
+        var arguments = Vec<usize>.new()
+        arguments.push(address)
+        let name = if kind == sema::NativeRoot() {
+            "crown_root_close"
+        } else {
+            "crown_root_release"
+        }
+        root_call(compiler, move name, move arguments)?
+        return Ok(())
+    }
+}

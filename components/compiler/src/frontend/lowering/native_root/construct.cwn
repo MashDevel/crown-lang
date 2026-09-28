@@ -1,0 +1,86 @@
+module lowering {
+    fn static_native_root(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                if sema::name_is(analysis.checker.symbols.source, method, "declare") {
+                    return root_declaration(compiler, analysis, expression)
+                }
+                if sema::type_builtin(value_type) == sema::RootToken() {
+                    return root_token_construct(compiler, analysis, expression)
+                }
+                if arguments.length() != 1 {
+                    return Err(762)
+                }
+                loan read arguments[0] as argument {
+                    return register_root_value(compiler, analysis, move value_type, argument)
+                }
+            },
+            _ => {
+            }
+        }
+        return Err(763)
+    }
+
+    fn register_root_value(compiler: write FunctionCompiler, analysis: sema::Analysis, value_type: take sema::Type, argument: frontend::Expression) -> Result<Value, u32> {
+        var visiting = Vec<usize>.new()
+        if sema::type_transferable(analysis.checker.symbols, value_type, visiting) == false {
+            return Err(772)
+        }
+        let result = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let container = root_value_storage(compiler, analysis, value_type, argument)?
+        let destructor = root_drop_pointer(compiler, value_type)?
+        var call = Vec<usize>.new()
+        call.push(result);
+        call.push(container);
+        call.push(destructor)
+        call.push(root_type_pointer(compiler, value_type)?)
+        root_call(compiler, "crown_root_register", move call)?
+        return Ok(AddressValue(result, move value_type))
+    }
+
+    fn root_value_storage(compiler: write FunctionCompiler, analysis: sema::Analysis, value_type: sema::Type, argument: frontend::Expression) -> Result<usize, u32> {
+        let box_type = root_box_type(value_type)?
+        let element = owner_element(box_type)?
+        let layout = layout(analysis.checker.symbols, element)?
+        let amount = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), layout.size)
+        let data = function_allocate(compiler, amount)?
+        copy_expression_to(compiler, analysis, argument, data)?
+        let eight = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 8)
+        let container = function_allocate(compiler, eight)?
+        function_store_pointer(compiler, container, data)?
+        return Ok(container)
+    }
+    fn root_token_construct(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method
+                if arguments.length() != 2 {
+                    return Err(764)
+                }
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                let result = function_stack(compiler, analysis.checker.symbols, value_type)?
+                for index in 0..2 {
+                    loan read arguments[index] as argument {
+                        root_token_word(compiler, analysis, argument, result, index)?
+                    }
+                }
+                return Ok(AddressValue(result, move value_type))
+            },
+            _ => {
+            }
+        }
+        return Err(765)
+    }
+
+    fn root_token_word(compiler: write FunctionCompiler, analysis: sema::Analysis, argument: frontend::Expression, result: usize, index: usize) -> Result<void, u32> {
+        let value = function_scalar_expression(compiler, analysis, argument)?
+        let address = function_offset(compiler, result, u64.from(index * 8))?
+        return function_store(compiler, analysis.checker.symbols, StoreRequest {
+                address: address, value: value, value_type: sema::builtin_leaf(sema::USize())
+            })
+    }
+}

@@ -1,0 +1,49 @@
+module profile {
+    fn layout(program: ir::Program, source: Text) -> Text {
+        var output = "{\"version\":1,\"source\":"
+        std::text::append(output, toolchain::json_quoted(source))
+        std::text::append(output, ",\"functions\":[")
+        for index in 0..program.functions.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            append_function(output, program.functions[index])
+        }
+        std::text::append(output, "]}\n")
+        return move output
+    }
+
+    fn append_function(output: write Text, function: ir::Function) -> void {
+        std::text::append(output, "{\"name\":")
+        std::text::append(output, toolchain::json_quoted(function.name))
+        std::text::append(output, ",\"blocks\":[")
+        for block in 0..function.blocks.length() {
+            if block != 0 {
+                output.push(',')
+            }
+            output.push('[')
+            std::text::append(output, std::text::decimal(u64.from(function.blocks[block].instructions.length())))
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    let targets = ir::terminator_targets(terminator)
+                    for index in 0..targets.length() {
+                        output.push(',')
+                        std::text::append(output, std::text::decimal(u64.from(targets[index])))
+                    }
+                }
+                None => {
+                }
+            }
+            output.push(']')
+        }
+        std::text::append(output, "]}")
+    }
+
+    fn block_count(program: ir::Program) -> usize {
+        var count: usize = 0
+        for index in 0..program.functions.length() {
+            count = count + program.functions[index].blocks.length()
+        }
+        return count
+    }
+}

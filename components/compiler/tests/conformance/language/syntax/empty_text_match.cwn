@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let value = ""
+    match read value {
+        "a" => 1,
+        "" => 42,
+        _ => 2
+    }
+}

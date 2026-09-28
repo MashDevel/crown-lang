@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    match Some(1) {
+        _ => {
+            return 0
+        },
+        Some(value) => {
+            return value
+        }
+    }
+}

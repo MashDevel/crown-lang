@@ -1,0 +1,56 @@
+module toolchain {
+    struct ProcessResult {
+        status: i32, stdout: Text, stderr: Text
+    }
+    struct Command {
+        arguments: Vec<Text>, stdout: Text, stderr: Text, timeout: u64
+    }
+
+    fn command(arguments: take Vec<Text>) -> Command {
+        return Command {
+            arguments: move arguments, stdout: "", stderr: "", timeout: 300000
+        }
+    }
+
+    fn execute(request: Command) -> Result<i32, Text> {
+        return wait_process(start_process(request)?, request.timeout)
+    }
+
+    fn start_process(request: Command) -> Result<i32, Text> {
+        var actions = spawn_actions()?
+        redirect(actions, 1, request.stdout)?
+        redirect(actions, 2, request.stderr)?
+        return spawn_process(request.arguments, actions)
+    }
+
+    fn capture(request: Command, directory: Text) -> Result<ProcessResult, Text> {
+        let temporary = temporary(directory)?
+        let path = temporary_path(temporary)
+        var captured = Command {
+            arguments: std::text::clone_list(request.arguments)
+            stdout: path_join(path, "stdout")
+            stderr: path_join(path, "stderr")
+            timeout: request.timeout
+        }
+        let status = execute(captured)?
+        return Ok(ProcessResult {
+                status: status, stdout: read_output(captured.stdout)?, stderr: read_output(captured.stderr)?
+            })
+    }
+
+    fn clean_result(result: ProcessResult) -> bool {
+        return result.status == 0 && result.stdout.length() == 0 && result.stderr.length() == 0
+    }
+
+    fn require_command(arguments: take Vec<Text>) -> Result<void, Text> {
+        return require_execution(command(move arguments))
+    }
+
+    fn require_execution(request: Command) -> Result<void, Text> {
+        let result = capture(request, temporary_directory())?
+        if clean_result(result) {
+            return Ok(())
+        }
+        return Err(std::text::joined(std::text::joined("command failed: ", request.arguments[0]), std::text::joined("\n", std::text::joined(result.stdout, result.stderr))))
+    }
+}

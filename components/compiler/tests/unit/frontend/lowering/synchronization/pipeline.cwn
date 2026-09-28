@@ -1,0 +1,96 @@
+fn sync_lower(source: take Text) -> Result<ir::Program, Text> {
+    let input = frontend_test_source(move source)
+    let program = match frontend::parse(input.bytes.share(), input.length, 0) {
+        Ok(value) => move value
+        Err(diagnostics) => {
+            diagnostics;
+            return Err("synchronization fixture did not parse")
+        }
+    }
+    let analysis = sema::analyze(input.bytes.share(), program)
+    if analysis.errors != 0 {
+        return Err("synchronization fixture did not type check")
+    }
+    var compiler = lowering::compiler_new()
+    sync_lowered(lowering::declare_program(compiler, analysis))?
+    sync_lowered(lowering::lower_program(compiler, lowering::ProgramInput {
+                analysis: move analysis, program: move program
+            }))?
+    return Ok(replace(compiler.output, ir::program_new()))
+}
+
+fn sync_lowered(result: take Result<void, u32>) -> Result<void, Text> {
+    match result {
+        Ok(done) => {
+            done;
+            return Ok(())
+        }
+        Err(code) => {
+            return Err(std::text::joined("lowering failed: ", std::text::decimal(u64.from(code))))
+        }
+    }
+}
+
+fn sync_inject(program: write ir::Program, name: Text, status: u64) -> Result<void, Text> {
+    for index in 0..program.functions.length() {
+        if std::text::equal(program.functions[index].name, name) {
+            var parameters = Vec<ir::Type>.new()
+            parameters.push(ir::TypePointer())
+            if std::text::contains(name, "_init") {
+                parameters.push(ir::TypePointer())
+            }
+            let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+            var function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+            let block = match safety_block(function) {
+                Ok(value) => value
+                Err(error) => {
+                    error;
+                    return Err("could not build failure stub")
+                }
+            }
+            let value = safety_integer(function, ir::IntegerWidth32(), status)
+            sync_lowered(safety_terminate(function, block, ir::TerminatorReturn(Some(value))))?
+            program.functions[index] = move function
+            return Ok(())
+        }
+    }
+    return Err(std::text::joined("missing native operation: ", name))
+}
+
+fn sync_object(input: take ir::Program) -> Result<object::CompilerObject, Text> {
+    var program = move input
+    match optimize::prune_program(program) {
+        Ok(done) => {
+            done
+        }
+        Err(error) => {
+            error;
+            return Err("invalid synchronization IR")
+        }
+    }
+    if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+        return arm64::codegen(move program, safety_arm_variant())
+    }
+    return match x86::codegen(move program) {
+        Ok(value) => Ok(move value)
+        Err(error) => {
+            error;
+            Err("synchronization code generation failed")
+        }
+    }
+}
+
+fn sync_execute(program: take ir::Program) -> Result<toolchain::ProcessResult, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let directory = toolchain::temporary_path(temporary)
+    let path = toolchain::path_join(directory, "synchronization")
+    let object = sync_object(move program)?
+    let bytes = safety_executable(move object)?
+    toolchain::write_bytes(path, bytes)?
+    toolchain::executable(path)?
+    var arguments = Vec<Text>.new()
+    arguments.push(path.clone())
+    var command = toolchain::command(move arguments)
+    command.timeout = 10000
+    return toolchain::capture(command, directory)
+}

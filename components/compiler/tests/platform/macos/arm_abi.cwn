@@ -1,0 +1,46 @@
+fn emit(arguments: Arguments) -> Result<void, Text> {
+    if arguments.length() != 5 {
+        return Err("expected Crown source, Mach-O object, ELF output, and Linux interpreter")
+    }
+    let object = darwin_program(arguments[1].clone(), arguments[2].clone())?
+    if std::text::equal(arguments[4], "macos") {
+        let bytes = macho::executable(object, macho::libraries(Vec<Text>.new())?)?
+        frontend::write_native_executable(arguments[3].clone(), bytes)?;
+        return Ok(())
+    }
+    return emit_linux(move object, arguments[3].clone(), arguments[4].clone())
+}
+fn darwin_program(source: Text, external_path: Text) -> Result<object::CompilerObject, Text> {
+    let target = toolchain::target(toolchain::Architecture::Arm64(), toolchain::Platform::Macos())
+    var sources = Vec<Text>.new()
+    sources.push(source.clone())
+    let checked = frontend::checked_sources(move sources, 128)?
+    var object = frontend::instrumented_object(move checked, "", toolchain::optimization_options(), target)?
+    let external = macho::read_object(toolchain::read_bytes(external_path.clone())?)?
+    link_object::merge(object, move external)?
+    link_object::merge(object, darwin_echo_object()?)?
+    return Ok(move object)
+}
+fn emit_linux(input: take object::CompilerObject, output: Text, interpreter: Text) -> Result<void, Text> {
+    var object = move input
+    elf::startup_import(object)?
+    var options = elf::Options {
+        interpreter: interpreter.clone(), libraries: elf::libraries(Vec<Text>.new())?, versions: Vec<elf::SymbolVersion>.new()
+    }
+    options.versions = elf::resolve_versions(object, options)?
+    let bytes = elf::executable(move object, options)?
+    toolchain::write_bytes(output, bytes)?
+    return toolchain::executable(output)
+}
+fn main(arguments: Arguments) -> u32 {
+    match emit(arguments) {
+        Ok(value) => {
+            value;
+            0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

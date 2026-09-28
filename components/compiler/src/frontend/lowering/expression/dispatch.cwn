@@ -1,0 +1,185 @@
+module lowering {
+    fn function_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        coverage_line(compiler, expression.span)?
+        let start = compiler.temporaries.length()
+        let lowered: Result<Value, u32> = literal_expression(compiler, analysis, expression, expression.kind)
+        let result = match move lowered {
+            Ok(value) => move value,
+            Err(error) => {
+                release_temporaries(compiler, start)
+                return Err(error)
+            }
+        }
+        let value = if compiler.temporaries.length() > start {
+            finish_projection_value(compiler, analysis.checker.symbols, move result)?
+        } else {
+            move result
+        }
+        emit_temporary_cleanup(compiler, start)?
+        release_temporaries(compiler, start)
+        return Ok(move value)
+    }
+
+    fn literal_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionInteger(value) => {
+                let request = LiteralRequest {
+                    span: expression.span, integer: value
+                }
+                return integer_literal(compiler, analysis, request)
+            }
+            frontend::ExpressionFloat(span) => {
+                return float_literal(compiler, analysis, FloatLiteralRequest {
+                        expression: expression.span, literal: span
+                    })
+            }
+            frontend::ExpressionBoolean(value) => {
+                return boolean_literal(compiler, value)
+            }
+            frontend::ExpressionCharacter(span) => {
+                return character_literal(compiler, analysis.checker.symbols.source, span)
+            }
+            frontend::ExpressionText(span) => {
+                return text_literal(compiler, analysis, span)
+            }
+            frontend::ExpressionUnit => {
+                return Ok(VoidValue())
+            }
+            _ => value_expression(compiler, analysis, expression, kind)
+        }
+    }
+
+    fn value_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                return path_expression(compiler, analysis, path)
+            }
+            frontend::ExpressionMove(path) => {
+                return move_expression(compiler, analysis, path)
+            }
+            frontend::ExpressionStruct(reference, fields) => {
+                reference;
+                fields;
+                return struct_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionArrayRepeat(value, length) => {
+                value;
+                length;
+                return array_repeat_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionArray(values) => {
+                values;
+                return array_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionField(target, name) => {
+                target;
+                name;
+                return place_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionIndex(target, index) => {
+                target;
+                index;
+                return place_expression(compiler, analysis, expression)
+            }
+            _ => operation_expression(compiler, analysis, expression, kind)
+        }
+    }
+
+    fn operation_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                name;
+                arguments;
+                return call_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionBinary(left, operator, right) => {
+                left;
+                operator;
+                right;
+                return binary_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionNegate(value) => {
+                value;
+                return negate_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionBitwiseNot(value) => {
+                value;
+                return bitwise_not_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method;
+                arguments;
+                return builtin_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method;
+                arguments;
+                return builtin_expression(compiler, analysis, expression)
+            }
+            frontend::ExpressionTry(value) => {
+                return try_expression(compiler, analysis, value)
+            }
+            _ => control_expression(compiler, analysis, expression)
+        }
+    }
+
+    fn function_scalar_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        let value = borrowed_scalar_value(compiler, analysis, expression)?
+        match move value {
+            ScalarValue(id, value_type) => {
+                value_type;
+                return Ok(id)
+            }
+            AddressValue(address, value_type) => {
+                if type_is_direct(analysis.checker.symbols, value_type)? == false {
+                    return Err(98)
+                }
+                let request = Place {
+                    address: address, value_type: move value_type
+                }
+                return function_load(compiler, analysis.checker.symbols, request)
+            }
+            VoidValue => {
+                return Err(99)
+            }
+        }
+    }
+
+    fn control_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionUnsafe(body) => {
+                return unsafe_expression(compiler, analysis, body, expression.span)
+            }
+            frontend::ExpressionConditional(value) => {
+                return conditional_expression(compiler, analysis, value, expression.span)
+            }
+            frontend::ExpressionMatch(matched) => {
+                loan read matched as value {
+                    return match_expression(compiler, analysis, value, expression.span)
+                }
+            }
+            frontend::ExpressionScopedSpawn(stack, captures, body) => {
+                stack;
+                captures;
+                body;
+                return scoped_spawn_value(compiler, analysis, expression)
+            }
+            frontend::ExpressionSpawn(configuration, body) => {
+                configuration;
+                body;
+                return spawn_value(compiler, analysis, expression)
+            }
+            frontend::ExpressionClosure(captures, parameters, body) => {
+                captures;
+                parameters;
+                body;
+                return closure_value(compiler, analysis, expression)
+            }
+            _ => {
+                return Err(51)
+            }
+        }
+    }
+}

@@ -1,0 +1,17 @@
+module data {
+    struct Value {
+        private number: u32
+    }
+    fn make() -> Value {
+        return Value {
+            number: 42
+        }
+    }
+}
+fn main() -> u32 {
+    let value = data::make()
+    let forged = data::Value {
+        number: 7
+    }
+    return 0
+}

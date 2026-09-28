@@ -1,0 +1,61 @@
+fn formatting(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "format.cwn", "fn main()->u32{\n let a=[1,2]\n if a[0] < 3{ return 0 }\n return 1\n}\n")?
+    let original = toolchain::read_text(path)?
+    let pending = testing::invoke(testing::list(std::text::joined("fmt|--check|", path)), root)?
+    testing::expect(pending.status == 1, "fmt check detects changes")?
+    testing::expect(std::text::equal(original, toolchain::read_text(path)?), "fmt check preserves source")?
+    return apply_format(root, path)
+}
+
+fn apply_format(root: Text, path: Text) -> Result<void, Text> {
+    let formatted = testing::invoke(testing::list(std::text::joined("fmt|", path)), root)?
+    testing::expect(formatted.status == 0, "formatter succeeds")?
+    let expected = "fn main() -> u32 {\n    let a = [1, 2]\n    if a[0] < 3 {\n        return 0\n    }\n    return 1\n}\n"
+    testing::expect(std::text::equal(toolchain::read_text(path)?, expected), "canonical whitespace")?
+    testing::clean_call(root, std::text::joined("fmt|--check|", path))?
+    testing::clean_call(root, std::text::joined("run|", path))?
+    return Ok(())
+}
+
+fn boundaries(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "empty.cwn", "\n \t\n")?
+    let changed = testing::invoke(testing::list(std::text::joined("fmt|", path)), root)?
+    testing::expect(changed.status == 0 && std::text::equal(toolchain::read_text(path)?, ""), "empty formatting")?
+    toolchain::write_text(path, "fn main() -> u32 { @ }")?
+    testing::failed_call(root, std::text::joined("fmt|", path))?
+    testing::expect(std::text::equal(toolchain::read_text(path)?, "fn main() -> u32 { @ }"), "lexical failure preserves input")?
+    return qualified_names(root, path)
+}
+
+fn qualified_names(root: Text, path: Text) -> Result<void, Text> {
+    toolchain::write_text(path, "module demo { fn value(x:u32)->u32 {return x} }\nfn main()->u32 {return demo::value(0)}")?
+    let names = testing::invoke(testing::list(std::text::joined("fmt|", path)), root)?
+    testing::expect(names.status == 0, "qualified names and annotations format")?
+    testing::clean_call(root, std::text::joined("run|", path))?
+    testing::clean_call(root, std::text::joined("fmt|--check|", path))?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    formatting(root)?
+    boundaries(root)?
+    bare_return(root)?
+    return Ok(())
+}
+
+fn bare_return(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "return.cwn", "fn finish()->void{return}\nfn main()->u32{finish();return 0}")?
+    let formatted = testing::invoke(testing::list(std::text::joined("fmt|", path)), root)?
+    testing::expect(formatted.status == 0, "bare return formats successfully")?
+    let expected = "fn finish() -> void {\n    return\n}\nfn main() -> u32 {\n    finish();\n    return 0\n}\n"
+    testing::expect(std::text::equal(toolchain::read_text(path)?, expected), "bare return formatting")?
+    testing::clean_call(root, std::text::joined("fmt|--check|", path))?
+    testing::clean_call(root, std::text::joined("run|", path))?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

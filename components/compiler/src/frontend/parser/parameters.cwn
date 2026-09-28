@@ -1,0 +1,38 @@
+module frontend {
+    struct ParsedParameters {
+        values: Vec<Parameter>, variadic_start: Option<usize>
+    }
+    fn parser_parameter_list(parser: write Parser, foreign: bool) -> ParsedParameters {
+        var output = ParsedParameters {
+            values: Vec<Parameter>.new(), variadic_start: None()
+        }
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightParen()) == false && parser_at(parser, TokenEnd()) == false {
+            if parser_consumed(parser, TokenRange()) {
+                parser_expect(parser, TokenDot())
+                parser_variadic_marker(parser, output, foreign)
+            }
+            output.values.push(parser_parameter(parser))
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        parser_expect(parser, TokenRightParen())
+        return move output
+    }
+    fn parser_variadic_marker(parser: write Parser, output: write ParsedParameters, foreign: bool) -> void {
+        let duplicate = match output.variadic_start {
+            Some(index) => {
+                index;
+                true
+            },
+            None => false
+        }
+        if foreign == false || duplicate || output.values.length() == 0 {
+            parser_report(parser, MissingToken())
+        }
+        output.variadic_start = Some(output.values.length())
+    }
+}

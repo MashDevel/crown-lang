@@ -1,0 +1,14 @@
+module sema {
+    fn checker_scoped_stack(checker: write Checker, configuration: Vec<frontend::Expression>) -> void {
+        if configuration.length() == 1 {
+            var arguments = Vec<Type>.new()
+            arguments.push(builtin_leaf(U8()))
+            let expected = BuiltinType(Vec(), move arguments)
+            loan read configuration[0] as value {
+                checker_value(checker, value, expected)
+            }
+            return
+        }
+        checker_spawn_configuration(checker, configuration)
+    }
+}

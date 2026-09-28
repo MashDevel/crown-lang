@@ -1,0 +1,17 @@
+resource Item {
+    value: u32
+    drop {
+        let ignored = if value == 0 {
+            return
+        } else {
+            1
+        }
+        ignored
+    }
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    };
+    0
+}

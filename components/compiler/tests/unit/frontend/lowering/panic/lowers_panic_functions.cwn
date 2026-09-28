@@ -1,0 +1,159 @@
+fn panic_analysis() -> Option<sema::Analysis> {
+    let source = frontend_test_source("fn main() -> u32 { return 42 }\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return None()
+        }
+        Ok(program) => {
+            let analysis = sema::analyze(source.bytes.share(), program)
+            if analysis.errors != 0 {
+                return None()
+            }
+            return Some(move analysis)
+        }
+    }
+}
+
+fn panic_terminator(function: read ir::Function) -> bool {
+    if function.blocks.length() != 1 {
+        return false
+    }
+    loan read function.blocks[0] as block {
+        if block.instructions.length() != 5 {
+            return false
+        }
+        match read block.terminator {
+            Some(ir::TerminatorUnreachable) => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}
+
+fn panic_functions_are_lowered(compiler: read lowering::Compiler) -> bool {
+    if compiler.tables.generated_functions.length() != 10 + compiler.drop_types.length() {
+        return false
+    }
+    var index: usize = 0
+    while index < 10 {
+        loan read compiler.tables.generated_functions[index] as binding {
+            if binding.function >= compiler.output.functions.length() {
+                return false
+            }
+            loan read compiler.output.functions[binding.function] as function {
+                if panic_terminator(function) == false {
+                    return false
+                }
+            }
+        }
+        index = index + 1
+    }
+    return true
+}
+
+fn panic_lowering_test() -> u32 {
+    match panic_analysis() {
+        None => {
+            return 1
+        }
+        Some(analysis) => {
+            var compiler = lowering::compiler_new()
+            match lowering::declare_program(compiler, analysis) {
+                Err(error) => {
+                    return error
+                }
+                Ok(value) => {
+                    value
+                }
+            }
+            match lowering::lower_panics(compiler) {
+                Err(error) => {
+                    return error
+                }
+                Ok(value) => {
+                    value
+                }
+            }
+            if panic_functions_are_lowered(compiler) == false {
+                return 2
+            }
+            if compiler.output.globals.length() != 12 {
+                return 3
+            }
+        }
+    }
+    return 42
+}
+
+fn panic_error<T>(result: take Result<T, u32>, expected: u32) -> bool {
+    match move result {
+        Err(error) => error == expected
+        Ok(value) => {
+            value;
+            false
+        }
+    }
+}
+
+fn panic_binding_errors() -> bool {
+    var compiler = lowering::compiler_new()
+    if panic_error(lowering::lower_panic(compiler, "test", "message"), 83) == false {
+        return false
+    }
+    compiler.tables.generated_functions.push(lowering::NamedFunction {
+            name: "crown_panic_test", function: 0
+        })
+    if panic_error(lowering::lower_panic(compiler, "test", "message"), 84) == false {
+        return false
+    }
+    compiler.tables.globals.push(lowering::NamedGlobal {
+            name: "test", global: 0
+        })
+    if panic_error(lowering::lower_panic(compiler, "test", "message"), 85) == false {
+        return false
+    }
+    compiler.tables.runtime_imports.push(lowering::NamedFunction {
+            name: "write", function: 1
+        })
+    if panic_error(lowering::lower_panic(compiler, "test", "message"), 86) == false {
+        return false
+    }
+    compiler.tables.runtime_imports.push(lowering::NamedFunction {
+            name: "abort", function: 2
+        })
+    return panic_error(lowering::lower_panic(compiler, "test", "message"), 89)
+}
+
+fn panic_instruction_errors() -> bool {
+    let signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+    var function = ir::function_new("panic", move signature, ir::LinkageLocal())
+    if panic_error(lowering::panic_append(function, 0, ir::InstructionGlobalAddress(0)), 90) == false {
+        return false
+    }
+    if panic_error(lowering::panic_append_value(function, 0, ir::InstructionGlobalAddress(0)), 91) == false {
+        return false
+    }
+    match ir::function_add_block(function) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(block) => {
+            return panic_error(lowering::panic_append_value(function, block, ir::InstructionMemorySet(0, 0, 0)), 92)
+        }
+    }
+}
+
+fn main() -> u32 {
+    if panic_binding_errors() == false {
+        return 4
+    }
+    if panic_instruction_errors() == false {
+        return 5
+    }
+    return panic_lowering_test()
+}

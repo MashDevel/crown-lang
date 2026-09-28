@@ -1,0 +1,24 @@
+module frontend {
+    fn parser_module(parser: write Parser, program: write Program) -> void {
+        if parser_enter(parser) == false {
+            return
+        }
+        let start = parser_expect(parser, TokenModule())
+        let name = parser_identifier(parser)
+        let leaf = sema::name_text(parser.source, name)
+        let previous = parser.module_name.clone()
+        parser.module_name = namespace_qualify(previous, leaf)
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            parser_program_item(parser, program)
+            parser_skip_breaks(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        program.modules.push(NamespaceModule {
+                name: parser.module_name.clone(), span: span_through(start.span, end.span)
+            })
+        parser.module_name = move previous
+        parser.depth = parser.depth - 1
+    }
+}

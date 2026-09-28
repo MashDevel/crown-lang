@@ -1,0 +1,57 @@
+module arm64 {
+    copy enum IntegerOperation {
+        Add, Subtract, Multiply, UnsignedDivide, SignedDivide, And, Or, Xor
+    }
+
+    fn integer_word(operation: IntegerOperation, registers: Registers) -> Result<u32, Text> {
+        let opcode = match operation {
+            IntegerOperation::Add => 2332033024
+            IntegerOperation::Subtract => 3405774848
+            IntegerOperation::Multiply => 2600500224
+            IntegerOperation::UnsignedDivide => 2596276224
+            IntegerOperation::SignedDivide => 2596277248
+            IntegerOperation::And => 2315255808
+            IntegerOperation::Or => 2852126720
+            IntegerOperation::Xor => 3388997632
+        }
+        return register_word(opcode, registers)
+    }
+
+    copy enum ShiftOperation {
+        Left, LogicalRight, ArithmeticRight, RotateRight
+    }
+
+    fn shift_word(operation: ShiftOperation, registers: Registers) -> Result<u32, Text> {
+        let opcode = match operation {
+            ShiftOperation::Left => 2596282368
+            ShiftOperation::LogicalRight => 2596283392
+            ShiftOperation::ArithmeticRight => 2596284416
+            ShiftOperation::RotateRight => 2596285440
+        }
+        return register_word(opcode, registers)
+    }
+
+    fn add_immediate(destination: u32, source: u32, immediate: u32, subtract: bool) -> Result<u32, Text> {
+        let opcode: u32 = if subtract {
+            3506438144
+        } else {
+            2432696320
+        }
+        return immediate_word(opcode, destination, source, immediate)
+    }
+
+    fn move_wide(destination: u32, immediate: u16, lane: u32, keep: bool) -> Result<u32, Text> {
+        if destination > 30 {
+            return Err("ARM64 move destination must be a general register")
+        }
+        if lane > 3 {
+            return Err("ARM64 move lane exceeds 3")
+        }
+        let opcode: u32 = if keep {
+            4068474880
+        } else {
+            3531603968
+        }
+        return Ok(opcode | destination |(u32.from(immediate) << 5) |(lane << 21))
+    }
+}

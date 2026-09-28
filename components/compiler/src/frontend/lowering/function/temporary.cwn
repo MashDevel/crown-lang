@@ -1,0 +1,55 @@
+module lowering {
+    struct Temporary {
+        address: usize
+        value_type: sema::Type
+        transfer: bool
+        depth: usize
+    }
+
+    fn stage_owned_place(compiler: write FunctionCompiler, symbols: sema::Symbols, place: take Place) -> void {
+        if sema::type_is_copy_with_symbols(symbols, place.value_type) {
+            return
+        }
+        compiler.temporaries.push(Temporary {
+                address: place.address, value_type: sema::type_copy(place.value_type), transfer: true, depth: compiler.scope_depth
+            })
+    }
+
+    fn release_temporaries(compiler: write FunctionCompiler, start: usize) -> void {
+        while compiler.temporaries.length() > start {
+            compiler.temporaries.pop()
+        }
+    }
+
+    fn emit_temporary_cleanup(compiler: write FunctionCompiler, start: usize) -> Result<void, u32> {
+        if expression_terminated(compiler) {
+            return Ok(())
+        }
+        var index = compiler.temporaries.length()
+        while index > start {
+            index = index - 1
+            if compiler.temporaries[index].transfer == false {
+                drop_temporary(compiler, index)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn emit_temporary_depth(compiler: write FunctionCompiler, depth: usize) -> Result<void, u32> {
+        var index = compiler.temporaries.length()
+        while index > 0 {
+            index = index - 1
+            if compiler.temporaries[index].depth == depth {
+                drop_temporary(compiler, index)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn drop_temporary(compiler: write FunctionCompiler, index: usize) -> Result<void, u32> {
+        let value = Place {
+            address: compiler.temporaries[index].address, value_type: sema::type_copy(compiler.temporaries[index].value_type)
+        }
+        return drop_value(compiler, value)
+    }
+}

@@ -1,0 +1,150 @@
+module macho {
+    struct ObjectReader {
+        bytes: Vec<u8>, output: object::CompilerObject,
+        addresses: Vec<u64>, relocation_offsets: Vec<usize>, relocation_counts: Vec<usize>,
+        symbol_offset: usize, symbol_count: usize, strings: usize, string_size: usize
+    }
+
+    fn read_object(bytes: take Vec<u8>) -> Result<object::CompilerObject, Text> {
+        let architecture = validate_object_header(bytes)?
+        var reader = ObjectReader {
+            bytes: move bytes, output: object::new(), addresses: Vec<u64>.new(),
+            relocation_offsets: Vec<usize>.new(), relocation_counts: Vec<usize>.new(),
+            symbol_offset: 0, symbol_count: 0, strings: 0, string_size: 0
+        }
+        reader.output.architecture = architecture
+        read_commands(reader)?
+        read_symbols(reader)?
+        read_relocations(reader)?
+        match object::validate_relocatable(reader.output) {
+            Err(error) => {
+                error;
+                return Err("invalid Mach-O object contents")
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return Ok(replace(reader.output, object::new()))
+    }
+
+    fn validate_object_header(bytes: Vec<u8>) -> Result<object::Architecture, Text> {
+        if link_binary::number(bytes, 0, 4)? != 4277009103 || link_binary::number(bytes, 12, 4)? != 1 {
+            return Err("external object must be a 64-bit Mach-O object")
+        }
+        let cpu = link_binary::number(bytes, 4, 4)?
+        if cpu == 16777223 {
+            return Ok(object::ArchitectureX86_64())
+        }
+        if cpu == 16777228 &&(link_binary::number(bytes, 8, 4)? & 16777215) == 0 {
+            return Ok(object::ArchitectureArm64())
+        }
+        return Err("unsupported Mach-O object architecture")
+    }
+
+    fn read_commands(reader: write ObjectReader) -> Result<void, Text> {
+        let count = usize.from(link_binary::number(reader.bytes, 16, 4)?)
+        let end: usize = 32 + usize.from(link_binary::number(reader.bytes, 20, 4)?)
+        if end > reader.bytes.length() {
+            return Err("truncated Mach-O commands")
+        }
+        var offset: usize = 32
+        for index in 0..count {
+            let size = read_command(reader, offset, end)?
+            offset = offset + size
+        }
+        if offset != end {
+            return Err("inconsistent Mach-O command size")
+        }
+        return Ok(())
+    }
+
+    fn read_command(reader: write ObjectReader, offset: usize, end: usize) -> Result<usize, Text> {
+        let kind = link_binary::number(reader.bytes, offset, 4)?
+        let size = usize.from(link_binary::number(reader.bytes, offset + 4, 4)?)
+        validate_command_size(offset, size, end)?
+        if kind == 25 {
+            read_segment(reader, offset, size)?
+        }
+        if kind == 2 {
+            read_symbol_command(reader, offset, size)?
+        }
+        return Ok(size)
+    }
+
+    fn validate_command_size(offset: usize, size: usize, end: usize) -> Result<void, Text> {
+        if size < 8 || size % 8 != 0 || offset > end || size > end - offset {
+            return Err("invalid Mach-O command size")
+        }
+        return Ok(())
+    }
+
+    fn read_symbol_command(reader: write ObjectReader, offset: usize, size: usize) -> Result<void, Text> {
+        if size != 24 {
+            return Err("invalid Mach-O symbol command")
+        }
+        reader.symbol_offset = usize.from(link_binary::number(reader.bytes, offset + 8, 4)?)
+        reader.symbol_count = usize.from(link_binary::number(reader.bytes, offset + 12, 4)?)
+        reader.strings = usize.from(link_binary::number(reader.bytes, offset + 16, 4)?)
+        reader.string_size = usize.from(link_binary::number(reader.bytes, offset + 20, 4)?)
+        return Ok(())
+    }
+
+    fn read_segment(reader: write ObjectReader, offset: usize, size: usize) -> Result<void, Text> {
+        if size < 72 {
+            return Err("truncated Mach-O segment")
+        }
+        let count = usize.from(link_binary::number(reader.bytes, offset + 64, 4)?)
+        if count >(size - 72) / 80 {
+            return Err("truncated Mach-O section table")
+        }
+        for index in 0..count {
+            read_section(reader, offset + 72 + index * 80)?
+        }
+        return Ok(())
+    }
+
+    fn read_section(reader: write ObjectReader, offset: usize) -> Result<void, Text> {
+        let size = link_binary::number(reader.bytes, offset + 40, 8)?
+        let start = usize.from(link_binary::number(reader.bytes, offset + 48, 4)?)
+        let power = link_binary::number(reader.bytes, offset + 52, 4)?
+        let flags = link_binary::number(reader.bytes, offset + 64, 4)?
+        let maximum = maximum_alignment_power(reader.output.architecture)
+        if power > maximum || size > 2147483647 {
+            return Err("unsupported Mach-O section size or alignment")
+        }
+        let kind = section_kind(flags)?
+        let bytes = if object::section_is_zero_fill(kind) {
+            Vec<u8>.new()
+        } else {
+            link_binary::part(reader.bytes, start, usize.from(size))?
+        }
+        reader.output.sections.push(object::Section {
+                name: std::text::decimal(u64.from(reader.output.sections.length())), kind: move kind,
+                alignment: 1 << power, memory_size: size, data: move bytes
+            })
+        return read_section_relocations(reader, offset)
+    }
+
+    fn section_kind(flags: u64) -> Result<object::SectionKind, Text> {
+        let kind = flags & 255
+        if kind > 5 && kind != 16 {
+            return Err("unsupported Mach-O section kind")
+        }
+        if (flags & 255) == 1 {
+            return Ok(object::SectionZeroFill())
+        }
+        if (flags & 2147484672) != 0 {
+            return Ok(object::SectionText())
+        }
+        return Ok(object::SectionData())
+    }
+
+    fn read_section_relocations(reader: write ObjectReader, offset: usize) -> Result<void, Text> {
+        reader.addresses.push(link_binary::number(reader.bytes, offset + 32, 8)?)
+        reader.relocation_offsets.push(usize.from(link_binary::number(reader.bytes, offset + 56, 4)?))
+        reader.relocation_counts.push(usize.from(link_binary::number(reader.bytes, offset + 60, 4)?))
+        return Ok(())
+    }
+
+}

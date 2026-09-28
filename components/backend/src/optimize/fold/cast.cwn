@@ -1,0 +1,134 @@
+module optimize {
+    fn fold_cast(function: ir::Function, kind: ir::InstructionKind) -> Option<ir::Constant> {
+        match read kind {
+            ir::InstructionCast(operator, value, target) => {
+                let input = CastInput {
+                    operator: operator
+                    value: value
+                    target: target
+                }
+                return fold_cast_input(function, input)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn fold_cast_input(function: ir::Function, input: CastInput) -> Option<ir::Constant> {
+        match ir::function_constant_value(function, input.value) {
+            None => {
+                return None()
+            }
+            Some(constant) => {
+                if cast_is_bitcast(input.operator) {
+                    return fold_bitcast(move constant, input.target)
+                }
+                match move constant {
+                    ir::ConstantInteger(value) => {
+                        return fold_integer_cast(function, input, value)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+        }
+    }
+
+    fn cast_is_bitcast(operator: ir::CastOperator) -> bool {
+        match read operator {
+            ir::CastBitcast => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn fold_integer_cast(function: ir::Function, input: CastInput, constant: u64) -> Option<ir::Constant> {
+        var output: ir::Constant = ir::ConstantInteger(constant)
+        match read input.operator {
+            ir::CastTruncate => {
+            }
+            ir::CastZeroExtend => {
+                if integer_bits(input.target) == 128 {
+                    output = ir::ConstantWideInteger(ir::WideInteger {
+                            low: constant, high: 0
+                        })
+                }
+            }
+            ir::CastSignExtend => {
+                match ir::function_value_type(function, input.value) {
+                    Some(source) => {
+                        output = sign_extended_constant(constant, source, input.target)
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+        return Some(ir::constant_normalized(output, input.target))
+    }
+
+    fn sign_extended_constant(value: u64, source: ir::Type, target: ir::Type) -> ir::Constant {
+        let source_mask = ir::integer_mask(source)
+        let negative = (value & sign_bit(source)) != 0
+        var low = value & source_mask
+        if negative {
+            low = low | ~source_mask
+        }
+        if integer_bits(target) == 128 {
+            var high: u64 = 0
+            if negative {
+                high = 18446744073709551615
+            }
+            return ir::ConstantWideInteger(ir::WideInteger {
+                    low: low, high: high
+                })
+        }
+        return ir::ConstantInteger(low)
+    }
+
+    fn fold_bitcast(constant: take ir::Constant, target: ir::Type) -> Option<ir::Constant> {
+        match move constant {
+            ir::ConstantInteger(value) => {
+                if ir::type_is_integer(target) {
+                    let output = ir::ConstantInteger(value)
+                    return Some(ir::constant_normalized(output, target))
+                }
+                if ir::type_is_float32(target) {
+                    return Some(ir::ConstantFloat32(u32.from(value & 4294967295)))
+                }
+                if ir::type_is_float64(target) {
+                    return Some(ir::ConstantFloat64(value))
+                }
+                return None()
+            }
+            ir::ConstantFloat32(value) => {
+                return float_bitcast_target(ir::ConstantFloat32(value), u64.from(value), target, ir::TypeFloat(ir::FloatWidth32()))
+            }
+            ir::ConstantFloat64(value) => {
+                return float_bitcast_target(ir::ConstantFloat64(value), value, target, ir::TypeFloat(ir::FloatWidth64()))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn float_bitcast_target(constant: take ir::Constant, bits: u64, target: ir::Type, source: ir::Type) -> Option<ir::Constant> {
+        if ir::type_is_integer(target) {
+            return Some(ir::ConstantInteger(bits))
+        }
+        if ir::type_equal(target, source) {
+            return Some(move constant)
+        }
+        None()
+    }
+}

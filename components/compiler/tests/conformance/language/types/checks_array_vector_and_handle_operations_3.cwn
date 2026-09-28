@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let values = [1, 2]
+    values[0] = 3
+    return 0
+}

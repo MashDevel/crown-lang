@@ -1,0 +1,58 @@
+module toolchain {
+    fn fresh(output: Text, input: Text) -> bool {
+        match read_text(std::text::joined(output, ".crown-build")) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(source) => {
+                match cache_matches(output, input, source) {
+                    Ok(value) => {
+                        return value
+                    }
+                    Err(error) => {
+                        error;
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    fn cache_matches(output: Text, input: Text, source: Text) -> Result<bool, Text> {
+        let document = json(source.clone())?
+        json_known_fields(document, document.root, "|input|output|seed|")?
+        let expected_input = json_text(document, json_required(document, document.root, "input")?)?
+        let expected_output = json_text(document, json_required(document, document.root, "output")?)?
+        return Ok(std::text::equal(expected_input, input) && std::text::equal(expected_output, digest(output)?))
+    }
+
+    fn record(output: Text, input: Text) -> Result<void, Text> {
+        return record_build(output, input, None())
+    }
+
+    fn record_bootstrap(output: Text, input: Text, seed: Text) -> Result<void, Text> {
+        return record_build(output, input, Some(digest(seed)?))
+    }
+
+    fn record_build(output: Text, input: Text, seed: Option<Text>) -> Result<void, Text> {
+        var state = "{\"input\":"
+        std::text::append(state, json_quoted(input))
+        std::text::append(state, ",\"output\":")
+        std::text::append(state, json_quoted(digest(output)?))
+        match read seed {
+            Some(value) => {
+                std::text::append(state, ",\"seed\":")
+                std::text::append(state, json_quoted(value))
+            }
+            None => {
+            }
+        }
+        std::text::append(state, "}\n")
+        let temporary = temporary(parent_path(output))?
+        let path = path_join(temporary_path(temporary), "record")
+        write_text(path, state)?
+        return rename_file(path, std::text::joined(output, ".crown-build"))
+    }
+
+}

@@ -1,0 +1,152 @@
+module lowering {
+    fn lower_drop_glue(compiler: write Compiler, input: ProgramInput) -> Result<void, u32> {
+        var index: usize = 0
+        while index < compiler.drop_types.length() {
+            var value_type = sema::Invalid()
+            loan read compiler.drop_types[index] as value {
+                value_type = sema::type_copy(value)
+            }
+            let key = drop_function_key(value_type)
+            var function = generated_function_compiler(compiler, key)?
+            let status = lower_drop_body(function, input, value_type)
+            swap(compiler.tables, function.tables)
+            match status {
+                Err(error) => {
+                    return Err(error)
+                }
+                Ok(value) => {
+                    value
+                }
+            }
+            var target: usize = 0
+            match find_generated_function(compiler, key) {
+                Some(value) => {
+                    target = value
+                }
+                None => {
+                    return Err(222)
+                }
+            }
+            if target >= compiler.output.functions.length() {
+                return Err(223)
+            }
+            replace_generated_functions(compiler, function.lowered_generated)?
+            compiler.output.functions[target] = take_function_ir(function)
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn run_resource_drop(compiler: write FunctionCompiler, input: ProgramInput, request: Place) -> Result<void, u32> {
+        match read request.value_type {
+            sema::NamedType(symbol, arguments) => {
+                arguments
+                if symbol >= input.analysis.checker.symbols.types.length() {
+                    return Err(227)
+                }
+                match read input.analysis.checker.symbols.types[symbol].kind {
+                    sema::Resource(opaque_value, transferable) => {
+                        opaque_value
+                        let search = ResourceDropSearch {
+                            request: drop_value_copy(request), symbol: symbol
+                        }
+                        return find_resource_drop(compiler, input, search)
+                    }
+                    _ => {
+                        return Ok(())
+                    }
+                }
+            }
+            _ => {
+                return Ok(())
+            }
+        }
+    }
+
+    struct ResourceDropSearch {
+        request: Place
+        symbol: usize
+    }
+
+    fn find_resource_drop(compiler: write FunctionCompiler, input: ProgramInput, search: ResourceDropSearch) -> Result<void, u32> {
+        var index: usize = 0
+        while index < input.program.resources.length() {
+            loan read input.program.resources[index] as declaration {
+                var expected = frontend::Name {
+                    text: "", span: frontend::Span {
+                        source: 0, start: 0, end: 0, line: 0, column: 0
+                    }
+                }
+                loan read input.analysis.checker.symbols.types[search.symbol] as value {
+                    expected = frontend::name_copy(value.name)
+                }
+                if sema::names_equal(input.analysis.checker.symbols.source, declaration.name, expected) {
+                    let lowering = ResourceDropLowering {
+                        resource_index: index, request: drop_value_copy(search.request)
+                    }
+                    return lower_resource_drop(compiler, input, lowering)
+                }
+            }
+            index = index + 1
+        }
+        return Err(228)
+    }
+
+    struct ResourceDropLowering {
+        resource_index: usize
+        request: Place
+    }
+
+    fn lower_resource_drop(compiler: write FunctionCompiler, input: ProgramInput, lowering: ResourceDropLowering) -> Result<void, u32> {
+        if lowering.resource_index >= input.program.resources.length() {
+            return Err(229)
+        }
+        let previous = sema::types_copy(compiler.substitutions)
+        match read lowering.request.value_type {
+            sema::NamedType(symbol, arguments) => {
+                compiler.substitutions = sema::parameter_values(input.analysis.checker.symbols.types[symbol].type_parameters, arguments)
+            }
+            _ => {
+            }
+        }
+        function_push_scope(compiler)
+        var index: usize = 0
+        while index < input.program.resources[lowering.resource_index].fields.length() {
+            loan read input.program.resources[lowering.resource_index].fields[index] as field {
+                let layout = layout_field(input.analysis.checker.symbols, lowering.request.value_type, field.name)?
+                let address = function_offset(compiler, lowering.request.address, layout.offset)?
+                function_add_binding(compiler, Binding {
+                        name: frontend::name_copy(field.name), value_type: sema::type_copy(layout.value_type), address: address, owned: false, available: true, depth: compiler.scope_depth
+                    })
+            }
+            index = index + 1
+        }
+        loan read input.program.resources[lowering.resource_index] as declaration {
+            coverage_line(compiler, declaration.span)?
+            function_statements(compiler, input.analysis, declaration.drop_body)?
+        }
+        function_pop_scope(compiler)?
+        compiler.substitutions = move previous
+        return Ok(())
+    }
+
+    fn drop_value_copy(value: Place) -> Place {
+        return Place {
+            address: value.address, value_type: sema::type_copy(value.value_type)
+        }
+    }
+
+    fn lower_drop_body(state: write FunctionCompiler, input: ProgramInput, value_type: sema::Type) -> Result<void, u32> {
+        function_start(state)?
+        if state.ir.parameters.length() != 1 {
+            return Err(221)
+        }
+        let value_drop = Place {
+            address: state.ir.parameters[0], value_type: sema::type_copy(value_type)
+        }
+        run_resource_drop(state, input, value_drop)?
+        drop_value_inline(state, input.analysis.checker.symbols, value_drop)?
+        function_finish(state, ir::TerminatorReturn(None()))?
+        return Ok(())
+    }
+}

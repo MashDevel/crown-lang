@@ -1,0 +1,4 @@
+const BAD: u32 = 0 - 1
+fn main() -> u32 {
+    0
+}

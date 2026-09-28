@@ -1,0 +1,47 @@
+module lowering {
+    struct NumericStatic {
+        target: sema::Type, bits: bool
+    }
+    fn numeric_static(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let target = function_expression_type(compiler, analysis, expression)?
+        return numeric_static_kind(compiler, analysis, expression.kind, move target)
+    }
+    fn numeric_static_kind(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind, target: take sema::Type) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference
+                if arguments.length() != 1 {
+                    return Err(160)
+                }
+                let bits = sema::name_is(analysis.checker.symbols.source, method, "from_bits")
+                if bits == false && sema::name_is(analysis.checker.symbols.source, method, "from") == false {
+                    return Err(161)
+                }
+                loan read arguments[0] as argument {
+                    return numeric_static_value(compiler, analysis, argument, NumericStatic {
+                            target: move target, bits: bits
+                        })
+                }
+            }
+            _ => {
+                return Err(162)
+            }
+        }
+    }
+    fn numeric_static_value(compiler: write FunctionCompiler, analysis: sema::Analysis, argument: frontend::Expression, request: take NumericStatic) -> Result<Value, u32> {
+        let value = function_scalar_expression(compiler, analysis, argument)?
+        if request.bits {
+            if sema::builtin_is_float(sema::type_builtin(request.target)) {
+                return float_bitcast(compiler, analysis.checker.symbols, FloatBitcast {
+                        value: value, target: sema::type_copy(request.target)
+                    })
+            }
+            return Ok(ScalarValue(value, sema::type_copy(request.target)))
+        }
+        let source = function_expression_type(compiler, analysis, argument)?
+        let converted = integer_conversion(compiler, analysis.checker.symbols, Conversion {
+                value: value, source: move source, target: sema::type_copy(request.target)
+            })?
+        return Ok(ScalarValue(converted, sema::type_copy(request.target)))
+    }
+}

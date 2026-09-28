@@ -1,0 +1,46 @@
+module x86 {
+    struct MemoryCopyAddress {
+        base: Register
+        offset: i32
+    }
+
+    fn codegen_copy_exact(compiler: write FunctionCompiler, source: MemoryCopyAddress, destination: MemoryCopyAddress, size: u64) -> Result<void, CodegenError> {
+        if size == 0 {
+            return Ok(())
+        }
+        if size > 2147483647 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        let last = i32.from(size - 1)
+        if source.offset > 2147483647 - last || destination.offset > 2147483647 - last {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        var offset: u64 = 0
+        while offset < size {
+            let width = codegen_memory_chunk_width(size - offset)
+            codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                        destination: Rax(), base: source.base, offset: source.offset + i32.from(offset)
+                        width: width, extension: ZeroExtend()
+                    }))
+            codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                        base: destination.base, offset: destination.offset + i32.from(offset)
+                        source: Rax(), width: width
+                    }))
+            offset = offset +(u64.from(1) << u64.from(width_code(width)))
+        }
+        return Ok(())
+    }
+
+    fn codegen_memory_chunk_width(remaining: u64) -> Width {
+        if remaining >= 8 {
+            return Qword()
+        }
+        if remaining >= 4 {
+            return Dword()
+        }
+        if remaining >= 2 {
+            return Word()
+        }
+        return Byte()
+    }
+}

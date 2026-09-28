@@ -1,0 +1,177 @@
+module optimize {
+    struct Definition {
+        block: usize
+        instruction: usize
+    }
+
+    fn dce(function: write ir::Function) -> usize {
+        var uses = value_uses(function)
+        let definitions = value_definitions(function)
+        var removed = false_values(function.values.length())
+        var pending = unused_definitions(uses, definitions)
+        var state = DceState {
+            uses: move uses, definitions: move definitions, removed: move removed, pending: move pending
+        }
+        while state.pending.length() > 0 {
+            match state.pending.pop() {
+                Some(value) => {
+                    remove_unused_value(function, state, value)
+                }
+                None => {
+                }
+            }
+        }
+        let count = count_true(state.removed)
+        if count != 0 {
+            remove_results(function, state.removed, result_marked)
+        }
+        return count
+    }
+
+    fn value_uses(function: ir::Function) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(0);
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index].kind as kind {
+                    count_value_uses(ir::instruction_operands(kind), output)
+                }
+                index = index + 1
+            }
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    count_value_uses(ir::terminator_operands(terminator), output)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn count_value_uses(operands: take Vec<usize>, uses: write Vec<usize>) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            uses[operands[index]] = uses[operands[index]] + 1
+            index = index + 1
+        }
+    }
+
+    fn value_definitions(function: ir::Function) -> Vec<Option<Definition>> {
+        var output = Vec<Option<Definition>>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(None());
+            index = index + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            index = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        output[result] = Some(Definition {
+                                block: block, instruction: index
+                            })
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn unused_definitions(uses: Vec<usize>, definitions: Vec<Option<Definition>>) -> Vec<usize> {
+        var output = Vec<usize>.new()
+        var value: usize = 0
+        while value < definitions.length() {
+            var defined = false
+            match read definitions[value] {
+                Some(location) => {
+                    location.block;
+                    defined = true
+                }
+                None => {
+                }
+            }
+            if defined && uses[value] == 0 {
+                output.push(value)
+            }
+            value = value + 1
+        }
+        return move output
+    }
+
+    fn remove_unused_value(function: ir::Function, state: write DceState, value: usize) -> void {
+        if state.removed[value] {
+            return
+        }
+        var location: Option<Definition> = None()
+        match read state.definitions[value] {
+            Some(found) => {
+                location = Some(Definition {
+                        block: found.block, instruction: found.instruction
+                    })
+            }
+            None => {
+                return
+            }
+        }
+        match move location {
+            None => {
+            }
+            Some(found) => {
+                loan read function.blocks[found.block].instructions[found.instruction] as instruction {
+                    if ir::instruction_removable(instruction.kind) == false {
+                        return
+                    }
+                    state.removed[value] = true
+                    decrement_uses(ir::instruction_operands(instruction.kind), state.uses, state.pending)
+                }
+            }
+        }
+    }
+
+    fn decrement_uses(operands: take Vec<usize>, uses: write Vec<usize>, pending: write Vec<usize>) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            let value = operands[index]
+            if uses[value] != 0 {
+                uses[value] = uses[value] - 1
+                if uses[value] == 0 {
+                    pending.push(value)
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn count_true(values: Vec<bool>) -> usize {
+        var output: usize = 0
+        var index: usize = 0
+        while index < values.length() {
+            if values[index] {
+                output = output + 1
+            }
+            index = index + 1
+        }
+        return output
+    }
+
+    struct DceState {
+        uses: Vec<usize>
+        definitions: Vec<Option<Definition>>
+        removed: Vec<bool>
+        pending: Vec<usize>
+    }
+}

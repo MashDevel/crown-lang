@@ -1,0 +1,90 @@
+fn test_sequence() -> u32 {
+    for length in 0..40 {
+        var values = Vec<u32>.new()
+        for index in 0..length {
+            values.push(u32.from((index * 17 + 3) % 11))
+        }
+        let original = std::sequence::clone(values, fn(value) {
+                return value
+            })
+        std::sequence::sort(values, compare_sequence_numbers)
+        if !sequence_sorted_permutation(values, original) {
+            return 1
+        }
+    }
+    return test_sequence_owned()
+}
+
+fn compare_sequence_numbers(left: u32, right: u32) -> i32 {
+    if left < right {
+        return -1
+    }
+    if left > right {
+        return 1
+    }
+    return 0
+}
+
+fn sequence_sorted_permutation(values: Slice<u32>, original: Slice<u32>) -> bool {
+    for index in 1..values.length() {
+        if values[index - 1] > values[index] {
+            return false
+        }
+    }
+    for number in 0..11 {
+        var before: u32 = 0
+        var after: u32 = 0
+        std::sequence::for_each(original, fn[read number, write before](value) {
+                if value == u32.from(number) {
+                    before += 1
+                }
+            })
+        std::sequence::for_each(values, fn[read number, write after](value) {
+                if value == u32.from(number) {
+                    after += 1
+                }
+            })
+        if before != after {
+            return false
+        }
+    }
+    return true
+}
+
+fn test_sequence_owned() -> u32 {
+    let values = ["λ", "a", "a", ""]
+    var cloned = std::sequence::clone(values, fn(value) {
+            return value.clone()
+        })
+    std::sequence::append(cloned, values[0..1], fn(value) {
+            return value.clone()
+        })
+    let descending: i32 = -1
+    std::sequence::sort(cloned, fn[read descending](left, right) {
+            return std::text::compare(left, right) * descending
+        })
+    let expected = ["λ", "λ", "a", "a", ""]
+    if !std::sequence::equal(cloned, expected, fn(left, right) {
+            return std::text::equal(left, right)
+        }) {
+        return 2
+    }
+    if std::sequence::equal(cloned, values, fn(left, right) {
+            return std::text::equal(left, right)
+        }) {
+        return 3
+    }
+    cloned[0] = "changed"
+    if std::sequence::equal(cloned, expected, fn(left, right) {
+            return std::text::equal(left, right)
+        }) {
+        return 4
+    }
+    let empty = Vec<Text>.new()
+    if !std::sequence::equal(empty, empty, fn(left, right) {
+            return std::text::equal(left, right)
+        }) {
+        return 5
+    }
+    return 0
+}

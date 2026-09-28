@@ -1,0 +1,55 @@
+module arm64 {
+    fn compile_compare(function: ir::Function, compiler: write Compiler, operator: ir::CompareOperator, left: usize, right: usize) -> Result<void, Text> {
+        let value_type = function.values[left]
+        if value_size(value_type)? == 16 {
+            return wide_compare(function, compiler, operator, left, right)
+        }
+        value_load(compiler, left, 9)
+        value_load(compiler, right, 10)
+        if ir::compare_is_float(operator) {
+            let double = ir::type_is_float64(value_type)
+            emit_encoding(compiler, float_move_bits(0, 9, true, double))
+            emit_encoding(compiler, float_move_bits(1, 10, true, double))
+            emit_encoding(compiler, float_compare(0, 1, double))
+        } else {
+            normalize(compiler, value_type, 9, ir::compare_is_signed(operator))
+            normalize(compiler, value_type, 10, ir::compare_is_signed(operator))
+            emit_encoding(compiler, compare_word(9, 10))
+        }
+        immediate(compiler, 9, 1)
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 9, left: 9, right: 31
+                }, compare_condition(operator)?))
+        if operator == ir::CompareFloatOrderedNotEqual() {
+            emit_encoding(compiler, select_word(Registers {
+                        destination: 9, left: 31, right: 9
+                    }, 6))
+        }
+        return Ok(())
+    }
+    fn compare_condition(operator: ir::CompareOperator) -> Result<u32, Text> {
+        match operator {
+            ir::CompareEqual | ir::CompareFloatOrderedEqual => Ok(0)
+            ir::CompareNotEqual | ir::CompareFloatOrderedNotEqual | ir::CompareFloatUnorderedNotEqual => Ok(1)
+            ir::CompareSignedLess => Ok(11)
+            ir::CompareSignedLessEqual => Ok(13)
+            ir::CompareSignedGreater => Ok(12)
+            ir::CompareSignedGreaterEqual => Ok(10)
+            _ => unsigned_float_condition(operator)
+        }
+    }
+    fn unsigned_float_condition(operator: ir::CompareOperator) -> Result<u32, Text> {
+        match operator {
+            ir::CompareUnsignedLess => Ok(3)
+            ir::CompareUnsignedLessEqual => Ok(9)
+            ir::CompareUnsignedGreater => Ok(8)
+            ir::CompareUnsignedGreaterEqual => Ok(2)
+            ir::CompareFloatOrderedLess => Ok(4)
+            ir::CompareFloatOrderedLessEqual => Ok(9)
+            ir::CompareFloatOrderedGreater => Ok(12)
+            ir::CompareFloatOrderedGreaterEqual => Ok(10)
+            _ => Err("invalid ARM64 comparison")
+        }
+    }
+
+}

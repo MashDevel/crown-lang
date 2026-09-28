@@ -1,0 +1,119 @@
+fn fixture_object() -> Result<object::CompilerObject, Text> {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::MoveImmediate(x86::Rax(), 42))
+    instructions.push(x86::Return())
+    var program = x86::program_new("entry")
+    match x86::program_add_function(program, x86::function_new("entry", move instructions)) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err("could not construct ELF fixture")
+        }
+    }
+    match x86::encode_program(program) {
+        Ok(value) => Ok(move value)
+        Err(error) => {
+            error;
+            Err("could not encode ELF fixture")
+        }
+    }
+}
+
+fn fixture_options() -> Result<elf::Options, Text> {
+    return Ok(elf::Options {
+            interpreter: "/lib64/ld-linux-x86-64.so.2", libraries: elf::libraries(Vec<Text>.new())?, versions: Vec<elf::SymbolVersion>.new()
+        })
+}
+
+fn executable_headers() -> Result<void, Text> {
+    let bytes = elf::executable(fixture_object()?, fixture_options()?)?
+    testing::expect(std::text::equal(elf::interpreter(bytes)?, "/lib64/ld-linux-x86-64.so.2"), "ELF interpreter round trip")?
+    testing::expect(link_binary::number(bytes, 18, 2)? == 62, "x86-64 ELF machine")?
+    testing::expect(link_binary::number(bytes, 56, 2)? == 6, "ELF program header count")?
+    return segment_permissions(bytes)
+}
+
+fn segment_permissions(bytes: Vec<u8>) -> Result<void, Text> {
+    testing::expect(link_binary::number(bytes, 180, 4)? == 5, "ELF text is executable and not writable")?
+    testing::expect(link_binary::number(bytes, 236, 4)? == 6, "ELF data is writable and not executable")?
+    testing::expect(link_binary::number(bytes, 344, 4)? == 1685382481, "ELF stack header")?
+    return testing::expect(link_binary::number(bytes, 348, 4)? == 6, "ELF stack is not executable")
+}
+
+fn malformed_headers() -> Result<void, Text> {
+    testing::error(elf::interpreter(Vec<u8>.new()))?
+    var bytes = elf::executable(fixture_object()?, fixture_options()?)?
+    bytes[4] = 1
+    testing::error(elf::interpreter(bytes))?
+    bytes[4] = 2
+    link_binary::put(bytes, 32, 18446744073709551615, 8)
+    testing::error(elf::interpreter(bytes))?
+    return malformed_interpreter(bytes)
+}
+
+fn malformed_interpreter(bytes: write Vec<u8>) -> Result<void, Text> {
+    link_binary::put(bytes, 32, 64, 8)
+    link_binary::put(bytes, 152, 0, 8)
+    testing::error(elf::interpreter(bytes))?
+    link_binary::put(bytes, 152, 4097, 8)
+    testing::error(elf::interpreter(bytes))?
+    return Ok(())
+}
+
+fn alignment_bounds() -> Result<void, Text> {
+    var image = elf::image_new()
+    testing::expect(elf::reserve(image, 65536, 1)? == 65536, "ELF maximum alignment")?
+    testing::error(elf::reserve(image, 0, 0))?
+    testing::error(elf::reserve(image, 3, 0))?
+    testing::error(elf::reserve(image, 131072, 0))?
+    testing::error(elf::reserve(image, 1, elf::IMAGE_LIMIT + 1))?
+    return Ok(())
+}
+
+fn relocation_bounds() -> Result<void, Text> {
+    testing::expect(elf::relative(2147483647, 0)? == 2147483647, "ELF positive relative boundary")?
+    testing::expect(elf::relative(0, 2147483648)? == -2147483648, "ELF negative relative boundary")?
+    testing::error(elf::relative(2147483648, 0))?
+    testing::error(elf::relative(0, 2147483649))?
+    testing::error(elf::relative(18446744073709551615, 0))?
+    return Ok(())
+}
+
+fn invalid_inputs() -> Result<void, Text> {
+    testing::error(elf::executable(object::new(), fixture_options()?))?
+    var image = elf::image_new()
+    testing::error(elf::write_interpreter(image, "relative"))?
+    testing::error(elf::write_interpreter(image, "/bad\0path"))?
+    testing::error(elf::libraries(testing::list("-framework|AppKit")))?
+    testing::error(elf::library_name("-l"))?
+    return Ok(())
+}
+
+fn imported_data_requires_indirection() -> Result<void, Text> {
+    var object = fixture_object()?
+    let symbol = object.symbols.length()
+    object.symbols.push(object::Symbol {
+            name: "external_data", kind: object::SymbolData(), binding: object::SymbolImport(),
+            section: None(), offset: 0, size: 8
+        })
+    object.relocations.push(object::Relocation {
+            section: 0, offset: 0, kind: object::RelocationPcRelative32(), symbol: symbol, subtract: None(), addend: -4
+        })
+    return testing::error(elf::executable(move object, fixture_options()?))
+}
+
+fn run() -> Result<void, Text> {
+    executable_headers()?
+    malformed_headers()?
+    alignment_bounds()?
+    relocation_bounds()?
+    invalid_inputs()?
+    imported_data_requires_indirection()?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

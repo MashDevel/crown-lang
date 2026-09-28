@@ -1,0 +1,80 @@
+fn parsed_shape(program: read frontend::Program) -> bool {
+    if program.structs.length() != 1 || program.enums.length() != 1 {
+        return false
+    }
+    if program.functions.length() != 1 {
+        return false
+    }
+    if program.structs[0].parameters.length() != 1 || program.structs[0].fields.length() != 2 {
+        return false
+    }
+    if program.enums[0].parameters.length() != 1 || program.enums[0].variants.length() != 2 {
+        return false
+    }
+    return parsed_function_shape(program.functions[0])
+}
+
+fn valid_parse() -> bool {
+    let source = frontend_test_source("struct Pair<T> { left: T, right: T }\nenum Choice<T> { Some(T), None }\nfn choose(value: read u32) -> u32 {\nvar next = value + 1\nif next > 2 { return next }\nreturn 2\n}\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return false
+        }
+        Ok(program) => {
+            return parsed_shape(program)
+        }
+    }
+}
+
+fn invalid_parse() -> bool {
+    let source = frontend_test_source("fn")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Ok(program) => {
+            program;
+            return false
+        }
+        Err(diagnostics) => {
+            return diagnostics.length() != 0
+        }
+    }
+}
+
+fn main() -> u32 {
+    if valid_parse() == false {
+        return 1
+    }
+    if invalid_parse() == false {
+        return 2
+    }
+    return 42
+}
+
+fn parsed_function_shape(function: frontend::Function) -> bool {
+    if function.parameters.length() != 1 || function.body.length() != 3 {
+        return false
+    }
+    match read function.body[0].kind {
+        frontend::StatementBind(name, mutable, annotation, value) => {
+            name;
+            annotation
+            if mutable == false {
+                return false
+            }
+            match read value.kind {
+                frontend::ExpressionBinary(left, operator, right) => {
+                    left;
+                    operator;
+                    right
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+    true
+}

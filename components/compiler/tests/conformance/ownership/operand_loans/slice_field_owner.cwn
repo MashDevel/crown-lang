@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    var owner = operand_owner()
+    loan read owner.values[consume_owner(move owner)..1] as part {
+        return part[0]
+    }
+}

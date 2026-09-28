@@ -1,0 +1,9 @@
+fn main() -> u32 {
+    let minimum: i32 = -2147483648
+    let large: f64 = 1e308
+    let small: f64 = 5e-324
+    if minimum < 0 && large > small {
+        return 42
+    }
+    return 0
+}

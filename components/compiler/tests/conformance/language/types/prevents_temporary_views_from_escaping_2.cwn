@@ -1,0 +1,6 @@
+fn bad(value: read Slice<u8>) -> Slice<u8> {
+    return value
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,39 @@
+fn changing_address_stores() -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    let base = safety_append(fixture.function, 0, ir::InstructionStackSlot(40, 8))?
+    let width = safety_integer(fixture.function, ir::IntegerWidth64(), 8)
+    let zero = safety_integer(fixture.function, ir::IntegerWidth64(), 0)
+    let one = safety_integer(fixture.function, ir::IntegerWidth64(), 1)
+    let address = loop_store_pointer(fixture.function, fixture.header, fixture.body, base, width)
+    safety_append(fixture.function, fixture.header, ir::InstructionStore(address, zero, 8, false))?
+    safety_append(fixture.function, fixture.body, ir::InstructionStore(address, one, 8, false))?
+    return safety_require(optimize::dead_stores(fixture.function, Shared.new(Vec<optimize::MemoryEffect>.new())) == 0, 2)
+}
+
+fn loop_store_pointer(function: write ir::Function, header: usize, body: usize, base: usize, width: usize) -> usize {
+    let address = ir::function_new_value(function, ir::TypePointer())
+    let next = ir::function_new_value(function, ir::TypePointer())
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(ir::PhiIncoming {
+            block: 0, value: base
+        })
+    incoming.push(ir::PhiIncoming {
+            block: body, value: next
+        })
+    var instructions = Vec<ir::Instruction>.new()
+    instructions.push(ir::Instruction {
+            result: Some(address), kind: ir::InstructionPhi(ir::TypePointer(), move incoming)
+        })
+    for index in 0..function.blocks[header].instructions.length() {
+        instructions.push(ir::instruction_copy(function.blocks[header].instructions[index]))
+    }
+    function.blocks[header].instructions = move instructions
+    function.blocks[body].instructions.push(ir::Instruction {
+            result: Some(next), kind: ir::InstructionOffset(address, width)
+        })
+    return address
+}
+
+fn main() -> u32 {
+    return safety_status(changing_address_stores())
+}

@@ -1,0 +1,130 @@
+module sema {
+    fn builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "i8") {
+            return Some(I8())
+        }
+        if name_is(source, name, "i16") {
+            return Some(I16())
+        }
+        if name_is(source, name, "i32") {
+            return Some(I32())
+        }
+        if name_is(source, name, "i64") {
+            return Some(I64())
+        }
+        if name_is(source, name, "isize") {
+            return Some(ISize())
+        }
+        return unsigned_builtin(source, name)
+    }
+
+    fn unsigned_builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "u8") {
+            return Some(U8())
+        }
+        if name_is(source, name, "u16") {
+            return Some(U16())
+        }
+        if name_is(source, name, "u32") {
+            return Some(U32())
+        }
+        if name_is(source, name, "u64") {
+            return Some(U64())
+        }
+        if name_is(source, name, "usize") {
+            return Some(USize())
+        }
+        return scalar_builtin(source, name)
+    }
+
+    fn scalar_builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "f32") {
+            return Some(F32())
+        }
+        if name_is(source, name, "f64") {
+            return Some(F64())
+        }
+        if name_is(source, name, "bool") {
+            return Some(Bool())
+        }
+        if name_is(source, name, "char") {
+            return Some(Char())
+        }
+        if name_is(source, name, "void") {
+            return Some(Unit())
+        }
+        return constructed_builtin(source, name)
+    }
+
+    fn constructed_builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "Text") {
+            return Some(Text())
+        }
+        if name_is(source, name, "TextView") {
+            return Some(TextView())
+        }
+        if name_is(source, name, "Arguments") {
+            return Some(Arguments())
+        }
+        if name_is(source, name, "ScopedThread") {
+            return Some(ScopedThread())
+        }
+        if name_is(source, name, "Thread") {
+            return Some(Thread())
+        }
+        return container_builtin(source, name)
+    }
+
+    fn container_builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "Vec") {
+            return Some(Vec())
+        }
+        if name_is(source, name, "RawPtr") {
+            return Some(RawPtr())
+        }
+        if name_is(source, name, "Slice") {
+            return Some(Slice())
+        }
+        if name_is(source, name, "Box") {
+            return Some(Box())
+        }
+        if name_is(source, name, "Shared") {
+            return Some(Shared())
+        }
+        return managed_builtin(source, name)
+    }
+
+    fn managed_builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "Mutex") {
+            return Some(Mutex())
+        }
+        if name_is(source, name, "RwLock") {
+            return Some(RwLock())
+        }
+        if name_is(source, name, "Arena") {
+            return Some(Arena())
+        }
+        if name_is(source, name, "Handle") {
+            return Some(Handle())
+        }
+        if name_is(source, name, "Channel") {
+            return Some(Channel())
+        }
+        if name_is(source, name, "Option") {
+            return Some(Option())
+        }
+        if name_is(source, name, "Result") {
+            return Some(Result())
+        }
+        return native_root_builtin(source, name)
+    }
+
+    fn builtin_type_arity(builtin: Builtin) -> usize {
+        match builtin {
+            Vec | RawPtr | Slice | Box | Shared | Mutex | RwLock | Arena | Handle | Channel | Option | NativeRoot | RootToken | RootLease => 1
+            Result => 2
+            _ => 0
+        }
+    }
+
+}

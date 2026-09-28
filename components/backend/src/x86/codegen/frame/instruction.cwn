@@ -1,0 +1,61 @@
+module x86 {
+    fn codegen_allocate_instruction(function: ir::Function, instruction: ir::Instruction, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        var value: usize = 0
+        match read instruction.result {
+            Some(result) => {
+                value = result
+            }
+            None => {
+                return Ok(())
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryStackSlot(size, alignment) => {
+                        let requirements = AllocationRequirements {
+                            size: size, alignment: alignment
+                        }
+                        return codegen_allocate_stack_address(value, requirements, builder)
+                    }
+                    ir::MemoryGlobalAddress(global) => {
+                        builder.locations[value] = Some(ValueGlobalAddress(global))
+                        return Ok(())
+                    }
+                    ir::MemorySymbolAddress(symbol) => {
+                        symbol
+                        builder.locations[value] = Some(ValueSymbolAddress())
+                        return Ok(())
+                    }
+                    ir::MemoryFunctionAddress(function_id) => {
+                        builder.locations[value] = Some(ValueFunctionAddress(function_id))
+                        return Ok(())
+                    }
+                    _ => {
+                        loan read function.values[value] as value_type {
+                            return codegen_allocate_value(value, value_type, builder)
+                        }
+                    }
+                }
+            }
+
+            _ => {
+                loan read function.values[value] as value_type {
+                    return codegen_allocate_value(value, value_type, builder)
+                }
+            }
+        }
+    }
+
+    fn codegen_allocate_stack_address(value: usize, requirements: AllocationRequirements, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        match codegen_allocate_bytes(requirements, builder) {
+            Ok(offset) => {
+                builder.locations[value] = Some(ValueStackAddress(offset))
+                return Ok(())
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+    }
+}

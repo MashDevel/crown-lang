@@ -1,0 +1,87 @@
+fn main() -> u32 {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth64()))
+    let imported = ir::function_new("identity", ir::signature_copy(signature), ir::LinkageImport())
+    var caller = ir::function_new("caller", move signature, ir::LinkageLocal())
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let constant_value = ir::ConstantInteger(u64.from(42))
+    let constant = ir::function_constant(caller, value_type, constant_value)
+    var block: usize = 0
+    match ir::function_add_block(caller) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    var arguments = Vec<usize>.new()
+    arguments.push(constant)
+    var result: usize = 0
+    match ir::function_append(caller, block, ir::InstructionCall(0, move arguments, value_type)) {
+        Err(error) => {
+            error;
+            return 2
+        }
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    result = id
+                }
+                None => {
+                    return 3
+                }
+            }
+        }
+    }
+    match ir::function_terminate(caller, block, ir::TerminatorReturn(Some(result))) {
+        Err(error) => {
+            error;
+            return 4
+        }
+        Ok(value) => {
+            value
+        }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move imported)
+    let caller_id = ir::program_add_function(program, move caller)
+    match x86::codegen_compile_function(program, caller_id) {
+        Err(error) => {
+            error;
+            return 5
+        }
+        Ok(instructions) => {
+            return check_generated_instructions(instructions)
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var argument = false
+    var call = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::MoveImmediate(register, value) => {
+                if x86::register_code(register) == 7 && value == 42 {
+                    argument = true
+                }
+            }
+            x86::Call(name) => {
+                if name.length() == 8 {
+                    call = true
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if argument == false || call == false {
+        return 6
+    }
+    42
+}

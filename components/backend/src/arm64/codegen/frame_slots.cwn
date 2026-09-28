@@ -1,0 +1,45 @@
+module arm64 {
+    struct FrameSlot {
+        offset: u64, size: u64, block: usize, end: usize
+    }
+
+    fn frame_assign_locals(frame: write Frame, function: ir::Function, lifetimes: Vec<FrameLifetime>) -> Result<void, Text> {
+        var slots = Vec<FrameSlot>.new()
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                frame_assign_instruction(frame, function, lifetimes, slots, function.blocks[block].instructions[index])?
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_assign_instruction(frame: write Frame, function: ir::Function, lifetimes: Vec<FrameLifetime>, slots: write Vec<FrameSlot>, instruction: ir::Instruction) -> Result<void, Text> {
+        match instruction.result {
+            Some(value) => {
+                if lifetimes[value].local && frame_register(frame, value) == REGISTER_SPILLED {
+                    let size = frame_value_size(function.values[value])?
+                    frame.values[value] = frame_local_slot(frame, slots, lifetimes[value], size)?
+                }
+            }
+            None => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_local_slot(frame: write Frame, slots: write Vec<FrameSlot>, lifetime: FrameLifetime, size: u64) -> Result<u64, Text> {
+        for index in 0..slots.length() {
+            let available = slots[index].block != lifetime.block || slots[index].end < lifetime.first
+            if available && slots[index].size >= size {
+                slots[index].block = lifetime.block
+                slots[index].end = lifetime.last
+                return Ok(slots[index].offset)
+            }
+        }
+        let offset = frame_reserve(frame, size, u32.from(size))?
+        slots.push(FrameSlot {
+                offset: offset, size: size, block: lifetime.block, end: lifetime.last
+            })
+        return Ok(offset)
+    }
+}

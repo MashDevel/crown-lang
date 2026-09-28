@@ -1,0 +1,3 @@
+[package]
+name = "crown_allocation_auditor"
+sources = ["src", "../../src/frontend", "../../src/coverage", "../../../backend/src", "../../../library/src", "../../../toolchain/src"]

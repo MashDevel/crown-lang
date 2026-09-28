@@ -1,0 +1,58 @@
+module arm64 {
+    fn assembly_symbols(object: object::CompilerObject, output: write Text, prefix: Text) -> Result<void, Text> {
+        for index in 0..object.symbols.length() {
+            loan read object.symbols[index] as symbol {
+                std::text::append(output, ".type ")
+                std::text::append(output, symbol.name)
+                std::text::append(output, if object::symbol_is_function(symbol.kind) {
+                        ",%function\n"
+                    } else {
+                        ",%object\n"
+                    })
+                match read symbol.binding {
+                    object::SymbolGlobal => {
+                        std::text::append(output, ".globl ")
+                        std::text::append(output, symbol.name)
+                        output.push('\n')
+                    }
+                    _ => {
+                    }
+                }
+                match symbol.section {
+                    Some(section) => {
+                        assembly_symbol(output, prefix, symbol, section)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        match object.entry {
+            Some(index) => {
+                std::text::append(output, ".globl main\n")
+                if std::text::equal(object.symbols[index].name, "main") == false {
+                    std::text::append(output, ".set main, ")
+                    std::text::append(output, object.symbols[index].name)
+                    output.push('\n')
+                }
+            }
+            None => {
+            }
+        }
+        return Ok(())
+    }
+    fn assembly_symbol(output: write Text, prefix: Text, symbol: object::Symbol, section: usize) -> void {
+        std::text::append(output, ".set ")
+        std::text::append(output, symbol.name)
+        std::text::append(output, ", ")
+        std::text::append(output, assembly_base(prefix, section))
+        output.push('+')
+        std::text::append(output, std::text::decimal(symbol.offset))
+        std::text::append(output, "\n.size ")
+        std::text::append(output, symbol.name)
+        output.push(',')
+        std::text::append(output, std::text::decimal(symbol.size))
+        output.push('\n')
+    }
+
+}

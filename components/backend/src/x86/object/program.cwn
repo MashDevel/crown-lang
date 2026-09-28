@@ -1,0 +1,99 @@
+module x86 {
+    fn encode_program(program: Program) -> Result<object::CompilerObject, EncodeError> {
+        var encoded = Vec<EncodedFunction>.new()
+        var offset: u64 = 0
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                match encode_function(program, function, offset) {
+                    Ok(value) => {
+                        offset = offset + u64.from(value.bytes.length());
+                        encoded.push(move value)
+                    }
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return build_object(program, encoded)
+    }
+
+    fn build_object(program: Program, encoded: Vec<EncodedFunction>) -> Result<object::CompilerObject, EncodeError> {
+        var object = object::new()
+        var text_section: usize = 0
+        match add_text_section(object, encoded) {
+            Ok(value) => {
+                text_section = value
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+        var state = object_state(text_section)
+        match add_function_symbols(object, state, encoded) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match add_data_sections(program, object, state) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match add_import_symbols(program, object, state) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match add_function_relocations(object, state, encoded) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return finish_object(program, move object, state)
+    }
+
+    fn add_text_section(object: write object::CompilerObject, encoded: Vec<EncodedFunction>) -> Result<usize, EncodeError> {
+        var bytes = Vec<u8>.new()
+        var function_index: usize = 0
+        while function_index < encoded.length() {
+            loan read encoded[function_index] as function {
+                var byte_index: usize = 0
+                while byte_index < function.bytes.length() {
+                    bytes.push(function.bytes[byte_index])
+                    byte_index = byte_index + 1
+                }
+            }
+            function_index = function_index + 1
+        }
+        let memory_size = u64.from(bytes.length())
+        match object::add_section(object, object::Section {
+                name: ".text"
+                kind: object::SectionText()
+                alignment: 16
+                data: move bytes
+                memory_size: memory_size
+            }) {
+            Ok(section) => {
+                return Ok(section)
+            }
+            Err(error) => {
+                return Err(object_error(move error))
+            }
+        }
+    }
+}

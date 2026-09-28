@@ -1,0 +1,9 @@
+enum First { Ready(u32), Empty }
+enum Second { Ready(u32), Empty }
+fn main() -> u32 {
+    let first = First::Ready(20)
+    let second = Second::Ready(22)
+    var total = 0
+    match move first { Ready(value) => { total = value } Empty => {} }
+    match move second { Second::Ready(value) => { return total + value } Second::Empty => { return 0 } }
+}

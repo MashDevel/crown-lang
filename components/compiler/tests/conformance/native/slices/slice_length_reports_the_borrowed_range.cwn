@@ -1,0 +1,9 @@
+fn length(values: read Slice<u32>) -> usize {
+    return values.length()
+}
+fn main() -> u32 {
+    let values = [1, 2, 3, 4]
+    loan read values[1..4] as middle {
+        return u32.from(length(middle))
+    }
+}

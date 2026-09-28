@@ -1,0 +1,37 @@
+module x86 {
+    fn codegen_emit_binary_machine(compiler: write FunctionCompiler, input: take BinaryMachine) -> bool {
+        match read input.operator {
+            ir::BinaryAdd => {
+                codegen_emit(compiler, AddSized(input.destination, input.source, input.width));
+                return true
+            }
+            ir::BinarySubtract => {
+                codegen_emit(compiler, SubtractSized(input.destination, input.source, input.width));
+                return true
+            }
+            ir::BinaryMultiply => {
+                if width_is_byte(input.width) {
+                    codegen_emit(compiler, Multiply(input.destination, input.source))
+                    return false
+                }
+                codegen_emit(compiler, MultiplySized(input.destination, input.source, input.width))
+                return true
+            }
+            ir::BinaryAnd => {
+                codegen_emit(compiler, AndSized(input.destination, input.source, input.width));
+                return true
+            }
+            ir::BinaryOr => {
+                codegen_emit(compiler, OrSized(input.destination, input.source, input.width));
+                return true
+            }
+            ir::BinaryXor => {
+                codegen_emit(compiler, XorSized(input.destination, input.source, input.width));
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

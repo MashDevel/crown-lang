@@ -1,0 +1,12 @@
+extern "c" {
+    fn output(format: RawPtr<u8>,...number: i8, fraction: f32) -> i32 = "printf"
+}
+fn main() -> u32 {
+    let format: [u8; 9] = [37, 100, 32, 37, 46, 49, 102, 10, 0]
+    unsafe {
+        if output(format.as_raw(), -8, 1.5) != 7 {
+            return 1
+        }
+    }
+    return 42
+}

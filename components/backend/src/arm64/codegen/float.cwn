@@ -1,0 +1,72 @@
+module arm64 {
+    fn compile_float_binary(compiler: write Compiler, operator: ir::BinaryOperator, value_type: ir::Type) -> Result<void, Text> {
+        let double = ir::type_is_float64(value_type)
+        emit_encoding(compiler, float_move_bits(0, 9, true, double))
+        emit_encoding(compiler, float_move_bits(1, 10, true, double))
+        if operator == ir::BinaryFloatRemainder() {
+            call_symbol(compiler, if double {
+                    "fmod"
+                } else {
+                    "fmodf"
+                })
+        } else {
+            let operation = match operator {
+                ir::BinaryFloatAdd => FloatOperation::Add()
+                ir::BinaryFloatSubtract => FloatOperation::Subtract()
+                ir::BinaryFloatMultiply => FloatOperation::Multiply()
+                ir::BinaryFloatDivide => FloatOperation::Divide()
+                _ => {
+                    return Err("invalid ARM64 floating operation")
+                }
+            }
+            emit_encoding(compiler, float_word(operation, Registers {
+                        destination: 0, left: 0, right: 1
+                    }, double))
+        }
+        emit_encoding(compiler, float_move_bits(9, 0, false, double))
+        return Ok(())
+    }
+    fn compile_cast(function: ir::Function, compiler: write Compiler, operator: ir::CastOperator, value: usize, target: ir::Type) -> Result<void, Text> {
+        let source = function.values[value]
+        value_load(compiler, value, 9)
+        value_high(compiler, value, 10)
+        match operator {
+            ir::CastSignExtend => {
+                normalize(compiler, source, 9, true)
+                immediate(compiler, 11, 63)
+                emit_encoding(compiler, shift_word(ShiftOperation::ArithmeticRight(), Registers {
+                            destination: 10, left: 9, right: 11
+                        }))
+            }
+            ir::CastZeroExtend => {
+                immediate(compiler, 10, 0)
+            }
+            ir::CastSignedIntegerToFloat | ir::CastUnsignedIntegerToFloat => {
+                if value_size(source)? == 16 {
+                    return wide_to_float(compiler, target, operator == ir::CastSignedIntegerToFloat())
+                }
+                normalize(compiler, source, 9, operator == ir::CastSignedIntegerToFloat())
+                let double = ir::type_is_float64(target)
+                emit_encoding(compiler, float_integer_convert(0, 9, double, operator == ir::CastUnsignedIntegerToFloat(), true))
+                emit_encoding(compiler, float_move_bits(9, 0, false, double))
+            }
+            ir::CastFloatToSignedInteger | ir::CastFloatToUnsignedInteger => {
+                if value_size(target)? == 16 {
+                    return float_to_wide(compiler, source, operator == ir::CastFloatToSignedInteger())
+                }
+                let double = ir::type_is_float64(source)
+                emit_encoding(compiler, float_move_bits(0, 9, true, double))
+                emit_encoding(compiler, float_integer_convert(9, 0, double, operator == ir::CastFloatToUnsignedInteger(), false))
+            }
+            ir::CastFloatExtend | ir::CastFloatTruncate => {
+                emit_encoding(compiler, float_move_bits(0, 9, true, ir::type_is_float64(source)))
+                emit_encoding(compiler, float_convert(0, 0, ir::type_is_float64(target)))
+                emit_encoding(compiler, float_move_bits(9, 0, false, ir::type_is_float64(target)))
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+}

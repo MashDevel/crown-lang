@@ -1,0 +1,16 @@
+module lowering {
+    fn align_scoped_stack(compiler: write FunctionCompiler, stack: write ScopedStack) -> Result<void, u32> {
+        let integer = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, integer, 0)
+        let low = function_integer(compiler, integer, 15)
+        let high = function_integer(compiler, integer, 18446744073709551600)
+        let negative = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), zero, stack.base))?
+        let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), negative, low))?
+        let enough = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedGreaterEqual(), stack.length, offset))?
+        let available = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), stack.length, offset))?
+        let length = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), available, high))?
+        stack.length = function_append_value(compiler, ir::InstructionSelect(enough, length, zero))?
+        stack.base = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), stack.base, offset))?
+        return Ok(())
+    }
+}

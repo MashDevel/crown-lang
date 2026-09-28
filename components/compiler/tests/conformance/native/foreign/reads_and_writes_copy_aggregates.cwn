@@ -1,0 +1,31 @@
+copy struct Pair {
+    first: u32, second: u32
+}
+fn main() -> u32 {
+    var values = Vec<Pair>.new()
+    values.push(Pair {
+            first: 1, second: 2
+        })
+    unsafe {
+        let pointer = values.as_raw()
+        pointer.write(Pair {
+                first: 20, second: 22
+            })
+        let pair = pointer.read()
+        if pair.first != 20 || pair.second != 22 {
+            return 1
+        }
+        pointer.write_volatile(Pair {
+                first: 19, second: 23
+            })
+        let copied = pointer.read_volatile()
+        if copied.first != 19 || copied.second != 23 {
+            return 2
+        }
+        let bytes = RawPtr<u8>.cast(pointer)
+        if bytes.read() != 19 || bytes.offset(4).read() != 23 {
+            return 3
+        }
+    }
+    return 42
+}

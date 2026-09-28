@@ -1,0 +1,18 @@
+copy struct Triple { x: usize, y: usize, z: usize }
+fn exchange(values: write Vec<Triple>, end: read usize) -> void {
+    swap(values[0], values[end])
+}
+fn main() -> u32 {
+    var values = Vec<Triple>.new()
+    values.push(Triple { x: 1, y: 2, z: 3 })
+    values.push(Triple { x: 4, y: 5, z: 6 })
+    let action = exchange
+    action(values, 1)
+    print(u32.from(values[0].x))
+    print(u32.from(values[0].y))
+    print(u32.from(values[0].z))
+    print(u32.from(values[1].x))
+    print(u32.from(values[1].y))
+    print(u32.from(values[1].z))
+    return 42
+}

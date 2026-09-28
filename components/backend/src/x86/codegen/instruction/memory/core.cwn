@@ -1,0 +1,179 @@
+module x86 {
+    struct MemoryOperand {
+        value: usize
+        offset: i32
+    }
+
+    fn codegen_emit_memory_compare(program: ir::Program, compiler: write FunctionCompiler, input: CompareInput) -> Result<Option<Condition>, CodegenError> {
+        match codegen_frame_slot(compiler.frame, input.right) {
+            None => {
+                return Ok(None())
+            }
+            Some(offset) => {
+                let value_type = codegen_value_type(program, compiler, input.left)?
+                let width = codegen_width(value_type)?
+                if codegen_memory_width(width) == false {
+                    return Ok(None())
+                }
+                var destination = Rax()
+                match codegen_frame_register(compiler.frame, input.left) {
+                    Some(register) => {
+                        destination = register
+                    }
+                    None => {
+                        codegen_load_value(program, compiler, ValueAccess {
+                                value: input.left, register: destination
+                            })?
+                    }
+                }
+                codegen_emit(compiler, MemoryBinary(MemoryBinaryArgs {
+                            operator: MemoryCompare()
+                            destination: destination
+                            base: Rbp()
+                            offset: offset
+                            width: width
+                        }))
+                return Ok(codegen_condition(input.operator))
+            }
+        }
+    }
+
+    fn codegen_compile_memory_binary(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<bool, CodegenError> {
+        var result: usize = 0
+        match read input.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return Ok(false)
+            }
+        }
+        var operator = MemoryAdd()
+        match codegen_memory_binary_operator(input.operator) {
+            Some(value) => {
+                operator = move value
+            }
+            None => {
+                return Ok(false)
+            }
+        }
+        var operand = MemoryOperand {
+            value: 0, offset: 0
+        }
+        match codegen_memory_binary_operand(compiler, input) {
+            Some(value) => {
+                operand = move value
+            }
+            None => {
+                return Ok(false)
+            }
+        }
+        let value_type = codegen_value_type(program, compiler, result)?
+        let width = codegen_width(value_type)?
+        if codegen_memory_width(width) == false {
+            return Ok(false)
+        }
+        let destination = codegen_load_memory_binary_value(program, compiler, result, operand.value)?
+        codegen_emit(compiler, MemoryBinary(MemoryBinaryArgs {
+                    operator: move operator
+                    destination: destination
+                    base: Rbp()
+                    offset: operand.offset
+                    width: width
+                }))
+        codegen_store_sized_result(program, compiler, SizedResultStore {
+                result: result, source: destination, width: width
+            })?
+        return Ok(true)
+    }
+
+    fn codegen_load_memory_binary_value(program: ir::Program, compiler: write FunctionCompiler, result: usize, value: usize) -> Result<Register, CodegenError> {
+        var destination = R11()
+        match codegen_frame_register(compiler.frame, result) {
+            Some(register) => {
+                destination = register
+            }
+            None => {
+            }
+        }
+        match codegen_frame_register(compiler.frame, value) {
+            Some(register) => {
+                if register_equal(register, destination) == false {
+                    codegen_load_value(program, compiler, ValueAccess {
+                            value: value, register: destination
+                        })?
+                }
+            }
+            None => {
+                codegen_load_value(program, compiler, ValueAccess {
+                        value: value, register: destination
+                    })?
+            }
+        }
+        return Ok(destination)
+    }
+
+    fn codegen_memory_binary_operand(compiler: FunctionCompiler, input: BinaryInput) -> Option<MemoryOperand> {
+        match codegen_frame_slot(compiler.frame, input.right) {
+            Some(offset) => {
+                return Some(MemoryOperand {
+                        value: input.left, offset: offset
+                    })
+            }
+            None => {
+            }
+        }
+        if ir::binary_is_commutative(input.operator) {
+            match codegen_frame_slot(compiler.frame, input.left) {
+                Some(offset) => {
+                    return Some(MemoryOperand {
+                            value: input.right, offset: offset
+                        })
+                }
+                None => {
+                }
+            }
+        }
+        return None()
+    }
+
+    fn codegen_memory_binary_operator(operator: ir::BinaryOperator) -> Option<MemoryBinaryOperator> {
+        match read operator {
+            ir::BinaryAdd => {
+                return Some(MemoryAdd())
+            }
+            ir::BinarySubtract => {
+                return Some(MemorySubtract())
+            }
+            ir::BinaryMultiply => {
+                return Some(MemoryMultiply())
+            }
+            ir::BinaryAnd => {
+                return Some(MemoryAnd())
+            }
+            ir::BinaryOr => {
+                return Some(MemoryOr())
+            }
+            ir::BinaryXor => {
+                return Some(MemoryXor())
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_memory_width(width: Width) -> bool {
+        match read width {
+            Dword => {
+                return true
+            }
+            Qword => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

@@ -1,0 +1,19 @@
+extern "c" {
+    fn length(value: read RawPtr<u8>) -> usize = "strlen"
+}
+fn main() -> u32 {
+    let value = "crown\0"
+    unsafe {
+        let pointer = value.as_raw()
+        if length(pointer) != 5 {
+            return 1
+        }
+        if pointer.offset(0).read() != 99 {
+            return 2
+        }
+        if pointer.offset(2).read() != 111 {
+            return 3
+        }
+    }
+    return 0
+}

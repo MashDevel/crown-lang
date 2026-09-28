@@ -1,0 +1,45 @@
+fn unsigned_bits() -> u32 {
+    if u8.from_bits(-1) != 255 {
+        return 1
+    }
+    if u16.from_bits(-1) != 65535 {
+        return 2
+    }
+    if u32.from_bits(-1) != 4294967295 {
+        return 3
+    }
+    if u64.from_bits(-1) != 18446744073709551615 {
+        return 4
+    }
+    if usize.from_bits(-1) != 18446744073709551615 {
+        return 5
+    }
+    return 0
+}
+
+fn signed_bits() -> u32 {
+    if i8.from_bits(128) != -128 {
+        return 6
+    }
+    if i16.from_bits(32768) != -32768 {
+        return 7
+    }
+    if i32.from_bits(2147483648) != -2147483648 {
+        return 8
+    }
+    if i64.from_bits(9223372036854775808) != -9223372036854775808 {
+        return 9
+    }
+    if isize.from_bits(9223372036854775808) != -9223372036854775808 {
+        return 10
+    }
+    return 0
+}
+
+fn main() -> u32 {
+    let result = unsigned_bits()
+    if result != 0 {
+        return result
+    }
+    signed_bits()
+}

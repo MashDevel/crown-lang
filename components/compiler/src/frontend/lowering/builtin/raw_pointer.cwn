@@ -1,0 +1,202 @@
+module lowering {
+    fn static_raw_pointer(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference
+                if arguments.length() != 1 {
+                    return Err(168)
+                }
+                loan read arguments[0] as argument {
+                    let value = function_scalar_expression(compiler, analysis, argument)?
+                    let value_type = function_expression_type(compiler, analysis, expression)?
+                    return raw_pointer_static_value(compiler, analysis.checker.symbols, method, value, move value_type)
+                }
+            }
+            _ => {
+                return Err(170)
+            }
+        }
+    }
+
+    fn raw_pointer_static_value(compiler: write FunctionCompiler, symbols: sema::Symbols, method: frontend::Name, value: usize, value_type: take sema::Type) -> Result<Value, u32> {
+        if sema::name_is(symbols.source, method, "cast") {
+            return Ok(ScalarValue(value, move value_type))
+        }
+        if sema::name_is(symbols.source, method, "from_address") == false {
+            return Err(169)
+        }
+        let pointer = function_append_value(compiler, ir::InstructionCast(ir::CastIntegerToPointer(), value, ir::TypePointer()))?
+        return Ok(ScalarValue(pointer, move value_type))
+    }
+
+    fn raw_pointer_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                arguments
+                let name = sema::name_text(analysis.checker.symbols.source, method)
+                match read name {
+                    "offset" => {
+                        return offset_pointer(compiler, analysis, expression)
+                    }
+                    "fill" => {
+                        return fill_pointer(compiler, analysis, expression)
+                    }
+                    "write" => {
+                        return write_pointer(compiler, analysis, expression)
+                    }
+                    "write_volatile" => {
+                        return write_pointer(compiler, analysis, expression)
+                    }
+                    "read" => {
+                        return read_pointer(compiler, analysis, expression)
+                    }
+                    "read_volatile" => {
+                        return read_pointer(compiler, analysis, expression)
+                    }
+                    _ => {
+                        return Err(172)
+                    }
+                }
+            }
+            _ => {
+                return Err(173)
+            }
+        }
+    }
+
+    struct PointerOperation {
+        pointer: usize
+        element: sema::Type
+    }
+
+    fn pointer_operation(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<PointerOperation, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method;
+                arguments
+                var pointer: usize = 0
+                var pointer_type = sema::Invalid()
+                loan read receiver as value {
+                    pointer = function_scalar_expression(compiler, analysis, value)?
+                    pointer_type = function_expression_type(compiler, analysis, value)?
+                }
+                return Ok(PointerOperation {
+                        pointer: pointer, element: raw_pointer_element(pointer_type)?
+                    })
+            }
+            _ => {
+                return Err(207)
+            }
+        }
+    }
+
+    fn offset_pointer(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let operation = pointer_operation(compiler, analysis, expression)?
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method
+                if arguments.length() != 1 {
+                    return Err(175)
+                }
+                var count: usize = 0
+                loan read arguments[0] as value {
+                    count = function_scalar_expression(compiler, analysis, value)?
+                }
+                let layout = layout(analysis.checker.symbols, operation.element)?
+                let size_type = ir::TypeInteger(ir::IntegerWidth64())
+                let size = function_integer(compiler, size_type, layout.size)
+                let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), count, size))?
+                let result = function_append_value(compiler, ir::InstructionOffset(operation.pointer, bytes))?
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                return Ok(ScalarValue(result, move value_type))
+            }
+            _ => {
+                return Err(176)
+            }
+        }
+    }
+
+    fn write_pointer(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let operation = pointer_operation(compiler, analysis, expression)?
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver
+                if arguments.length() != 1 {
+                    return Err(178)
+                }
+                let volatile = sema::name_is(analysis.checker.symbols.source, method, "write_volatile")
+                loan read arguments[0] as item {
+                    let value = function_expression(compiler, analysis, item)?
+                    let request = CopyRequest {
+                        destination: operation.pointer, value: move value
+                    }
+                    write_raw_value(compiler, analysis.checker.symbols, request, volatile)?
+                }
+                return Ok(VoidValue())
+            }
+            _ => {
+                return Err(179)
+            }
+        }
+    }
+
+    fn read_pointer(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let operation = pointer_operation(compiler, analysis, expression)?
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                arguments
+                let volatile = sema::name_is(analysis.checker.symbols.source, method, "read_volatile")
+                return read_raw_value(compiler, analysis.checker.symbols, operation, volatile)
+            }
+            _ => {
+                return Err(209)
+            }
+        }
+    }
+
+    fn fill_pointer(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let operation = pointer_operation(compiler, analysis, expression)?
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method
+                if arguments.length() != 2 {
+                    return Err(211)
+                }
+                var byte: usize = 0
+                loan read arguments[0] as value {
+                    byte = function_scalar_expression(compiler, analysis, value)?
+                }
+                var size: usize = 0
+                loan read arguments[1] as value {
+                    size = function_scalar_expression(compiler, analysis, value)?
+                }
+                operation.element
+                function_append(compiler, ir::InstructionMemorySet(operation.pointer, byte, size))?
+                return Ok(VoidValue())
+            }
+            _ => {
+                return Err(212)
+            }
+        }
+    }
+
+    fn raw_pointer_element(value_type: sema::Type) -> Result<sema::Type, u32> {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                if builtin != sema::RawPtr() || arguments.length() != 1 {
+                    return Err(181)
+                }
+                loan read arguments[0] as value {
+                    return Ok(sema::type_copy(value))
+                }
+            }
+            _ => {
+                return Err(182)
+            }
+        }
+    }
+}

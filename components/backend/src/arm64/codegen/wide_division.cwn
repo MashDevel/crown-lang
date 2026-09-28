@@ -1,0 +1,62 @@
+module arm64 {
+    fn wide_division(compiler: write Compiler, operator: ir::BinaryOperator) -> Result<void, Text> {
+        emit_registers(compiler, 2852126720, 13, 11, 12)
+        emit_encoding(compiler, compare_word(13, 31))
+        emit_encoding(compiler, conditional_branch(8, 1))
+        emit(compiler, 3558866944)
+        let signed = signed_binary(operator)
+        if signed {
+            wide_division_signs(compiler)
+        }
+        immediate(compiler, 13, 0)
+        immediate(compiler, 14, 0)
+        immediate(compiler, 15, 128)
+        let loop_start = compiler.bytes.length()
+        emit_registers(compiler, 2868903936, 9, 9, 9)
+        emit_registers(compiler, 3120562176, 10, 10, 10)
+        emit_registers(compiler, 3120562176, 13, 13, 13)
+        emit_registers(compiler, 3120562176, 14, 14, 14)
+        emit_encoding(compiler, conditional_branch(16, 2))
+        emit_encoding(compiler, compare_word(14, 12))
+        emit_encoding(compiler, conditional_branch(8, 1))
+        emit_encoding(compiler, compare_word(13, 11))
+        emit_encoding(compiler, conditional_branch(16, 3))
+        emit_registers(compiler, 3942645760, 13, 13, 11)
+        emit_registers(compiler, 3657433088, 14, 14, 12)
+        emit_encoding(compiler, add_immediate(9, 9, 1, false))
+        emit_encoding(compiler, add_immediate(15, 15, 1, true))
+        emit_encoding(compiler, compare_word(15, 31))
+        emit_encoding(compiler, conditional_branch(i64.from(loop_start) - i64.from(compiler.bytes.length()), 1))
+        let remainder = operator == ir::BinarySignedRemainder() || operator == ir::BinaryUnsignedRemainder()
+        if remainder {
+            emit_registers(compiler, 2852126720, 9, 31, 13)
+            emit_registers(compiler, 2852126720, 10, 31, 14)
+        }
+        if signed {
+            wide_division_restore(compiler, remainder)
+        }
+        return Ok(())
+    }
+    fn wide_division_signs(compiler: write Compiler) -> void {
+        immediate(compiler, 15, 63)
+        shift_registers(compiler, ShiftOperation::ArithmeticRight(), 0, 10, 15)
+        shift_registers(compiler, ShiftOperation::ArithmeticRight(), 1, 12, 15)
+        emit_registers(compiler, 3388997632, 1, 0, 1)
+        emit_encoding(compiler, compare_word(10, 31))
+        emit_encoding(compiler, conditional_branch(12, 10))
+        wide_negate(compiler, 9, 10)
+        emit_encoding(compiler, compare_word(12, 31))
+        emit_encoding(compiler, conditional_branch(12, 10))
+        return wide_negate(compiler, 11, 12)
+    }
+    fn wide_division_restore(compiler: write Compiler, remainder: bool) -> void {
+        emit_encoding(compiler, compare_word(if remainder {
+                    0
+                } else {
+                    1
+                }, 31))
+        emit_encoding(compiler, conditional_branch(12, 0))
+        return wide_negate(compiler, 9, 10)
+    }
+
+}

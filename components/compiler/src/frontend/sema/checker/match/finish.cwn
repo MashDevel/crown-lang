@@ -1,0 +1,49 @@
+module sema {
+    fn checker_finish_match(checker: write Checker, source: MatchSource, context: MatchContext) -> void {
+        if context.wildcard == false &&(match_is_text(context.value_type) || type_is_integer(context.value_type) || context.seen.length() != match_variant_count(checker, context.value_type)) {
+            checker_error(checker, "match must cover every variant with compatible ownership on continuing branches")
+        }
+        checker_merge_match_states(checker, context)
+        checker.thread_regions = thread_regions_copy(context.region_before)
+        for index in 0..context.states.length() {
+            if context.states[index].continuing {
+                merge_thread_region_loans(checker.thread_regions, context.states[index].regions)
+            }
+        }
+        checker_end_match_loan(checker, source)
+    }
+
+    fn checker_merge_match_states(checker: write Checker, context: MatchContext) -> void {
+        var found = false
+        var merged = scopes_copy(context.before)
+        var compatible = true
+        var index: usize = 0
+        while index < context.states.length() {
+            if context.states[index].continuing {
+                if found == false {
+                    merged = scopes_copy(context.states[index].scopes);
+                    found = true
+                }
+                else {
+                    if scopes_equal(merged, context.states[index].scopes) == false {
+                        compatible = false
+                    }
+                }
+            }
+            index = index + 1
+        }
+        if compatible == false {
+            checker_error(checker, "match must cover every variant with compatible ownership on continuing branches")
+            checker.scopes = scopes_copy(context.before)
+            checker.continuing = true
+            return
+        }
+        if found {
+            checker.scopes = scopes_copy(merged)
+            checker.continuing = true
+        } else {
+            checker.scopes = scopes_copy(context.before)
+            checker.continuing = context.states.length() == 0
+        }
+    }
+}

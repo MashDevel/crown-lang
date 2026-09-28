@@ -1,0 +1,76 @@
+module arm64 {
+    copy struct SimdAccess {
+        start: u32, count: u32, size: u32, load: bool
+    }
+    fn aggregate_kind(size: u64, components: Vec<ir::AbiComponent>) -> AbiKind {
+        if components.length() == 0 || components.length() > 4 {
+            return AbiKind::Aggregate()
+        }
+        let first = components[0].value_type
+        if ir::type_is_float(first) == false && ir::type_is_vector(first) == false {
+            return AbiKind::Aggregate()
+        }
+        let width = match ir::type_size(first) {
+            Some(value) => value,
+            None => {
+                return AbiKind::Aggregate()
+            }
+        }
+        if size != u64.from(components.length()) * width {
+            return AbiKind::Aggregate()
+        }
+        for index in 0..components.length() {
+            if components[index].value_type != first || components[index].offset != u64.from(index) * width {
+                return AbiKind::Aggregate()
+            }
+        }
+        return AbiKind::Homogeneous(u32.from(components.length()), u32.from(width))
+    }
+    fn parameter_type(signature: ir::Signature, index: usize) -> Result<AbiValue, Text> {
+        match read signature.parameter_abi[index] {
+            ir::ParameterAggregate(aggregate) | ir::ParameterReturn(aggregate) => Ok(aggregate_type(aggregate))
+            ir::ParameterDirect => abi_type(signature.parameters[index])
+        }
+    }
+    fn simd_access(compiler: write Compiler, base: u32, access: SimdAccess) -> Result<void, Text> {
+        if access.count == 0 || access.size % access.count != 0 {
+            return Err("invalid ARM64 SIMD argument layout")
+        }
+        let width = access.size / access.count
+        for lane in 0..usize.from(access.count) {
+            emit_encoding(compiler, simd_memory_word(access.start + u32.from(lane), base, u32.from(lane) * width, width, access.load))
+        }
+        return Ok(())
+    }
+    fn aggregate_registers(compiler: write Compiler, shape: AbiValue, location: AbiLocation, load: bool) -> Result<void, Text> {
+        match location {
+            AbiLocation::General(start, count) => {
+                aggregate_general_registers(compiler, shape, start, count, load)?
+            }
+            AbiLocation::Simd(start, count) => {
+                simd_access(compiler, 16, SimdAccess {
+                        start: start, count: count, size: u32.from(shape.size), load: load
+                    })?
+            }
+            AbiLocation::Omitted => {
+            }
+            _ => {
+                return Err("ARM64 result cannot be returned on the stack")
+            }
+        }
+        return Ok(())
+    }
+
+    fn aggregate_general_registers(compiler: write Compiler, shape: AbiValue, start: u32, count: u32, load: bool) -> Result<void, Text> {
+        for lane in 0..usize.from(count) {
+            if load {
+                load_partial(compiler, start + u32.from(lane), 16, u64.from(lane) * 8, shape.size)?
+            }
+            else {
+                store_partial(compiler, start + u32.from(lane), 16, u64.from(lane) * 8, shape.size)?
+            }
+        }
+        return Ok(())
+    }
+
+}

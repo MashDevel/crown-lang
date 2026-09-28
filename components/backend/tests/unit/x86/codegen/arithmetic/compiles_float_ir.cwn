@@ -1,0 +1,109 @@
+fn append_test_value(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Err(error) => {
+            error;
+            return 0
+        }
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    return id
+                }
+                None => {
+                    return 0
+                }
+            }
+        }
+    }
+}
+
+fn main() -> u32 {
+    let float_type = ir::TypeFloat(ir::FloatWidth64())
+    let integer_type = ir::TypeInteger(ir::IntegerWidth64())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), float_type)
+    var function = ir::function_new("float_ops", move signature, ir::LinkageLocal())
+    let left_constant = ir::ConstantFloat64(u64.from(1078198272) << 32)
+    let right_constant = ir::ConstantFloat64(u64.from(1073741824) << 32)
+    let integer_constant = ir::ConstantInteger(u64.from(42))
+    let left = ir::function_constant(function, float_type, left_constant)
+    let right = ir::function_constant(function, float_type, right_constant)
+    let integer = ir::function_constant(function, integer_type, integer_constant)
+    var block: usize = 0
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    let sum = append_test_value(function, block, ir::InstructionBinary(ir::BinaryFloatAdd(), left, right))
+    append_test_value(function, block, ir::InstructionBinary(ir::BinaryFloatRemainder(), left, right))
+    append_test_value(function, block, ir::InstructionCompare(ir::CompareFloatOrderedGreater(), left, right))
+    append_test_value(function, block, ir::InstructionUnary(ir::UnaryFloatNegate(), left))
+    append_test_value(function, block, ir::InstructionCast(ir::CastSignedIntegerToFloat(), integer, float_type))
+    append_test_value(function, block, ir::InstructionCast(ir::CastFloatToSignedInteger(), left, integer_type))
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(sum))) {
+        Err(error) => {
+            error;
+            return 2
+        }
+        Ok(value) => {
+            value
+        }
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return 3
+        }
+        Ok(instructions) => {
+            return check_generated_instructions(instructions)
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var found: u32 = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::FloatBinary(values) => {
+                values;
+                found = found | 1
+            }
+            x86::FloatStackRemainder => {
+                found = found | 2
+            }
+            x86::FloatCompare(width, left_register, right_register) => {
+                width;
+                left_register;
+                right_register;
+                found = found | 4
+            }
+            x86::Xor(left_register, right_register) => {
+                left_register;
+                right_register;
+                found = found | 8
+            }
+            x86::SignedToFloat(values) => {
+                values;
+                found = found | 16
+            }
+            x86::FloatToSigned(values) => {
+                values;
+                found = found | 32
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if found != 63 {
+        return 4
+    }
+    42
+}

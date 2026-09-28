@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let value = "borrowed"
+    let started = spawn[read value] {
+        value
+    }
+    started
+    return 0
+}

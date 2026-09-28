@@ -1,0 +1,74 @@
+fn invoke(action: scoped fn() -> void) -> void {
+    action()
+}
+fn repeat(action: scoped fn() -> void) -> void {
+    for index in 0..3 {
+        index;
+        action()
+    }
+}
+fn wrap(action: scoped fn() -> void) -> void {
+    invoke(fn[write action]() {
+            action()
+        })
+}
+fn both(first: scoped fn() -> u32, second: scoped fn() -> u32) -> u32 {
+    return first() + second()
+}
+
+fn update<T>(value: write T, action: scoped fn(write T) -> void) -> void {
+    wrap(fn[write value, write action]() {
+            action(value)
+        })
+}
+
+fn visit<T>(values: Slice<T>, action: scoped fn(read T) -> void) -> void {
+    for index in 0..values.length() {
+        action(values[index])
+    }
+}
+
+fn main() -> u32 {
+    var total: u32 = 0
+    repeat(fn[write total]() {
+            wrap(fn[write total]() {
+                    total = total + 2
+                })
+        })
+    if total != 6 {
+        return 1
+    }
+    update(total, fn(value) {
+            value = value + 1
+        })
+    if total != 7 {
+        return 2
+    }
+    var text = "x"
+    update(text, fn(value) {
+            value.push('y')
+        })
+    if text.length() != 2 {
+        return 3
+    }
+    let amount: u32 = 5
+    if both(fn[read amount]() {
+            amount
+        }, fn[read amount]() {
+            amount
+        }) != 10 {
+        return 4
+    }
+    let values = [10, 11, 14]
+    loan read values as items {
+        visit(items, fn[write total](value) {
+                total = total + value
+            })
+    }
+    if total != 42 {
+        return 5
+    }
+    invoke(fn[]() {
+        })
+    return 0
+}

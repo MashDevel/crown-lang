@@ -1,0 +1,20 @@
+fn main() -> u32 {
+    var arena = Arena<u32>.new()
+    var other = Arena<u32>.new()
+    let handle = arena.insert(42)
+    if other.contains(handle) {
+        return 1
+    }
+    if arena.contains(handle) == false {
+        return 2
+    }
+    arena.remove(handle)
+    let replacement = arena.insert(7)
+    if arena.contains(handle) {
+        return 3
+    }
+    if arena.contains(replacement) == false {
+        return 4
+    }
+    return 0
+}

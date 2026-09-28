@@ -1,0 +1,86 @@
+module x86 {
+    fn codegen_compile_switch(program: ir::Program, compiler: write FunctionCompiler, input: take SwitchInput) -> Result<void, CodegenError> {
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: Rax()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        var edges = codegen_switch_edges(compiler, input.cases)
+        codegen_sort_switch_edges(edges)
+        let default_edge = codegen_internal_label(compiler)
+        match codegen_dense_switch(edges, default_edge) {
+            Some(dense) => {
+                codegen_emit_dense_switch(compiler, move dense, default_edge)
+            }
+            None => {
+                let tree = SwitchTree {
+                    edges: codegen_switch_edges_copy(edges)
+                    default: local_label_copy(default_edge)
+                }
+                codegen_emit_switch_tree(compiler, tree, SwitchRange {
+                        start: 0, end: edges.length()
+                    })
+            }
+        }
+        codegen_emit(compiler, Label(local_label_copy(default_edge)))
+        match codegen_branch_to(program, compiler, input.default) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        return codegen_emit_switch_edges(program, compiler, move edges)
+    }
+
+    fn codegen_switch_edges(compiler: write FunctionCompiler, cases: Vec<ir::SwitchCase>) -> Vec<SwitchEdge> {
+        var output = Vec<SwitchEdge>.with_capacity(cases.length())
+        var index: usize = 0
+        while index < cases.length() {
+            output.push(SwitchEdge {
+                    value: cases[index].value
+                    target: cases[index].block
+                    label: codegen_internal_label(compiler)
+                })
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_switch_edges_copy(edges: Vec<SwitchEdge>) -> Vec<SwitchEdge> {
+        var output = Vec<SwitchEdge>.with_capacity(edges.length())
+        var index: usize = 0
+        while index < edges.length() {
+            loan read edges[index] as edge {
+                output.push(codegen_switch_edge_copy(edge))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_emit_switch_edges(program: ir::Program, compiler: write FunctionCompiler, edges: take Vec<SwitchEdge>) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < edges.length() {
+            loan read edges[index] as edge {
+                codegen_emit(compiler, Label(local_label_copy(edge.label)))
+                match codegen_branch_to(program, compiler, edge.target) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

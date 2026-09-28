@@ -1,0 +1,217 @@
+module x86 {
+    fn encode_privileged_instruction(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            Privileged(value) => {
+                emit_privileged(value, output);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn emit_privileged(instruction: PrivilegedInstruction, output: write Vec<u8>) -> void {
+        if emit_privileged_register_access(instruction, output) {
+            return
+        }
+        if emit_privileged_system_state(instruction, output) {
+            return
+        }
+        match read instruction {
+            InputPort(width) => {
+                emit_port(width, output, false)
+            }
+            OutputPort(width) => {
+                emit_port(width, output, true)
+            }
+            ReadTimestamp => {
+                output.push(15);
+                output.push(49)
+            }
+            ReadTimestampProcessor => {
+                output.push(15);
+                output.push(1);
+                output.push(249)
+            }
+            ReadMsr => {
+                output.push(15);
+                output.push(50)
+            }
+            WriteMsr => {
+                output.push(15);
+                output.push(48)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn emit_privileged_register_access(instruction: PrivilegedInstruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ReadControl(control, register) => {
+                emit_control_register(output, 32, u16.from(control_register_code(control)) |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            WriteControl(control, register) => {
+                emit_control_register(output, 34, u16.from(control_register_code(control)) |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            InvalidatePage(register) => {
+                emit_privileged_memory(output, 1, 7 |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            ReadFlags(register) => {
+                output.push(156);
+                encode_stack_register(output, 88, register);
+                return true
+            }
+            LoadGdt(register) => {
+                emit_privileged_memory(output, 1, 2 |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            LoadIdt(register) => {
+                emit_privileged_memory(output, 1, 3 |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            LoadTaskRegister(register) => {
+                emit_privileged_register(output, 0, 3 |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            LoadMxcsr(register) => {
+                emit_privileged_memory(output, 174, 2 |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            StoreMxcsr(register) => {
+                emit_privileged_memory(output, 174, 3 |(u16.from(register_code(register)) << 8));
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn emit_privileged_system_state(instruction: PrivilegedInstruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            MemoryFence => {
+                output.push(15);
+                output.push(174);
+                output.push(240);
+                return true
+            }
+            EnableInterrupts => {
+                output.push(251);
+                return true
+            }
+            DisableInterrupts => {
+                output.push(250);
+                return true
+            }
+            Halt => {
+                output.push(244);
+                return true
+            }
+            WriteBackInvalidate => {
+                output.push(15);
+                output.push(9);
+                return true
+            }
+            InitializeFloat => {
+                output.push(219);
+                output.push(227);
+                return true
+            }
+            ReloadSegments => {
+                emit_reload_segments(output);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn emit_control_register(output: write Vec<u8>, opcode: u8, registers: u16) -> void {
+        let control = u8.from(registers & 255)
+        let register = u8.from(registers >> 8)
+        output.push(rex(control, 0, register));
+        output.push(15);
+        output.push(opcode)
+        output.push(modrm(3, control, register))
+    }
+
+    fn emit_port(width: PortWidth, output: write Vec<u8>, writing: bool) -> void {
+        let code = port_width_code(width)
+        if code == 1 {
+            output.push(102)
+        }
+        if writing {
+            if code == 0 {
+                output.push(238)
+            } else {
+                output.push(239)
+            }
+        } else {
+            if code == 0 {
+                output.push(236)
+            } else {
+                output.push(237)
+            }
+        }
+    }
+
+    fn emit_privileged_register(output: write Vec<u8>, opcode: u8, encoding: u16) -> void {
+        let group = u8.from(encoding & 255)
+        let register = u8.from(encoding >> 8)
+        if register >= 8 {
+            output.push(65)
+        }
+        output.push(15);
+        output.push(opcode);
+        output.push(modrm(3, group, register))
+    }
+
+    fn emit_privileged_memory(output: write Vec<u8>, opcode: u8, encoding: u16) -> void {
+        let group = u8.from(encoding & 255)
+        let base = u8.from(encoding >> 8)
+        if base >= 8 {
+            output.push(65)
+        }
+        output.push(15);
+        output.push(opcode);
+        output.push(modrm(2, group, base))
+        if base & 7 == 4 {
+            output.push(36)
+        }
+        emit_i32(output, 0)
+    }
+
+    fn emit_reload_segments(output: write Vec<u8>) -> void {
+        output.push(106);
+        output.push(8);
+        output.push(72);
+        output.push(141);
+        output.push(5);
+        output.push(3)
+        output.push(0);
+        output.push(0);
+        output.push(0);
+        output.push(80);
+        output.push(72);
+        output.push(203)
+        output.push(102);
+        output.push(184);
+        output.push(16);
+        output.push(0);
+        output.push(142);
+        output.push(216)
+        output.push(142);
+        output.push(192);
+        output.push(142);
+        output.push(208);
+        output.push(102);
+        output.push(49)
+        output.push(192);
+        output.push(142);
+        output.push(224);
+        output.push(142);
+        output.push(232)
+    }
+}

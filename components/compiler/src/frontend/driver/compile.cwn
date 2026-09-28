@@ -1,0 +1,145 @@
+module frontend {
+    fn compile_program(analysis: take sema::Analysis, program: take Program, output: CompileOutput, instrumentation: take Option<Shared<lowering::CoverageLayout>>, settings: CompileSettings) -> u32 {
+        let format = if output.target.platform == toolchain::Platform::Macos() {
+            x86::AssemblyFormat::MachO()
+        } else {
+            x86::AssemblyFormat::Elf()
+        }
+        match compile_object(move analysis, move program, move instrumentation, settings) {
+            Err(error) => error
+            Ok(object) => write_assembly(object, output.path, format)
+        }
+    }
+
+    fn compile_object(analysis: take sema::Analysis, program: take Program, instrumentation: take Option<Shared<lowering::CoverageLayout>>, settings: CompileSettings) -> Result<object::CompilerObject, u32> {
+        if analysis.errors != 0 {
+            return Err(analysis.errors)
+        }
+        var compiler = lowering::compiler_new()
+        compiler.tables.coverage = move instrumentation
+        lowering::declare_program(compiler, analysis)?
+        let input = lowering::ProgramInput {
+            analysis: move analysis, program: move program
+        }
+        lower_required_program(compiler, input)?
+        let bytes = optimize_program(compiler.output, settings)?
+        var object = generate_object(replace(compiler.output, ir::program_new()), settings.target)?
+        match profile::append_runtime(object, bytes, settings.optimization.generate) {
+            Err(error) => Err(optimization_error(error))
+            Ok(value) => {
+                value;
+                Ok(move object)
+            }
+        }
+    }
+
+    fn generate_object(program: take ir::Program, target: toolchain::Target) -> Result<object::CompilerObject, u32> {
+        if target.architecture == toolchain::Architecture::Arm64() {
+            return match arm64::codegen_validated(move program, arm_variant(target)) {
+                Ok(value) => Ok(move value)
+                Err(error) => {
+                    toolchain::failure(error);
+                    Err(255)
+                }
+            }
+        }
+        return match x86::codegen_validated(move program) {
+            Err(error) => {
+                return Err(codegen_error(error))
+            }
+            Ok(value) => Ok(move value)
+        }
+    }
+
+    fn write_assembly(object: object::CompilerObject, output_path: TextView, format: x86::AssemblyFormat) -> u32 {
+        if object.architecture == object::ArchitectureArm64() {
+            let variant = if format == x86::AssemblyFormat::MachO() {
+                arm64::AbiVariant::Darwin()
+            } else {
+                arm64::AbiVariant::Aapcs64()
+            }
+            return match arm64::assembly(object, "program", variant) {
+                Ok(text) => if write_output(output_path, text) {
+                    0
+                } else {
+                    254
+                }
+                Err(error) => {
+                    toolchain::failure(error);
+                    255
+                }
+            }
+        }
+        match x86::assembly(object, format) {
+            Err(error) => {
+                return 250 + error
+            }
+            Ok(output) => {
+                if write_output(output_path, output) {
+                    return 0
+                }
+                return 254
+            }
+        }
+    }
+
+    fn ir_memory_kind(memory: ir::MemoryInstruction) -> u32 {
+        match read memory {
+            ir::MemoryStackSlot(size, alignment) => {
+                size;
+                alignment;
+                return 5
+            }
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                address;
+                value_type;
+                alignment;
+                volatile;
+                return 6
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                address;
+                value;
+                alignment;
+                volatile;
+                return 7
+            }
+            ir::MemoryOffset(base, offset) => {
+                base;
+                offset;
+                return 8
+            }
+            ir::MemoryGlobalAddress(global) => {
+                global;
+                return 9
+            }
+            ir::MemorySymbolAddress(symbol) => {
+                symbol;
+                return 10
+            }
+            ir::MemoryFunctionAddress(function) => {
+                function;
+                return 11
+            }
+            ir::MemoryCopy(destination, source, size) => {
+                destination;
+                source;
+                size;
+                return 12
+            }
+            ir::MemorySet(destination, value, size) => {
+                destination;
+                value;
+                size;
+                return 13
+            }
+            ir::MemoryRepeat(destination, source, size, count) => {
+                destination;
+                source;
+                size;
+                count;
+                return 14
+            }
+        }
+    }
+}

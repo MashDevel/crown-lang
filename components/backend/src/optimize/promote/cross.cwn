@@ -1,0 +1,225 @@
+module optimize {
+    fn promote_cross(function: write ir::Function, candidate: PromotionCandidate, predecessors: Vec<Vec<usize>>) -> Option<Promotion> {
+        var facts = promotion_facts(function, candidate.slot)
+        solve_promotion_liveness(function, facts)
+        if facts.live_in.length() == 0 || facts.live_in[0] {
+            return None()
+        }
+        match read candidate.value_type {
+            None => {
+                return None()
+            }
+            Some(value_type) => {
+                let phis = insert_promotion_phis(function, value_type, facts.live_in, predecessors)
+                match promotion_states(function, candidate.slot, facts, predecessors, phis) {
+                    None => {
+                        remove_promotion_phis(function, phis);
+                        return None()
+                    }
+                    Some(solution) => {
+                        if fill_promotion_phis(function, predecessors, phis, solution.states) == false {
+                            remove_promotion_phis(function, phis)
+                            return None()
+                        }
+                        return Some(Promotion {
+                                slot: candidate.slot, rewrite: promotion_rewrite_copy(solution.rewrite)
+                            })
+                    }
+                }
+            }
+        }
+    }
+
+    struct PromotionSolution {
+        states: Vec<Option<PromotionState>>
+        rewrite: PromotionRewrite
+    }
+
+    fn insert_promotion_phis(function: write ir::Function, value_type: ir::Type, live_in: Vec<bool>, predecessors: Vec<Vec<usize>>) -> Vec<Option<usize>> {
+        var output = none_usize(function.blocks.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            if live_in[block] && predecessors[block].length() >= 2 {
+                let result = ir::function_new_value(function, value_type)
+                let instruction = ir::Instruction {
+                    result: Some(result)
+                    kind: ir::InstructionPhi(value_type, Vec<ir::PhiIncoming>.new())
+                }
+                loan write function.blocks[block] as target {
+                    prepend_instruction(target, move instruction)
+                }
+                output[block] = Some(result)
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn prepend_instruction(block: write ir::BasicBlock, instruction: take ir::Instruction) -> void {
+        var output = Vec<ir::Instruction>.with_capacity(block.instructions.length() + 1)
+        output.push(move instruction)
+        var index: usize = 0
+        while index < block.instructions.length() {
+            loan read block.instructions[index] as value {
+                output.push(ir::instruction_copy(value))
+            }
+            index = index + 1
+        }
+        block.instructions = move output
+    }
+
+    fn promotion_states(function: ir::Function, slot: usize, facts: PromotionFacts, predecessors: Vec<Vec<usize>>, phis: Vec<Option<usize>>) -> Option<PromotionSolution> {
+        var output = none_promotion_states(function.blocks.length())
+        var rewrite = promotion_rewrite_new()
+        var progress = true
+        while progress {
+            progress = false
+            var cursor: usize = 0
+            while cursor < function.blocks.length() {
+                let block = cursor
+                cursor = cursor + 1
+                if promotion_state_missing(output[block]) == false {
+                    continue
+                }
+                let state = match promotion_input_state(block, facts, predecessors, phis, output) {
+                    Some(value) => move value
+                    None => {
+                        continue
+                    }
+                }
+                let result = match promotion_block_state(function, block, slot, move state, rewrite) {
+                    Some(value) => move value
+                    None => {
+                        return None()
+                    }
+                }
+                output[block] = Some(move result)
+                progress = true
+            }
+            if all_promotion_states(output) {
+                return Some(PromotionSolution {
+                        states: move output, rewrite: move rewrite
+                    })
+            }
+        }
+        None()
+    }
+
+    fn promotion_state_missing(state: Option<PromotionState>) -> bool {
+        match read state {
+            Some(value) => {
+                value;
+                return false
+            }
+            None => {
+                return true
+            }
+        }
+    }
+
+    fn promotion_input_state(block: usize, facts: PromotionFacts, predecessors: Vec<Vec<usize>>, phis: Vec<Option<usize>>, states: Vec<Option<PromotionState>>) -> Option<PromotionState> {
+        if facts.live_in[block] == false {
+            return Some(PromotionEmpty())
+        }
+        match read phis[block] {
+            Some(value) => {
+                return Some(PromotionValue(value))
+            }
+            None => {
+            }
+        }
+        if predecessors[block].length() == 0 {
+            return None()
+        }
+        let predecessor = predecessors[block][0]
+        loan read states[predecessor] as state {
+            return option_promotion_state_copy(state)
+        }
+    }
+
+    fn promotion_block_state(function: ir::Function, block: usize, slot: usize, initial: take PromotionState, rewrite: write PromotionRewrite) -> Option<PromotionState> {
+        var state = move initial
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            if promotion_instruction_state(function, function.blocks[block].instructions[index], slot, state, rewrite) == false {
+                return None()
+            }
+            index = index + 1
+        }
+        return Some(move state)
+    }
+
+    fn none_promotion_states(length: usize) -> Vec<Option<PromotionState>> {
+        var output = Vec<Option<PromotionState>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn all_promotion_states(states: Vec<Option<PromotionState>>) -> bool {
+        var index: usize = 0
+        while index < states.length() {
+            loan read states[index] as state {
+                if promotion_state_missing(state) {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn promotion_rewrite_load(function: ir::Function, rewrite: write PromotionRewrite, result: Option<usize>, state: PromotionState) -> bool {
+        let replacement = match read state {
+            PromotionValue(value) => value
+            PromotionEmpty => {
+                return false
+            }
+        }
+        let id = match result {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        let pair = ir::ValueRewrite {
+            result: id, replacement: replacement
+        }
+        promotion_record_load(function, rewrite, pair)
+    }
+
+    fn promotion_instruction_state(function: ir::Function, instruction: ir::Instruction, slot: usize, state: write PromotionState, rewrite: write PromotionRewrite) -> bool {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        if address == slot {
+                            if promotion_rewrite_load(function, rewrite, instruction.result, state) == false {
+                                return false
+                            }
+                        }
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        if address == slot {
+                            state = PromotionValue(value)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+
+            _ => {
+            }
+        }
+        true
+    }
+}

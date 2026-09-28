@@ -1,0 +1,16 @@
+fn same(text: Text, expected: Text) -> bool {
+    loan read text as left {
+        loan read expected as right { if left.length() != right.length() { return false }; for index in 0..left.length() { if left[index] != right[index] { return false } }; return true }
+    }
+}
+fn invoke(callback: scoped fn(SourceSite, u32) -> u32, value: u32) -> u32 {
+    return source_call(callback, (value + 2))
+}
+fn main() -> u32 {
+    var calls: u32 = 0
+    let result = invoke(fn[write calls](site, value) {
+        calls = calls + 1
+        return if same(site.expression, "(value + 2)") && site.line == 7 && site.column == 12 { value } else { 999 }
+    }, 5)
+    return if result == 7 && calls == 1 { 0 } else { 1 }
+}

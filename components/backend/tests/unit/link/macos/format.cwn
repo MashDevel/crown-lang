@@ -1,0 +1,22 @@
+fn run_format_tests() -> Result<void, Text> {
+    verify_invalid_objects()?
+    malformed_headers()?
+    malformed_symbols()?
+    relocation_boundaries()?
+    supported_relocation_kinds()?
+    rejected_relocation_kinds()?
+    return duplicate_definitions()
+}
+
+fn main() -> u32 {
+    match run_format_tests() {
+        Ok(value) => {
+            value;
+            42
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

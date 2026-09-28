@@ -1,0 +1,8 @@
+fn apply(action: read fn(u32) -> u32) -> u32 {
+    return action(1)
+}
+fn main() -> u32 {
+    return apply(fn(first, second) {
+            return first
+        })
+}

@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    let text = "worker"
+    loan read text as borrowed {
+        let thread = spawn move {
+            borrowed.length()
+        }
+        thread
+    }
+    return 0
+}

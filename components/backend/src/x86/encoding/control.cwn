@@ -1,0 +1,96 @@
+module x86 {
+    fn encode_control_instruction(instruction: Instruction, output: write Vec<u8>) -> bool {
+        if encode_comparison(instruction, output) {
+            return true
+        }
+        if encode_processor_state(instruction, output) {
+            return true
+        }
+        match read instruction {
+            CallRegister(register) => {
+                emit_indirect(output, 2, register_code(register));
+                return true
+            }
+            Iret => {
+                output.push(72);
+                output.push(207);
+                return true
+            }
+            Interrupt(vector) => {
+                output.push(205);
+                output.push(vector);
+                return true
+            }
+            JumpRegister(register) => {
+                emit_indirect(output, 4, register_code(register));
+                return true
+            }
+            Return => {
+                output.push(195);
+                return true
+            }
+            Syscall => {
+                output.push(15);
+                output.push(5);
+                return true
+            }
+            Trap => {
+                output.push(15);
+                output.push(11);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn encode_comparison(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            Compare(left, right) => {
+                emit_binary(output, 57, pack_registers(left, right));
+                return true
+            }
+            CompareImmediate(left, value) => {
+                emit_immediate(output, ImmediateEncoding {
+                        group: 7, register: register_code(left), value: value
+                    });
+                return true
+            }
+            Test(left, right) => {
+                emit_binary(output, 133, pack_registers(left, right));
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_processor_state(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ClearDirection => {
+                output.push(252);
+                return true
+            }
+            Cpuid => {
+                output.push(15);
+                output.push(162);
+                return true
+            }
+            PopFlags => {
+                output.push(157);
+                return true
+            }
+            PushFlags => {
+                output.push(156);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn emit_indirect(output: write Vec<u8>, group: u8, register: u8) -> void {
+        output.push(rex_narrow(group, 0, register))
+        output.push(255)
+        output.push(modrm(3, group, register))
+    }
+}

@@ -1,0 +1,291 @@
+module lowering {
+    fn sort_drop_types(values: write Vec<sema::Type>, symbols: sema::Symbols) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            let best = least_type_index(values, index, symbols)
+            if best != index {
+                var left = sema::Invalid()
+                var right = sema::Invalid()
+                loan read values[index] as value {
+                    left = sema::type_copy(value)
+                }
+                loan read values[best] as value {
+                    right = sema::type_copy(value)
+                }
+                values[index] = move right
+                values[best] = move left
+            }
+            index = index + 1
+        }
+    }
+
+    fn least_type_index(values: Vec<sema::Type>, start: usize, symbols: sema::Symbols) -> usize {
+        var best = start
+        var candidate = start + 1
+        while candidate < values.length() {
+            loan read values[candidate] as left {
+                loan read values[best] as right {
+                    if type_compare(left, right, symbols) < 0 {
+                        best = candidate
+                    }
+                }
+            }
+            candidate = candidate + 1
+        }
+        return best
+    }
+
+    fn type_compare(left: sema::Type, right: sema::Type, symbols: sema::Symbols) -> i32 {
+        let left_rank = type_rank(left)
+        let right_rank = type_rank(right)
+        if left_rank < right_rank {
+            return -1
+        }
+        if left_rank > right_rank {
+            return 1
+        }
+        if left_rank <= 14 {
+            return 0
+        }
+        if left_rank == 15 {
+            return array_type_compare(left, right, symbols)
+        }
+        if left_rank == 16 {
+            return function_type_compare(left, right, symbols)
+        }
+        if left_rank == 17 {
+            return dynamic_type_compare(left, right, symbols)
+        }
+        if left_rank == 24 {
+            return function_type_compare(sema::callable_type(left), sema::callable_type(right), symbols)
+        }
+        if left_rank == 18 {
+            return named_type_compare(left, right, symbols)
+        }
+        return parameter_type_compare(left, right)
+    }
+
+    fn array_type_compare(left: sema::Type, right: sema::Type, symbols: sema::Symbols) -> i32 {
+        match read left {
+            sema::ArrayType(left_element, left_length) => {
+                match read right {
+                    sema::ArrayType(right_element, right_length) => {
+                        let order = boxed_type_compare(left_element, right_element, symbols)
+                        if order != 0 {
+                            return order
+                        }
+                        return usize_compare(left_length, right_length)
+                    }
+                    _ => {
+                        return 0
+                    }
+                }
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn function_type_compare(left: sema::Type, right: sema::Type, symbols: sema::Symbols) -> i32 {
+        match read left {
+            sema::FunctionType(left_parameters, left_result) => {
+                match read right {
+                    sema::FunctionType(right_parameters, right_result) => {
+                        let order = parameter_vector_compare(left_parameters, right_parameters, symbols)
+                        if order != 0 {
+                            return order
+                        }
+                        return boxed_type_compare(left_result, right_result, symbols)
+                    }
+                    _ => {
+                        return 0
+                    }
+                }
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn parameter_vector_compare(left: Vec<sema::ParameterType>, right: Vec<sema::ParameterType>, symbols: sema::Symbols) -> i32 {
+        var index: usize = 0
+        while index < left.length() && index < right.length() {
+            loan read left[index] as left_parameter {
+                loan read right[index] as right_parameter {
+                    let mode_order = usize_compare(usize.from(mode_rank(left_parameter.mode)), usize.from(mode_rank(right_parameter.mode)))
+                    if mode_order != 0 {
+                        return mode_order
+                    }
+                    let type_order = type_compare(left_parameter.value_type, right_parameter.value_type, symbols)
+                    if type_order != 0 {
+                        return type_order
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return usize_compare(left.length(), right.length())
+    }
+
+    fn dynamic_type_compare(left: sema::Type, right: sema::Type, symbols: sema::Symbols) -> i32 {
+        match read left {
+            sema::DynamicType(left_symbol) => {
+                match read right {
+                    sema::DynamicType(right_symbol) => {
+                        return semantic_symbol_name_compare(left_symbol, right_symbol, symbols)
+                    }
+                    _ => {
+                        return 0
+                    }
+                }
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn named_type_compare(left: sema::Type, right: sema::Type, symbols: sema::Symbols) -> i32 {
+        let left_name = type_base_name(left, symbols)
+        let right_name = type_base_name(right, symbols)
+        let name_order = text_compare(left_name, right_name)
+        if name_order != 0 {
+            return name_order
+        }
+        match read left {
+            sema::BuiltinType(left_builtin, left_arguments) => {
+                left_builtin
+                match read right {
+                    sema::BuiltinType(right_builtin, right_arguments) => {
+                        right_builtin
+                        return type_vector_compare(left_arguments, right_arguments, symbols)
+                    }
+                    _ => {
+                        return 0
+                    }
+                }
+            }
+            sema::NamedType(left_symbol, left_arguments) => {
+                left_symbol
+                match read right {
+                    sema::NamedType(right_symbol, right_arguments) => {
+                        right_symbol
+                        return type_vector_compare(left_arguments, right_arguments, symbols)
+                    }
+                    _ => {
+                        return 0
+                    }
+                }
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn type_vector_compare(left: Vec<sema::Type>, right: Vec<sema::Type>, symbols: sema::Symbols) -> i32 {
+        var index: usize = 0
+        while index < left.length() && index < right.length() {
+            loan read left[index] as left_value {
+                loan read right[index] as right_value {
+                    let order = type_compare(left_value, right_value, symbols)
+                    if order != 0 {
+                        return order
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return usize_compare(left.length(), right.length())
+    }
+
+    fn parameter_type_compare(left: sema::Type, right: sema::Type) -> i32 {
+        match read left {
+            sema::ParameterType(left_parameter) => {
+                match read right {
+                    sema::ParameterType(right_parameter) => {
+                        return usize_compare(left_parameter, right_parameter)
+                    }
+                    _ => {
+                        return 0
+                    }
+                }
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn type_base_name(value_type: sema::Type, symbols: sema::Symbols) -> Text {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                arguments;
+                return sema::builtin_type_name(builtin)
+            }
+            sema::NamedType(symbol, arguments) => {
+                arguments
+                if symbol < symbols.types.length() {
+                    loan read symbols.types[symbol] as declaration {
+                        return sema::name_text(symbols.source, declaration.name)
+                    }
+                }
+                return Text.new()
+            }
+            _ => {
+                return Text.new()
+            }
+        }
+    }
+
+    fn semantic_symbol_name_compare(left: usize, right: usize, symbols: sema::Symbols) -> i32 {
+        if left >= symbols.types.length() || right >= symbols.types.length() {
+            return usize_compare(left, right)
+        }
+        loan read symbols.types[left] as left_declaration {
+            loan read symbols.types[right] as right_declaration {
+                let left_name = sema::name_text(symbols.source, left_declaration.name)
+                let right_name = sema::name_text(symbols.source, right_declaration.name)
+                return text_compare(left_name, right_name)
+            }
+        }
+    }
+
+    fn text_compare(left: Text, right: Text) -> i32 {
+        loan read left as left_bytes {
+            loan read right as right_bytes {
+                var index: usize = 0
+                while index < left_bytes.length() && index < right_bytes.length() {
+                    if left_bytes[index] < right_bytes[index] {
+                        return -1
+                    }
+                    if left_bytes[index] > right_bytes[index] {
+                        return 1
+                    }
+                    index = index + 1
+                }
+            }
+        }
+        return usize_compare(left.length(), right.length())
+    }
+
+    fn usize_compare(left: usize, right: usize) -> i32 {
+        if left < right {
+            return -1
+        }
+        if left > right {
+            return 1
+        }
+        return 0
+    }
+
+    fn boxed_type_compare(left: Box<sema::Type>, right: Box<sema::Type>, symbols: sema::Symbols) -> i32 {
+        loan read left as left_value {
+            loan read right as right_value {
+                return type_compare(left_value, right_value, symbols)
+            }
+        }
+    }
+}

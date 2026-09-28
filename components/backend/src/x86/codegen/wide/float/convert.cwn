@@ -1,0 +1,115 @@
+module x86 {
+    fn codegen_convert_positive_float(compiler: write FunctionCompiler, width: FloatWidth) -> Result<void, CodegenError> {
+        let power = WideFloatConstant {
+            width: width, target: Xmm7(), exponent: 64, negative: false, zero: false
+        }
+        codegen_load_wide_float_constant(compiler, move power)
+        codegen_emit(compiler, MoveFloat(width, Xmm1(), Xmm6()))
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: FloatDivide(), width: width, destination: Xmm1(), source: Xmm7()
+                }))
+        let high = WideFloatToU64 {
+            width: width, source: Xmm1(), destination: R11()
+        }
+        codegen_float_register_to_u64(compiler, move high)
+        codegen_emit(compiler, Move(Rax(), R11()))
+        codegen_u64_to_float(compiler, width)
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: FloatMultiply(), width: width, destination: Xmm0(), source: Xmm7()
+                }))
+        codegen_emit(compiler, MoveFloat(width, Xmm1(), Xmm6()))
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: FloatSubtract(), width: width, destination: Xmm1(), source: Xmm0()
+                }))
+        let low = WideFloatToU64 {
+            width: width, source: Xmm1(), destination: R10()
+        }
+        codegen_float_register_to_u64(compiler, move low)
+        return Ok(())
+    }
+
+    fn codegen_float_register_to_u64(compiler: write FunctionCompiler, input: take WideFloatToU64) -> void {
+        let large = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        let half = WideFloatConstant {
+            width: input.width, target: Xmm5(), exponent: 63, negative: false, zero: false
+        }
+        codegen_load_wide_float_constant(compiler, move half)
+        codegen_emit(compiler, FloatCompare(input.width, input.source, Xmm5()))
+        codegen_emit(compiler, JumpIf(AboveOrEqual(), local_label_copy(large)))
+        codegen_emit_float_to_signed_wide(compiler, input)
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move large))
+        codegen_emit(compiler, MoveFloat(input.width, Xmm4(), input.source))
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: FloatSubtract(), width: input.width, destination: Xmm4(), source: Xmm5()
+                }))
+        let adjusted = WideFloatToU64 {
+            width: input.width, source: Xmm4(), destination: input.destination
+        }
+        codegen_emit_float_to_signed_wide(compiler, adjusted)
+        codegen_emit(compiler, MoveImmediate(Rax(), -9223372036854775808))
+        codegen_emit(compiler, Or(input.destination, Rax()))
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_emit_float_to_signed_wide(compiler: write FunctionCompiler, input: WideFloatToU64) -> void {
+        codegen_emit(compiler, FloatToSigned(FloatToSignedArgs {
+                    width: input.width, destination: input.destination, source: input.source, destination_64: true
+                }))
+    }
+
+    fn codegen_negate_wide_if_marked(compiler: write FunctionCompiler) -> void {
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, Test(R9(), R9()))
+        codegen_emit(compiler, JumpIf(Equal(), local_label_copy(done)))
+        codegen_emit_wide_negate(compiler, WideRegisters {
+                low: R10(), high: R11()
+            })
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_emit_wide_immediate(compiler: write FunctionCompiler, value: take ir::WideInteger) -> void {
+        codegen_emit(compiler, MoveImmediate(R10(), i64.from_bits(value.low)))
+        codegen_emit(compiler, MoveImmediate(R11(), i64.from_bits(value.high)))
+    }
+
+    fn codegen_load_wide_float_constant(compiler: write FunctionCompiler, input: take WideFloatConstant) -> void {
+        var bits: i64 = 0
+        match read input.width {
+            Float32 => {
+                var value: u32 = 0
+                if input.zero == false {
+                    value = u32.from(input.exponent + 127) << 23
+                }
+                if input.negative {
+                    value = value |(u32.from(1) << 31)
+                }
+                bits = i64.from(value)
+            }
+            Float64 => {
+                var value: u64 = 0
+                if input.zero == false {
+                    value = u64.from(input.exponent + 1023) << 52
+                }
+                if input.negative {
+                    value = value |(u64.from(1) << 63)
+                }
+                bits = i64.from_bits(value)
+            }
+        }
+        codegen_emit(compiler, MoveImmediate(Rax(), bits))
+        codegen_emit(compiler, MoveToFloat(input.width, input.target, Rax()))
+    }
+
+    fn codegen_wide_float_sign(width: FloatWidth) -> i64 {
+        match read width {
+            Float32 => {
+                return i64.from(-2147483648)
+            }
+            Float64 => {
+                return -9223372036854775808
+            }
+        }
+    }
+}

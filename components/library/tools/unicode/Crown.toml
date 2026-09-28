@@ -1,0 +1,3 @@
+[package]
+name = "unicode-tables"
+sources = ["main.cwn", "src", "../../../toolchain/src", "../../src"]

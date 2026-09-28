@@ -1,0 +1,147 @@
+module macho {
+    fn read_arm_relocations(reader: write ObjectReader, section: usize) -> Result<void, Text> {
+        var index: usize = 0
+        while index < reader.relocation_counts[section] {
+            let offset = reader.relocation_offsets[section] + index * 8
+            let raw = link_binary::number(reader.bytes, offset + 4, 4)?
+            if (raw >> 28) == 1 {
+                if index + 1 >= reader.relocation_counts[section] {
+                    return Err("missing ARM64 subtractor pair")
+                }
+                read_difference(reader, section, offset)?
+                index = index + 2
+            } else {
+                index = index + read_arm_relocation_entry(reader, section, offset, index)?
+            }
+        }
+        return Ok(())
+    }
+    fn read_arm_relocation_entry(reader: write ObjectReader, section: usize, offset: usize, index: usize) -> Result<usize, Text> {
+        let raw = link_binary::number(reader.bytes, offset + 4, 4)?
+        if (raw >> 28) != 10 {
+            read_arm_relocation(reader, section, offset, 0)?
+            return Ok(1)
+        }
+        validate_arm_addend_pair(reader, section, offset, index)?
+        read_arm_relocation(reader, section, offset + 8, signed_field(raw & 16777215, 24))?
+        return Ok(2)
+    }
+    fn read_arm_relocation(reader: write ObjectReader, section: usize, offset: usize, extra: i64) -> Result<void, Text> {
+        let address = link_binary::number(reader.bytes, offset, 4)?
+        let raw = link_binary::number(reader.bytes, offset + 4, 4)?
+        if (address & 2147483648) != 0 {
+            return Err("unsupported scattered ARM64 relocation")
+        }
+        let width = usize.from(u64.from(1) <<((raw >> 25) & 3))
+        let bits = link_binary::number(reader.output.sections[section].data, usize.from(address), width)?
+        let kind = arm_input_relocation_kind(raw, u32.from(bits & 4294967295))?
+        let symbol = relocation_symbol(reader, raw)?
+        let addend = link_binary::signed_add(arm_input_addend(reader, section, address, raw, bits)?, extra)?
+        if kind == object::RelocationArmBranch26() {
+            reader.output.symbols[symbol].kind = object::SymbolFunction()
+        }
+        reader.output.relocations.push(object::Relocation {
+                section: section, offset: address, kind: kind, symbol: symbol, subtract: None(), addend: addend
+            })
+        return Ok(())
+    }
+    fn arm_input_relocation_kind(raw: u64, word: u32) -> Result<object::RelocationKind, Text> {
+        let kind = raw >> 28
+        validate_arm_relocation_flags(raw, kind)?
+        if kind == 0 {
+            return absolute_relocation_kind((raw >> 25) & 3)
+        }
+        match kind {
+            2 => Ok(object::RelocationArmBranch26())
+            3 => Ok(object::RelocationArmPage21())
+            4 => arm_page_offset_kind(word)
+            5 => Ok(object::RelocationArmGotPage21())
+            6 => Ok(object::RelocationArmGotLoadPageOffset12())
+            7 => Ok(object::RelocationGotPcRelative32())
+            _ => Err("unsupported ARM64 Mach-O relocation type")
+        }
+    }
+    fn arm_page_offset_kind(word: u32) -> Result<object::RelocationKind, Text> {
+        if (word & 4290772992) == 2432696320 {
+            return Ok(object::RelocationArmPageOffset12())
+        }
+        if (word & 989855744) != 956301312 {
+            return Err("invalid ARM64 page-offset instruction")
+        }
+        let scale = if (word & 67108864) != 0 &&(word & 8388608) != 0 {
+            4
+        } else {
+            word >> 30
+        }
+        return Ok(object::RelocationArmLoadPageOffset12(scale))
+    }
+    fn signed_field(value: u64, bits: u32) -> i64 {
+        let shift = 64 - bits
+        return i64.from_bits(value << u64.from(shift)) >> i64.from(shift)
+    }
+    fn arm_input_addend(reader: ObjectReader, section: usize, address: u64, raw: u64, bits: u64) -> Result<i64, Text> {
+        let kind = raw >> 28
+        var value = arm_encoded_addend(kind, raw, bits)?
+        if (raw & 134217728) == 0 {
+            let target = usize.from(raw & 16777215)
+            if target == 0 || target > reader.addresses.length() {
+                return Err("invalid local ARM64 relocation")
+            }
+            value = link_binary::signed_subtract(value, i64.from(reader.addresses[target - 1]))?
+            if (raw & 16777216) != 0 {
+                value = link_binary::signed_add(value, i64.from(reader.addresses[section] + address))?
+            }
+        }
+        return Ok(value)
+    }
+    fn arm_offset_addend(word: u32) -> Result<i64, Text> {
+        let kind = arm_page_offset_kind(word)?
+        let immediate = i64.from((word >> 10) & 4095)
+        match kind {
+            object::RelocationArmLoadPageOffset12(scale) => Ok(immediate << i64.from(scale))
+            _ => Ok(immediate)
+        }
+    }
+    fn validate_arm_addend_pair(reader: ObjectReader, section: usize, offset: usize, index: usize) -> Result<void, Text> {
+        let raw = link_binary::number(reader.bytes, offset + 4, 4)?
+        if index + 1 >= reader.relocation_counts[section] ||(raw & 251658240) != 67108864 {
+            return Err("invalid ARM64 addend relocation")
+        }
+        let next = link_binary::number(reader.bytes, offset + 12, 4)? >> 28
+        if arm_addend_pair_kind(next) == false || link_binary::number(reader.bytes, offset, 4)? != link_binary::number(reader.bytes, offset + 8, 4)? {
+            return Err("invalid ARM64 addend relocation pair")
+        }
+        return Ok(())
+    }
+    fn arm_encoded_addend(kind: u64, raw: u64, bits: u64) -> Result<i64, Text> {
+        return match kind {
+            0 => Ok(if ((raw >> 25) & 3) == 3 {
+                    i64.from_bits(bits)
+                } else {
+                    signed_field(bits, 32)
+                })
+            2 => Ok(signed_field(bits & 67108863, 26) * 4)
+            3 | 5 => Ok(signed_field(((bits >> 29) & 3) |(((bits >> 5) & 524287) << 2), 21) * 4096)
+            4 | 6 => arm_offset_addend(u32.from(bits))
+            7 => Ok(signed_field(bits, 32))
+            _ => {
+                return Err("unsupported ARM64 relocation addend")
+            }
+        }
+    }
+    fn validate_arm_relocation_flags(raw: u64, kind: u64) -> Result<void, Text> {
+        if ((raw & 16777216) != 0) != arm_relocation_relative(kind) {
+            return Err("invalid ARM64 relocation relativity")
+        }
+        if kind == 0 {
+            return Ok(())
+        }
+        if ((raw >> 25) & 3) != 2 {
+            return Err("invalid ARM64 instruction relocation width")
+        }
+        if (raw & 134217728) == 0 {
+            return Err("ARM64 instruction relocation requires a symbol")
+        }
+        return Ok(())
+    }
+}

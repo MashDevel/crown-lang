@@ -1,0 +1,11 @@
+module data {
+    struct Value {
+        private value: u32
+    }
+}
+fn data::peek(item: read data::Value) -> u32 {
+    return item.value
+}
+fn main() -> u32 {
+    return 0
+}

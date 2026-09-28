@@ -1,0 +1,38 @@
+module ir {
+    fn function_constant_index(function: Function, value: usize) -> Option<usize> {
+        if value >= function.constant_indices.length() {
+            return None()
+        }
+        let index = function.constant_indices[value]
+        if index >= function.constants.length() {
+            return None()
+        }
+        return Some(index)
+    }
+
+    fn function_constant_value(function: Function, value: usize) -> Option<Constant> {
+        match function_constant_index(function, value) {
+            Some(index) => {
+                loan read function.constants[index].value as constant {
+                    return Some(constant_copy(constant))
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn function_constant_type(function: Function, value: usize) -> Option<Type> {
+        match function_constant_index(function, value) {
+            Some(index) => {
+                loan read function.constants[index].value_type as value_type {
+                    return Some(value_type)
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+}

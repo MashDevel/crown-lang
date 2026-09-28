@@ -1,0 +1,23 @@
+module elf {
+    fn relocate_arm_instruction(image: write Image, relocation: object::Relocation, address: u64) -> Result<void, Text> {
+        if image.architecture != object::ArchitectureArm64() || address % 4 != 0 {
+            return Err("ARM64 instruction relocation requires an aligned ARM64 instruction")
+        }
+        match relocation.subtract {
+            Some(symbol) => {
+                symbol;
+                return Err("ARM64 instruction relocation cannot subtract a symbol")
+            }
+            None => {
+            }
+        }
+        let target = relocation_target(image, relocation)?
+        let value = link_binary::signed_add(i64.from(target), relocation.addend)?
+        let offset = usize.from(address - IMAGE_BASE)
+        let word = u32.from(link_binary::number(image.bytes, offset, 4)?)
+        let encoded = arm64::arm_relocated_word(relocation.kind, word, value, address)?
+        link_binary::put(image.bytes, offset, u64.from(encoded), 4)
+        return Ok(())
+    }
+
+}

@@ -1,0 +1,82 @@
+module macho {
+    struct Commands {
+        bytes: Vec<u8>, count: u64
+    }
+    struct Segment {
+        name: Text, address: u64, offset: u64, size: u64, permissions: u64
+    }
+
+    fn command(output: write Commands, kind: u64, size: usize) -> usize {
+        let offset = output.bytes.length()
+        link_binary::pad(output.bytes, offset + size)
+        link_binary::put(output.bytes, offset, kind, 4)
+        link_binary::put(output.bytes, offset + 4, u64.from(size), 4)
+        output.count = output.count + 1
+        return offset
+    }
+
+    fn name(bytes: write Vec<u8>, offset: usize, text: Text) -> void {
+        let source = toolchain::text_bytes(text)
+        for index in 0..source.length() {
+            bytes[offset + index] = source[index]
+        }
+    }
+
+    fn segment(output: write Commands, item: Segment, initializer: u64, page: usize) -> void {
+        let offset = command(output, 25, if initializer == 0 {
+                72
+            } else {
+                152
+            })
+        name(output.bytes, offset + 8, item.name)
+        link_binary::put(output.bytes, offset + 24, item.address, 8)
+        link_binary::put(output.bytes, offset + 32, u64.from(link_binary::aligned(usize.from(item.size), page)), 8)
+        link_binary::put(output.bytes, offset + 40, item.offset, 8)
+        let file_size: u64 = if item.address == 0 {
+            0
+        } else {
+            item.size
+        }
+        link_binary::put(output.bytes, offset + 48, file_size, 8)
+        link_binary::put(output.bytes, offset + 56, item.permissions, 4)
+        link_binary::put(output.bytes, offset + 60, item.permissions, 4)
+        if initializer != 0 {
+            link_binary::put(output.bytes, offset + 64, 1, 4)
+            init_section(output.bytes, offset + 72, item, initializer)
+        }
+    }
+
+    fn init_section(bytes: write Vec<u8>, offset: usize, item: Segment, address: u64) -> void {
+        name(bytes, offset, "__mod_init_func")
+        name(bytes, offset + 16, "__DATA")
+        link_binary::put(bytes, offset + 32, address, 8)
+        link_binary::put(bytes, offset + 40, 8, 8)
+        link_binary::put(bytes, offset + 48, item.offset + address - item.address, 4)
+        link_binary::put(bytes, offset + 52, 3, 4)
+        link_binary::put(bytes, offset + 64, 9, 4)
+    }
+
+    fn string_command(output: write Commands, kind: u64, path: Text, header: usize) -> void {
+        let size = link_binary::aligned(header + path.length() + 1, 8)
+        let offset = command(output, kind, size)
+        link_binary::put(output.bytes, offset + 8, u64.from(header), 4)
+        name(output.bytes, offset + header, path)
+        if header == 24 {
+            link_binary::put(output.bytes, offset + 16, 65536, 4)
+            link_binary::put(output.bytes, offset + 20, 65536, 4)
+        }
+    }
+
+    fn loader_commands(output: write Commands, image: Image, libraries: Vec<Text>) -> void {
+        string_command(output, 14, "/usr/lib/dyld", 12)
+        for index in 0..libraries.length() {
+            string_command(output, 12, libraries[index], 24)
+        }
+        let version = command(output, 50, 24)
+        link_binary::put(output.bytes, version + 8, 1, 4)
+        link_binary::put(output.bytes, version + 12, 720896, 4)
+        link_binary::put(output.bytes, version + 16, 720896, 4)
+        let main = command(output, 2147483688, 24)
+        link_binary::put(output.bytes, main + 8, image.entry, 8)
+    }
+}

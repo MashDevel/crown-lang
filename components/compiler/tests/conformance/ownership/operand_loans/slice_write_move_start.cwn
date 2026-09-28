@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    var values = operand_values()
+    loan write values[consume_values(move values)..1] as part {
+        return u32.from(part.length())
+    }
+}

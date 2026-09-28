@@ -1,0 +1,112 @@
+module toolchain {
+    fn json_field(document: Json, object: usize, name: Text) -> Option<usize> {
+        match read document.values[object] {
+            JsonObject(fields) => {
+                for index in 0..fields.length() {
+                    if std::text::equal(fields[index].name, name) {
+                        return Some(fields[index].value)
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn json_required(document: Json, object: usize, name: Text) -> Result<usize, Text> {
+        match json_field(document, object, name) {
+            Some(index) => {
+                return Ok(index)
+            }
+            None => {
+                return Err(std::text::joined("missing field: ", name))
+            }
+        }
+    }
+
+    fn json_text(document: Json, index: usize) -> Result<Text, Text> {
+        match read document.values[index] {
+            JsonString(value) => {
+                return Ok(value.clone())
+            }
+            _ => {
+                return Err("expected text")
+            }
+        }
+    }
+
+    fn json_integer(document: Json, index: usize) -> Result<u64, Text> {
+        match read document.values[index] {
+            JsonNumber(value) => {
+                return std::text::unsigned(value)
+            }
+            _ => {
+                return Err("expected an unsigned integer")
+            }
+        }
+    }
+
+    fn json_array_values(document: Json, index: usize) -> Result<Vec<usize>, Text> {
+        match read document.values[index] {
+            JsonArray(values) => {
+                var output = Vec<usize>.new()
+                for offset in 0..values.length() {
+                    output.push(values[offset])
+                }
+                return Ok(move output)
+            }
+            _ => {
+                return Err("expected an array")
+            }
+        }
+    }
+
+    fn json_strings(document: Json, index: usize) -> Result<Vec<Text>, Text> {
+        let entries = json_array_values(document, index)?
+        var output = Vec<Text>.new()
+        for offset in 0..entries.length() {
+            output.push(json_text(document, entries[offset])?)
+        }
+        return Ok(move output)
+    }
+
+    fn json_optional_strings(document: Json, object: usize, name: Text) -> Result<Vec<Text>, Text> {
+        match json_field(document, object, name) {
+            Some(index) => {
+                return json_strings(document, index)
+            }
+            None => {
+                return Ok(Vec<Text>.new())
+            }
+        }
+    }
+
+    fn json_optional_text(document: Json, object: usize, name: Text) -> Result<Text, Text> {
+        match json_field(document, object, name) {
+            Some(index) => {
+                return json_text(document, index)
+            }
+            None => {
+                return Ok("")
+            }
+        }
+    }
+
+    fn json_known_fields(document: Json, object: usize, known: Text) -> Result<void, Text> {
+        match read document.values[object] {
+            JsonObject(fields) => {
+                for index in 0..fields.length() {
+                    let key = std::text::joined(std::text::joined("|", fields[index].name), "|")
+                    if std::text::contains(known, key) == false {
+                        return Err(std::text::joined("unknown field: ", fields[index].name))
+                    }
+                }
+                return Ok(())
+            }
+            _ => {
+                return Err("expected an object")
+            }
+        }
+    }
+}

@@ -1,0 +1,9 @@
+resource Guard {
+    code: u32
+    drop {
+        return
+    }
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,28 @@
+module sema {
+    fn type_is_fieldless_enum(symbols: Symbols, value_type: Type) -> bool {
+        match read value_type {
+            NamedType(index, arguments) => {
+                arguments
+                loan read symbols.types[index] as symbol {
+                    if symbol.copy_value == false {
+                        return false
+                    }
+                    match symbol.kind {
+                        Enum => {
+                        }
+                        _ => {
+                            return false
+                        }
+                    }
+                    for variant in 0..symbol.variants.length() {
+                        if symbol.variants[variant].fields.length() != 0 {
+                            return false
+                        }
+                    }
+                    return true
+                }
+            }
+            _ => false
+        }
+    }
+}

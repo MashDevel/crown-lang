@@ -1,0 +1,142 @@
+module lowering {
+    fn function_stack(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<usize, u32> {
+        match layout(symbols, value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(layout) => {
+                return function_append_value(compiler, ir::InstructionStackSlot(layout.size, layout.alignment))
+            }
+        }
+    }
+
+    fn function_load(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Place) -> Result<usize, u32> {
+        match layout(symbols, request.value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(layout) => {
+                match ir_type(symbols, request.value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value_type) => {
+                        return function_append_value(compiler, ir::InstructionLoad(request.address, value_type, layout.alignment, false))
+                    }
+                }
+            }
+        }
+    }
+
+    fn function_store(compiler: write FunctionCompiler, symbols: sema::Symbols, request: StoreRequest) -> Result<void, u32> {
+        match layout(symbols, request.value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(layout) => {
+                match function_append(compiler, ir::InstructionStore(request.address, request.value, layout.alignment, false)) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(result) => {
+                        result;
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    fn function_offset(compiler: write FunctionCompiler, base: usize, bytes: u64) -> Result<usize, u32> {
+        if bytes == 0 {
+            return Ok(base)
+        }
+        let integer_type = ir::TypeInteger(ir::IntegerWidth64())
+        let offset = function_integer(compiler, integer_type, bytes)
+        return function_append_value(compiler, ir::InstructionOffset(base, offset))
+    }
+
+    fn function_store_pointer(compiler: write FunctionCompiler, address: usize, value: usize) -> Result<void, u32> {
+        match function_append(compiler, ir::InstructionStore(address, value, 8, false)) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                result;
+                return Ok(())
+            }
+        }
+    }
+
+    fn function_load_pointer(compiler: write FunctionCompiler, address: usize) -> Result<usize, u32> {
+        return function_append_value(compiler, ir::InstructionLoad(address, ir::TypePointer(), 8, false))
+    }
+
+    fn function_copy(compiler: write FunctionCompiler, symbols: sema::Symbols, request: CopyRequest) -> Result<void, u32> {
+        match read request.value {
+            ScalarValue(source, value_type) => {
+                let store = StoreRequest {
+                    address: request.destination, value: source, value_type: sema::type_copy(value_type)
+                }
+                return function_store(compiler, symbols, store)
+            }
+            AddressValue(source, value_type) => {
+                match layout(symbols, value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+                        let size = function_integer(compiler, size_type, layout.size)
+                        match function_append(compiler, ir::InstructionMemoryCopy(request.destination, source, size)) {
+                            Err(error) => {
+                                return Err(error)
+                            }
+                            Ok(result) => {
+                                result;
+                                return Ok(())
+                            }
+                        }
+                    }
+                }
+            }
+            VoidValue => {
+                return Ok(())
+            }
+        }
+    }
+
+    struct StoreRequest {
+        address: usize
+        value: usize
+        value_type: sema::Type
+    }
+
+    struct CopyRequest {
+        destination: usize
+        value: Value
+    }
+
+    fn function_zero(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Place) -> Result<void, u32> {
+        match layout(symbols, request.value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(layout) => {
+                let byte_type = ir::TypeInteger(ir::IntegerWidth8())
+                let size_type = ir::TypeInteger(ir::IntegerWidth64())
+                let byte = function_integer(compiler, byte_type, 0)
+                let size = function_integer(compiler, size_type, layout.size)
+                match function_append(compiler, ir::InstructionMemorySet(request.address, byte, size)) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value) => {
+                        value;
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+}

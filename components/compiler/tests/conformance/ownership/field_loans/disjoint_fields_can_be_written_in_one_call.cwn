@@ -1,0 +1,25 @@
+struct Cpu {
+    value: u32
+}
+struct Memory {
+    value: u32
+}
+struct Emulator {
+    cpu: Cpu, memory: Memory
+}
+fn update(cpu: write Cpu, memory: write Memory) -> u32 {
+    cpu.value = 20
+    memory.value = 22
+    return cpu.value + memory.value
+}
+fn main() -> u32 {
+    var emulator = Emulator {
+        cpu: Cpu {
+            value: 0
+        },
+        memory: Memory {
+            value: 0
+        }
+    }
+    return update(emulator.cpu, emulator.memory)
+}

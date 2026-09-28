@@ -1,0 +1,71 @@
+fn main() -> u32 {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth64()))
+    var function = ir::function_new("sum", move signature, ir::LinkageLocal())
+    var block: usize = 0
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    var result: usize = 0
+    match ir::function_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), 0, 1)) {
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    result = id
+                }
+                None => {
+                    return 2
+                }
+            }
+        }
+        Err(error) => {
+            error;
+            return 3
+        }
+    }
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 4
+        }
+    }
+    let allocation = x86::codegen_allocate_registers(function)
+    let first = check_register(allocation, 0, 7, 5)
+    if first != 0 {
+        return first
+    }
+    let second = check_register(allocation, 1, 6, 7)
+    if second != 0 {
+        return second
+    }
+    let output = check_register(allocation, result, 0, 9)
+    if output != 0 {
+        return output
+    }
+    42
+}
+
+fn check_register(allocation: x86::RegisterAllocation, value: usize, expected: u8, failure: u32) -> u32 {
+    match x86::codegen_allocation_register(allocation, value) {
+        Some(register) => {
+            if x86::register_code(register) != expected {
+                return failure
+            }
+        }
+        None => {
+            return failure + 1
+        }
+    }
+    0
+}

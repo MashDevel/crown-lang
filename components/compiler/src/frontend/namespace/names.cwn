@@ -1,0 +1,94 @@
+module frontend {
+    fn namespace_add(resolver: write NamespaceResolver, entry: take NamespaceEntry) -> void {
+        var index: usize = 0
+        while index < resolver.entries.length() {
+            loan write resolver.entries[index] as previous {
+                if namespace_merge_entry(previous, entry) {
+                    return
+                }
+            }
+            index = index + 1
+        }
+        resolver.entries.push(move entry)
+    }
+
+    fn namespace_lookup(resolver: NamespaceResolver, name: Text, type_value: bool) -> Option<Text> {
+        var index: usize = 0
+        while index < resolver.entries.length() {
+            loan read resolver.entries[index] as entry {
+                if entry.type_value == type_value && std::text::equal(entry.name, name) && entry.target.length() != 0 {
+                    return Some(entry.target.clone())
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn namespace_resolve_name(resolver: NamespaceResolver, name: write Name, type_value: bool) -> void {
+        let original = sema::name_text(resolver.source, name)
+        var scope = resolver.module_name.clone()
+        while true {
+            let candidate = namespace_qualify(scope, original)
+            match namespace_lookup(resolver, candidate, type_value) {
+                Some(target) => {
+                    name.text = move target;
+                    return
+                }
+                None => {
+                }
+            }
+            if scope.length() == 0 {
+                break
+            }
+            scope = namespace_parent(scope)
+        }
+    }
+
+    fn namespace_type_name(resolver: NamespaceResolver, name: write Name) -> void {
+        match sema::find_name(resolver.source, resolver.parameters, name) {
+            Some(index) => {
+                index;
+                return
+            }
+            None => {
+            }
+        }
+        namespace_resolve_name(resolver, name, true)
+    }
+
+    fn namespace_value_name(resolver: NamespaceResolver, name: write Name) -> void {
+        match sema::find_name(resolver.source, resolver.locals, name) {
+            Some(index) => {
+                index;
+                return
+            }
+            None => {
+            }
+        }
+        namespace_resolve_name(resolver, name, false)
+    }
+
+    fn namespace_declaration_name(resolver: NamespaceResolver, name: write Name) -> void {
+        let original = sema::name_text(resolver.source, name)
+        name.text = namespace_qualify(resolver.module_name, original)
+    }
+
+    fn namespace_path(resolver: NamespaceResolver, path: write Path) -> void {
+        if path.segments.length() != 0 {
+            loan write path.segments[0] as name {
+                namespace_value_name(resolver, name)
+            }
+        }
+    }
+
+    fn namespace_merge_entry(previous: write NamespaceEntry, entry: NamespaceEntry) -> bool {
+        if previous.type_value != entry.type_value || std::text::equal(previous.name, entry.name) == false {
+            return false
+        }
+        if std::text::equal(previous.target, entry.target) == false {
+            previous.target = ""
+        }
+        return true
+    }
+}

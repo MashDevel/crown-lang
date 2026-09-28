@@ -1,0 +1,27 @@
+struct Item {
+    value: u32
+}
+fn consume(item: take Item) -> u32 {
+    return item.value
+}
+fn main() -> u32 {
+    var left = 8
+    var right = 2
+    print(left - right)
+    print(left * right)
+    print(left / right)
+    print(left % right)
+    print(left == right)
+    print(left != right)
+    print(left < right)
+    print(left <= right)
+    print(left > right)
+    print(left >= right)
+    if false {
+        print(0)
+    }
+    let result = consume(Item {
+            value: (left + right)
+        })
+    return result
+}

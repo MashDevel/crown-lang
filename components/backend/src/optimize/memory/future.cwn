@@ -1,0 +1,97 @@
+module optimize {
+    fn memory_future_stores(function: ir::Function, scan: LoadScan) -> Vec<Vec<LoadAccess>> {
+        var entries = Vec<Vec<LoadAccess>>.new()
+        for block in 0..function.blocks.length() {
+            entries.push(Vec<LoadAccess>.new())
+        }
+        var changed = true
+        while changed {
+            changed = false
+            var cursor = function.blocks.length()
+            while cursor > 0 {
+                cursor = cursor - 1
+                let output = memory_successor_stores(function.blocks[cursor], entries)
+                let input = memory_backward_stores(function, function.blocks[cursor], scan, output)
+                if memory_access_sets_equal(entries[cursor], input) == false {
+                    entries[cursor] = memory_accesses_copy(input)
+                    changed = true
+                }
+            }
+        }
+        return move entries
+    }
+
+    fn memory_successor_stores(block: ir::BasicBlock, entries: Vec<Vec<LoadAccess>>) -> Vec<LoadAccess> {
+        let targets = match read block.terminator {
+            Some(terminator) => ir::terminator_targets(terminator)
+            None => Vec<usize>.new()
+        }
+        if targets.length() == 0 {
+            return Vec<LoadAccess>.new()
+        }
+        var output = memory_accesses_copy(entries[targets[0]])
+        for index in 1..targets.length() {
+            output = memory_access_intersection(output, entries[targets[index]])
+        }
+        return move output
+    }
+
+    fn memory_backward_stores(function: ir::Function, block: ir::BasicBlock, scan: LoadScan, initial: Vec<LoadAccess>) -> Vec<LoadAccess> {
+        var stores = memory_accesses_copy(initial)
+        var cursor = block.instructions.length()
+        while cursor > 0 {
+            cursor = cursor - 1
+            loan read block.instructions[cursor].kind as kind {
+                match memory_store_access(function, kind) {
+                    Some(access) => {
+                        if memory_access_contains(stores, access) == false {
+                            stores.push(access)
+                        }
+                    }
+                    None => {
+                        stores = memory_backward_observe(function, scan, stores, kind)
+                    }
+                }
+            }
+        }
+        return memory_entry_stores(block, stores)
+    }
+
+    fn memory_backward_observe(function: ir::Function, scan: LoadScan, stores: Vec<LoadAccess>, kind: ir::InstructionKind) -> Vec<LoadAccess> {
+        if memory_instruction_effect(kind, scan.effects) == 0 {
+            return memory_accesses_copy(stores)
+        }
+        var output = Vec<LoadAccess>.new()
+        for index in 0..stores.length() {
+            if memory_instruction_touches(function, scan, stores[index], kind, 3) == false {
+                output.push(stores[index])
+            }
+        }
+        return move output
+    }
+
+    fn memory_entry_stores(block: ir::BasicBlock, stores: Vec<LoadAccess>) -> Vec<LoadAccess> {
+        var output = Vec<LoadAccess>.new()
+        for index in 0..stores.length() {
+            if memory_address_defined(block, stores[index].address) == false {
+                output.push(stores[index])
+            }
+        }
+        return move output
+    }
+
+    fn memory_address_defined(block: ir::BasicBlock, address: usize) -> bool {
+        for index in 0..block.instructions.length() {
+            match block.instructions[index].result {
+                Some(value) => {
+                    if value == address {
+                        return true
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return false
+    }
+}

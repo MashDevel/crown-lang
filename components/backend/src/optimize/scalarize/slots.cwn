@@ -1,0 +1,91 @@
+module optimize {
+    fn scalar_insert_slots(function: write ir::Function, analysis: write ScalarAnalysis) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var source = ir::basic_block_new()
+            loan read function.blocks[block] as value {
+                source = ir::basic_block_copy(value)
+            }
+            var output = Vec<ir::Instruction>.new()
+            var index: usize = 0
+            while index < source.instructions.length() {
+                loan read source.instructions[index] as instruction {
+                    output.push(ir::instruction_copy(instruction))
+                    match read instruction.result {
+                        Some(root) => {
+                            scalar_insert_root_slots(function, analysis, root, output)
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            function.blocks[block].instructions = move output
+            block = block + 1
+        }
+    }
+
+    fn scalar_insert_root_slots(function: write ir::Function, analysis: write ScalarAnalysis, root: usize, output: write Vec<ir::Instruction>) -> void {
+        if root >= analysis.roots.length() {
+            return
+        }
+        if analysis.roots[root].valid == false || analysis.roots[root].fields.length() == 0 {
+            return
+        }
+        var index: usize = 0
+        while index < analysis.roots[root].fields.length() {
+            var field_type = ir::TypeVoid()
+            loan read analysis.roots[root].fields[index].value_type as value_type {
+                field_type = value_type
+            }
+            match ir::type_size(field_type) {
+                None => {
+                }
+                Some(size) => {
+                    let pointer = ir::TypePointer()
+                    let slot = ir::function_new_value(function, pointer)
+                    let alignment = scalar_min_alignment(analysis.roots[root].fields[index].alignment, analysis.roots[root].alignment)
+                    analysis.roots[root].fields[index].slot = Some(slot)
+                    output.push(ir::Instruction {
+                            result: Some(slot), kind: ir::InstructionStackSlot(size, alignment)
+                        })
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn scalar_min_alignment(left: u32, right: u32) -> u32 {
+        if left < right {
+            return left
+        }
+        return right
+    }
+
+    fn scalar_field_slot(analysis: ScalarAnalysis, root: usize, offset: u64) -> Option<usize> {
+        var index: usize = 0
+        while index < analysis.roots[root].fields.length() {
+            if analysis.roots[root].fields[index].offset == offset {
+                loan read analysis.roots[root].fields[index].slot as slot {
+                    return slot
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn scalar_field_at(analysis: ScalarAnalysis, root: usize, offset: u64) -> Option<ScalarField> {
+        var index: usize = 0
+        while index < analysis.roots[root].fields.length() {
+            loan read analysis.roots[root].fields[index] as field {
+                if field.offset == offset {
+                    return Some(scalar_field_copy(field))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+}

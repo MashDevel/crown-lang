@@ -1,0 +1,41 @@
+module arm64 {
+    fn branch_word(displacement: i64, link: bool) -> Result<u32, Text> {
+        if displacement % 4 != 0 {
+            return Err("ARM64 branch displacement must be aligned to four bytes")
+        }
+        if displacement < -134217728 || displacement > 134217724 {
+            return Err("ARM64 branch displacement exceeds 26 bits")
+        }
+        let opcode: u32 = if link {
+            2483027968
+        } else {
+            335544320
+        }
+        return Ok(opcode | u32.from((displacement / 4) & 67108863))
+    }
+
+    fn conditional_branch(displacement: i64, condition: u32) -> Result<u32, Text> {
+        if condition > 15 {
+            return Err("ARM64 condition exceeds four bits")
+        }
+        if displacement % 4 != 0 {
+            return Err("ARM64 branch displacement must be aligned to four bytes")
+        }
+        if displacement < -1048576 || displacement > 1048572 {
+            return Err("ARM64 conditional branch displacement exceeds 19 bits")
+        }
+        return Ok(1409286144 |(u32.from((displacement / 4) & 524287) << 5) | condition)
+    }
+
+    fn indirect_branch(register: u32, link: bool) -> Result<u32, Text> {
+        if register > 30 {
+            return Err("ARM64 branch requires a general register")
+        }
+        let opcode: u32 = if link {
+            3594452992
+        } else {
+            3592355840
+        }
+        return Ok(opcode |(register << 5))
+    }
+}

@@ -1,0 +1,29 @@
+copy struct Record {
+    address: usize
+}
+copy struct Nested {
+    record: Record
+}
+fn record() -> Record {
+    return Record {
+        address: 7
+    }
+}
+fn nested() -> Nested {
+    return Nested {
+        record: record()
+    }
+}
+fn main() -> u32 {
+    if record().address != 7 {
+        return 1
+    }
+    if nested().record.address != 7 {
+        return 2
+    }
+    let copied = nested().record
+    if copied.address != 7 {
+        return 3
+    }
+    return 0
+}

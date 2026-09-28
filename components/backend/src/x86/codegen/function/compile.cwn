@@ -1,0 +1,121 @@
+module x86 {
+    fn codegen_compile_function(program: ir::Program, id: usize) -> Result<Vec<Instruction>, CodegenError> {
+        if id >= program.functions.length() {
+            return Err(codegen_error(CodegenMissingSymbol()))
+        }
+        loan read program.functions[id] as function {
+            match codegen_build_frame(function) {
+                Err(error) => {
+                    return Err(move error)
+                }
+                Ok(frame) => {
+                    var compiler = FunctionCompiler {
+                        id: id
+                        frame: move frame
+                        instructions: Some(Vec<Instruction>.new())
+                        block: None()
+                        symbols: codegen_symbol_addresses(function)
+                        uses: codegen_value_uses(function)
+                        cached_value: None()
+                        label_sequence: 0
+                    }
+                    match codegen_prologue(program, compiler) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                    match codegen_blocks(program, compiler) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                    return Ok(codegen_take_instructions(compiler))
+                }
+            }
+        }
+    }
+
+    fn codegen_blocks(program: ir::Program, compiler: write FunctionCompiler) -> Result<void, CodegenError> {
+        loan read program.functions[compiler.id] as function {
+            let order = codegen_block_order(function)
+            var index: usize = 0
+            while index < order.length() {
+                let block = order[index]
+                codegen_clear_cache(compiler)
+                compiler.block = Some(block)
+                codegen_emit(compiler, Label(codegen_label(block)))
+                loan read function.blocks[block] as body {
+                    match codegen_compile_block(program, compiler, body) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+                index = index + 1
+            }
+        }
+        compiler.block = None()
+        return Ok(())
+    }
+
+    fn codegen_compile_block(program: ir::Program, compiler: write FunctionCompiler, block: ir::BasicBlock) -> Result<void, CodegenError> {
+        match codegen_fused_overflow(program, compiler) {
+            Some(input) => {
+                return codegen_compile_overflow_block(program, compiler, move input)
+            }
+            None => {
+            }
+        }
+        let fused = codegen_fused_compare(program, compiler)
+        var count = block.instructions.length()
+        match read fused {
+            Some(input) => {
+                count = count - input.skipped
+            }
+            None => {
+            }
+        }
+        codegen_compile_block_range(program, compiler, count)?
+        match move fused {
+            Some(input) => {
+                return codegen_compile_compare_branch(program, compiler, move input)
+            }
+            None => {
+            }
+        }
+        match read block.terminator {
+            Some(terminator) => {
+                return codegen_compile_terminator(program, compiler, terminator)
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+    }
+
+    fn codegen_compile_block_range(program: ir::Program, compiler: write FunctionCompiler, limit: usize) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < limit {
+            match codegen_compile_sequence_at(program, compiler, SequencePosition {
+                    index: index, limit: limit
+                }) {
+                Err(error) => {
+                    return Err(move error)
+                }
+                Ok(consumed) => {
+                    index = index + consumed
+                }
+            }
+        }
+        return Ok(())
+    }
+}

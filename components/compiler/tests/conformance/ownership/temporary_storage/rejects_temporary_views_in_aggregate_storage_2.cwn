@@ -1,0 +1,12 @@
+struct Stored<T> {
+    value: T
+}
+fn main() -> u32 {
+    let values = [1, 2]
+    loan read values as view {
+        let stored = Stored<Slice<u32>> {
+            value: view
+        }
+    }
+    return 0
+}

@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let values = [7, 8]
+    let index: usize = 1
+    return values[index]
+}

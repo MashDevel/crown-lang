@@ -1,0 +1,19 @@
+opaque resource NativeHandle {
+    value: usize, drop {
+        value
+    }
+}
+fn make() -> NativeHandle {
+    unsafe {
+        return NativeHandle {
+            value: 42
+        }
+    }
+}
+fn main() -> u32 {
+    let value = make()
+    let worker = spawn move {
+        value
+    }
+    return 0
+}

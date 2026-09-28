@@ -1,0 +1,159 @@
+module optimize {
+    fn load_scan_block(function: ir::Function, block: ir::BasicBlock, scan: write LoadScan) -> void {
+        var index: usize = 0
+        while index < block.instructions.length() {
+            loan read block.instructions[index] as instruction {
+                load_scan_instruction(function, instruction, scan)
+            }
+            index = index + 1
+        }
+    }
+
+    fn load_scan_instruction(function: ir::Function, instruction: ir::Instruction, scan: write LoadScan) -> void {
+        match read instruction.kind {
+            ir::InstructionMemory(memory) => {
+                load_scan_memory(function, scan, instruction.result, memory)
+            }
+            ir::InstructionCall(target, arguments, result) => {
+                arguments;
+                result;
+                target;
+                load_retain_call(function, scan, instruction.kind)
+            }
+            ir::InstructionCallIndirect(target, signature, arguments) => {
+                target;
+                signature;
+                arguments;
+                scan.available = Vec<LoadEntry>.new()
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn load_scan_memory(function: ir::Function, scan: write LoadScan, result: Option<usize>, memory: ir::MemoryInstruction) -> void {
+        match read memory {
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                alignment;
+                if volatile {
+                    scan.available = Vec<LoadEntry>.new()
+                    return
+                }
+                load_invalidate_store(function, scan, LoadStore {
+                        address: address, value: value
+                    })
+            }
+            ir::MemoryCopy(destination, source, size) => {
+                destination;
+                source;
+                size;
+                scan.available = Vec<LoadEntry>.new()
+            }
+            ir::MemorySet(destination, value, size) => {
+                destination;
+                value;
+                size;
+                scan.available = Vec<LoadEntry>.new()
+            }
+            ir::MemoryRepeat(destination, source, size, count) => {
+                destination;
+                source;
+                size;
+                count;
+                scan.available = Vec<LoadEntry>.new()
+            }
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                if volatile {
+                    scan.available = Vec<LoadEntry>.new();
+                    return
+                }
+                let id = match result {
+                    Some(value) => value
+                    None => {
+                        return
+                    }
+                }
+                let resolved = load_resolve(address, scan.replacements)
+                load_record(scan, LoadEntry {
+                        address: resolved, value_type: value_type, alignment: alignment, result: id
+                    })
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn load_record(scan: write LoadScan, entry: take LoadEntry) -> void {
+        match load_find(scan.available, entry.address, entry.value_type, entry.alignment) {
+            Some(existing) => {
+                if scan.eliminate {
+                    scan.replacements[entry.result] = Some(existing);
+                    scan.removed[entry.result] = true
+                }
+                return
+            }
+            None => {
+                scan.available.push(move entry)
+            }
+        }
+    }
+
+    fn load_find(values: Vec<LoadEntry>, address: usize, value_type: ir::Type, alignment: u32) -> Option<usize> {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if value.address == address && value.alignment == alignment && ir::type_equal(value.value_type, value_type) {
+                    return Some(value.result)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn load_invalidate_store(function: ir::Function, scan: write LoadScan, store: take LoadStore) -> void {
+        match ir::function_value_type(function, store.value) {
+            None => {
+                scan.available = Vec<LoadEntry>.new()
+            }
+            Some(value_type) => {
+                match ir::type_size(value_type) {
+                    None => {
+                        scan.available = Vec<LoadEntry>.new()
+                    }
+                    Some(size) => {
+                        load_retain_disjoint(function, scan, store.address, size)
+                    }
+                }
+            }
+        }
+    }
+
+    fn load_retain_disjoint(function: ir::Function, scan: write LoadScan, address: usize, size: u64) -> void {
+        var output = Vec<LoadEntry>.new()
+        var index: usize = 0
+        while index < scan.available.length() {
+            loan read scan.available[index] as load {
+                var load_size: u64 = 18446744073709551615
+                match ir::type_size(load.value_type) {
+                    Some(value) => {
+                        load_size = value
+                    }
+                    None => {
+                    }
+                }
+                let left = LoadAccess {
+                    address: load.address, size: load_size
+                }
+                let right = LoadAccess {
+                    address: address, size: size
+                }
+                if load_disjoint(function, scan, left, right) {
+                    output.push(load_entry_copy(load))
+                }
+            }
+            index = index + 1
+        }
+        scan.available = move output
+    }
+}

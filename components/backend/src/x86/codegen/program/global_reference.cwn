@@ -1,0 +1,31 @@
+module x86 {
+    fn codegen_global_reference(program: ir::Program, reference: ir::GlobalReference) -> Result<DataReference, CodegenError> {
+        match codegen_reference_name(program, reference.target) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(name) => {
+                return Ok(DataReference {
+                        offset: reference.offset, symbol: move name, addend: reference.addend
+                    })
+            }
+        }
+    }
+
+    fn codegen_reference_name(program: ir::Program, target: ir::GlobalReferenceTarget) -> Result<Text, CodegenError> {
+        match read target {
+            ir::GlobalReferenceFunction(function) => {
+                if function >= program.functions.length() {
+                    return Err(codegen_error(CodegenMissingSymbol()))
+                }
+                return Ok(program.functions[function].name.clone())
+            }
+            ir::GlobalReferenceGlobal(global) => {
+                if global >= program.globals.length() {
+                    return Err(codegen_error(CodegenMissingSymbol()))
+                }
+                return Ok(program.globals[global].name.clone())
+            }
+        }
+    }
+}

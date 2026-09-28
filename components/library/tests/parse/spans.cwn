@@ -1,0 +1,72 @@
+fn parse_checksum(bytes: Slice<u8>) -> u32 {
+    var sum: u32 = 0
+    for index in 0..bytes.length() {
+        sum = sum + u32.from(bytes[index])
+    }
+    return sum
+}
+
+fn test_parse_spans() -> u32 {
+    let input = "é\0:42!"
+    loan read input as bytes {
+        var parser = std::parse::Parser {
+            data: bytes, position: 0
+        }
+        match test_parse_spans_body(parser) {
+            Ok(value) => {
+                return value
+            }
+            Err(error) => {
+                error;
+                return 9
+            }
+        }
+    }
+}
+
+fn test_parse_spans_body(parser: write std::parse::Parser) -> Result<u32, std::parse::Error> {
+    let prefix = test_parse_span_prefix(parser)?
+    if prefix != 0 {
+        return Ok(prefix)
+    }
+    return test_parse_span_tail(parser)
+}
+
+fn test_parse_span_prefix(parser: write std::parse::Parser) -> Result<u32, std::parse::Error> {
+    let span = std::parse::until(parser, 58)?
+    let sum = std::parse::with_span(parser, span, parse_checksum)?
+    if sum != 364 || span.start != 0 || span.end != 3 {
+        return Ok(1)
+    }
+    if std::parse::read_byte(parser)? != 58 {
+        return Ok(2)
+    }
+    if std::parse::unsigned(parser)? != 42 {
+        return Ok(3)
+    }
+    return Ok(0)
+}
+
+fn test_parse_span_tail(parser: write std::parse::Parser) -> Result<u32, std::parse::Error> {
+    let tail = std::parse::take_bytes(parser, 1)?
+    if tail.start != 6 || tail.end != 7 {
+        return Ok(4)
+    }
+    let empty = std::parse::take_bytes(parser, 0)?
+    if std::parse::with_span(parser, empty, parse_checksum)? != 0 {
+        return Ok(7)
+    }
+    let invalid = std::parse::Span {
+        start: 2, end: 1
+    }
+    if parse_failed(std::parse::with_span(parser, invalid, parse_checksum), 6, 2) == false {
+        return Ok(5)
+    }
+    let past_end = std::parse::Span {
+        start: 0, end: 8
+    }
+    if parse_failed(std::parse::with_span(parser, past_end, parse_checksum), 6, 0) == false {
+        return Ok(6)
+    }
+    return Ok(0)
+}

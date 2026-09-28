@@ -1,0 +1,96 @@
+module sema {
+    struct CallSignature {
+        function: Option<usize>
+        parameters: Vec<ParameterType>
+        result: Type
+        type_parameter_count: usize
+        unsafe_value: bool
+    }
+
+    struct CallRequest {
+        signature: CallSignature
+        expected: Type
+        span: frontend::Span
+    }
+
+    struct CallState {
+        signature: CallSignature
+        values: Vec<Type>
+        checked: Vec<CheckedArgument>
+        span: frontend::Span
+    }
+
+    enum CheckedArgument {
+        InvalidArgument
+        ValidArgument(ExpressionInfo)
+    }
+
+    fn call_signature_copy(value: CallSignature) -> CallSignature {
+        var parameters = Vec<ParameterType>.with_capacity(value.parameters.length())
+        var index: usize = 0
+        while index < value.parameters.length() {
+            loan read value.parameters[index] as parameter {
+                parameters.push(parameter_type_copy(parameter))
+            }
+            index = index + 1
+        }
+        var function: Option<usize> = None()
+        match read value.function {
+            Some(item) => {
+                function = Some(item)
+            }
+            None => {
+            }
+        }
+        return CallSignature {
+            function: function
+            parameters: move parameters
+            result: type_copy(value.result)
+            type_parameter_count: value.type_parameter_count
+            unsafe_value: value.unsafe_value
+        }
+    }
+
+    fn function_call_signature(symbols: Symbols, index: usize) -> CallSignature {
+        var parameters = Vec<ParameterType>.new()
+        loan read symbols.functions[index] as function {
+            var parameter_index: usize = 0
+            while parameter_index < function.parameters.length() {
+                loan read function.parameters[parameter_index] as parameter {
+                    parameters.push(ParameterType {
+                            mode: parameter.mode
+                            value_type: type_copy(parameter.value_type)
+                        })
+                }
+                parameter_index = parameter_index + 1
+            }
+            return CallSignature {
+                function: Some(index)
+                parameters: move parameters
+                result: type_copy(function.result)
+                type_parameter_count: function.type_parameters.length()
+                unsafe_value: function.unsafe_value
+            }
+        }
+    }
+
+    fn function_value_signature(value_type: Type) -> Option<CallSignature> {
+        let callable = callable_type(value_type)
+        match read callable {
+            FunctionType(parameters, result) => {
+                loan read result as result_type {
+                    return Some(CallSignature {
+                            function: None()
+                            parameters: parameter_types_copy(parameters)
+                            result: type_copy(result_type)
+                            type_parameter_count: 0
+                            unsafe_value: false
+                        })
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

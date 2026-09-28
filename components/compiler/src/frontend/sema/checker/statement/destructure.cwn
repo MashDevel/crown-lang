@@ -1,0 +1,75 @@
+module sema {
+    fn checker_destructure(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementDestructure(mutable_value, bindings, expression) => {
+                match checker_expression(checker, expression) {
+                    None => {
+                    }
+                    Some(info) => {
+                        if value_is_borrowed(info.value) {
+                            checker_error(checker, "struct destructuring requires ownership of the whole value")
+                            return
+                        }
+                        if checker_destructure_shape(checker, info.value_type, bindings) == false {
+                            return
+                        }
+                        checker_destructure_bindings(checker, bindings, DestructureBindings {
+                                mutable_value: mutable_value, value_type: type_copy(info.value_type), span: statement.span
+                            })
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid struct destructuring")
+            }
+        }
+    }
+    struct DestructureBindings {
+        mutable_value: bool, value_type: Type, span: frontend::Span
+    }
+    fn checker_destructure_bindings(checker: write Checker, bindings: Vec<frontend::StructBinding>, context: take DestructureBindings) -> void {
+        for index in 0..bindings.length() {
+            match checker_field_type(checker, context.value_type, bindings[index].field) {
+                None => {
+                }
+                Some(value_type) => {
+                    let info = checker_type_info(checker, move value_type)
+                    checker_store_binding(checker, BindingResult {
+                            name: frontend::name_copy(bindings[index].binding), mutable_value: context.mutable_value,
+                            span: context.span, info: move info, expected: Infer(), annotated: false
+                        })
+                }
+            }
+        }
+    }
+    fn checker_destructure_shape(checker: write Checker, value_type: Type, bindings: Vec<frontend::StructBinding>) -> bool {
+        let symbol = match type_named_symbol(value_type) {
+            Some(value) => value,
+            None => {
+                checker_error(checker, "struct destructuring requires a struct value");
+                return false
+            }
+        }
+        let allowed = match read checker.symbols.types[symbol].kind {
+            Struct => true,
+            _ => false
+        }
+        if allowed == false {
+            checker_error(checker, "struct destructuring cannot consume a resource or non-struct value")
+            return false
+        }
+        if bindings.length() != checker.symbols.types[symbol].fields.length() {
+            checker_error(checker, "struct destructuring must bind every field exactly once")
+            return false
+        }
+        for index in 0..bindings.length() {
+            for previous in 0..index {
+                if names_equal(checker.symbols.source, bindings[index].field, bindings[previous].field) {
+                    checker_error(checker, "struct destructuring must bind every field exactly once")
+                    return false
+                }
+            }
+        }
+        return true
+    }
+}

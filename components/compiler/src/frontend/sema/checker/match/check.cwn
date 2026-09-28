@@ -1,0 +1,136 @@
+module sema {
+    fn checker_match(checker: write Checker, expression: frontend::MatchExpression) -> void {
+        checker_match_value(checker, expression, None())
+    }
+
+    fn checker_match_value(checker: write Checker, expression: frontend::MatchExpression, expected: take Option<Type>) -> Option<ExpressionInfo> {
+        match checker_match_source(checker, expression.value, expression.access) {
+            None => {
+                return None()
+            }
+            Some(source) => {
+                let before = scopes_copy(checker.scopes)
+                let context = match_context(source, before, move expected)
+                let analysis = MatchAnalysis {
+                    source: move source, context: move context
+                }
+                return checker_apply_match(checker, expression, move analysis)
+            }
+        }
+    }
+
+    fn checker_match_source(checker: write Checker, value: frontend::Expression, access: Option<frontend::LoanMode>) -> Option<MatchSource> {
+        match read access {
+            None => {
+                match checker_expression(checker, value) {
+                    None => {
+                        return None()
+                    }
+                    Some(info) => {
+                        if match_requires_move(checker.symbols, info) {
+                            checker_error(checker, "match requires an enum, Text, or TextView with valid access")
+                        }
+                        return Some(MatchSource {
+                                value_type: type_copy(info.value_type), root_key: None(), access: None()
+                            })
+                    }
+                }
+            }
+            Some(mode) => {
+                return checker_borrowed_match_source(checker, value, mode)
+            }
+        }
+    }
+
+    fn checker_borrowed_match_source(checker: write Checker, value: frontend::Expression, mode: frontend::LoanMode) -> Option<MatchSource> {
+        match expression_root(value) {
+            None => {
+                checker_error(checker, "match requires an enum, Text, or TextView with valid access");
+                return None()
+            }
+            Some(root) => {
+                match checker_find_variable(checker, root) {
+                    None => {
+                        checker_error(checker, "match requires an enum, Text, or TextView with valid access");
+                        return None()
+                    }
+                    Some(key) => {
+                        let variable = checker_variable_copy(checker, key)
+                        if can_reborrow(variable.access, mode) == false {
+                            checker_error(checker, "match requires an enum, Text, or TextView with valid access");
+                            return None()
+                        }
+                        let usage = loan_usage(mode)
+                        match checker_place(checker, value, usage) {
+                            None => {
+                                return None()
+                            }
+                            Some(info) => {
+                                return Some(MatchSource {
+                                        value_type: type_copy(info.value_type)
+                                        root_key: Some(key)
+                                        access: Some(mode)
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    struct MatchAnalysis {
+        source: MatchSource
+        context: MatchContext
+    }
+
+    fn checker_apply_match(checker: write Checker, expression: frontend::MatchExpression, input: take MatchAnalysis) -> Option<ExpressionInfo> {
+        var analysis = move input
+        if match_variant_count(checker, analysis.source.value_type) == 0 && match_is_text(analysis.source.value_type) == false && type_is_integer(analysis.source.value_type) == false {
+            checker_error(checker, "match requires an enum, Text, or TextView with valid access")
+            return None()
+        }
+        checker_begin_match_loan(checker, analysis.source)
+        analysis.context.before = scopes_copy(checker.scopes)
+        analysis.context.region_before = thread_regions_copy(checker.thread_regions)
+        var index: usize = 0
+        while index < expression.arms.length() {
+            checker_match_arm(checker, expression.arms[index], analysis.context)
+            index = index + 1
+        }
+        checker_finish_match(checker, analysis.source, analysis.context)
+        return match_expression_result(checker, analysis.context)
+    }
+
+    fn checker_begin_match_loan(checker: write Checker, source: MatchSource) -> void {
+        match read source.root_key {
+            None => {
+            }
+            Some(key) => {
+                match read source.access {
+                    Some(mode) => {
+                        checker_begin_loan(checker, key, mode)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+    }
+
+    fn checker_end_match_loan(checker: write Checker, source: MatchSource) -> void {
+        match read source.root_key {
+            None => {
+            }
+            Some(key) => {
+                match read source.access {
+                    Some(mode) => {
+                        checker_end_loan(checker, key, mode)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+    }
+}

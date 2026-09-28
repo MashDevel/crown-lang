@@ -1,0 +1,37 @@
+module lowering {
+    fn pass_argument(compiler: write FunctionCompiler, analysis: sema::Analysis, mode: frontend::Mode, value_type: sema::Type, expression: frontend::Expression) -> Result<usize, u32> {
+        if sema::type_is_scoped_function(value_type) {
+            return pass_scoped_argument(compiler, analysis, value_type, expression)
+        }
+        let parameter = sema::ParameterType {
+            mode: mode, value_type: sema::type_copy(value_type)
+        }
+        if sema::parameter_uses_view(parameter) {
+            return pass_view_argument(compiler, analysis, expression)
+        }
+        if sema::mode_is_write(mode) {
+            return expression_place(compiler, analysis, expression)
+        }
+        if sema::mode_is_read(mode) && type_is_direct(analysis.checker.symbols, value_type)? {
+            return scalar_expression(compiler, analysis, expression)
+        }
+        return pass_owned_argument(compiler, analysis, mode, value_type, expression)
+    }
+
+    fn pass_owned_argument(compiler: write FunctionCompiler, analysis: sema::Analysis, mode: frontend::Mode, value_type: sema::Type, expression: frontend::Expression) -> Result<usize, u32> {
+        let value = if sema::type_builtin(value_type) == sema::RawPtr() {
+            borrowed_scalar_value(compiler, analysis, expression)?
+        } else if sema::mode_is_read(mode) {
+            borrowed_projection(compiler, analysis, expression)?
+        } else {
+            function_expression(compiler, analysis, expression)?
+        }
+        let address = argument_address(compiler, analysis.checker.symbols, move value)?
+        if expression_is_owned(compiler, analysis, expression) && sema::type_is_copy_with_symbols(analysis.checker.symbols, value_type) == false {
+            compiler.temporaries.push(Temporary {
+                    address: address, value_type: sema::type_copy(value_type), transfer: sema::mode_is_read(mode) == false, depth: compiler.scope_depth
+                })
+        }
+        return Ok(address)
+    }
+}

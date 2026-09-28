@@ -1,0 +1,243 @@
+fn register_aggregate_signature(returned: read bool) -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    var components = Vec<ir::AbiComponent>.new()
+    components.push(ir::AbiComponent {
+            offset: 0, value_type: ir::TypeInteger(ir::IntegerWidth64())
+        })
+    components.push(ir::AbiComponent {
+            offset: 8, value_type: ir::TypeInteger(ir::IntegerWidth64())
+        })
+    let aggregate = ir::AggregateRegisters(u64.from(16), 8, move components)
+    if returned {
+        signature.parameter_abi[0] = ir::ParameterReturn(move aggregate)
+    } else {
+        signature.parameter_abi[0] = ir::ParameterAggregate(move aggregate)
+    }
+    return move signature
+}
+
+fn memory_aggregate_signature() -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    signature.parameter_abi[0] = ir::ParameterAggregate(ir::AggregateMemory(u64.from(24), 8))
+    return move signature
+}
+
+fn terminate_void(function: write ir::Function, block: read usize) -> bool {
+    match ir::function_terminate(function, block, ir::TerminatorReturn(None())) {
+        Err(error) => {
+            error;
+            return false
+        }
+        Ok(done) => {
+            done;
+            return true
+        }
+    }
+}
+
+fn compile_capture(name: Text, signature: take ir::Signature, code: u32) -> Result<Vec<x86::Instruction>, u32> {
+    var function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+    let block = backend_test::checked(ir::function_add_block(function), code)?
+    if terminate_void(function, block) == false {
+        return Err(code + 1)
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    return backend_test::checked(x86::codegen_compile_function(program, id), code + 2)
+}
+
+fn compile_call_result() -> Result<Vec<x86::Instruction>, u32> {
+    let imported = ir::function_new("returning", register_aggregate_signature(true), ir::LinkageImport())
+    var caller = ir::function_new("caller", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    let block = backend_test::checked(ir::function_add_block(caller), 7)?
+    let destination = backend_test::value(ir::function_append(caller, block, ir::InstructionStackSlot(u64.from(16), 8)), 8, 9)?
+    var arguments = Vec<usize>.new()
+    arguments.push(destination)
+    backend_test::checked(ir::function_append(caller, block, ir::InstructionCall(0, move arguments, ir::TypeVoid())), 10)?
+    if terminate_void(caller, block) == false {
+        return Err(11)
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move imported)
+    let id = ir::program_add_function(program, move caller)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Err(12)
+        }
+        Ok(instructions) => {
+            return Ok(move instructions)
+        }
+    }
+}
+
+fn compile_memory_argument() -> Result<Vec<x86::Instruction>, u32> {
+    let imported = ir::function_new("memory_parameter", memory_aggregate_signature(), ir::LinkageImport())
+    var caller = ir::function_new("memory_caller", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    let block = backend_test::checked(ir::function_add_block(caller), 16)?
+    let argument = backend_test::value(ir::function_append(caller, block, ir::InstructionStackSlot(u64.from(24), 8)), 17, 18)?
+    var arguments = Vec<usize>.new()
+    arguments.push(argument)
+    backend_test::checked(ir::function_append(caller, block, ir::InstructionCall(0, move arguments, ir::TypeVoid())), 19)?
+    if terminate_void(caller, block) == false {
+        return Err(20)
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move imported)
+    let id = ir::program_add_function(program, move caller)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Err(21)
+        }
+        Ok(instructions) => {
+            return Ok(move instructions)
+        }
+    }
+}
+
+fn capture_count(instructions: read Vec<x86::Instruction>) -> usize {
+    var count: usize = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::StoreSized(values) => {
+                let base = x86::register_code(values.base)
+                let source = x86::register_code(values.source)
+                if base == 5 &&(source == 7 || source == 6) {
+                    count = count + 1
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return count
+}
+
+fn return_load_count(instructions: read Vec<x86::Instruction>) -> usize {
+    var count: usize = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::LoadSized(values) => {
+                let destination = x86::register_code(values.destination)
+                if x86::register_code(values.base) == 11 &&(destination == 0 || destination == 2) {
+                    count = count + 1
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return count
+}
+
+fn result_store_count(instructions: read Vec<x86::Instruction>) -> usize {
+    var count: usize = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::StoreSized(values) => {
+                let source = x86::register_code(values.source)
+                if x86::register_code(values.base) == 11 &&(source == 0 || source == 2) {
+                    count = count + 1
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return count
+}
+
+fn stores_to(instructions: read Vec<x86::Instruction>, base: read u8) -> usize {
+    var count: usize = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::StoreSized(values) => {
+                if x86::register_code(values.base) == base && x86::register_code(values.source) == 0 {
+                    count = count + 1
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return count
+}
+
+fn register_cases() -> u32 {
+    match compile_capture("parameter", register_aggregate_signature(false), 1) {
+        Err(error) => {
+            return error
+        }
+        Ok(instructions) => {
+            if capture_count(instructions) != 2 {
+                return 20
+            }
+        }
+    }
+    match compile_capture("returning", register_aggregate_signature(true), 4) {
+        Err(error) => {
+            return error
+        }
+        Ok(instructions) => {
+            if return_load_count(instructions) != 2 {
+                return 21
+            }
+        }
+    }
+    match compile_call_result() {
+        Err(error) => {
+            return error
+        }
+        Ok(instructions) => {
+            if result_store_count(instructions) != 2 {
+                return 22
+            }
+        }
+    }
+    return 42
+}
+
+fn memory_cases() -> u32 {
+    match compile_capture("memory_parameter", memory_aggregate_signature(), 13) {
+        Err(error) => {
+            return error
+        }
+        Ok(instructions) => {
+            if stores_to(instructions, 5) != 3 {
+                return 23
+            }
+        }
+    }
+    match compile_memory_argument() {
+        Err(error) => {
+            return error
+        }
+        Ok(instructions) => {
+            if stores_to(instructions, 4) != 3 {
+                return 24
+            }
+        }
+    }
+    return 42
+}
+
+fn main() -> u32 {
+    let result = register_cases()
+    if result != 42 {
+        return result
+    }
+    memory_cases()
+}

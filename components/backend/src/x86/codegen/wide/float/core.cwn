@@ -1,0 +1,142 @@
+module x86 {
+    fn codegen_wide_float_cast(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        let operator = input.operator
+        match operator {
+            ir::CastFloatToSignedInteger => {
+                return codegen_float_to_wide(program, compiler, move input)
+            }
+            ir::CastFloatToUnsignedInteger => {
+                return codegen_float_to_wide(program, compiler, move input)
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+            }
+        }
+    }
+
+    fn codegen_float_to_wide(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        let source_type = codegen_value_type(program, compiler, input.value)?
+        let width = codegen_float_width(source_type)?
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: Rax()
+            })?
+        codegen_emit(compiler, MoveToFloat(width, Xmm6(), Rax()))
+        var signed = false
+        match read input.operator {
+            ir::CastFloatToSignedInteger => {
+                signed = true
+            }
+            _ => {
+            }
+        }
+        let done = codegen_internal_label(compiler)
+        codegen_emit_wide_float_bounds(compiler, width, signed, done)
+        codegen_convert_float_magnitude(compiler, width, signed)?
+        codegen_emit(compiler, Label(move done))
+        let result = codegen_wide_result(compiler, input.result)?
+        return codegen_store_wide(compiler, result, WideRegisters {
+                low: R10(), high: R11()
+            })
+    }
+
+    fn codegen_emit_wide_float_bounds(compiler: write FunctionCompiler, width: FloatWidth, signed: bool, done: LocalLabel) -> void {
+        let zero = codegen_internal_label(compiler)
+        let maximum = codegen_internal_label(compiler)
+        let minimum = codegen_internal_label(compiler)
+        let convert = codegen_internal_label(compiler)
+        let labels = WideFloatBoundLabels {
+            zero: local_label_copy(zero), minimum: local_label_copy(minimum), maximum: local_label_copy(maximum), convert: local_label_copy(convert)
+        }
+        codegen_emit_wide_float_bound_branches(compiler, WideFloatBoundInput {
+                width: width, signed: signed, labels: move labels
+            })
+        codegen_emit(compiler, Label(move zero))
+        codegen_emit_wide_immediate(compiler, ir::WideInteger {
+                low: 0, high: 0
+            })
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move maximum))
+        if signed {
+            codegen_emit_wide_immediate(compiler, ir::WideInteger {
+                    low: u64.from_bits(-1), high: u64.from_bits(9223372036854775807)
+                })
+        }
+        else {
+            codegen_emit_wide_immediate(compiler, ir::WideInteger {
+                    low: u64.from_bits(-1), high: u64.from_bits(-1)
+                })
+        }
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move minimum))
+        codegen_emit_wide_immediate(compiler, ir::WideInteger {
+                low: 0, high: u64.from_bits(-9223372036854775808)
+            })
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move convert))
+
+    }
+
+    fn codegen_emit_wide_float_bound_branches(compiler: write FunctionCompiler, input: take WideFloatBoundInput) -> void {
+        codegen_emit(compiler, FloatCompare(input.width, Xmm6(), Xmm6()))
+        codegen_emit(compiler, JumpIf(Parity(), local_label_copy(input.labels.zero)))
+        let zero = WideFloatConstant {
+            width: input.width, target: Xmm7(), exponent: 0, negative: false, zero: true
+        }
+        codegen_load_wide_float_constant(compiler, move zero)
+        codegen_emit(compiler, FloatCompare(input.width, Xmm6(), Xmm7()))
+        if input.signed == false {
+            codegen_emit(compiler, JumpIf(BelowOrEqual(), local_label_copy(input.labels.zero)))
+        }
+        var exponent: i32 = 128
+        if input.signed {
+            exponent = 127
+        }
+        let maximum = WideFloatConstant {
+            width: input.width, target: Xmm7(), exponent: exponent, negative: false, zero: false
+        }
+        codegen_load_wide_float_constant(compiler, move maximum)
+        codegen_emit(compiler, FloatCompare(input.width, Xmm6(), Xmm7()))
+        codegen_emit(compiler, JumpIf(AboveOrEqual(), local_label_copy(input.labels.maximum)))
+        if input.signed {
+            codegen_emit_wide_float_minimum_branch(compiler, input)
+        }
+        codegen_emit(compiler, Jump(local_label_copy(input.labels.convert)))
+    }
+
+    fn codegen_emit_wide_float_minimum_branch(compiler: write FunctionCompiler, input: WideFloatBoundInput) -> void {
+        let minimum = WideFloatConstant {
+            width: input.width, target: Xmm7(), exponent: 127, negative: true, zero: false
+        }
+        codegen_load_wide_float_constant(compiler, move minimum)
+        codegen_emit(compiler, FloatCompare(input.width, Xmm6(), Xmm7()))
+        codegen_emit(compiler, JumpIf(BelowOrEqual(), local_label_copy(input.labels.minimum)))
+    }
+
+    fn codegen_convert_float_magnitude(compiler: write FunctionCompiler, width: FloatWidth, signed: bool) -> Result<void, CodegenError> {
+        codegen_emit(compiler, MoveImmediate(R9(), 0))
+        if signed {
+            codegen_make_float_magnitude(compiler, width)
+        }
+        codegen_convert_positive_float(compiler, width)?
+        if signed {
+            codegen_negate_wide_if_marked(compiler)
+        }
+        return Ok(())
+    }
+
+    fn codegen_make_float_magnitude(compiler: write FunctionCompiler, width: FloatWidth) -> void {
+        let positive = codegen_internal_label(compiler)
+        let zero = WideFloatConstant {
+            width: width, target: Xmm7(), exponent: 0, negative: false, zero: true
+        }
+        codegen_load_wide_float_constant(compiler, move zero)
+        codegen_emit(compiler, FloatCompare(width, Xmm6(), Xmm7()))
+        codegen_emit(compiler, JumpIf(AboveOrEqual(), local_label_copy(positive)))
+        codegen_emit(compiler, MoveImmediate(R9(), 1))
+        codegen_emit(compiler, MoveFromFloat(width, Rax(), Xmm6()))
+        codegen_emit(compiler, MoveImmediate(Rcx(), codegen_wide_float_sign(width)))
+        codegen_emit(compiler, Xor(Rax(), Rcx()))
+        codegen_emit(compiler, MoveToFloat(width, Xmm6(), Rax()))
+        codegen_emit(compiler, Label(move positive))
+    }
+}

@@ -1,0 +1,11 @@
+fn main() -> u32 {
+    let identity = test_game_identity()
+    if identity != 0 {
+        return identity
+    }
+    let formats = test_audio_formats()
+    if formats != 0 {
+        return formats
+    }
+    return test_audio_buffers()
+}

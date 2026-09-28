@@ -1,0 +1,32 @@
+module x86 {
+    fn codegen_add_arena_runtime(program: write Program) -> Result<void, CodegenError> {
+        let name = "crown_arena_identity"
+        if program_has_import(program, name) == false {
+            return Ok(())
+        }
+        program_remove_import(program, name)
+        root_runtime_data(program, "__compiler_arena_identity_counter", 8)?
+        return codegen_insert_function(program, arena_identity_runtime())
+    }
+
+    fn arena_identity_runtime() -> Function {
+        var instructions = Vec<Instruction>.new()
+        instructions.push(LoadSymbolAddress(R8(), "__compiler_arena_identity_counter"))
+        instructions.push(Load(Rax(), R8(), 0))
+        instructions.push(Label(InternalLabel(0)))
+        instructions.push(CompareImmediate(Rax(), -1))
+        instructions.push(JumpIf(Equal(), InternalLabel(1)))
+        instructions.push(Move(R10(), Rax()))
+        instructions.push(AddImmediate(R10(), 1))
+        instructions.push(CompareExchangeMemory(CompareExchangeMemoryArgs {
+                    address: R8(), value: R10(), width: Qword()
+                }))
+        instructions.push(JumpIf(NotEqual(), InternalLabel(0)))
+        instructions.push(Move(Rax(), R10()))
+        instructions.push(Return())
+        instructions.push(Label(InternalLabel(1)))
+        instructions.push(Xor(Rax(), Rax()))
+        instructions.push(Return())
+        return function_new("crown_arena_identity", move instructions)
+    }
+}

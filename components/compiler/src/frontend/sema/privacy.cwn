@@ -1,0 +1,38 @@
+module sema {
+    fn owner_module_matches(checker: Checker, symbol: usize) -> bool {
+        loan read checker.symbols.types[symbol] as declaration {
+            let owner = frontend::namespace_module_at(checker.symbols.modules, declaration.name.span)
+            return std::text::equal(owner, checker.module_name)
+        }
+    }
+
+    fn private_field_allowed(checker: Checker, symbol: usize, name: frontend::Name) -> bool {
+        if owner_module_matches(checker, symbol) {
+            return true
+        }
+        var index: usize = 0
+        while index < checker.symbols.types[symbol].fields.length() {
+            loan read checker.symbols.types[symbol].fields[index] as field {
+                if field.private_value && names_equal(checker.symbols.source, field.name, name) {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn private_constructor_allowed(checker: Checker, symbol: usize) -> bool {
+        if owner_module_matches(checker, symbol) {
+            return true
+        }
+        var index: usize = 0
+        while index < checker.symbols.types[symbol].fields.length() {
+            if checker.symbols.types[symbol].fields[index].private_value {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+}

@@ -1,0 +1,106 @@
+module ir {
+    fn value_liveness(function: ir::Function, eligible: Vec<bool>) -> ValueLiveness {
+        var state = LivenessRecordState {
+            eligible: flags_copy(eligible)
+            used: flags_new(function.values.length())
+        }
+        var output = Vec<BlockLiveness>.with_capacity(function.blocks.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            loan read function.blocks[block] as source {
+                output.push(liveness_scan_block(source, state, function.values.length()))
+            }
+            block = block + 1
+        }
+        solve_liveness(function, output)
+        return ValueLiveness {
+            used: replace(state.used, Vec<bool>.new()), blocks: move output
+        }
+    }
+
+    fn liveness_scan_block(block: ir::BasicBlock, state: write LivenessRecordState, values: usize) -> BlockLiveness {
+        var facts = liveness_empty(values)
+        var index: usize = 0
+        while index < block.instructions.length() {
+            loan read block.instructions[index] as instruction {
+                if liveness_record_phi(instruction, facts, state) == false {
+                    let operands = ir::instruction_operands(instruction.kind)
+                    liveness_record_uses(operands, facts, state)
+                    liveness_record_definition(instruction.result, state.eligible, facts.definitions)
+                }
+            }
+            index = index + 1
+        }
+        match read block.terminator {
+            Some(terminator) => {
+                let operands = ir::terminator_operands(terminator)
+                liveness_record_uses(operands, facts, state)
+            }
+            None => {
+            }
+        }
+        return move facts
+    }
+
+    fn liveness_record_phi(instruction: ir::Instruction, facts: write BlockLiveness, state: write LivenessRecordState) -> bool {
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                match read instruction.result {
+                    Some(value) => {
+                        if state.eligible[value] {
+                            ir::bitset_insert(facts.definitions, value)
+                            ir::bitset_insert(facts.phi_definitions, value)
+                        }
+                    }
+                    None => {
+                    }
+                }
+                liveness_record_phi_inputs(incoming, facts.phi_inputs, state)
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn liveness_record_phi_inputs(incoming: Vec<ir::PhiIncoming>, output: write Vec<PhiInput>, state: write LivenessRecordState) -> void {
+        var index: usize = 0
+        while index < incoming.length() {
+            if state.eligible[incoming[index].value] {
+                output.push(PhiInput {
+                        block: incoming[index].block, value: incoming[index].value
+                    })
+                state.used[incoming[index].value] = true
+            }
+            index = index + 1
+        }
+    }
+
+    fn liveness_record_uses(operands: Vec<usize>, facts: write BlockLiveness, state: write LivenessRecordState) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            let value = operands[index]
+            if state.eligible[value] {
+                if ir::bitset_contains(facts.definitions, value) == false {
+                    ir::bitset_insert(facts.uses, value)
+                }
+                state.used[value] = true
+            }
+            index = index + 1
+        }
+    }
+
+    fn liveness_record_definition(result: Option<usize>, eligible: Vec<bool>, definitions: write ir::BitSet) -> void {
+        match read result {
+            Some(value) => {
+                if eligible[value] {
+                    ir::bitset_insert(definitions, value)
+                }
+            }
+            None => {
+            }
+        }
+    }
+}

@@ -1,0 +1,20 @@
+struct Payload {
+    value: u32
+}
+enum Item {
+    Value(Payload), Empty
+}
+fn inspect(item: read Item) -> u32 {
+    match read item {
+        Value(payload) => {
+            let owned = move payload
+            return owned.value
+        }
+        Empty => {
+            return 0
+        }
+    }
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,139 @@
+module frontend {
+    fn capture_expression(context: write SourceCapture, value: write Expression) -> void {
+        capture_children(context, value.kind)
+        capture_call(context, value)
+    }
+    fn capture_expressions(context: write SourceCapture, values: write Vec<Expression>) -> void {
+        for index in 0..values.length() {
+            capture_expression(context, values[index])
+        }
+    }
+    fn capture_box(context: write SourceCapture, value: write Box<Expression>) -> void {
+        loan write value as inner {
+            capture_expression(context, inner)
+        }
+    }
+    fn capture_children(context: write SourceCapture, kind: write ExpressionKind) -> void {
+        match write kind {
+            ExpressionCall(name, arguments) => {
+                name;
+                capture_expressions(context, arguments);
+                return
+            },
+            ExpressionStaticCall(target, method, arguments) => {
+                target;
+                method;
+                capture_expressions(context, arguments);
+                return
+            },
+            ExpressionMethodCall(target, method, arguments) => {
+                method;
+                capture_box(context, target);
+                capture_expressions(context, arguments);
+                return
+            },
+            ExpressionStruct(target, fields) => {
+                target;
+                for index in 0..fields.length() {
+                    capture_expression(context, fields[index].value)
+                };
+                return
+            },
+            ExpressionBinary(left, operation, right) => {
+                operation;
+                capture_box(context, left);
+                capture_box(context, right);
+                return
+            },
+            ExpressionTry(value) => {
+                capture_box(context, value);
+                return
+            },
+            ExpressionNegate(value) => {
+                capture_box(context, value);
+                return
+            },
+            ExpressionBitwiseNot(value) => {
+                capture_box(context, value);
+                return
+            },
+            _ => {
+            }
+        }
+        capture_collection(context, kind)
+    }
+    fn capture_collection(context: write SourceCapture, kind: write ExpressionKind) -> void {
+        match write kind {
+            ExpressionArrayRepeat(value, length) => {
+                length;
+                capture_box(context, value);
+                return
+            }
+            ExpressionArray(values) => {
+                capture_expressions(context, values);
+                return
+            },
+            ExpressionIndex(target, index) => {
+                capture_box(context, target);
+                capture_box(context, index);
+                return
+            },
+            ExpressionSlice(target, start, end) => {
+                capture_box(context, target);
+                capture_box(context, start);
+                capture_box(context, end);
+                return
+            },
+            ExpressionField(target, field) => {
+                field;
+                capture_box(context, target);
+                return
+            },
+            ExpressionClosure(captures, parameters, body) => {
+                captures;
+                parameters;
+                capture_statements(context, body);
+                return
+            },
+            ExpressionScopedSpawn(stack, captures, body) => {
+                captures;
+                capture_expressions(context, stack);
+                capture_statements(context, body);
+                return
+            },
+            ExpressionSpawn(configuration, body) => {
+                capture_expressions(context, configuration);
+                capture_statements(context, body);
+                return
+            },
+            _ => {
+            }
+        }
+        capture_control(context, kind)
+    }
+    fn capture_control(context: write SourceCapture, kind: write ExpressionKind) -> void {
+        match write kind {
+            ExpressionUnsafe(body) => {
+                capture_statements(context, body)
+            }
+            ExpressionConditional(branch) => {
+                capture_box(context, branch.condition);
+                capture_statements(context, branch.then_body);
+                capture_statements(context, branch.else_body)
+            },
+            ExpressionMatch(value) => {
+                loan write value as inner {
+                    capture_match(context, inner)
+                }
+            },
+            _ => {
+            }
+        }
+    }
+    fn capture_match(context: write SourceCapture, value: write MatchExpression) -> void {
+        capture_expression(context, value.value)
+        for index in 0..value.arms.length() {
+            capture_statements(context, value.arms[index].body)
+        }
+    }
+}

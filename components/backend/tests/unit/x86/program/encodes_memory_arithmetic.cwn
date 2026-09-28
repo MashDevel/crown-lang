@@ -1,0 +1,16 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    let instruction = x86::MemoryBinary(x86::MemoryBinaryArgs {
+            operator: x86::MemoryAdd(), destination: x86::R11(), base: x86::Rsp(), offset: 20, width: x86::Qword()
+        })
+    if x86::encode_fixed(instruction, bytes) == false {
+        return 1
+    }
+    if bytes.length() != 8 {
+        return 2
+    }
+    if bytes[0] != 76 || bytes[1] != 3 || bytes[2] != 156 || bytes[3] != 36 || bytes[4] != 20 {
+        return 3
+    }
+    return 42
+}

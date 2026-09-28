@@ -1,0 +1,20 @@
+module captured {
+    fn equal(text: Text, expected: Text) -> bool {
+        loan read text as left { loan read expected as right { if left.length() != right.length() { return false }; for index in 0..left.length() { if left[index] != right[index] { return false } }; return true } }
+    }
+    fn observe(site: SourceSite, value: u32) -> u32 {
+        let path = "δεύτερο.cwn"
+        loan read site.file as filename { loan read path as suffix {
+            if filename.length() < suffix.length() { return 1 }; for index in 0..suffix.length() { if filename[filename.length() - suffix.length() + index] != suffix[index] { return 1 } }
+        } }
+        return if site.line == 16 && site.column == 38 && equal(site.expression, "(7 + 2)") && value == 9 { 0 } else { 2 }
+    }
+    fn run() -> u32 {
+        let location = source_location()
+        if location.line != 13 || equal(location.expression, "") == false { return 3 }
+        let unused = "é";
+        let text = "é"; let result = source_call(observe, (7 + 2))
+        text; unused;
+        return result
+    }
+}

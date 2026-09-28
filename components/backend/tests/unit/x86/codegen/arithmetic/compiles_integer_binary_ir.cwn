@@ -1,0 +1,80 @@
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var function = ir::function_new("add", move signature, ir::LinkageLocal())
+    let left_value = ir::ConstantInteger(u64.from(40))
+    let right_value = ir::ConstantInteger(u64.from(2))
+    let left = ir::function_constant(function, value_type, left_value)
+    let right = ir::function_constant(function, value_type, right_value)
+    var block: usize = 0
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    var result: usize = 0
+    match ir::function_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), left, right)) {
+        Err(error) => {
+            error;
+            return 2
+        }
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    result = id
+                }
+                None => {
+                    return 3
+                }
+            }
+        }
+    }
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) {
+        Err(error) => {
+            error;
+            return 4
+        }
+        Ok(value) => {
+            value
+        }
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return 5
+        }
+        Ok(instructions) => {
+            return check_generated_instructions(instructions)
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var index: usize = 0
+    while index < instructions.length() {
+        if is_expected_addition(instructions[index]) {
+            return 42
+        }
+        index = index + 1
+    }
+    6
+}
+
+fn is_expected_addition(instruction: x86::Instruction) -> bool {
+    match read instruction {
+        x86::AddSized(destination, source, width) => x86::register_code(destination) == 0 && x86::register_code(source) == 1 && x86::width_is_qword(width)
+        x86::Immediate(values) => {
+            match read values.operator {
+                x86::ImmediateAdd => values.value == 2 && x86::width_is_qword(values.width)
+                _ => false
+            }
+        }
+        _ => false
+    }
+}

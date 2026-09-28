@@ -1,0 +1,50 @@
+module sema {
+    fn raw_pointer_offset(checker: write Checker, arguments: Vec<frontend::Expression>, element: Type) -> Option<ExpressionInfo> {
+        if arguments.length() != 1 {
+            checker_error(checker, "raw pointer operations require unsafe and compatible copyable values");
+            return None()
+        }
+        loan read arguments[0] as argument {
+            let expected = builtin_leaf(USize())
+            checker_value(checker, argument, expected)
+        }
+        var types = Vec<Type>.new()
+        types.push(type_copy(element))
+        return Some(copy_info(BuiltinType(RawPtr(), move types)))
+    }
+
+    fn raw_pointer_read(checker: write Checker, arguments: Vec<frontend::Expression>, element: Type) -> Option<ExpressionInfo> {
+        if arguments.length() != 0 || type_is_copy_with_symbols(checker.symbols, element) == false {
+            checker_error(checker, "raw pointer operations require unsafe and compatible copyable values")
+            return None()
+        }
+        return Some(copy_info(type_copy(element)))
+    }
+
+    fn raw_pointer_write(checker: write Checker, arguments: Vec<frontend::Expression>, element: Type) -> Option<ExpressionInfo> {
+        if arguments.length() != 1 || type_is_copy_with_symbols(checker.symbols, element) == false {
+            checker_error(checker, "raw pointer operations require unsafe and compatible copyable values")
+            return None()
+        }
+        loan read arguments[0] as argument {
+            checker_value(checker, argument, element)
+        }
+        return Some(copy_info(builtin_leaf(Unit())))
+    }
+
+    fn raw_pointer_fill(checker: write Checker, arguments: Vec<frontend::Expression>, element: Type) -> Option<ExpressionInfo> {
+        let byte = builtin_leaf(U8())
+        if arguments.length() != 2 || types_equal(element, byte) == false {
+            checker_error(checker, "raw pointer operations require unsafe and compatible copyable values")
+            return None()
+        }
+        loan read arguments[0] as value {
+            checker_value(checker, value, byte)
+        }
+        loan read arguments[1] as count {
+            let expected = builtin_leaf(USize())
+            checker_value(checker, count, expected)
+        }
+        return Some(copy_info(builtin_leaf(Unit())))
+    }
+}

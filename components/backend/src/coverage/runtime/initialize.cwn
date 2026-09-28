@@ -1,0 +1,55 @@
+module coverage {
+    fn runtime_status(instructions: write Vec<x86::Instruction>) -> void {
+        instructions.push(x86::MoveSized(x86::MoveSizedArgs {
+                    destination: x86::Rax(), source: x86::Rax(), width: x86::Dword(), extension: x86::ZeroExtend()
+                }))
+        instructions.push(x86::Test(x86::Rax(), x86::Rax()))
+        instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(0)))
+    }
+
+    fn runtime_size(instructions: write Vec<x86::Instruction>) -> void {
+        instructions.push(x86::LoadSymbolAddress(x86::Rsi(), "crown_cov_size"))
+        instructions.push(x86::Load(x86::Rsi(), x86::Rsi(), 0))
+    }
+
+    fn runtime_initialize() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::Push(x86::Rbx()))
+        instructions.push(x86::LoadSymbolAddress(x86::Rdi(), "crown_cov_path"))
+        instructions.push(x86::Call("mkstemp"))
+        instructions.push(x86::MoveSized(x86::MoveSizedArgs {
+                    destination: x86::Rbx(), source: x86::Rax(), width: x86::Dword(), extension: x86::SignExtend()
+                }))
+        instructions.push(x86::CompareImmediate(x86::Rbx(), -1))
+        instructions.push(x86::JumpIf(x86::Equal(), x86::InternalLabel(0)))
+        instructions.push(x86::Move(x86::Rdi(), x86::Rbx()))
+        runtime_size(instructions)
+        instructions.push(x86::Call("ftruncate"))
+        runtime_status(instructions)
+        instructions.push(x86::MoveImmediate(x86::Rdi(), 0))
+        runtime_size(instructions)
+        instructions.push(x86::MoveImmediate(x86::Rdx(), 3))
+        instructions.push(x86::MoveImmediate(x86::Rcx(), 1))
+        instructions.push(x86::Move(x86::R8(), x86::Rbx()))
+        instructions.push(x86::MoveImmediate(x86::R9(), 0))
+        instructions.push(x86::Call("mmap"))
+        instructions.push(x86::CompareImmediate(x86::Rax(), -1))
+        instructions.push(x86::JumpIf(x86::Equal(), x86::InternalLabel(0)))
+        instructions.push(x86::LoadSymbolAddress(x86::Rcx(), "crown_cov_data"))
+        instructions.push(x86::Store(x86::Rcx(), 0, x86::Rax()))
+        instructions.push(x86::Move(x86::Rdi(), x86::Rbx()))
+        instructions.push(x86::Call("close"))
+        runtime_status(instructions)
+        instructions.push(x86::Pop(x86::Rbx()))
+        instructions.push(x86::Return())
+        instructions.push(x86::Label(x86::InternalLabel(0)))
+        instructions.push(x86::LoadSymbolAddress(x86::Rdi(), "crown_cov_error"))
+        instructions.push(x86::Call("perror"))
+        instructions.push(x86::MoveImmediate(x86::Rdi(), 125))
+        instructions.push(x86::Call("exit"))
+        instructions.push(x86::Trap())
+        var function = x86::function_new("crown_cov_init", move instructions)
+        x86::function_export(function)
+        return move function
+    }
+}

@@ -1,0 +1,256 @@
+module toolchain {
+    struct Options {
+        command: Text
+        paths: Vec<Text>
+        output: Text
+        objects: Vec<Text>
+        links: Vec<Text>
+        max_instances: u64
+        force: bool
+        help: bool
+        arguments: Vec<Text>
+        seed: u64
+        jobs: usize
+        runs: usize
+        filter: Text
+        coverage: Text
+        optimization: OptimizationOptions
+        check_only: bool
+        target: Target
+    }
+
+    fn options(command: take Text) -> Options {
+        return Options {
+            command: move command, paths: Vec<Text>.new(), output: "", objects: Vec<Text>.new(), links: Vec<Text>.new(), max_instances: 128, force: false, help: false, arguments: Vec<Text>.new(), seed: 20260905, jobs: 3, runs: 3, filter: "", coverage: "", optimization: optimization_options(), check_only: false, target: host_target()
+        }
+    }
+
+    fn arguments(values: Arguments) -> Vec<Text> {
+        var output = Vec<Text>.with_capacity(values.length())
+        for index in 0..values.length() {
+            output.push(values[index].clone())
+        }
+        return move output
+    }
+
+    fn parse_options(arguments: Vec<Text>) -> Result<Options, Text> {
+        if arguments.length() < 2 {
+            return Err("usage: crown <command> [options]")
+        }
+        var output = options(arguments[1].clone())
+        if std::text::equal(output.command, "help") || std::text::equal(output.command, "--help") {
+            output.help = true;
+            return Ok(move output)
+        }
+        if valid_command(output.command) == false {
+            return Err(std::text::joined("unknown command: ", output.command))
+        }
+        parse_command_arguments(arguments, output)?
+        validate_positionals(output)?
+        validate_optimization(output)?
+        return Ok(move output)
+    }
+
+    fn parse_command_arguments(arguments: Vec<Text>, output: write Options) -> Result<void, Text> {
+        var index: usize = 2
+        while index < arguments.length() {
+            if std::text::equal(arguments[index], "--") {
+                program_arguments(arguments, index + 1, output)?;
+                break
+            }
+            if std::text::starts(arguments[index], "-") {
+                parse_option(arguments, index, output)?
+            }
+            else {
+                output.paths.push(arguments[index].clone());
+                index = index + 1
+            }
+        }
+        return Ok(())
+    }
+
+    fn validate_positionals(output: Options) -> Result<void, Text> {
+        if std::text::contains("|--version|bootstrap|refresh-seed|_link_inputs|", std::text::joined(std::text::joined("|", output.command), "|")) && output.paths.length() != 0 {
+            return Err(std::text::joined("unexpected positional argument for ", output.command))
+        }
+        return Ok(())
+    }
+
+    fn valid_command(name: Text) -> bool {
+        return std::text::contains("|parse|check|compile|_executable|_link_inputs|build|run|bootstrap|refresh-seed|test|release|benchmark|fmt|lint|coverage|duplication|--version|", std::text::joined(std::text::joined("|", name), "|"))
+    }
+
+    fn program_arguments(arguments: Vec<Text>, start: usize, output: write Options) -> Result<void, Text> {
+        if std::text::equal(output.command, "run") == false {
+            return Err("program arguments are only accepted by run")
+        }
+        for index in start..arguments.length() {
+            output.arguments.push(arguments[index].clone())
+        }
+        return Ok(())
+    }
+
+    fn parse_option(arguments: Vec<Text>, index: write usize, output: write Options) -> Result<void, Text> {
+        let key = arguments[index].clone()
+        index = index + 1
+        if std::text::equal(key, "--help") || std::text::equal(key, "-h") {
+            output.help = true;
+            return Ok(())
+        }
+        if std::text::equal(key, "--check") {
+            if std::text::equal(output.command, "fmt") == false {
+                return Err("--check is only accepted by fmt")
+            }
+            output.check_only = true
+            return Ok(())
+        }
+        if std::text::equal(key, "--force") {
+            if std::text::equal(output.command, "bootstrap") == false {
+                return Err("--force is only accepted by bootstrap")
+            }
+            output.force = true
+            return Ok(())
+        }
+        if index >= arguments.length() {
+            return Err(std::text::joined("missing value for ", key))
+        }
+        option_value(output, key, arguments[index])?
+        index = index + 1
+        return Ok(())
+    }
+
+    fn option_value(output: write Options, key: Text, value: Text) -> Result<void, Text> {
+        validate_option(output.command, key)?
+        match read key {
+            "--target" => {
+                output.target = parse_target(value)?
+            }
+            "--coverage" => {
+                output.coverage = absolute(value)?
+            }
+            "--filter" => {
+                output.filter = value.clone()
+            }
+            "-o" | "--output" => {
+                output.output = value.clone()
+            }
+            _ => {
+                return optimization_option(output, key, value)
+            }
+        }
+        return Ok(())
+    }
+
+    fn optimization_option(output: write Options, key: Text, value: Text) -> Result<void, Text> {
+        match read key {
+            "--profile-generate" => {
+                output.optimization.generate = absolute(value)?
+            }
+            "--profile-use" => {
+                output.optimization.use_profile = absolute(value)?
+            }
+            "--optimization-report" => {
+                output.optimization.report = absolute(value)?
+            }
+            _ => {
+                return numeric_option(output, key, value)
+            }
+        }
+        return Ok(())
+    }
+
+    fn numeric_option(output: write Options, key: Text, value: Text) -> Result<void, Text> {
+        match read key {
+            "--max-instances" => {
+                output.max_instances = positive(value)?
+            }
+            "--seed" => {
+                output.seed = std::text::unsigned(value)?
+            }
+            "--jobs" => {
+                output.jobs = usize.from(positive(value)?)
+                if output.jobs > 4 {
+                    return Err("--jobs must be from 1 to 4")
+                }
+            }
+            "--runs" => {
+                output.runs = usize.from(positive(value)?)
+            }
+            _ => {
+                return link_option(output, key, value)
+            }
+        }
+        return Ok(())
+    }
+
+    fn validate_option(command: Text, key: Text) -> Result<void, Text> {
+        if std::text::equal(command, "_link_inputs") {
+            if std::text::equal(key, "--target") || std::text::equal(key, "--library") {
+                return Ok(())
+            }
+            return Err(std::text::joined("unsupported link-input option: ", key))
+        }
+        let selected = if std::text::equal(command, "_executable") {
+            "build"
+        } else {
+            command.clone()
+        }
+        let commands = option_commands(key)
+        if std::text::contains(commands, std::text::joined(std::text::joined("|", selected), "|")) {
+            return Ok(())
+        }
+        return Err(std::text::joined("unsupported option: ", key))
+    }
+
+    fn option_commands(key: Text) -> Text {
+        match read key {
+            "--coverage" => "|compile|build|run|test|"
+            "--profile-generate" | "--profile-use" | "--optimization-report" => "|compile|build|run|"
+            "--target" | "--max-instances" => "|parse|check|compile|build|run|lint|"
+            "-o" | "--output" => "|build|run|bootstrap|test|release|benchmark|lint|coverage|duplication|"
+            "--jobs" => "|test|release|benchmark|"
+            "--seed" => "|release|"
+            "--runs" => "|benchmark|"
+            "--filter" => "|test|"
+            _ => "|build|run|"
+        }
+    }
+
+    fn link_option(output: write Options, key: Text, value: Text) -> Result<void, Text> {
+        if std::text::contains("|build|run|_executable|_link_inputs|", std::text::joined(std::text::joined("|", output.command), "|")) == false {
+            return Err(std::text::joined("unsupported option: ", key))
+        }
+        if std::text::equal(key, "--object") {
+            output.objects.push(absolute(value)?);
+            return Ok(())
+        }
+        if std::text::equal(key, "--framework") {
+            valid_link_name(value)?;
+            output.links.push("-framework");
+            output.links.push(value.clone());
+            return Ok(())
+        }
+        if std::text::equal(key, "--library") {
+            valid_link_name(value)?;
+            output.links.push(std::text::joined("-l", value));
+            return Ok(())
+        }
+        return Err(std::text::joined("unknown option: ", key))
+    }
+
+    fn positive(value: Text) -> Result<u64, Text> {
+        let count = std::text::unsigned(value)?
+        if count == 0 {
+            return Err("expected a positive unsigned 64-bit integer")
+        }
+        return Ok(count)
+    }
+
+    fn version() -> Text {
+        return "crown 0.1.0"
+    }
+
+    fn help() -> Text {
+        return std::text::joined(version(), "\nusage: crown parse|check <sources-or-project> [--max-instances N]\n       crown compile <output.s> <sources-or-project> [--max-instances N]\n       crown build|run [project-or-source] [-o output] [-- program arguments]\n       crown fmt [sources-or-project] [--check]\n       crown lint [sources-or-project] [--output metrics.json]\n       crown duplication [paths] [--output clones.json]\n       crown coverage <directories...> [--output report.json]\n       crown bootstrap [--output directory] [--force]\n       crown refresh-seed\n       crown test [project] [--filter name] [--jobs 1..4] [--output directory] [--coverage directory]\n       crown release [--seed N] [--jobs 1..4] [--output directory]\n       crown benchmark [--runs N] [--jobs 1..4] [--output directory]\ncompile/build/run target: --target x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock\ncompile/build/run optimization: --profile-generate directory, --profile-use directory, --optimization-report path\ncompile/build/run instrumentation: --coverage directory\nbuild/run options: --max-instances N, --object path, --framework name, --library name\n")
+    }
+}

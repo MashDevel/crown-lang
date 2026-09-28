@@ -1,0 +1,35 @@
+module lowering {
+    fn function_guard_with(compiler: write FunctionCompiler, condition: usize, message: take Text) -> Result<void, u32> {
+        let pass = function_new_block(compiler)?
+        let fail = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(condition, pass, fail))?
+        function_select_block(compiler, fail)
+        function_panic_now(compiler, move message)?
+        function_select_block(compiler, pass)
+        return Ok(())
+    }
+
+    fn function_panic_now(compiler: write FunctionCompiler, message: take Text) -> Result<void, u32> {
+        var name = "crown_panic_"
+        std::text::append(name, message)
+        var target: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                target = value
+            }
+            None => {
+                return Err(94)
+            }
+        }
+        match function_append(compiler, ir::InstructionCall(target, Vec<usize>.new(), ir::TypeVoid())) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                result
+            }
+        }
+        function_finish(compiler, ir::TerminatorUnreachable())?
+        return Ok(())
+    }
+}

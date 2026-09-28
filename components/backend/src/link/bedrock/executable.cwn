@@ -1,0 +1,32 @@
+module bedrock {
+    fn executable(object: object::CompilerObject, runtime_path: Text) -> Result<Vec<u8>, Text> {
+        if object.architecture != object::ArchitectureX86_64() {
+            return Err("Bedrock requires an x86-64 object")
+        }
+        match object::validate(object) {
+            Err(error) => {
+                error;
+                return Err("invalid Crown object")
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        let runtime = runtime(toolchain::read_bytes(runtime_path)?)?
+        var image = layout(runtime, object)?
+        relocate_object(image, object)?
+        relocate_runtime(image, runtime)?
+        let headers = usize.from(link_binary::number(image.text, 32, 8)?)
+        link_binary::put(image.text, headers + 32, u64.from(image.text.length()), 8)
+        link_binary::put(image.text, headers + 40, u64.from(image.text.length()), 8)
+        link_binary::put(image.text, headers + 64, u64.from(image.text.length()), 8)
+        link_binary::put(image.text, headers + 72, image.data_base, 8)
+        link_binary::put(image.text, headers + 80, image.data_base, 8)
+        link_binary::put(image.text, headers + 88, u64.from(image.data.length()), 8)
+        link_binary::put(image.text, headers + 96, u64.from(image.data.length()), 8)
+        link_binary::put(image.text, 40, 0, 8)
+        link_binary::put(image.text, 60, 0, 4)
+        link_binary::append(image.text, image.data)
+        return Ok(replace(image.text, Vec<u8>.new()))
+    }
+}

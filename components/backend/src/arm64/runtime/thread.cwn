@@ -1,0 +1,67 @@
+module arm64 {
+    fn append_stack_runtime(output: write object::CompilerObject) -> Result<void, Text> {
+        if runtime_required(output, "crown_pthread_create_stack") == false {
+            return Ok(())
+        }
+        var compiler = runtime_compiler(128)
+        stack_validate(compiler)
+        prologue(compiler)
+        for register in 0..5 {
+            frame_access(compiler, u32.from(register), 80 + u64.from(register) * 8, 8, false)
+        }
+        frame_address(compiler, 0, 0)
+        call_symbol(compiler, "pthread_attr_init")
+        stack_status(compiler, 2)
+        frame_address(compiler, 0, 0)
+        frame_access(compiler, 1, 104, 8, true)
+        frame_access(compiler, 2, 112, 8, true)
+        call_symbol(compiler, "pthread_attr_setstack")
+        stack_status(compiler, 1)
+        frame_address(compiler, 0, 64)
+        frame_address(compiler, 1, 0)
+        frame_access(compiler, 2, 88, 8, true)
+        frame_access(compiler, 3, 96, 8, true)
+        call_symbol(compiler, "pthread_create")
+        emit_encoding(compiler, extend_word(0, 0, 32, false))
+        frame_access(compiler, 0, 72, 8, false)
+        runtime_label(compiler, 1)
+        frame_address(compiler, 0, 0)
+        call_symbol(compiler, "pthread_attr_destroy")
+        runtime_label(compiler, 2)
+        frame_access(compiler, 0, 72, 8, true)
+        runtime_compare(compiler, 0, 0)
+        runtime_condition(compiler, 1, 3)
+        frame_access(compiler, 9, 64, 8, true)
+        frame_access(compiler, 10, 80, 8, true)
+        runtime_memory(compiler, 9, 10, 0, false)
+        runtime_label(compiler, 3)
+        epilogue(compiler)
+        runtime_label(compiler, 4)
+        immediate(compiler, 0, 22)
+        emit(compiler, 3596551104)
+        return runtime_finish(output, compiler, "crown_pthread_create_stack")
+    }
+    fn stack_status(compiler: write Compiler, label: usize) -> void {
+        emit_encoding(compiler, extend_word(0, 0, 32, false))
+        frame_access(compiler, 0, 72, 8, false)
+        runtime_compare(compiler, 0, 0)
+        return runtime_condition(compiler, 1, label)
+    }
+    fn stack_validate(compiler: write Compiler) -> void {
+        runtime_compare(compiler, 0, 0)
+        runtime_condition(compiler, 0, 4)
+        runtime_compare(compiler, 1, 0)
+        runtime_condition(compiler, 0, 4)
+        runtime_compare(compiler, 3, 0)
+        runtime_condition(compiler, 0, 4)
+        immediate(compiler, 10, 15)
+        emit_registers(compiler, 2315255808, 9, 3, 10)
+        runtime_compare(compiler, 9, 0)
+        runtime_condition(compiler, 1, 4)
+        runtime_compare(compiler, 4, 131072)
+        runtime_condition(compiler, 3, 4)
+        emit_registers(compiler, 2868903936, 9, 3, 4)
+        return runtime_condition(compiler, 2, 4)
+    }
+
+}

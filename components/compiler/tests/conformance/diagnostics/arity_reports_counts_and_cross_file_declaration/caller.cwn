@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    consume()
+    return 0
+}

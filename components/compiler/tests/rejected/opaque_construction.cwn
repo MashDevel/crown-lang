@@ -1,0 +1,13 @@
+opaque resource Secret {
+    code: u32
+
+    drop {
+    }
+}
+
+fn main() -> u32 {
+    let secret = Secret {
+        code: 42
+    }
+    return 0
+}

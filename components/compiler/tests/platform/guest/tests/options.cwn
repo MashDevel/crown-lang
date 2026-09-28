@@ -1,0 +1,48 @@
+module guest_tests {
+    fn options() -> Result<void, Text> {
+        let basic = guest::options(testing::list("guest|--socket|socket|--execute|true"))?
+        testing::expect(std::text::equal(basic.socket, "socket") && basic.timeout == 300000, "default options")?
+        let waiting = guest::options(testing::list("guest|--socket|socket|--wait-pid|17"))?
+        testing::expect(waiting.pid == 17, "wait options")?
+        testing::expect(guest::timeout("0.125")? == 125 && guest::timeout("1e-3")? == 1, "fractional timeout")?
+        return invalid_options()
+    }
+
+    fn invalid_options() -> Result<void, Text> {
+        let bad = std::text::split("--upload|file;--destination|file;--timeout|0;--wait-pid|0;--wait-pid|1|--execute|true;--execute|true|--wait-pid|1;--timeout|-1;--timeout|nan;--timeout|inf;--timeout|bad;--wat|x;--execute", 59)
+        for index in 0..bad.length() {
+            testing::error(guest::options(testing::list(std::text::joined("guest|--socket|socket|", bad[index]))))?
+        }
+        testing::error(guest::options(testing::list("guest")))?
+        testing::error(guest::options(testing::list("guest|--socket|")))?
+        return testing::error(guest::options(testing::list("guest|--socket|socket|--wait-pid|-1")))
+    }
+
+    fn codec() -> Result<void, Text> {
+        let plain = std::text::split(";f;fo;foo;foob;fooba;foobar", 59)
+        let encoded = std::text::split(";Zg==;Zm8=;Zm9v;Zm9vYg==;Zm9vYmE=;Zm9vYmFy", 59)
+        for index in 0..plain.length() {
+            let bytes = guest::unbase64(encoded[index])?
+            testing::expect(std::text::equal(std::text::from_bytes(bytes)?, plain[index]), "decode known vector")?
+            testing::expect(std::text::equal(guest::base64(bytes), encoded[index]), "encode known vector")?
+        }
+        return binary_codec()
+    }
+
+    fn binary_codec() -> Result<void, Text> {
+        var bytes = Vec<u8>.new()
+        for index in 0..256 {
+            bytes.push(u8.from(index))
+        }
+        let decoded = guest::unbase64(guest::base64(bytes))?
+        testing::expect(decoded.length() == bytes.length(), "binary size")?
+        for index in 0..bytes.length() {
+            testing::expect(decoded[index] == bytes[index], "binary roundtrip")?
+        }
+        let invalid = testing::list("a|====|ab=c|AA==AAAA|!!!!")
+        for index in 0..invalid.length() {
+            testing::error(guest::unbase64(invalid[index]))?
+        }
+        return Ok(())
+    }
+}

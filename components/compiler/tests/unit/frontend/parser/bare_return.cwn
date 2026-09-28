@@ -1,0 +1,77 @@
+fn return_shape(body: Text) -> bool {
+    let source = frontend_test_source(std::text::joined(std::text::joined("fn finish() -> void {", body), "}"))
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors
+            return false
+        }
+        Ok(program) => {
+            if program.functions[0].body.length() != 1 {
+                return false
+            }
+            match read program.functions[0].body[0].kind {
+                frontend::StatementReturn(value, implicit) => {
+                    return implicit == false && empty_value(value.kind)
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+    }
+}
+
+fn empty_value(kind: frontend::ExpressionKind) -> bool {
+    match read kind {
+        frontend::ExpressionUnit => true
+        _ => false
+    }
+}
+
+fn valid_source(text: take Text) -> bool {
+    let source = frontend_test_source(std::text::joined(text, "\nfn main() -> u32 { return 0 }"))
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors
+            return false
+        }
+        Ok(program) => {
+            return sema::analyze(source.bytes.share(), program).errors == 0
+        }
+    }
+}
+
+fn invalid_returns() -> bool {
+    if valid_source("fn value() -> u32 { return }") {
+        return false
+    }
+    if valid_source("fn value() -> void { return 1 }") {
+        return false
+    }
+    if valid_source("fn value() -> unit { return }") {
+        return false
+    }
+    if valid_source("fn value() -> void { return") {
+        return false
+    }
+    return valid_source("fn value() -> void { return + }") == false
+}
+
+fn main() -> u32 {
+    if return_shape("return") == false || return_shape("return;") == false {
+        return 1
+    }
+    if return_shape("return\n") == false || return_shape("return\r\n") == false {
+        return 2
+    }
+    if valid_source("fn value() -> u32 { return 42 }") == false {
+        return 3
+    }
+    if valid_source("fn value() -> void { return\nlet value = 42 }") == false {
+        return 4
+    }
+    if invalid_returns() == false {
+        return 5
+    }
+    return 42
+}

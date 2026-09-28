@@ -1,0 +1,67 @@
+module benchmark {
+    extern "c" {
+        fn raw_usage(who: i32, output: RawPtr<u64>) -> i32 = "getrusage"
+    }
+    struct Usage {
+        user: u64, system: u64
+    }
+    struct Benchmark {
+        directory: Text, results: Vec<Text>
+    }
+
+    fn usage() -> Result<Usage, Text> {
+        var values = Vec<u64>.new()
+        for index in 0..18 {
+            index;
+            values.push(0)
+        }
+        unsafe {
+            if raw_usage(-1, values.as_raw()) != 0 {
+                return Err("could not read child resource usage")
+            }
+        }
+        return Ok(Usage {
+                user: values[0] * 1000000 + values[1], system: values[2] * 1000000 + values[3]
+            })
+    }
+
+    fn measure(benchmark: write Benchmark, label: Text, arguments: take Vec<Text>) -> Result<void, Text> {
+        let before = usage()?
+        let started = toolchain::milliseconds()
+        let request = toolchain::Command {
+            arguments: move arguments, stdout: toolchain::path_join(benchmark.directory, std::text::joined(label, ".stdout.log")), stderr: toolchain::path_join(benchmark.directory, std::text::joined(label, ".stderr.log")), timeout: 900000
+        }
+        let status = toolchain::execute(request)?
+        let elapsed = toolchain::milliseconds() - started
+        let after = usage()?
+        var row = std::text::joined("{\"label\":", toolchain::json_quoted(label))
+        std::text::append(row, std::text::joined(",\"milliseconds\":", std::text::decimal(elapsed)))
+        std::text::append(row, std::text::joined(",\"user_microseconds\":", std::text::decimal(after.user - before.user)))
+        std::text::append(row, std::text::joined(",\"system_microseconds\":", std::text::decimal(after.system - before.system)))
+        std::text::append(row, std::text::joined(",\"status\":", std::text::signed_decimal(i64.from(status))))
+        row.push('}')
+        benchmark.results.push(move row)
+        save(benchmark)?
+        toolchain::say(std::text::joined(std::text::joined(label, ": "), std::text::joined(std::text::decimal(elapsed), "ms")))
+        if status != 0 {
+            return Err(std::text::joined("benchmark command failed: ", label))
+        }
+        let diagnostics = toolchain::read_text(request.stderr)?
+        if diagnostics.length() != 0 {
+            return Err(std::text::joined("benchmark command produced a diagnostic: ", label))
+        }
+        return Ok(())
+    }
+
+    fn save(benchmark: Benchmark) -> Result<void, Text> {
+        var output = "["
+        for index in 0..benchmark.results.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, benchmark.results[index])
+        }
+        std::text::append(output, "]\n")
+        return toolchain::write_text(toolchain::path_join(benchmark.directory, "results.json"), output)
+    }
+}

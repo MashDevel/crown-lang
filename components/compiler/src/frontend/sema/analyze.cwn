@@ -1,0 +1,19 @@
+module sema {
+    fn analyze(source: take Shared<Vec<u8>>, program: frontend::Program) -> Analysis {
+        return analyze_with_limit(move source, program, 128)
+    }
+
+    fn analyze_with_limit(source: take Shared<Vec<u8>>, program: frontend::Program, max_instances: usize) -> Analysis {
+        let symbols = collect_symbols(move source, program)
+        var checker = checker_new(move symbols)
+        checker.max_instances = max_instances
+        checker_check_program(checker, program)
+        let instances = collect_instances(checker)
+        let errors = checker.symbols.errors + checker.errors
+        return Analysis {
+            checker: move checker
+            instances: move instances
+            errors: errors
+        }
+    }
+}

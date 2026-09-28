@@ -1,0 +1,24 @@
+module optimize {
+    fn scalarize(function: write ir::Function) -> usize {
+        var analysis = scalar_analysis(function)
+        let count = scalar_selected_roots(analysis)
+        if count == 0 {
+            return 0
+        }
+        scalar_insert_slots(function, analysis)
+        scalar_rewrite(function, analysis)
+        return count
+    }
+
+    fn scalar_selected_roots(analysis: ScalarAnalysis) -> usize {
+        var count: usize = 0
+        var index: usize = 0
+        while index < analysis.roots.length() {
+            if analysis.roots[index].present && analysis.roots[index].valid && analysis.roots[index].fields.length() != 0 {
+                count = count + 1
+            }
+            index = index + 1
+        }
+        return count
+    }
+}

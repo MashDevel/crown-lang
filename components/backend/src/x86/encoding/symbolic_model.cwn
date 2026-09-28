@@ -1,0 +1,27 @@
+module x86 {
+    struct LabelOffset {
+        name: LocalLabel
+        offset: u64
+    }
+
+    struct NamedReference {
+        indirect: bool
+        offset: u64
+        name: Text
+    }
+
+    struct EncodedFunction {
+        name: Text
+        exported: bool
+        offset: u64
+        bytes: Vec<u8>
+        calls: Vec<NamedReference>
+        references: Vec<NamedReference>
+        labels: Vec<LabelOffset>
+    }
+
+    struct SymbolAddressInput {
+        register: u8
+        name: Text
+    }
+}

@@ -1,0 +1,76 @@
+module lowering {
+    fn match_cases(compiler: FunctionCompiler, symbols: sema::Symbols, expression: frontend::MatchExpression) -> Result<Vec<ir::SwitchCase>, u32> {
+        var output = Vec<ir::SwitchCase>.new()
+        let flow = compiler.matches.length() - 1
+        for index in 0..expression.arms.length() {
+            loan read expression.arms[index].pattern.choices as choices {
+                for choice in 0..choices.length() {
+                    let value = match_case(symbols, compiler.matches[flow], choices[choice])?
+                    match value {
+                        Some(tag) => {
+                            output.push(ir::SwitchCase {
+                                    value: tag, block: compiler.matches[flow].blocks[index]
+                                })
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn match_case(symbols: sema::Symbols, flow: MatchFlow, kind: frontend::PatternKind) -> Result<Option<u64>, u32> {
+        match read kind {
+            frontend::PatternWildcard => {
+                return Ok(None())
+            }
+            _ => {
+            }
+        }
+        if sema::type_is_integer(flow.value_type) {
+            match sema::integer_pattern_value(symbols, flow.value_type, kind) {
+                Ok(bits) => {
+                    return Ok(Some(bits))
+                }
+                Err(error) => {
+                    error;
+                    return Err(211)
+                }
+            }
+        }
+        match read kind {
+            frontend::PatternVariant(name) => {
+                let layout = layout_variant(symbols, flow.value_type, name)?;
+                return Ok(Some(layout.tag))
+            }
+            _ => {
+                return Err(211)
+            }
+        }
+    }
+
+    fn match_default(compiler: FunctionCompiler, expression: frontend::MatchExpression) -> usize {
+        let flow = compiler.matches.length() - 1
+        for index in 0..expression.arms.length() {
+            if match_pattern_is_wildcard(expression.arms[index].pattern) {
+                return compiler.matches[flow].blocks[index]
+            }
+        }
+        return compiler.matches[flow].invalid
+    }
+
+    fn match_pattern_is_wildcard(pattern: frontend::Pattern) -> bool {
+        for index in 0..pattern.choices.length() {
+            match read pattern.choices[index] {
+                frontend::PatternWildcard => {
+                    return true
+                }
+                _ => {
+                }
+            }
+        }
+        return false
+    }
+}

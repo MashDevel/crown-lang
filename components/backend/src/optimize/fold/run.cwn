@@ -1,0 +1,102 @@
+module optimize {
+    fn fold(function: write ir::Function) -> usize {
+        let folded = find_folded(function)
+        var replacements = none_usize(function.values.length())
+        var index: usize = 0
+        while index < folded.length() {
+            loan read folded[index] as value {
+                let replacement = ir::function_constant(function, value.value_type, value.constant)
+                replacements[value.result] = Some(replacement)
+            }
+            index = index + 1
+        }
+        ir::function_replace_uses_many(function, replacements)
+        remove_results(function, replacements, ir::value_present)
+        return folded.length()
+    }
+
+    fn find_folded(function: ir::Function) -> Vec<Folded> {
+        var output = Vec<Folded>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                match folded_result(function, function.blocks[block].instructions[index]) {
+                    Some(value) => {
+                        output.push(move value)
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn folded_result(function: ir::Function, instruction: ir::Instruction) -> Option<Folded> {
+        let result = match read instruction.result {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let value_type = match ir::function_value_type(function, result) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        match fold_instruction(function, instruction.kind, value_type) {
+            Some(constant) => Some(Folded {
+                    result: result, value_type: value_type, constant: move constant
+                })
+            None => None()
+        }
+    }
+
+    fn fold_instruction(function: ir::Function, kind: ir::InstructionKind, value_type: ir::Type) -> Option<ir::Constant> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return fold_binary(function, kind, value_type)
+            }
+            ir::InstructionUnary(operator, value) => {
+                operator;
+                value;
+                return fold_unary(function, kind, value_type)
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return fold_compare(function, kind)
+            }
+            ir::InstructionCast(operator, value, target) => {
+                operator;
+                value;
+                target;
+                return fold_cast(function, kind)
+            }
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                match integer_constant(function, condition) {
+                    Some(value) => {
+                        if value == 0 {
+                            return ir::function_constant_value(function, else_value)
+                        };
+                        return ir::function_constant_value(function, then_value)
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

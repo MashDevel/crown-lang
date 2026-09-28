@@ -1,0 +1,69 @@
+module native::x11 {
+    unsafe fn open_display(library: std::dylib::Library, name: RawPtr<u8>) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 0)).read()
+            return action(name)
+        }
+    }
+
+    unsafe fn close_display(library: std::dylib::Library, display: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 1)).read()
+            return action(display)
+        }
+    }
+
+    unsafe fn default_screen(library: std::dylib::Library, display: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 2)).read()
+            return action(display)
+        }
+    }
+
+    unsafe fn default_visual(library: std::dylib::Library, display: RawPtr<u8>, screen: i32) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> RawPtr<u8>>.cast(std::dylib::slot(library, 3)).read()
+            return action(display, screen)
+        }
+    }
+
+    unsafe fn default_depth(library: std::dylib::Library, display: RawPtr<u8>, screen: i32) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> i32>.cast(std::dylib::slot(library, 4)).read()
+            return action(display, screen)
+        }
+    }
+
+    unsafe fn root_window(library: std::dylib::Library, display: RawPtr<u8>, screen: i32) -> u64 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> u64>.cast(std::dylib::slot(library, 5)).read()
+            return action(display, screen)
+        }
+    }
+
+    copy struct CreateWindow {
+        display: RawPtr<u8>
+        parent: u64
+        x: i32
+        y: i32
+        width: u32
+        height: u32
+        border: u32
+        foreground: u64
+        background: u64
+    }
+
+    unsafe fn create_window(library: std::dylib::Library, request: CreateWindow) -> u64 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read i32, read i32, read u32, read u32, read u32, read u64, read u64) -> u64>.cast(std::dylib::slot(library, 6)).read()
+            return action(request.display, request.parent, request.x, request.y, request.width, request.height, request.border, request.foreground, request.background)
+        }
+    }
+
+    unsafe fn destroy_window(library: std::dylib::Library, display: RawPtr<u8>, window: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 7)).read()
+            return action(display, window)
+        }
+    }
+}

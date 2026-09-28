@@ -1,0 +1,131 @@
+module optimize {
+    fn memory_effects(program: ir::Program) -> Shared<Vec<MemoryEffect>> {
+        var effects = Vec<MemoryEffect>.with_capacity(program.functions.length())
+        for index in 0..program.functions.length() {
+            var effect = memory_effect_new()
+            if ir::function_is_import(program.functions[index]) {
+                effect.unknown = 3
+            }
+            effects.push(move effect)
+        }
+        var scopes = Vec<EffectScope>.with_capacity(program.functions.length())
+        for index in 0..program.functions.length() {
+            scopes.push(EffectScope {
+                    roots: memory_roots(program.functions[index]), offsets: load_offsets(program.functions[index])
+                })
+        }
+        var changed = true
+        while changed {
+            changed = false
+            for index in 0..program.functions.length() {
+                let effect = memory_function_effect(program.functions[index], scopes[index], effects)
+                changed = memory_effect_merge(effects[index], effect) || changed
+            }
+        }
+        return Shared.new(move effects)
+    }
+
+    fn memory_function_effect(function: ir::Function, scope: EffectScope, effects: Vec<MemoryEffect>) -> MemoryEffect {
+        var output = memory_effect_new()
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                memory_summarize(function.blocks[block].instructions[index].kind, scope, effects, output)
+            }
+        }
+        return move output
+    }
+
+    fn memory_scope_root(scope: EffectScope, address: usize) -> MemoryRoot {
+        let root = load_root(scope.offsets, Vec<Option<usize>>.new(), address)
+        if root >= scope.roots.length() {
+            return MemoryUnknown()
+        }
+        return scope.roots[root]
+    }
+
+    fn memory_summarize(kind: ir::InstructionKind, scope: EffectScope, effects: Vec<MemoryEffect>, output: write MemoryEffect) -> void {
+        match read kind {
+            ir::InstructionMemory(memory) => memory_summarize_access(memory, scope, output)
+            ir::InstructionCall(target, arguments, result) => {
+                result;
+                memory_summarize_call(target, arguments, scope, effects, output)
+            }
+            ir::InstructionCallIndirect(target, signature, arguments) => {
+                target;
+                signature;
+                arguments;
+                output.unknown = 3
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn memory_summarize_access(memory: ir::MemoryInstruction, scope: EffectScope, output: write MemoryEffect) -> void {
+        match read memory {
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                value_type;
+                alignment;
+                memory_summarize_scalar(address, volatile, 1, scope, output)
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                value;
+                alignment;
+                memory_summarize_scalar(address, volatile, 2, scope, output)
+            }
+            ir::MemoryCopy(destination, source, size) => {
+                size;
+                memory_effect_add(output, memory_scope_root(scope, source), 1)
+                memory_effect_add(output, memory_scope_root(scope, destination), 2)
+            }
+            ir::MemorySet(destination, value, size) => {
+                value;
+                size;
+                memory_effect_add(output, memory_scope_root(scope, destination), 2)
+            }
+            ir::MemoryRepeat(destination, source, size, count) => {
+                size;
+                count;
+                memory_effect_add(output, memory_scope_root(scope, source), 1)
+                memory_effect_add(output, memory_scope_root(scope, destination), 2)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn memory_summarize_scalar(address: usize, volatile: bool, bits: u8, scope: EffectScope, output: write MemoryEffect) -> void {
+        if volatile {
+            output.unknown = 3
+        } else {
+            memory_effect_add(output, memory_scope_root(scope, address), bits)
+        }
+    }
+
+    fn memory_summarize_call(target: usize, arguments: Vec<usize>, scope: EffectScope, effects: Vec<MemoryEffect>, output: write MemoryEffect) -> void {
+        if target >= effects.length() {
+            output.unknown = 3
+            return
+        }
+        loan read effects[target] as effect {
+            output.unknown = output.unknown | effect.unknown
+            for index in 0..effect.regions.length() {
+                let root = memory_call_root(effect.regions[index].root, arguments, scope)
+                memory_effect_add(output, root, effect.regions[index].effect)
+            }
+        }
+    }
+
+    fn memory_call_root(root: MemoryRoot, arguments: Vec<usize>, scope: EffectScope) -> MemoryRoot {
+        match root {
+            MemoryParameter(index, exclusive) => {
+                exclusive;
+                if index >= arguments.length() {
+                    return MemoryUnknown()
+                }
+                return memory_scope_root(scope, arguments[index])
+            }
+            _ => root
+        }
+    }
+}

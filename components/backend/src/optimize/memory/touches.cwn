@@ -1,0 +1,81 @@
+module optimize {
+    fn memory_instruction_touches(function: ir::Function, scan: LoadScan, access: LoadAccess, kind: ir::InstructionKind, mask: u8) -> bool {
+        if memory_instruction_effect(kind, scan.effects) & mask == 0 {
+            return false
+        }
+        match read kind {
+            ir::InstructionCall(target, arguments, result) => {
+                result;
+                return memory_call_touches(scan, target, arguments, access, mask)
+            }
+            _ => {
+            }
+        }
+        let other = if mask == 2 {
+            memory_store_access(function, kind)
+        } else {
+            memory_load_access(kind)
+        }
+        match other {
+            Some(value) => load_disjoint(function, scan, access, value) == false
+            None => true
+        }
+    }
+
+    fn memory_call_touches(scan: LoadScan, target: usize, arguments: Vec<usize>, access: LoadAccess, mask: u8) -> bool {
+        loan read scan.effects as table {
+            if target >= table.length() {
+                return true
+            }
+            return memory_effect_touches(scan, table[target], arguments, access, mask)
+        }
+    }
+
+    fn memory_effect_touches(scan: LoadScan, effect: MemoryEffect, arguments: Vec<usize>, access: LoadAccess, mask: u8) -> bool {
+        if effect.unknown & mask != 0 {
+            return true
+        }
+        let root = load_allocation(scan, access.address)
+        for index in 0..effect.regions.length() {
+            if effect.regions[index].effect & mask != 0 {
+                let other = memory_call_allocation(scan, effect.regions[index].root, arguments)
+                if memory_roots_disjoint(root, other) == false {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    fn memory_call_allocation(scan: LoadScan, root: MemoryRoot, arguments: Vec<usize>) -> MemoryRoot {
+        match root {
+            MemoryParameter(index, exclusive) => {
+                exclusive;
+                if index >= arguments.length() {
+                    return MemoryUnknown()
+                }
+                return load_allocation(scan, arguments[index])
+            }
+            _ => root
+        }
+    }
+
+    fn load_retain_call(function: ir::Function, scan: write LoadScan, kind: ir::InstructionKind) -> void {
+        var output = Vec<LoadEntry>.new()
+        for index in 0..scan.available.length() {
+            loan read scan.available[index] as load {
+                let access = memory_typed_access(load.address, load.value_type)
+                match access {
+                    Some(value) => {
+                        if memory_instruction_touches(function, scan, value, kind, 2) == false {
+                            output.push(load_entry_copy(load))
+                        }
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        scan.available = move output
+    }
+}

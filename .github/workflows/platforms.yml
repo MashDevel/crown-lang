@@ -1,0 +1,206 @@
+name: Native platforms
+on:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+      coverage:
+        type: boolean
+        default: false
+      verify:
+        type: boolean
+        default: false
+      ref:
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  native:
+    name: ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: x86_64-linux
+            runner: ubuntu-24.04
+            jobs: 4
+          - host: arm64-linux
+            runner: ubuntu-24.04-arm
+            jobs: 4
+          - host: x86_64-macos
+            runner: macos-15-intel
+            jobs: 4
+          - host: arm64-macos
+            runner: macos-15
+            jobs: 3
+    env:
+      CROWN_ROOT: ${{ github.workspace }}
+      CROWN_JOBS: ${{ matrix.jobs }}
+      CROWN_CACHE_PATHS: |
+        target/bootstrap
+        target/bootstrap-cache
+        target/test-cache
+        target/toolchain
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Disable automatic Linux crash reports
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo sysctl -w kernel.core_pattern=core
+          test "$(cat /proc/sys/kernel/core_pattern)" = core
+      - name: Check host and bootstrap scripts
+        id: host
+        env:
+          EXPECTED_HOST: ${{ matrix.host }}
+        run: |
+          test "$(sh bootstrap/host)" = "$EXPECTED_HOST"
+          printf 'image=%s-%s\n' "$ImageOS" "$ImageVersion" >> "$GITHUB_OUTPUT"
+          sh bootstrap/tests/run
+      - name: Restore pinned bootstrap assets
+        id: assets
+        if: ${{ !inputs.release }}
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            bootstrap/${{ matrix.host }}
+            target/bootstrap-release
+          key: seed-v2-${{ matrix.host }}-${{ hashFiles('bootstrap/locks/*.json', 'bootstrap/seed-release') }}
+      - name: Fetch and verify bootstrap assets
+        id: seed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh bootstrap/fetch
+          compiler=$(sh bootstrap/fetch-compiler)
+          printf 'compiler=%s\n' "$compiler" >> "$GITHUB_OUTPUT"
+      - name: Save pinned bootstrap assets
+        if: ${{ !inputs.release && steps.assets.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            bootstrap/${{ matrix.host }}
+            target/bootstrap-release
+          key: ${{ steps.assets.outputs.cache-primary-key }}
+      - name: Restore compiler and test executables
+        id: builds
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ env.CROWN_CACHE_PATHS }}
+          key: builds-v1-${{ matrix.host }}-${{ steps.host.outputs.image }}-${{ hashFiles('components/**/*.cwn', 'components/**/Crown.toml', 'components/compiler/tests/cases.json', 'bootstrap/crown', 'bootstrap/digest.awk', 'bootstrap/locks/*.json', 'Crown.toml') }}
+          restore-keys: |
+            builds-v1-${{ matrix.host }}-${{ steps.host.outputs.image }}-
+      - name: Bootstrap compiler
+        id: bootstrap
+        env:
+          VERIFY_BUILD: ${{ inputs.release || inputs.verify }}
+          STARTING_COMPILER: ${{ steps.seed.outputs.compiler }}
+        run: |
+          if [ "$VERIFY_BUILD" = true ]; then
+            "$STARTING_COMPILER" bootstrap --force
+          else
+            "$STARTING_COMPILER" _launch --version
+          fi
+      - name: Format and structural checks
+        run: |
+          mkdir -p target/ci
+          sources=(components/compiler/src components/backend/src components/library/src components/toolchain/src)
+          sources+=(components/compiler/tests/runner components/compiler/tests/harness components/compiler/tests/campaigns)
+          target/bootstrap/crown fmt "${sources[@]}" --check
+          target/bootstrap/crown lint components/compiler --output target/ci/metrics.json
+          target/bootstrap/crown lint components/compiler/tests/runner --output target/ci/runner-metrics.json
+      - name: Build allocation test tool
+        run: target/bootstrap/crown build components/compiler/tests/allocator -o target/toolchain/crown-allocation-auditor
+      - name: Full test registry
+        id: tests
+        env:
+          COLLECT_COVERAGE: ${{ inputs.coverage }}
+        run: |
+          ulimit -c 0
+          arguments=(--jobs "$CROWN_JOBS" --output target/ci/tests)
+          if [ "$COLLECT_COVERAGE" = true ]; then
+            arguments+=(--coverage target/ci/coverage)
+          fi
+          target/bootstrap/crown test "${arguments[@]}"
+      - name: Verify Linux crash-report isolation
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.tests.outcome != 'skipped' }}
+        run: |
+          test "$(cat /proc/sys/kernel/core_pattern)" = core
+          if pgrep -x apport; then
+            exit 1
+          fi
+      - name: Require coverage thresholds
+        if: ${{ !cancelled() && inputs.coverage && steps.tests.outcome != 'skipped' }}
+        run: target/bootstrap/crown coverage target/ci/coverage --output target/ci/coverage.json
+      - name: Release stress campaigns
+        if: ${{ inputs.release }}
+        timeout-minutes: 15
+        run: |
+          ulimit -c 0
+          mkdir -p target/ci/release
+          monitor() {
+            while true; do
+              date -u
+              ps -eo pid,ppid,stat,etime,time,%cpu,rss,comm
+              ls -ltR target/ci/release > target/ci/stress-files.log
+              head -100 target/ci/stress-files.log
+              if [ -r /proc/meminfo ]; then
+                head -5 /proc/meminfo
+                ps -eo pid,wchan:32,args | awk '/[c]rown|[p]rogram|[a]llocations/'
+              fi
+              sleep 30
+            done
+          }
+          monitor > >(tee target/ci/stress-monitor.log) 2>&1 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+          target/bootstrap/crown release --seed 20260928 --jobs "$CROWN_JOBS" --output target/ci/release 2>&1 | tee target/ci/stress.log
+      - name: Refresh and package release
+        if: ${{ inputs.release }}
+        run: |
+          target/bootstrap/crown refresh-seed
+          sh bootstrap/package-release target/dist
+      - name: Upload release assets
+        if: ${{ inputs.release }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-${{ matrix.host }}
+          path: target/dist/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload validation reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reports-${{ matrix.host }}
+          path: |
+            target/ci/*.json
+            target/ci/tests/*.json
+            target/ci/release/*.json
+            target/ci/stress*.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Save compiler and test executables
+        if: ${{ !cancelled() && !inputs.release && steps.bootstrap.outcome == 'success' && steps.builds.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ env.CROWN_CACHE_PATHS }}
+          key: ${{ steps.builds.outputs.cache-primary-key }}

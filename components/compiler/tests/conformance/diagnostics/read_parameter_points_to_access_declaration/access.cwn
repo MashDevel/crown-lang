@@ -1,0 +1,9 @@
+struct Item {
+    value: u32
+}
+fn modify(item: read Item) -> void {
+    item.value = 2
+}
+fn main() -> u32 {
+    return 0
+}

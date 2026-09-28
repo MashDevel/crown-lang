@@ -1,0 +1,3 @@
+fn consume(value: u32) -> void {
+    value
+}

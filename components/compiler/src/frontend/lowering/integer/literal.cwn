@@ -1,0 +1,23 @@
+module lowering {
+    struct NegatedLiteral {
+        magnitude: u64
+        value_type: sema::Type
+    }
+
+    fn negated_integer_literal(compiler: write FunctionCompiler, symbols: sema::Symbols, request: NegatedLiteral) -> Result<Value, u32> {
+        let layout = layout(symbols, request.value_type)?
+        let bits = layout.size * 8
+        var mask: u64 = 18446744073709551615
+        if bits < 64 {
+            mask = (u64.from(1) << bits) - 1
+        }
+        var literal: u64 = 0
+        if request.magnitude != 0 {
+            literal = 18446744073709551615 - request.magnitude + 1
+        }
+        literal = literal & mask
+        let ir_type = ir_type(symbols, request.value_type)?
+        let value = function_integer(compiler, ir_type, literal)
+        return Ok(ScalarValue(value, sema::type_copy(request.value_type)))
+    }
+}

@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let value = Some(42)
+    match value {
+        Some(item) => { return item }
+    }
+}

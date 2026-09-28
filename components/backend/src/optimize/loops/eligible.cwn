@@ -1,0 +1,71 @@
+module optimize {
+    fn loop_clone_cost_eligible(function: ir::Function, natural_loop: NaturalLoop) -> bool {
+        if natural_loop.count > 8 || function.blocks.length() > 256 {
+            return false
+        }
+        var cost: usize = 0
+        for block in 0..function.blocks.length() {
+            if natural_loop.blocks[block] {
+                cost = cost + function.blocks[block].instructions.length()
+            }
+        }
+        return cost <= 48
+    }
+
+    fn loop_clone_eligible(function: ir::Function, natural_loop: NaturalLoop) -> bool {
+        if loop_clone_cost_eligible(function, natural_loop) == false {
+            return false
+        }
+        let inside = licm_definitions(function, natural_loop.blocks)
+        for block in 0..function.blocks.length() {
+            if natural_loop.blocks[block] == false {
+                if loop_external_uses_closed(function.blocks[block], inside, natural_loop.blocks) == false {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    fn loop_external_uses_closed(block: ir::BasicBlock, inside: Vec<bool>, blocks: Vec<bool>) -> bool {
+        for index in 0..block.instructions.length() {
+            loan read block.instructions[index].kind as kind {
+                match read kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        value_type;
+                        if loop_phi_uses_closed(incoming, inside, blocks) == false {
+                            return false
+                        }
+                    }
+                    _ => {
+                        if loop_uses_inside(ir::instruction_operands(kind), inside) {
+                            return false
+                        }
+                    }
+                }
+            }
+        }
+        match read block.terminator {
+            Some(terminator) => loop_uses_inside(ir::terminator_operands(terminator), inside) == false
+            None => true
+        }
+    }
+
+    fn loop_uses_inside(values: Vec<usize>, inside: Vec<bool>) -> bool {
+        for index in 0..values.length() {
+            if inside[values[index]] {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn loop_phi_uses_closed(incoming: Vec<ir::PhiIncoming>, inside: Vec<bool>, blocks: Vec<bool>) -> bool {
+        for cursor in 0..incoming.length() {
+            if inside[incoming[cursor].value] && blocks[incoming[cursor].block] == false {
+                return false
+            }
+        }
+        return true
+    }
+}

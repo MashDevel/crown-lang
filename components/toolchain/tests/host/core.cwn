@@ -1,0 +1,97 @@
+fn text_tests() -> bool {
+    if std::text::equal(std::text::joined("hello ", "é λ"), "hello é λ") == false {
+        return false
+    }
+    if std::text::equal(std::text::slice("aéλz", 1, 5), "éλ") == false {
+        return false
+    }
+    if std::text::occurrences("a b a", "a") != 2 {
+        return false
+    }
+    if std::text::contains("abc", "longer") {
+        return false
+    }
+    if std::text::less("ab", "abc") == false {
+        return false
+    }
+    if std::text::equal(std::text::decimal(18446744073709551615), "18446744073709551615") == false {
+        return false
+    }
+    if std::text::equal(std::text::signed_decimal(-2147483648), "-2147483648") == false {
+        return false
+    }
+    match std::text::unsigned("18446744073709551616") {
+        Ok(value) => {
+            value;
+            return false
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match std::text::unsigned("18446744073709551615") {
+        Ok(value) => {
+            return value == 18446744073709551615
+        }
+        Err(error) => {
+            error;
+            return false
+        }
+    }
+}
+
+fn host_tests() -> Result<bool, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let directory = toolchain::path_join(root, "é nested/deeper")
+    toolchain::make_directory(directory)?
+    let path = toolchain::path_join(directory, "a.cwn")
+    toolchain::write_text(path, "valid λ text")?
+    if std::text::equal(toolchain::read_text(path)?, "valid λ text") == false {
+        return Ok(false)
+    }
+    let files = toolchain::walk_files(root)?
+    if files.length() != 1 || std::text::equal(files[0], toolchain::absolute(path)?) == false {
+        return Ok(false)
+    }
+    return process_tests(root)
+}
+
+fn process_tests(root: Text) -> Result<bool, Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push("printf")
+    arguments.push("%s|%s|%s")
+    arguments.push("")
+    arguments.push("é")
+    arguments.push("hello world")
+    let request = toolchain::command(move arguments)
+    let result = toolchain::capture(request, root)?
+    if result.status != 0 || result.stderr.length() != 0 {
+        return Ok(false)
+    }
+    if std::text::equal(result.stdout, "|é|hello world") == false {
+        return Ok(false)
+    }
+    if toolchain::process_status(6) != -6 || toolchain::process_status(42 << 8) != 42 {
+        return Ok(false)
+    }
+    return Ok(true)
+}
+
+fn main() -> u32 {
+    if text_tests() == false {
+        return 1
+    }
+    match host_tests() {
+        Err(error) => {
+            toolchain::failure(error);
+            return 2
+        }
+        Ok(passed) => {
+            if passed == false {
+                return 3
+            }
+        }
+    }
+    return 42
+}

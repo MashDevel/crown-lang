@@ -1,0 +1,90 @@
+fn project_tests(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "src/main.cwn", "fn main() -> u32 { 0 }")?
+    let path = testing::write_file(root, "Crown.toml", "[package]\nname = \"demo\"\nsource = \"src\"\n[target.macos]\nframeworks = [\"AppKit\", \"Foundation\"]\nlibraries = [\"objc\"]\n")?
+    let target = toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos())
+    let project = toolchain::load_project(root, target)?
+    let direct = toolchain::load_project(path, target)?
+    testing::expect(std::text::equal(project.name, "demo"), "project name")?
+    testing::expect(testing::equal_lists(project.sources, direct.sources), "manifest path and directory agree")?
+    testing::expect(testing::equal_lists(project.links, testing::list("-framework|AppKit|-framework|Foundation|-lobjc")), "manifest link flags")?
+    testing::expect(std::text::equal(project.output, toolchain::path_join(root, "target/debug/demo")), "default project output")?
+    return Ok(())
+}
+
+fn source_tests(root: Text) -> Result<void, Text> {
+    source_fixture(root)?
+    let project = toolchain::load_project(root, toolchain::host_target())?
+    testing::expect(project.sources.length() == 2, "deduplicate and exclude sources")?
+    testing::expect(std::text::ends(project.sources[0], "nested/a.cwn") && std::text::ends(project.sources[1], "nested/z.cwn"), "source order")?
+    invalid_source_paths(root)?
+    testing::write_file(root, "app/Crown.toml", "[package]\nname='app'\nsources=['../src']")?
+    let shared = toolchain::load_project(toolchain::path_join(root, "app"), toolchain::host_target())?
+    testing::expect(shared.sources.length() == 4, "shared parent sources")?
+    return Ok(())
+}
+
+fn invalid_projects(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "Crown.toml")
+    let values = testing::list("|[other]\nname='demo'|[package]\nname='bad name'\nsource='src'|[package]\nname='demo'|[package]\nname='demo'\nsources=[]|[package]\nname='demo'\nsource='src'\nsources=['src']|[package]\nname='demo'\nsource='src'\nextra='no'|[package]\nname='demo'\nname='other'\nsource='src'|[package]\nname='demo'\nsource='/absolute'|[package]\nname='demo'\nsources='src'|[package]\nname=3\nsource='src'|[package]\nname='demo'\nsources=[3]|[package]\nname='demo'\nsource=''|[package]\nname='demo'\nsource='missing'")
+    for index in 0..values.length() {
+        toolchain::write_text(path, values[index])?;
+        testing::error(toolchain::load_project(path, toolchain::host_target()))?
+    }
+    let sections = testing::list("[target.unknown]|[target.macos]\nunknown=[]|[target.macos]\nframeworks='AppKit'|[target.macos]\nlibraries=['']")
+    for index in 0..sections.length() {
+        toolchain::write_text(path, std::text::joined("[package]\nname='demo'\nsource='src'\n", sections[index]))?
+        testing::error(toolchain::load_project(path, toolchain::host_target()))?
+    }
+    testing::error(toolchain::relative_paths(root, testing::list("a\0b")))?
+    testing::error(toolchain::project_from_document(toolchain::json("[]")?, path, toolchain::host_target()))?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    project_tests(root)?;
+    source_tests(root)?;
+    invalid_projects(root)?
+    target_projects(root)?
+    link_name_tests(root)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn source_fixture(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "src/nested/a.cwn", "a")?;
+    testing::write_file(root, "src/nested/z.cwn", "z")?
+    testing::write_file(root, "src/platform/mac.cwn", "mac")?;
+    testing::write_file(root, "src/README.md", "ignored")?
+    toolchain::make_directory(toolchain::path_join(root, "src/directory.cwn"))?
+    testing::write_file(root, "Crown.toml", "[package]\nname = \"demo\"\nsources = [\"src\", \"src/nested/a.cwn\"]\nexclude = [\"src/platform\", \"src/main.cwn\"]\n")?
+    return Ok(())
+}
+
+fn invalid_source_paths(root: Text) -> Result<void, Text> {
+    testing::error(toolchain::require_sources(toolchain::single_source(toolchain::path_join(root, "missing"), toolchain::host_target())))?
+    testing::error(toolchain::require_sources(toolchain::single_source(toolchain::path_join(root, "src/directory.cwn"), toolchain::host_target())))?
+    testing::error(toolchain::require_sources(toolchain::single_source(toolchain::path_join(root, "src/README.md"), toolchain::host_target())))?
+    return Ok(())
+}
+
+fn link_name_tests(root: Text) -> Result<void, Text> {
+    let valid = testing::list("AppKit|System.B|stdc++|pipewire-0.3|c++_shared")
+    for index in 0..valid.length() {
+        toolchain::valid_link_name(valid[index])?
+    }
+    let invalid = testing::list("../payload|AppKit.framework/../../payload|/tmp/payload|a\\b|a b|a\nb|@rpath|.|..|λ")
+    for index in 0..invalid.length() {
+        testing::error(toolchain::valid_link_name(invalid[index]))?
+    }
+    let base = "[package]\nname='demo'\nsource='src'\n"
+    let sections = testing::list("[target.macos]\nframeworks=['AppKit.framework/../../payload']|[target.macos]\nlibraries=['../payload']|[target.linux]\nlibraries=['../payload']")
+    for index in 0..sections.length() {
+        let path = testing::write_file(root, "Crown.toml", std::text::joined(base, sections[index]))?
+        testing::error(toolchain::load_project(path, toolchain::host_target()))?
+    }
+    return Ok(())
+}

@@ -1,0 +1,16 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    let item = Item {
+        value: 1
+    }
+    loan read item as first {
+        loan write first as second {
+            second.value = 2
+        }
+    }
+    return 0
+
+}

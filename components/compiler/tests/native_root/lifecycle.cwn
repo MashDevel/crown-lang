@@ -1,0 +1,153 @@
+resource Counted {
+    amount: u32, counter: Shared<Mutex<u32>>
+    drop {
+        counter.lock write as count {
+            count = count + amount
+        }
+    }
+}
+
+fn count(counter: Shared<Mutex<u32>>) -> u32 {
+    counter.lock write as value {
+        return value
+    }
+}
+
+struct Held {
+    lease: RootLease<Counted>, token: RootToken<Counted>
+}
+
+fn held_after_close(counter: Shared<Mutex<u32>>) -> Result<Held, u32> {
+    let owner = NativeRoot<Counted>.new(Counted {
+            amount: 7, counter: counter.share()
+        })
+    let token = owner.token()
+    let held = token.acquire()?
+    match token.acquire() {
+        Ok(other) => {
+            other;
+            return Err(20)
+        },
+        Err(error) => {
+            if error != 2 {
+                return Err(21)
+            }
+        }
+    }
+    return Ok(Held {
+            lease: move held, token: token
+        })
+}
+
+fn deferred(counter: Shared<Mutex<u32>>) -> Result<void, u32> {
+    let held = held_after_close(counter)?
+    if count(counter) != 0 {
+        return Err(22)
+    }
+    match held.token.acquire() {
+        Ok(value) => {
+            value;
+            return Err(34)
+        },
+        Err(error) => {
+            if error != 1 {
+                return Err(35)
+            }
+        }
+    }
+    loan read held.lease as payload {
+        if payload.amount != 7 {
+            return Err(23)
+        }
+    }
+    return Ok(())
+}
+
+fn expired(counter: Shared<Mutex<u32>>) -> RootToken<Counted> {
+    let owner = NativeRoot<Counted>.new(Counted {
+            amount: 3, counter: counter.share()
+        })
+    return owner.token()
+}
+
+fn replacement(counter: Shared<Mutex<u32>>, old: RootToken<Counted>) -> Result<void, u32> {
+    let owner = NativeRoot<Counted>.new(Counted {
+            amount: 5, counter: counter.share()
+        })
+    let token = owner.token()
+    if old.slot() != token.slot() || old.generation() == token.generation() {
+        return Err(24)
+    }
+    match old.acquire() {
+        Ok(value) => {
+            value;
+            return Err(25)
+        },
+        Err(error) => {
+            if error != 1 {
+                return Err(26)
+            }
+        }
+    }
+    let wrong = RootToken<u64>.from_parts(token.slot(), token.generation())
+    match wrong.acquire() {
+        Ok(value) => {
+            value;
+            return Err(27)
+        },
+        Err(error) => {
+            if error != 3 {
+                return Err(28)
+            }
+        }
+    }
+    let held = token.acquire()?
+    held
+    return Ok(())
+}
+
+fn invalid() -> Result<void, u32> {
+    let tokens = [RootToken<u64>.from_parts(1024, 1), RootToken<u64>.from_parts(0, 0)]
+    for index in 0..2 {
+        match tokens[index].acquire() {
+            Ok(value) => {
+                value;
+                return Err(29)
+            },
+            Err(error) => {
+                if error != 1 {
+                    return Err(30)
+                }
+            }
+        }
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, u32> {
+    invalid()?
+    let counter = Shared.new(Mutex.new(u32.from(0)))
+    deferred(counter)?
+    if count(counter) != 7 {
+        return Err(31)
+    }
+    let old = expired(counter)
+    if count(counter) != 10 {
+        return Err(32)
+    }
+    replacement(counter, old)?
+    if count(counter) != 15 {
+        return Err(33)
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(value) => {
+            value;
+            0
+        },
+        Err(error) => error
+    }
+}

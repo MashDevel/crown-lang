@@ -1,0 +1,68 @@
+module x86 {
+    fn codegen_add_sequential_functions(program: ir::Program, machine: write Program) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                if ir::function_is_import(function) {
+                    match program_add_import(machine, function.name.clone()) {
+                        Err(error) => {
+                            error;
+                            return Err(codegen_error(CodegenEncodeError()))
+                        }
+                        Ok(value) => {
+                            value
+                        }
+                    }
+                } else {
+                    match codegen_add_function(program, machine, index) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(value) => {
+                            value
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_add_function(program: ir::Program, machine: write Program, id: usize) -> Result<void, CodegenError> {
+        let output = codegen_function(program, id)?
+        return codegen_insert_function(machine, move output)
+    }
+
+    fn codegen_function(program: ir::Program, id: usize) -> Result<Function, CodegenError> {
+        match codegen_compile_function(program, id) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(instructions) => {
+                var output = function_new(program.functions[id].name.clone(), move instructions)
+                match read program.functions[id].linkage {
+                    ir::LinkageExport => {
+                        function_export(output)
+                    }
+                    _ => {
+                    }
+                }
+                return Ok(move output)
+            }
+        }
+    }
+
+    fn codegen_insert_function(machine: write Program, function: take Function) -> Result<void, CodegenError> {
+        match program_add_function(machine, move function) {
+            Err(error) => {
+                error;
+                return Err(codegen_error(CodegenEncodeError()))
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+}

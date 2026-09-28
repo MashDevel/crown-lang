@@ -1,0 +1,1 @@
+fn main() -> u32 { var option: Option<u32> = Some(0); if let Some(value) = read option { value += 1 }; return 0 }

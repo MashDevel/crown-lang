@@ -1,0 +1,34 @@
+fn main() -> u32 {
+    var actual = Vec<u8>.new()
+    var expected = Vec<u8>.new()
+    loan read expected as values {
+        if test_bytes_equal(actual, values) == false {
+            return 1
+        }
+    }
+    actual.push(255)
+    loan read expected as values {
+        if test_bytes_equal(actual, values) {
+            return 2
+        }
+    }
+    expected.push(255)
+    loan read expected as values {
+        if test_bytes_equal(actual, values) == false {
+            return 3
+        }
+    }
+    expected[0] = 0
+    loan read expected as values {
+        if test_bytes_equal(actual, values) {
+            return 4
+        }
+    }
+    expected.push(255)
+    loan read expected as values {
+        if test_bytes_equal(actual, values) {
+            return 5
+        }
+    }
+    42
+}

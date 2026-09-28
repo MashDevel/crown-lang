@@ -1,0 +1,81 @@
+module optimize {
+    struct ScalarAddress {
+        root: usize
+        offset: u64
+    }
+
+    struct ScalarField {
+        offset: u64
+        value_type: ir::Type
+        alignment: u32
+        slot: Option<usize>
+    }
+
+    struct ScalarRoot {
+        present: bool
+        size: u64
+        alignment: u32
+        fields: Vec<ScalarField>
+        valid: bool
+        fills: Vec<u8>
+    }
+
+    struct ScalarCopy {
+        destination: ScalarAddress
+        source: ScalarAddress
+        size: u64
+    }
+
+    struct ScalarAnalysis {
+        roots: Vec<ScalarRoot>
+        addresses: Vec<Option<ScalarAddress>>
+        copies: Vec<ScalarCopy>
+    }
+
+    struct ScalarAccess {
+        address: usize
+        value_type: ir::Type
+        alignment: u32
+        volatile: bool
+    }
+
+    struct ScalarMemory {
+        destination: usize
+        source: usize
+        size: usize
+    }
+
+    fn scalar_address_copy(value: ScalarAddress) -> ScalarAddress {
+        return ScalarAddress {
+            root: value.root, offset: value.offset
+        }
+    }
+
+    fn scalar_field_copy(value: ScalarField) -> ScalarField {
+        return ScalarField {
+            offset: value.offset
+            value_type: value.value_type
+            alignment: value.alignment
+            slot: value.slot
+        }
+    }
+
+    fn scalar_copy_copy(value: ScalarCopy) -> ScalarCopy {
+        return ScalarCopy {
+            destination: scalar_address_copy(value.destination)
+            source: scalar_address_copy(value.source)
+            size: value.size
+        }
+    }
+
+    fn scalar_empty_root() -> ScalarRoot {
+        return ScalarRoot {
+            present: false
+            size: 0
+            alignment: 1
+            fields: Vec<ScalarField>.new()
+            valid: false
+            fills: Vec<u8>.new()
+        }
+    }
+}

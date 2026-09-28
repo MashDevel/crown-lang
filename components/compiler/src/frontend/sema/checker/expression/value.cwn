@@ -1,0 +1,51 @@
+module sema {
+    fn checker_value(checker: write Checker, expression: frontend::Expression, expected: Type) -> bool {
+        match checker_expression_expected(checker, expression, expected) {
+            None => {
+                return false
+            }
+            Some(info) => {
+                checker.current_span = expression.span
+                var valid = assignable(checker.symbols, expected, info.value_type)
+                if valid == false {
+                    checker_type_error(checker, expected, info.value_type)
+                }
+                if type_is_copy_with_symbols(checker.symbols, expected) == false && value_is_borrowed(info.value) {
+                    checker_error(checker, "owned values require an explicit move; borrowed values cannot escape their scope")
+                    valid = false
+                }
+                return valid
+            }
+        }
+    }
+
+    fn value_is_borrowed(value: ValueKind) -> bool {
+        match read value {
+            BorrowedValue => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn value_is_owned(value: ValueKind) -> bool {
+        match read value {
+            OwnedValue => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn checker_require_storable(checker: write Checker, value_type: Type) -> bool {
+        if type_contains_view(checker.symbols, value_type) == false {
+            return true
+        }
+        checker_error(checker, "owned values require an explicit move; borrowed values cannot escape their scope")
+        return false
+    }
+}

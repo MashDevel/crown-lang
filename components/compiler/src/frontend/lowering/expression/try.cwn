@@ -1,0 +1,144 @@
+module lowering {
+    struct ResultTypes {
+        ok_type: sema::Type
+        error_type: sema::Type
+        offset: u64
+    }
+
+    struct TryFlow {
+        address: usize
+        types: ResultTypes
+        error: usize
+        success: usize
+    }
+
+    fn try_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: Box<frontend::Expression>) -> Result<Value, u32> {
+        var source = VoidValue()
+        var source_type = sema::Invalid()
+        loan read expression as value {
+            source = function_expression(compiler, analysis, value)?
+            source_type = function_expression_type(compiler, analysis, value)?
+        }
+        let address = value_address(compiler, analysis.checker.symbols, move source)?
+        let types = result_types(analysis.checker.symbols, source_type)?
+        let flow = TryFlow {
+            address: address, types: move types, error: function_new_block(compiler)?, success: function_new_block(compiler)?
+        }
+        let failed = try_failed_tag(compiler, analysis.checker.symbols, flow)?
+        loan read expression as value {
+            finish_condition(compiler, value.span, ir::TerminatorConditional(failed, flow.error, flow.success))?
+        }
+        function_select_block(compiler, flow.error)
+        propagate_try_error(compiler, analysis.checker.symbols, flow)?
+        function_select_block(compiler, flow.success)
+        return try_success_value(compiler, analysis.checker.symbols, flow)
+    }
+
+    fn try_success_value(compiler: write FunctionCompiler, symbols: sema::Symbols, flow: TryFlow) -> Result<Value, u32> {
+        let value = function_offset(compiler, flow.address, flow.types.offset)?
+        if sema::type_is_unit(flow.types.ok_type) {
+            return Ok(VoidValue())
+        }
+        if type_is_direct(symbols, flow.types.ok_type)? {
+            let load = Place {
+                address: value, value_type: sema::type_copy(flow.types.ok_type)
+            }
+            let result = function_load(compiler, symbols, load)?
+            return Ok(ScalarValue(result, sema::type_copy(flow.types.ok_type)))
+        }
+        return Ok(AddressValue(value, sema::type_copy(flow.types.ok_type)))
+    }
+
+    fn result_types(symbols: sema::Symbols, value_type: sema::Type) -> Result<ResultTypes, u32> {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                let count = try_argument_count(builtin)
+                if count == 0 || count != arguments.length() {
+                    return Err(215)
+                }
+                let alignment = try_payload_alignment(symbols, arguments)?
+                var ok_type = sema::Invalid()
+                var error_type = sema::builtin_leaf(sema::Unit())
+                loan read arguments[0] as value {
+                    ok_type = sema::type_copy(value)
+                }
+                if arguments.length() == 2 {
+                    loan read arguments[1] as value {
+                        error_type = sema::type_copy(value)
+                    }
+                }
+                return Ok(ResultTypes {
+                        ok_type: move ok_type, error_type: move error_type, offset: align_to(4, alignment)
+                    })
+            }
+            _ => {
+                return Err(216)
+            }
+        }
+    }
+
+    fn propagate_try_error(compiler: write FunctionCompiler, symbols: sema::Symbols, flow: TryFlow) -> Result<void, u32> {
+        var destination: usize = 0
+        match read compiler.result_address {
+            Some(value) => {
+                destination = value
+            }
+            None => {
+                return Err(217)
+            }
+        }
+        let zero = Place {
+            address: destination, value_type: sema::type_copy(compiler.result)
+        }
+        function_zero(compiler, symbols, zero)?
+        if sema::type_builtin(compiler.result) == sema::Option() {
+            function_cleanup_all(compiler)?
+            return function_finish(compiler, ir::TerminatorReturn(None()))
+        }
+        let target_types = result_types(symbols, compiler.result)?
+        let source = function_offset(compiler, flow.address, flow.types.offset)?
+        let target = function_offset(compiler, destination, target_types.offset)?
+        let value = AddressValue(source, sema::type_copy(flow.types.error_type))
+        let transfer = CopyRequest {
+            destination: target, value: move value
+        }
+        function_copy(compiler, symbols, transfer)?
+        function_cleanup_all(compiler)?
+        return function_finish(compiler, ir::TerminatorReturn(None()))
+    }
+
+    fn try_argument_count(builtin: sema::Builtin) -> usize {
+        if builtin == sema::Result() {
+            return 2
+        }
+        if builtin == sema::Option() {
+            return 1
+        }
+        return 0
+    }
+
+    fn try_payload_alignment(symbols: sema::Symbols, arguments: Vec<sema::Type>) -> Result<u32, u32> {
+        var alignment: u32 = 1
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as value {
+                let item = layout(symbols, value)?
+                if item.alignment > alignment {
+                    alignment = item.alignment
+                }
+            }
+            index = index + 1
+        }
+        return Ok(alignment)
+    }
+
+    fn try_failed_tag(compiler: write FunctionCompiler, symbols: sema::Symbols, flow: TryFlow) -> Result<usize, u32> {
+        let tag_request = Place {
+            address: flow.address, value_type: sema::builtin_leaf(sema::U32())
+        }
+        let tag = function_load(compiler, symbols, tag_request)?
+        let tag_type = ir::TypeInteger(ir::IntegerWidth32())
+        let error_tag = function_integer(compiler, tag_type, 0)
+        return function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), tag, error_tag))
+    }
+}

@@ -1,0 +1,176 @@
+module optimize {
+    fn scalar_rewrite_copy(function: write ir::Function, analysis: ScalarAnalysis, memory: take ScalarMemory) -> Vec<ir::Instruction> {
+        let destination = scalar_selected(analysis, memory.destination)
+        let source = scalar_selected(analysis, memory.source)
+        let size = scalar_integer(function, memory.size)
+        match move destination {
+            None => {
+                return scalar_original_memory_copy(move memory)
+            }
+            Some(destination_address) => {
+                match move source {
+                    None => {
+                        return scalar_original_memory_copy(move memory)
+                    }
+                    Some(source_address) => {
+                        match read size {
+                            None => {
+                                return scalar_original_memory_copy(move memory)
+                            }
+                            Some(copy_size) => {
+                                return scalar_emit_copy(function, analysis, ScalarCopy {
+                                        destination: move destination_address, source: move source_address, size: copy_size
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_original_memory_copy(memory: take ScalarMemory) -> Vec<ir::Instruction> {
+        var output = Vec<ir::Instruction>.new()
+        output.push(ir::Instruction {
+                result: None(), kind: ir::InstructionMemoryCopy(memory.destination, memory.source, memory.size)
+            })
+        return move output
+    }
+
+    fn scalar_emit_copy(function: write ir::Function, analysis: ScalarAnalysis, value: take ScalarCopy) -> Vec<ir::Instruction> {
+        var output = Vec<ir::Instruction>.new()
+        let end = value.destination.offset + value.size
+        var index: usize = 0
+        while index < analysis.roots[value.destination.root].fields.length() {
+            loan read analysis.roots[value.destination.root].fields[index] as field {
+                if value.destination.offset <= field.offset && field.offset < end {
+                    scalar_emit_field_copy(function, analysis, value, field, output)
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn scalar_emit_field_copy(function: write ir::Function, analysis: ScalarAnalysis, value: ScalarCopy, field: ScalarField, output: write Vec<ir::Instruction>) -> void {
+        let source_offset = value.source.offset + field.offset - value.destination.offset
+        let source_field = scalar_field_at(analysis, value.source.root, source_offset)
+        let source_slot = scalar_field_slot(analysis, value.source.root, source_offset)
+        let destination_slot = scalar_field_slot(analysis, value.destination.root, field.offset)
+        match move source_field {
+            None => {
+            }
+            Some(source_value) => {
+                match read source_slot {
+                    None => {
+                    }
+                    Some(load_address) => {
+                        match read destination_slot {
+                            None => {
+                            }
+                            Some(store_address) => {
+                                let result = ir::function_new_value(function, field.value_type)
+                                let alignment = scalar_min_alignment(field.alignment, source_value.alignment)
+                                output.push(ir::Instruction {
+                                        result: Some(result), kind: ir::InstructionLoad(load_address, field.value_type, alignment, false)
+                                    })
+                                output.push(ir::Instruction {
+                                        result: None(), kind: ir::InstructionStore(store_address, result, field.alignment, false)
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_rewrite_set(function: write ir::Function, analysis: ScalarAnalysis, memory: take ScalarMemory) -> Vec<ir::Instruction> {
+        let destination = scalar_selected(analysis, memory.destination)
+        let byte = scalar_integer(function, memory.source)
+        match move destination {
+            None => {
+                return scalar_original_memory_set(move memory)
+            }
+            Some(address) => {
+                match read byte {
+                    None => {
+                        return scalar_original_memory_set(move memory)
+                    }
+                    Some(value) => {
+                        return scalar_emit_set(function, analysis, address.root, u8.from(value))
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_original_memory_set(memory: take ScalarMemory) -> Vec<ir::Instruction> {
+        var output = Vec<ir::Instruction>.new()
+        output.push(ir::Instruction {
+                result: None(), kind: ir::InstructionMemorySet(memory.destination, memory.source, memory.size)
+            })
+        return move output
+    }
+
+    fn scalar_emit_set(function: write ir::Function, analysis: ScalarAnalysis, root: usize, byte: u8) -> Vec<ir::Instruction> {
+        var output = Vec<ir::Instruction>.new()
+        var index: usize = 0
+        while index < analysis.roots[root].fields.length() {
+            match read analysis.roots[root].fields[index].slot {
+                None => {
+                }
+                Some(slot) => {
+                    let value = scalar_repeated_constant(function, analysis.roots[root].fields[index], byte)
+                    output.push(ir::Instruction {
+                            result: None(), kind: ir::InstructionStore(slot, value, analysis.roots[root].fields[index].alignment, false)
+                        })
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn scalar_repeated_constant(function: write ir::Function, field: ScalarField, byte: u8) -> usize {
+        var bits: u64 = 0
+        match ir::type_size(field.value_type) {
+            Some(size) => {
+                var index: u64 = 0
+                while index < size {
+                    bits = bits |(u64.from(byte) <<(index * 8));
+                    index = index + 1
+                }
+            }
+            None => {
+            }
+        }
+        let constant = scalar_constant(field.value_type, bits)
+        return ir::function_constant(function, field.value_type, constant)
+    }
+
+    fn scalar_constant(value_type: ir::Type, bits: u64) -> ir::Constant {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                width;
+                return ir::ConstantInteger(bits)
+            }
+            ir::TypeFloat(width) => {
+                match read width {
+                    ir::FloatWidth32 => {
+                        return ir::ConstantFloat32(u32.from(bits))
+                    }
+                    ir::FloatWidth64 => {
+                        return ir::ConstantFloat64(bits)
+                    }
+                }
+            }
+            ir::TypePointer => {
+                return ir::ConstantNull()
+            }
+            _ => {
+                return ir::ConstantInteger(bits)
+            }
+        }
+    }
+}

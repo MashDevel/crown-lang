@@ -1,0 +1,20 @@
+fn first() -> [u8; 13] {
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+}
+fn second() -> [u8; 13] {
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+}
+fn main(arguments: Arguments) -> u32 {
+    let make: fn() -> [u8; 13] = if arguments.length() == 0 {
+        first
+    } else {
+        second
+    }
+    let bytes = make()
+    for index in 0..13 {
+        if bytes[index] != u8.from(index + 1) {
+            return 1
+        }
+    }
+    return 42
+}

@@ -1,0 +1,62 @@
+fn run() -> Result<u32, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    let signature = ir::signature_new(move parameters, value_type)
+    var function = ir::function_new("shared_address", move signature, ir::LinkageLocal())
+    let constant_type = value_type
+    let constant_value = ir::ConstantInteger(u64.from(8))
+    let offset = ir::function_constant(function, constant_type, constant_value)
+    let base = function.parameters[0]
+    let block = backend_test::checked(ir::function_add_block(function), 1)?
+    let address = backend_test::value(ir::function_append(function, block, ir::InstructionOffset(base, offset)), 3, 2)?
+    backend_test::checked(ir::function_append(function, block, ir::InstructionLoad(address, value_type, 8, false)), 4)?
+    var loaded: Option<usize> = None()
+    match ir::function_append(function, block, ir::InstructionLoad(address, value_type, 8, false)) {
+        Ok(value) => {
+            loaded = value
+        }
+        Err(error) => {
+            error;
+            return Ok(5)
+        }
+    }
+    backend_test::checked(ir::function_terminate(function, block, ir::TerminatorReturn(loaded)), 6)?
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Ok(7)
+        }
+        Ok(instructions) => {
+            return Ok(check_generated_instructions(instructions))
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var kept_address = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::AddImmediate(register, value) => {
+                register;
+                if value == 8 {
+                    kept_address = true
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if kept_address == false {
+        return 8
+    }
+    42
+}
+
+fn main() -> u32 {
+    backend_test::finished(run())
+}

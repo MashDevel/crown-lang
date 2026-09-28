@@ -1,0 +1,42 @@
+fn main() -> u32 {
+    let left = [[1, 2], [3, 4]]
+    let right = [[1, 2], [3, 4]]
+    let different = [[1, 2], [4, 3]]
+    let empty: [u32; 0] = []
+    let units: [void; 2] = [(), ()]
+    let zeros = [0.0, -0.0]
+    if left != right {
+        return 1
+    }
+    if left == different {
+        return 2
+    }
+    if empty != empty {
+        return 6
+    }
+    if units != units {
+        return 7
+    }
+    if zeros !=[0.0, 0.0] {
+        return 8
+    }
+    var arena = Arena<u32>.new()
+    let first = arena.insert(1)
+    let same = first
+    let second = arena.insert(2)
+    if first != same {
+        return 3
+    }
+    if first == second {
+        return 4
+    }
+    let text = "crown"
+    loan read text as first_view {
+        loan read text as second_view {
+            if first_view != second_view {
+                return 5
+            }
+        }
+    }
+    return 0
+}

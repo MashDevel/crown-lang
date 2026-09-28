@@ -1,0 +1,25 @@
+struct Item {
+    value: u32
+}
+enum Choice {
+    Early, Later
+}
+fn consume(item: take Item) -> u32 {
+    return item.value
+}
+fn choose(choice: take Choice, item: take Item) -> u32 {
+    match move choice {
+        Early => {
+            return consume(move item)
+        }
+        Later => {
+            print(0)
+        }
+    }
+    return consume(move item)
+}
+fn main() -> u32 {
+    return choose(Later(), Item {
+            value: 9
+        })
+}

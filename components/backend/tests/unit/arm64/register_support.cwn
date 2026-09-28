@@ -1,0 +1,136 @@
+fn chain_function(count: usize, value_type: ir::Type) -> ir::Function {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("chain", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    var block = ir::basic_block_new()
+    for index in 0..count {
+        let result = ir::function_new_value(function, value_type)
+        block.instructions.push(ir::Instruction {
+                result: Some(result), kind: ir::InstructionBinary(ir::BinaryAnd(), index, index)
+            })
+    }
+    block.terminator = Some(ir::TerminatorReturn(Some(count)))
+    function.blocks.push(move block)
+    return move function
+}
+
+fn pressure_function(count: usize) -> ir::Function {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    for index in 0..count {
+        index;
+        parameters.push(value_type)
+    }
+    var function = ir::function_new("sum", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    var block = ir::basic_block_new()
+    var previous: usize = 0
+    for index in 1..count {
+        let result = ir::function_new_value(function, value_type)
+        block.instructions.push(ir::Instruction {
+                result: Some(result), kind: ir::InstructionBinary(ir::BinaryAdd(), previous, index)
+            })
+        previous = result
+    }
+    block.terminator = Some(ir::TerminatorReturn(Some(previous)))
+    function.blocks.push(move block)
+    return move function
+}
+
+fn pressure_with_temporary() -> ir::Function {
+    var function = pressure_function(24)
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let temporary = ir::function_new_value(function, value_type)
+    let unused = ir::function_new_value(function, value_type)
+    var instructions = Vec<ir::Instruction>.new()
+    instructions.push(ir::Instruction {
+            result: Some(temporary), kind: ir::InstructionBinary(ir::BinaryAdd(), 0, 1)
+        })
+    instructions.push(ir::Instruction {
+            result: Some(unused), kind: ir::InstructionBinary(ir::BinaryMultiply(), temporary, temporary)
+        })
+    for index in 0..function.blocks[0].instructions.length() {
+        instructions.push(ir::instruction_copy(function.blocks[0].instructions[index]))
+    }
+    function.blocks[0].instructions = move instructions
+    return move function
+}
+
+fn rotating_function() -> ir::Function {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("rotate", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    for index in 0..4 {
+        index;
+        function.blocks.push(ir::basic_block_new())
+    }
+    for index in 0..3 {
+        ir::function_constant(function, value_type, ir::ConstantInteger(u64.from(index)))
+    }
+    for index in 0..4 {
+        index;
+        ir::function_new_value(function, value_type)
+    }
+    loop_phi(function, 4, 1, 7)
+    loop_phi(function, 5, 2, 6)
+    loop_phi(function, 6, 3, 5)
+    let condition = ir::function_new_value(function, ir::TypeInteger(ir::IntegerWidth1()))
+    function.blocks[0].terminator = Some(ir::TerminatorBranch(1))
+    function.blocks[1].instructions.push(ir::Instruction {
+            result: Some(condition), kind: ir::InstructionCompare(ir::CompareUnsignedLess(), 4, 0)
+        })
+    function.blocks[1].terminator = Some(ir::TerminatorConditional(condition, 2, 3))
+    function.blocks[2].instructions.push(ir::Instruction {
+            result: Some(7), kind: ir::InstructionBinary(ir::BinaryAdd(), 4, 2)
+        })
+    function.blocks[2].terminator = Some(ir::TerminatorBranch(1))
+    let ten = ir::function_constant(function, value_type, ir::ConstantInteger(10))
+    let product = ir::function_new_value(function, value_type)
+    let result = ir::function_new_value(function, value_type)
+    function.blocks[3].instructions.push(ir::Instruction {
+            result: Some(product), kind: ir::InstructionBinary(ir::BinaryMultiply(), 5, ten)
+        })
+    function.blocks[3].instructions.push(ir::Instruction {
+            result: Some(result), kind: ir::InstructionBinary(ir::BinaryAdd(), product, 6)
+        })
+    function.blocks[3].terminator = Some(ir::TerminatorReturn(Some(result)))
+    return move function
+}
+
+fn loop_phi(function: write ir::Function, result: usize, initial: usize, next: usize) -> void {
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(ir::PhiIncoming {
+            block: 0, value: initial
+        })
+    incoming.push(ir::PhiIncoming {
+            block: 2, value: next
+        })
+    function.blocks[1].instructions.push(ir::Instruction {
+            result: Some(result), kind: ir::InstructionPhi(ir::TypeInteger(ir::IntegerWidth64()), move incoming)
+        })
+}
+
+fn aggregate_return_function() -> ir::Function {
+    let integer = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    signature.parameter_abi[0] = ir::ParameterReturn(ir::AggregateMemory(8, 8))
+    var function = ir::function_new("aggregate", move signature, ir::LinkageLocal())
+    let constant = ir::function_constant(function, integer, ir::ConstantInteger(42))
+    let temporary = ir::function_new_value(function, integer)
+    let unused = ir::function_new_value(function, integer)
+    var block = ir::basic_block_new()
+    block.instructions.push(ir::Instruction {
+            result: None(), kind: ir::InstructionStore(0, constant, 8, false)
+        })
+    block.instructions.push(ir::Instruction {
+            result: Some(temporary), kind: ir::InstructionBinary(ir::BinaryAdd(), constant, constant)
+        })
+    block.instructions.push(ir::Instruction {
+            result: Some(unused), kind: ir::InstructionBinary(ir::BinaryMultiply(), temporary, temporary)
+        })
+    block.terminator = Some(ir::TerminatorReturn(None()))
+    function.blocks.push(move block)
+    return move function
+}

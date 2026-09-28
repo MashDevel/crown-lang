@@ -1,0 +1,33 @@
+module frontend {
+    copy enum Mode {
+        ModeRead
+        ModeWrite
+        ModeTake
+    }
+
+    copy enum LoanMode {
+        LoanRead
+        LoanWrite
+    }
+
+    copy enum BinaryOperator {
+        BinaryAdd
+        BinarySubtract
+        BinaryMultiply
+        BinaryDivide
+        BinaryRemainder
+        BinaryLogicalAnd
+        BinaryLogicalOr
+        BinaryBitwiseAnd
+        BinaryBitwiseOr
+        BinaryBitwiseXor
+        BinaryShiftLeft
+        BinaryShiftRight
+        BinaryEqual
+        BinaryNotEqual
+        BinaryLess
+        BinaryLessEqual
+        BinaryGreater
+        BinaryGreaterEqual
+    }
+}

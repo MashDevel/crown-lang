@@ -1,0 +1,5 @@
+const VALUE: u32 = 0b102
+
+fn main() -> u32 {
+    return VALUE
+}

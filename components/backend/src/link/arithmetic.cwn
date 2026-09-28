@@ -1,0 +1,21 @@
+module link_binary {
+    fn signed_add(left: i64, right: i64) -> Result<i64, Text> {
+        if right > 0 && left > 9223372036854775807 - right {
+            return Err("relocation addition overflow")
+        }
+        if right < 0 && left < -9223372036854775808 - right {
+            return Err("relocation addition overflow")
+        }
+        return Ok(left + right)
+    }
+
+    fn signed_subtract(left: i64, right: i64) -> Result<i64, Text> {
+        if right > 0 && left < -9223372036854775808 + right {
+            return Err("relocation subtraction overflow")
+        }
+        if right < 0 && left > 9223372036854775807 + right {
+            return Err("relocation subtraction overflow")
+        }
+        return Ok(left - right)
+    }
+}

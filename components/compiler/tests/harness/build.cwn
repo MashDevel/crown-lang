@@ -1,0 +1,39 @@
+module harness {
+    fn test_build(environment: Environment, sources: Vec<Text>, budget: u64) -> toolchain::BuildRequest {
+        let binary = toolchain::path_join(environment.output, "program")
+        let project = toolchain::Project {
+            manifest: "", name: "test", sources: std::text::clone_list(sources), links: Vec<Text>.new(), output: binary.clone()
+        }
+        return toolchain::BuildRequest {
+            compiler: environment.compiler.clone(), project: move project, output: move binary, objects: Vec<Text>.new(), links: Vec<Text>.new(), max_instances: budget, coverage: environment.coverage.clone(), optimization: toolchain::optimization_options(), target: toolchain::host_target()
+        }
+    }
+
+    fn build_program(environment: Environment, sources: Vec<Text>, budget: u64) -> Result<Text, Text> {
+        let request = test_build(environment, sources, budget)
+        toolchain::make_directory(environment.output)?
+        if toolchain::build_cacheable(request) == false {
+            toolchain::compile_project(request, request.output)?
+            return Ok(request.output.clone())
+        }
+        let input = toolchain::build_fingerprint(request)?
+        let directory = toolchain::path_join(environment.root, toolchain::path_join("target/test-cache", input))
+        let cached = toolchain::path_join(directory, "program")
+        let lock = toolchain::lock_file(toolchain::path_join(directory, "build.lock"))?
+        prepare_cached_program(request, cached, input)?
+        toolchain::copy_file(cached, request.output)?
+        toolchain::executable(request.output)?
+        lock;
+        return Ok(request.output.clone())
+    }
+
+    fn prepare_cached_program(request: toolchain::BuildRequest, cached: Text, input: Text) -> Result<void, Text> {
+        if toolchain::fresh(cached, input) {
+            return Ok(())
+        }
+        let temporary = toolchain::temporary(toolchain::parent_path(cached))?
+        let binary = toolchain::path_join(toolchain::temporary_path(temporary), "program")
+        toolchain::compile_project(request, binary)?
+        return toolchain::publish_build(request, binary, cached, input)
+    }
+}

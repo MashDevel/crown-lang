@@ -1,0 +1,7 @@
+struct Record {
+    value: u32
+}
+fn main() -> usize {
+    let name = "value";
+    return Record.offset_of(name)
+}

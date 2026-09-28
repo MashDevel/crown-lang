@@ -1,0 +1,78 @@
+module arm64 {
+    fn abi_argument(state: write AbiState, value: AbiValue, variadic: bool) -> Result<AbiArgument, Text> {
+        abi_validate(value)?
+        let indirect = value.kind == AbiKind::Aggregate() && value.size > 16
+        let actual = if indirect {
+            AbiValue {
+                size: 8, alignment: 8, kind: AbiKind::Integer()
+            }
+        } else {
+            value
+        }
+        let location = abi_location(state, actual, variadic)?
+        return Ok(AbiArgument {
+                location: location, indirect: indirect
+            })
+    }
+
+    fn abi_location(state: write AbiState, value: AbiValue, variadic: bool) -> Result<AbiLocation, Text> {
+        if value.size == 0 {
+            return Ok(AbiLocation::Omitted())
+        }
+        if state.variant == AbiVariant::Darwin() && variadic {
+            return abi_stack(state, value, true)
+        }
+        match value.kind {
+            AbiKind::Float | AbiKind::Vector => abi_simd(state, value, 1)
+            AbiKind::Homogeneous(count, size) => {
+                size;
+                abi_simd(state, value, count)
+            }
+            _ => abi_general(state, value)
+        }
+    }
+
+    fn abi_general(state: write AbiState, value: AbiValue) -> Result<AbiLocation, Text> {
+        let count = u32.from((value.size + 7) / 8)
+        if state.variant == AbiVariant::Aapcs64() && value.alignment >= 16 {
+            state.integer = (state.integer + 1) & 4294967294
+        }
+        if count <= 8 - state.integer {
+            let start = state.integer
+            state.integer = state.integer + count
+            return Ok(AbiLocation::General(start, count))
+        }
+        state.integer = 8
+        return abi_stack(state, value, false)
+    }
+
+    fn abi_simd(state: write AbiState, value: AbiValue, count: u32) -> Result<AbiLocation, Text> {
+        if count <= 8 - state.simd {
+            let start = state.simd
+            state.simd = state.simd + count
+            return Ok(AbiLocation::Simd(start, count))
+        }
+        state.simd = 8
+        return abi_stack(state, value, false)
+    }
+
+    fn abi_stack(state: write AbiState, value: AbiValue, variadic: bool) -> Result<AbiLocation, Text> {
+        var alignment = u64.from(value.alignment)
+        var size = value.size
+        if state.variant == AbiVariant::Aapcs64() || variadic {
+            if alignment < 8 {
+                alignment = 8
+            }
+            size = abi_align(size, 8)?
+        }
+        if alignment > 16 {
+            alignment = 16
+        }
+        let offset = abi_align(state.stack, alignment)?
+        if offset > 18446744073709551615 - size {
+            return Err("ARM64 ABI stack size overflow")
+        }
+        state.stack = offset + size
+        return Ok(AbiLocation::Stack(offset, size))
+    }
+}

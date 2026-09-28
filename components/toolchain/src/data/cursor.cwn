@@ -1,0 +1,83 @@
+module toolchain {
+    struct Cursor {
+        source: Text, position: usize
+    }
+
+    fn cursor(source: take Text) -> Cursor {
+        return Cursor {
+            source: move source, position: 0
+        }
+    }
+
+    fn peek(input: Cursor) -> u8 {
+        if input.position >= input.source.length() {
+            return 0
+        }
+        loan read input.source as bytes {
+            return bytes[input.position]
+        }
+    }
+
+    fn consumed(input: write Cursor, expected: u8) -> bool {
+        if input.position >= input.source.length() || peek(input) != expected {
+            return false
+        }
+        input.position = input.position + 1
+        return true
+    }
+
+    fn require_byte(input: write Cursor, expected: u8) -> Result<void, Text> {
+        if consumed(input, expected) {
+            return Ok(())
+        }
+        return Err(parse_error(input, "expected delimiter"))
+    }
+
+    fn parse_error(input: Cursor, message: Text) -> Text {
+        return std::text::joined(std::text::joined(message, " at byte "), std::text::decimal(u64.from(input.position)))
+    }
+
+    fn whitespace(input: write Cursor) -> void {
+        while input.position < input.source.length() {
+            let byte = peek(input)
+            if byte != 32 && byte != 9 && byte != 10 && byte != 13 {
+                break
+            }
+            input.position = input.position + 1
+        }
+    }
+
+    fn literal(input: write Cursor, expected: Text) -> Result<void, Text> {
+        loan read expected as bytes {
+            for index in 0..bytes.length() {
+                if consumed(input, bytes[index]) == false {
+                    return Err(parse_error(input, "invalid literal"))
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn hex_digit(byte: u8) -> Result<u32, Text> {
+        if byte >= 48 && byte <= 57 {
+            return Ok(u32.from(byte - 48))
+        }
+        if byte >= 65 && byte <= 70 {
+            return Ok(u32.from(byte - 65 + 10))
+        }
+        if byte >= 97 && byte <= 102 {
+            return Ok(u32.from(byte - 97 + 10))
+        }
+        return Err("invalid hexadecimal escape")
+    }
+
+    fn unicode_word(input: write Cursor) -> Result<u32, Text> {
+        var result: u32 = 0
+        for index in 0..4 {
+            index;
+            result = result * 16 + hex_digit(peek(input))?;
+            input.position = input.position + 1
+        }
+        return Ok(result)
+    }
+}

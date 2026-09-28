@@ -1,0 +1,82 @@
+module lowering {
+    fn coverage_slot(compiler: FunctionCompiler, span: frontend::Span, branch: bool) -> usize {
+        match read compiler.tables.coverage {
+            None => {
+                return 0
+            }
+            Some(shared) => {
+                loan read shared as layout {
+                    return coverage_index(layout, span, branch)
+                }
+            }
+        }
+    }
+
+    fn coverage_line(compiler: write FunctionCompiler, span: frontend::Span) -> Result<void, u32> {
+        let index = coverage_slot(compiler, span, false)
+        if index != 0 {
+            coverage_hit(compiler, index - 1)?
+        }
+        return Ok(())
+    }
+
+    fn coverage_arm(compiler: write FunctionCompiler, span: frontend::Span) -> Result<void, u32> {
+        let index = coverage_slot(compiler, span, true)
+        if index != 0 {
+            coverage_hit(compiler, index - 1)?
+        }
+        return Ok(())
+    }
+
+    fn coverage_hit(compiler: write FunctionCompiler, index: usize) -> Result<void, u32> {
+        let value = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), u64.from(index))
+        return coverage_hit_value(compiler, value)
+    }
+
+    fn coverage_hit_value(compiler: write FunctionCompiler, value: usize) -> Result<void, u32> {
+        var arguments = Vec<usize>.new()
+        arguments.push(value)
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let request = ImportedCall {
+            name: "crown_cov_hit", signature: ir::signature_new(move parameters, ir::TypeVoid()), arguments: move arguments
+        }
+        function_imported_call(compiler, request)?
+        return Ok(())
+    }
+
+    fn function_source_start(compiler: write FunctionCompiler, span: frontend::Span) -> Result<void, u32> {
+        function_start(compiler)?
+        return coverage_line(compiler, span)
+    }
+
+    fn function_condition(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        let value = function_scalar_expression(compiler, analysis, expression)?
+        coverage_condition(compiler, expression.span, value)?
+        return Ok(value)
+    }
+
+    fn finish_condition(compiler: write FunctionCompiler, span: frontend::Span, terminator: take ir::Terminator) -> Result<void, u32> {
+        match read terminator {
+            ir::TerminatorConditional(condition, yes, no) => {
+                yes;
+                no;
+                coverage_condition(compiler, span, condition)?
+            }
+            _ => {
+            }
+        }
+        return function_finish(compiler, move terminator)
+    }
+
+    fn coverage_condition(compiler: write FunctionCompiler, span: frontend::Span, condition: usize) -> Result<void, u32> {
+        let index = coverage_slot(compiler, span, true)
+        if index == 0 {
+            return Ok(())
+        }
+        let yes = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), u64.from(index - 1))
+        let no = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), u64.from(index))
+        let selected = function_append_value(compiler, ir::InstructionSelect(condition, yes, no))?
+        return coverage_hit_value(compiler, selected)
+    }
+}

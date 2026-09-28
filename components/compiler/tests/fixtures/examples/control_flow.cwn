@@ -1,0 +1,11 @@
+fn main() -> u32 {
+    var value = 0
+    while value < 50 {
+        value = value + 1
+        if value < 42 {
+            continue
+        }
+        break
+    }
+    return value
+}

@@ -1,0 +1,276 @@
+module optimize {
+    fn control_value_range(function: ir::Function, ranges: Vec<Option<Range>>, constraints: RangeConstraints, value: usize) -> Option<Range> {
+        let inferred = value_range(function, ranges, value)
+        match move inferred {
+            None => {
+                return None()
+            }
+            Some(value_range) => {
+                match constraint_range(constraints, value) {
+                    Some(local) => {
+                        return intersect_ranges(value_range, local)
+                    }
+                    None => {
+                        return Some(move value_range)
+                    }
+                }
+            }
+        }
+    }
+
+    fn constraint_range(constraints: RangeConstraints, value: usize) -> Option<Range> {
+        var index: usize = 0
+        while index < constraints.values.length() {
+            loan read constraints.values[index] as entry {
+                if entry.value == value {
+                    return Some(range_copy(entry.range))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn constrain_value(function: ir::Function, constraints: write RangeConstraints, value: usize, range: Range) -> void {
+        match ir::function_constant_value(function, value) {
+            Some(constant) => {
+                constant;
+                return
+            }
+            None => {
+            }
+        }
+        var index: usize = 0
+        while index < constraints.values.length() {
+            if constraints.values[index].value == value {
+                var current = Range {
+                    minimum: 0, maximum: 0
+                }
+                loan read constraints.values[index].range as value_range {
+                    current = range_copy(value_range)
+                }
+                match intersect_ranges(current, range) {
+                    Some(refined) => {
+                        constraints.values[index].range = move refined
+                    }
+                    None => {
+                    }
+                }
+                return
+            }
+            index = index + 1
+        }
+        constraints.values.push(RangeConstraint {
+                value: value, range: range_copy(range)
+            })
+    }
+
+    fn relational_ranges(operator: ir::CompareOperator, left: Range, right: Range) -> Option<RangePair> {
+        match read operator {
+            ir::CompareEqual => {
+                match intersect_ranges(left, right) {
+                    Some(shared) => {
+                        return Some(RangePair {
+                                left: range_copy(shared), right: move shared
+                            })
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            ir::CompareUnsignedLess => {
+                return less_than_ranges(left, right, true)
+            }
+            ir::CompareUnsignedLessEqual => {
+                return less_than_ranges(left, right, false)
+            }
+            ir::CompareUnsignedGreater => {
+                return greater_ranges(left, right, true)
+            }
+            ir::CompareUnsignedGreaterEqual => {
+                return greater_ranges(left, right, false)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn less_than_ranges(left: Range, right: Range, strict: bool) -> Option<RangePair> {
+        var amount: u64 = 0
+        if strict {
+            amount = 1
+        }
+        if right.maximum < amount || left.minimum > 18446744073709551615 - amount {
+            return None()
+        }
+        let left_bound = Range {
+            minimum: 0, maximum: right.maximum - amount
+        }
+        let right_bound = Range {
+            minimum: left.minimum + amount, maximum: 18446744073709551615
+        }
+        let left_range = intersect_ranges(left, left_bound)
+        let right_range = intersect_ranges(right, right_bound)
+        match move left_range {
+            None => {
+                return None()
+            }
+            Some(left_value) => {
+                match move right_range {
+                    Some(right_value) => {
+                        return Some(RangePair {
+                                left: move left_value, right: move right_value
+                            })
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+        }
+    }
+
+    fn greater_ranges(left: Range, right: Range, strict: bool) -> Option<RangePair> {
+        match less_than_ranges(right, left, strict) {
+            Some(value) => {
+                return Some(RangePair {
+                        left: range_copy(value.right), right: range_copy(value.left)
+                    })
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn intersect_ranges(left: Range, right: Range) -> Option<Range> {
+        var minimum = left.minimum
+        var maximum = left.maximum
+        if right.minimum > minimum {
+            minimum = right.minimum
+        }
+        if right.maximum < maximum {
+            maximum = right.maximum
+        }
+        if minimum > maximum {
+            return None()
+        }
+        return Some(Range {
+                minimum: minimum, maximum: maximum
+            })
+    }
+
+    fn invert_compare(operator: ir::CompareOperator) -> Option<ir::CompareOperator> {
+        match read operator {
+            ir::CompareEqual => {
+                return Some(ir::CompareNotEqual())
+            }
+            ir::CompareNotEqual => {
+                return Some(ir::CompareEqual())
+            }
+            ir::CompareUnsignedLess => {
+                return Some(ir::CompareUnsignedGreaterEqual())
+            }
+            ir::CompareUnsignedLessEqual => {
+                return Some(ir::CompareUnsignedGreater())
+            }
+            ir::CompareUnsignedGreater => {
+                return Some(ir::CompareUnsignedLessEqual())
+            }
+            ir::CompareUnsignedGreaterEqual => {
+                return Some(ir::CompareUnsignedLess())
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn merge_constraints(target: write RangeConstraints, incoming: RangeConstraints) -> bool {
+        if target.reached == false {
+            target = range_constraints_copy(incoming)
+            return true
+        }
+        var output = Vec<RangeConstraint>.new()
+        var index: usize = 0
+        while index < target.values.length() {
+            loan read target.values[index] as current {
+                match constraint_range(incoming, current.value) {
+                    Some(other) => {
+                        output.push(RangeConstraint {
+                                value: current.value, range: range_union(current.range, other)
+                            })
+                    }
+                    None => {
+                    }
+                }
+            }
+            index = index + 1
+        }
+        let changed = constraint_values_equal(target.values, output) == false
+        target.values = move output
+        return changed
+    }
+
+    fn constraint_values_equal(left: Vec<RangeConstraint>, right: Vec<RangeConstraint>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < left.length() {
+            if left[index].value != right[index].value {
+                return false
+            }
+            if left[index].range.minimum != right[index].range.minimum {
+                return false
+            }
+            if left[index].range.maximum != right[index].range.maximum {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn constraint_sets_equal(left: Vec<RangeConstraints>, right: Vec<RangeConstraints>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < left.length() {
+            var equal = false
+            loan read left[index] as left_value {
+                loan read right[index] as right_value {
+                    equal = constraints_equal(left_value, right_value)
+                }
+            }
+            if equal == false {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn constraints_equal(left: RangeConstraints, right: RangeConstraints) -> bool {
+        if left.reached != right.reached || left.values.length() != right.values.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < left.values.length() {
+            if left.values[index].value != right.values[index].value {
+                return false
+            }
+            if left.values[index].range.minimum != right.values[index].range.minimum {
+                return false
+            }
+            if left.values[index].range.maximum != right.values[index].range.maximum {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+}

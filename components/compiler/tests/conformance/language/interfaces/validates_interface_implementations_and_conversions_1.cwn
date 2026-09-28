@@ -1,0 +1,11 @@
+interface Read {
+    fn get(self: read Self) -> u32
+}
+struct Value {
+    item: u32
+}
+impl Read for Value {
+}
+fn main() -> u32 {
+    return 0
+}

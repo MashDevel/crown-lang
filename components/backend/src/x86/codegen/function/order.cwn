@@ -1,0 +1,76 @@
+module x86 {
+    fn codegen_block_order(function: ir::Function) -> Vec<usize> {
+        var state = BlockOrderState {
+            visited: ir::flags_new(function.blocks.length())
+            output: Vec<usize>.with_capacity(function.blocks.length())
+        }
+        var index: usize = 0
+        while index < function.blocks.length() {
+            if state.visited[index] == false {
+                codegen_visit_trace(function, index, state)
+            }
+            index = index + 1
+        }
+        var output = Vec<usize>.with_capacity(state.output.length())
+        index = 0
+        while index < state.output.length() {
+            output.push(state.output[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_visit_trace(function: ir::Function, root: usize, state: write BlockOrderState) -> void {
+        var pending = Vec<usize>.new()
+        pending.push(root)
+        while pending.length() > 0 {
+            var block: usize = root
+            match pending.pop() {
+                Some(value) => {
+                    block = value
+                }
+                None => {
+                    return
+                }
+            }
+            if state.visited[block] == false {
+                state.visited[block] = true
+                state.output.push(block)
+                loan read function.blocks[block] as source {
+                    codegen_push_successors(function, source, state.visited, pending)
+                }
+            }
+        }
+    }
+
+    fn codegen_sort_successors(function: ir::Function, targets: write Vec<usize>) -> void {
+        for index in 1..targets.length() {
+            var cursor = index
+            while cursor > 0 && function.blocks[targets[cursor]].frequency > function.blocks[targets[cursor - 1]].frequency {
+                let previous = targets[cursor - 1]
+                targets[cursor - 1] = targets[cursor]
+                targets[cursor] = previous
+                cursor = cursor - 1
+            }
+        }
+    }
+
+    fn codegen_push_successors(function: ir::Function, block: ir::BasicBlock, visited: Vec<bool>, pending: write Vec<usize>) -> void {
+        match read block.terminator {
+            Some(terminator) => {
+                var targets = ir::terminator_targets(terminator)
+                codegen_sort_successors(function, targets)
+                var cursor = targets.length()
+                while cursor > 0 {
+                    cursor = cursor - 1
+                    let target = targets[cursor]
+                    if visited[target] == false {
+                        pending.push(target)
+                    }
+                }
+            }
+            None => {
+            }
+        }
+    }
+}

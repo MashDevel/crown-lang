@@ -1,0 +1,50 @@
+module sema {
+    fn constant_form_valid(expression: frontend::Expression) -> bool {
+        return constant_kind_valid(expression.kind)
+    }
+
+    fn constant_kind_valid(kind: frontend::ExpressionKind) -> bool {
+        match read kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                operator;
+                return constant_box_valid(left) && constant_box_valid(right)
+            }
+            frontend::ExpressionNegate(value) | frontend::ExpressionBitwiseNot(value) => {
+                return constant_box_valid(value)
+            }
+            _ => {
+                return constant_leaf_valid(kind)
+            }
+        }
+    }
+
+    fn constant_box_valid(value: Box<frontend::Expression>) -> bool {
+        loan read value as expression {
+            return constant_form_valid(expression)
+        }
+    }
+
+    fn constant_leaf_valid(kind: frontend::ExpressionKind) -> bool {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                path;
+                return true
+            }
+            frontend::ExpressionInteger(value) => {
+                value;
+                return true
+            }
+            frontend::ExpressionBoolean(value) => {
+                value;
+                return true
+            }
+            frontend::ExpressionFloat(span) | frontend::ExpressionCharacter(span) => {
+                span;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

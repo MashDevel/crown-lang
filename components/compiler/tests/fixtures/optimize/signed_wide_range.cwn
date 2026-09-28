@@ -1,0 +1,31 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn main() -> u32 {
+    let wide_type = ir::TypeInteger(ir::IntegerWidth128())
+    let result_type = ir::TypeInteger(ir::IntegerWidth1())
+    var function = ir::function_new("signed_wide", ir::signature_new(Vec<ir::Type>.new(), result_type), ir::LinkageLocal())
+    var block: usize = 0
+    match ir::function_add_block(function) { Ok(value) => { block = value } Err(error) => { error; return 1 } }
+    let negative_one_constant = ir::ConstantWideInteger(ir::WideInteger { low: 18446744073709551615, high: 18446744073709551615 })
+    let zero_constant = ir::ConstantWideInteger(ir::WideInteger { low: 0, high: 0 })
+    let minimum_constant = ir::ConstantWideInteger(ir::WideInteger { low: 0, high: 9223372036854775808 })
+    let maximum_constant = ir::ConstantWideInteger(ir::WideInteger { low: 18446744073709551615, high: 9223372036854775807 })
+    let negative_one = ir::function_constant(function, wide_type, negative_one_constant)
+    let zero = ir::function_constant(function, wide_type, zero_constant)
+    let minimum = ir::function_constant(function, wide_type, minimum_constant)
+    let maximum = ir::function_constant(function, wide_type, maximum_constant)
+    let first = test_append(function, block, ir::InstructionCompare(ir::CompareSignedLess(), negative_one, zero))
+    test_append(function, block, ir::InstructionCompare(ir::CompareSignedGreaterEqual(), minimum, negative_one))
+    test_append(function, block, ir::InstructionCompare(ir::CompareSignedGreater(), maximum, negative_one))
+    test_append(function, block, ir::InstructionCompare(ir::CompareSignedLessEqual(), minimum, maximum))
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(first))) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    if optimize::range(function, true) != 4 { return 3 }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    match ir::validate_program(program) { Ok(value) => { value; return 42 } Err(error) => { error; return 4 } }
+}

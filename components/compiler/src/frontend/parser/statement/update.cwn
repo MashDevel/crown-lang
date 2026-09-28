@@ -1,0 +1,52 @@
+module frontend {
+    fn parser_update_operator(parser: Parser) -> Option<BinaryOperator> {
+        if parser.offset + 1 >= parser.tokens.length() {
+            return None()
+        }
+        let current = parser_token_at(parser, parser.offset)
+        let next = parser_token_at(parser, parser.offset + 1)
+        if token_kind_equal(next.kind, TokenEqual()) == false || current.span.end != next.span.start {
+            return None()
+        }
+        match parser_binary_operator(current.kind) {
+            Some(parsed) => {
+                if parsed.precedence >= 5 {
+                    return Some(parsed.operator)
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+
+    fn parser_is_update(parser: Parser) -> bool {
+        match parser_update_operator(parser) {
+            Some(value) => {
+                value;
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn parser_update(parser: write Parser, target: take Expression) -> Statement {
+        var operator = BinaryAdd()
+        match parser_update_operator(parser) {
+            Some(value) => {
+                operator = value
+            }
+            None => {
+                parser_report(parser, UnexpectedToken())
+            }
+        }
+        parser_advance(parser)
+        parser_expect(parser, TokenEqual())
+        let value = parser_expression(parser)
+        let span = span_through(target.span, value.span)
+        parser_line_end(parser)
+        return statement(StatementUpdate(move target, operator, move value), span)
+    }
+}

@@ -1,0 +1,80 @@
+module lowering {
+    struct LockTarget {
+        address: usize
+        value_type: sema::Type
+    }
+
+    fn lock_scope(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementLock(mode, source, alias, body) => {
+                let target = lock_target(compiler, analysis, source)?
+                let payload = lock_payload(target.value_type)?
+                let lock = function_load_pointer(compiler, target.address)?
+                let acquire = lock_acquire_name(payload.mutex, mode)
+                call_lock(compiler, move acquire, lock)?
+                let layout = layout(analysis.checker.symbols, payload.value_type)?
+                let value = function_offset(compiler, target.address, align_to(8, layout.alignment))?
+                function_push_scope(compiler)
+                function_add_exit(compiler, lock_release_name(payload.mutex), lock)
+                function_add_binding(compiler, Binding {
+                        name: frontend::name_copy(alias), value_type: sema::type_copy(payload.value_type), address: value, owned: false, available: true, depth: compiler.scope_depth
+                    })
+                function_statements(compiler, analysis, body)?
+                return function_pop_scope(compiler)
+            }
+            _ => {
+                return Err(235)
+            }
+        }
+    }
+
+    fn lock_target(compiler: write FunctionCompiler, analysis: sema::Analysis, path: frontend::Path) -> Result<LockTarget, u32> {
+        let place = path_place(compiler, analysis, path)?
+        let value_type = sema::type_copy(place.value_type)
+        if sema::type_builtin(value_type) == sema::Shared() {
+            let element = owner_element(value_type)?
+            let data = function_load_pointer(compiler, place.address)?
+            return Ok(LockTarget {
+                    address: data, value_type: move element
+                })
+        }
+        return Ok(LockTarget {
+                address: place.address, value_type: move value_type
+            })
+    }
+
+    fn lock_payload(value_type: sema::Type) -> Result<sema::LockPayload, u32> {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                let kind = builtin
+                if (kind == sema::Mutex() || kind == sema::RwLock()) && arguments.length() == 1 {
+                    loan read arguments[0] as value {
+                        return Ok(sema::LockPayload {
+                                value_type: sema::type_copy(value), mutex: kind == sema::Mutex()
+                            })
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return Err(238)
+    }
+
+    fn lock_acquire_name(mutex: bool, mode: frontend::LoanMode) -> Text {
+        if mutex {
+            return "pthread_mutex_lock"
+        }
+        if sema::loan_is_read(mode) {
+            return "pthread_rwlock_rdlock"
+        }
+        return "pthread_rwlock_wrlock"
+    }
+
+    fn lock_release_name(mutex: bool) -> Text {
+        if mutex {
+            return "pthread_mutex_unlock"
+        }
+        return "pthread_rwlock_unlock"
+    }
+}

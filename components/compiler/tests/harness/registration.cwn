@@ -1,0 +1,57 @@
+module harness {
+    struct RegistrationAudit {
+        covered: std::map::TextMap<bool>, entries: std::map::TextMap<usize>
+    }
+
+    fn registration_audit() -> RegistrationAudit {
+        return RegistrationAudit {
+            covered: std::map::new_text(), entries: std::map::new_text()
+        }
+    }
+
+    fn register_case(value: Case, root: Text, audit: write RegistrationAudit) -> Result<void, Text> {
+        if value.hosts.length() == 0 {
+            return register_target(value, root, toolchain::host_target(), audit)
+        }
+        for index in 0..value.hosts.length() {
+            register_target(value, root, toolchain::parse_target(value.hosts[index])?, audit)?
+        }
+        return Ok(())
+    }
+
+    fn register_target(value: Case, root: Text, target: toolchain::Target, audit: write RegistrationAudit) -> Result<void, Text> {
+        var count = register_entry(toolchain::path_join(root, value.source), target, audit)?
+        for index in 0..value.roots.length() {
+            count = count + register_entry(toolchain::path_join(root, value.roots[index]), target, audit)?
+        }
+        if count == 0 {
+            return Err("no Crown source files found")
+        }
+        return Ok(())
+    }
+
+    fn register_entry(path: Text, target: toolchain::Target, audit: write RegistrationAudit) -> Result<usize, Text> {
+        let resolved = toolchain::absolute(path)?
+        let key = std::text::joined(toolchain::target_name(target), std::text::joined(":", resolved))
+        match std::map::with_text_value(audit.entries, key, fn(count) {
+                return count
+            }) {
+            Some(count) => {
+                return Ok(count)
+            }
+            None => {
+            }
+        }
+        var sources = Vec<Text>.new()
+        toolchain::append_frontend_path(sources, resolved, target)?
+        let paths = toolchain::source_paths(toolchain::SourcePaths {
+                entries: move sources, excluded: Vec<Text>.new(), target: target
+            })?
+        for index in 0..paths.length() {
+            std::map::text_insert(audit.covered, paths[index].clone(), true)
+        }
+        let count = paths.length()
+        std::map::text_insert(audit.entries, move key, count)
+        return Ok(count)
+    }
+}

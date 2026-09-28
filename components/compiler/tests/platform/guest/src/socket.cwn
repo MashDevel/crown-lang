@@ -1,0 +1,114 @@
+module guest {
+    extern "c" {
+        fn raw_socket(domain: i32, kind: i32, protocol: i32) -> i32 = "socket"
+        fn raw_connect(socket: i32, address: RawPtr<u8>, length: u32) -> i32 = "connect"
+        fn raw_recv(socket: i32, data: RawPtr<u8>, length: usize, flags: i32) -> isize = "recv"
+        fn raw_send(socket: i32, data: RawPtr<u8>, length: usize, flags: i32) -> isize = "send"
+        fn raw_option(socket: i32, level: i32, name: i32, value: RawPtr<u64>, length: u32) -> i32 = "setsockopt"
+        fn raw_close(socket: i32) -> i32 = "close"
+    }
+
+    opaque resource Socket {
+        descriptor: i32
+        buffer: Vec<u8>
+        position: usize
+        length: usize
+        drop {
+            unsafe {
+                raw_close(descriptor)
+            }
+        }
+    }
+
+    fn connect(path: Text) -> Result<Socket, Text> {
+        let address = socket_address(path)?
+        unsafe {
+            let descriptor = raw_socket(1, 1, 0)
+            if descriptor < 0 {
+                return Err("could not create guest socket")
+            }
+            let socket = Socket {
+                descriptor: descriptor, buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+            }
+            socket_timeout(socket)?
+            if raw_connect(descriptor, address.as_raw(), u32.from(address.length())) != 0 {
+                return Err("could not connect to guest socket")
+            }
+            return Ok(move socket)
+        }
+    }
+
+    fn socket_timeout(socket: Socket) -> Result<void, Text> {
+        var timeout = Vec<u64>.new()
+        timeout.push(30)
+        timeout.push(0)
+        unsafe {
+            if raw_option(socket.descriptor, SOCKET_LEVEL, RECEIVE_TIMEOUT, timeout.as_raw(), 16) != 0 {
+                return Err("could not set guest receive timeout")
+            }
+            if raw_option(socket.descriptor, SOCKET_LEVEL, SEND_TIMEOUT, timeout.as_raw(), 16) != 0 {
+                return Err("could not set guest send timeout")
+            }
+        }
+        return Ok(())
+    }
+
+    fn send(socket: Socket, message: Text) -> Result<void, Text> {
+        var offset: usize = 0
+        while offset < message.length() {
+            unsafe {
+                let count = raw_send(socket.descriptor, message.as_raw().offset(offset), message.length() - offset, NO_SIGNAL)
+                if count <= 0 {
+                    return Err("could not send guest request")
+                }
+                offset = offset + usize.from(count)
+            }
+        }
+        return Ok(())
+    }
+
+    fn receive_byte(socket: write Socket) -> Result<u8, Text> {
+        unsafe {
+            if socket.position == socket.length {
+                unsafe {
+                    let count = raw_recv(socket.descriptor, socket.buffer.as_raw(), socket.buffer.length(), 0)
+                    if count <= 0 {
+                        return Err("guest socket closed or timed out")
+                    }
+                    socket.length = usize.from(count)
+                    socket.position = 0
+                }
+            }
+            let byte = socket.buffer[socket.position]
+            socket.position = socket.position + 1
+            return Ok(byte)
+        }
+    }
+
+    fn exchange(socket: write Socket, message: Text) -> Result<Text, Text> {
+        send(socket, message)?
+        var bytes = Vec<u8>.new()
+        while true {
+            let byte = receive_byte(socket)?
+            if byte == 10 {
+                return std::text::from_bytes(bytes)
+            }
+            bytes.push(byte)
+        }
+        return Err("unterminated guest response")
+    }
+
+    fn socket_path(path: Text, length: usize) -> Result<Vec<u8>, Text> {
+        if path.length() == 0 || path.length() + 3 > length {
+            return Err("invalid guest socket path length")
+        }
+        toolchain::cstring(path)?
+        var output = std::bytes::filled(length, 0)
+        loan read path as bytes {
+            for index in 0..bytes.length() {
+                output[index + 2] = bytes[index]
+            }
+        }
+        return Ok(move output)
+    }
+}

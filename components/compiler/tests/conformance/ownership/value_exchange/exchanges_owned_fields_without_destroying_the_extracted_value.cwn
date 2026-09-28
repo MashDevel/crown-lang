@@ -1,0 +1,23 @@
+resource Guard {
+    code: u32, drop {
+        print(code)
+    }
+}
+struct State {
+    first: Guard, second: Guard
+}
+fn main() -> u32 {
+    var state = State {
+        first: Guard {
+            code: 1
+        }, second: Guard {
+            code: 2
+        }
+    }
+    let previous = replace(state.first, Guard {
+            code: 3
+        })
+    swap(state.first, state.second)
+    print(previous.code)
+    return state.first.code + state.second.code
+}

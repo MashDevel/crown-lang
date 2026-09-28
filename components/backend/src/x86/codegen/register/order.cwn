@@ -1,0 +1,36 @@
+module x86 {
+    fn codegen_order_values(eligible: Vec<bool>, used: Vec<bool>, analysis: OrderAnalysis) -> Vec<usize> {
+        var entries = Vec<ir::IndexEntry>.new()
+        var index: usize = 0
+        while index < eligible.length() {
+            if eligible[index] && used[index] {
+                entries.push(ir::IndexEntry {
+                        group: 18446744073709551615 - analysis.costs[index]
+                        key: 18446744073709551615 - u64.from(analysis.degrees[index])
+                        value: index
+                    })
+            }
+            index = index + 1
+        }
+        ir::index_sort(entries)
+        var output = Vec<usize>.with_capacity(entries.length())
+        index = 0
+        while index < entries.length() {
+            output.push(entries[index].value);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_graph_degrees(graph: Vec<ir::BitSet>) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(graph.length())
+        var index: usize = 0
+        while index < graph.length() {
+            loan read graph[index] as edges {
+                output.push(ir::bitset_count(edges))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

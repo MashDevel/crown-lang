@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    let number = 7
+    let text = "worker"
+    let thread = spawn move {
+        text.length()
+        print(number)
+    }
+    thread
+    return number
+}

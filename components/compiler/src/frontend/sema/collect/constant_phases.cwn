@@ -1,0 +1,81 @@
+module sema {
+    fn constant_is_array_declaration(reference: frontend::TypeRef) -> bool {
+        match read reference.kind {
+            frontend::TypeArray(element, length) => {
+                element;
+                length;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn initial_constant_type(symbols: write Symbols, resolution: Resolution, reference: frontend::TypeRef) -> Type {
+        if constant_is_array_declaration(reference) {
+            return Invalid()
+        }
+        return resolve_type(symbols, resolution, reference)
+    }
+
+    fn resolve_scalar_constants(symbols: take Symbols, program: frontend::Program) -> Symbols {
+        if symbols.errors != 0 {
+            return move symbols
+        }
+        var checker = checker_new(move symbols)
+        for index in 0..program.constants.length() {
+            if constant_is_array_declaration(program.constants[index].value_type) == false {
+                check_scalar_constant(checker, program.constants[index], index)
+            }
+        }
+        evaluate_constants(checker, program)
+        checker.symbols.errors = checker.symbols.errors + checker.errors
+        while let Some(diagnostic) = checker.diagnostics.pop() {
+            checker.symbols.diagnostics.push(move diagnostic)
+        }
+        let empty = symbols_new(checker.symbols.source.share())
+        return replace(checker.symbols, move empty)
+    }
+
+    fn check_scalar_constant(checker: write Checker, declaration: frontend::ConstDecl, index: usize) -> void {
+        checker.current_span = declaration.value.span
+        if constant_form_valid(declaration.value) == false {
+            checker_error(checker, "constant expression requires literals, constants, or scalar operators")
+            return
+        }
+        let expected = type_copy(checker.symbols.constants[index].value_type)
+        checker_value(checker, declaration.value, expected)
+    }
+
+    fn collect_array_constants(symbols: write Symbols, program: frontend::Program) -> void {
+        if symbols.errors != 0 {
+            return
+        }
+        for index in 0..program.constants.length() {
+            if constant_is_array_declaration(program.constants[index].value_type) {
+                symbols.current_span = program.constants[index].name.span
+                let resolution = resolution_new()
+                let value_type = resolve_type(symbols, resolution, program.constants[index].value_type)
+                if scalar_array_type(value_type) == false {
+                    symbols_error(symbols, "constant requires a scalar or fixed scalar array type")
+                }
+                symbols.constants[index].value_type = move value_type
+            }
+        }
+    }
+
+    fn scalar_array_type(value_type: Type) -> bool {
+        match read value_type {
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return constant_type_valid(value)
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

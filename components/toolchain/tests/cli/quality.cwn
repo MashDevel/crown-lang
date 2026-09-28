@@ -1,0 +1,53 @@
+fn formatting(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "src/main.cwn", "fn main()->u32{\n\n\n return 0\n}\n")?
+    testing::write_file(root, "Crown.toml", "[format]\nindent_width=2\nmax_blank_lines=0\nfinal_newline=false\n")?
+    format(root)?
+    testing::expect(std::text::equal(toolchain::read_text(path)?, "fn main() -> u32 {\n  return 0\n}"), "configured formatting")?
+    testing::clean_call(root, std::text::joined("fmt|--check|", root))?
+    return format_boundaries(root, path)
+}
+
+fn format_boundaries(root: Text, path: Text) -> Result<void, Text> {
+    testing::write_file(root, "Crown.toml", "[format]\nindent_width=3\nmax_blank_lines=2\n")?
+    toolchain::write_text(path, "fn main() -> u32 {\n\n\n\nreturn 0\n}")?
+    format(root)?
+    testing::expect(std::text::equal(toolchain::read_text(path)?, "fn main() -> u32 {\n\n\n   return 0\n}\n"), "blank lines and final newline")?
+    return testing::clean_call(root, std::text::joined("fmt|--check|", root))
+}
+
+fn format(root: Text) -> Result<void, Text> {
+    let result = testing::invoke(testing::list(std::text::joined("fmt|", root)), root)?
+    return testing::expect(result.status == 0, "formatter succeeds")
+}
+
+fn structural(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "probe.cwn", "fn main() -> u32 {\n    if true { return 0 }\n    return 1\n}\n")?
+    let command = std::text::joined(std::text::joined("lint|", path), std::text::joined("|--output|", toolchain::path_join(root, "metrics.json")))
+    testing::write_file(root, "Crown.toml", "[quality]\nmax_file_lines=4\nmax_function_lines=4\nmax_cyclomatic=2\nmax_cognitive=1\nmax_nesting=1\nmax_parameters=0\n")?
+    testing::clean_call(root, command)?
+    let fields = testing::list("max_file_lines=3|max_function_lines=3|max_cyclomatic=1|max_cognitive=0|max_nesting=0")
+    for index in 0..fields.length() {
+        testing::write_file(root, "Crown.toml", std::text::joined("[quality]\n", fields[index]))?
+        testing::failed_call(root, command)?
+    }
+    return parameter_limit(root, path, command)
+}
+
+fn parameter_limit(root: Text, path: Text, command: Text) -> Result<void, Text> {
+    toolchain::write_text(path, "fn value(a: u32) -> u32 { a }\nfn main() -> u32 { value(0) }\n")?
+    testing::write_file(root, "Crown.toml", "[quality]\nmax_parameters=0")?
+    testing::failed_call(root, command)?
+    testing::write_file(root, "Crown.toml", "[quality]\nmax_parameters=1")?
+    return testing::clean_call(root, command)
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    formatting(root)?
+    return structural(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

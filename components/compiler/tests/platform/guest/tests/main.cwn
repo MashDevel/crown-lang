@@ -1,0 +1,13 @@
+fn run() -> Result<void, Text> {
+    guest_tests::options()?
+    guest_tests::codec()?
+    guest_tests::protocol()?
+    guest_tests::wait()?
+    guest_tests::output()?
+    guest_tests::upload()?
+    return guest::socket_tests()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

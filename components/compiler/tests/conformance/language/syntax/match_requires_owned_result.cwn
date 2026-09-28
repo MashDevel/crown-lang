@@ -1,0 +1,9 @@
+fn choose(value: Option<Text>) -> Text {
+    match read value {
+        Some(text) => text,
+        None => ""
+    }
+}
+fn main() -> u32 {
+    0
+}

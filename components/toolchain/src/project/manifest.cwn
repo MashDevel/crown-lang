@@ -1,0 +1,145 @@
+module toolchain {
+    struct Project {
+        manifest: Text, name: Text, sources: Vec<Text>, links: Vec<Text>, output: Text
+    }
+
+    fn load_project(path: Text, target: Target) -> Result<Project, Text> {
+        let resolved = absolute(path)?
+        let manifest = if is_directory(resolved) {
+            path_join(resolved, "Crown.toml")
+        } else {
+            resolved.clone()
+        }
+        let configuration = toml(read_text(manifest)?)?
+        validate_sections(configuration.sections)?
+        return project_from_document(configuration.document, manifest, target)
+    }
+
+    fn project_from_document(document: Json, manifest: Text, target: Target) -> Result<Project, Text> {
+        let root = parent_path(manifest)
+        json_known_fields(document, document.root, manifest_fields())?
+        var quality = quality_defaults()
+        apply_quality(document, quality)?
+        let name = json_text(document, json_required(document, document.root, "package.name")?)?
+        if package_name(name) == false {
+            return Err("package.name must contain letters, digits, - or _")
+        }
+        let sources = project_sources(document, root, target)?
+        let links = manifest_links(document, target)?
+        let output = path_join(path_join(root, "target/debug"), name)
+        return Ok(Project {
+                manifest: manifest.clone(), name: move name, sources: move sources, links: move links, output: move output
+            })
+    }
+
+    fn project_sources(document: Json, root: Text, target: Target) -> Result<Vec<Text>, Text> {
+        let entries = manifest_sources(document)?
+        let exclusions = json_optional_strings(document, document.root, "package.exclude")?
+        let request = SourcePaths {
+            entries: relative_paths(root, entries)?, excluded: relative_paths(root, exclusions)?, target: target
+        }
+        return require_sources(request)
+    }
+
+    fn validate_sections(sections: Vec<Text>) -> Result<void, Text> {
+        for index in 0..sections.length() {
+            if manifest_section(sections[index]) == false {
+                return Err(std::text::joined("unsupported manifest section: ", sections[index]))
+            }
+        }
+        return Ok(())
+    }
+
+    fn package_name(name: Text) -> bool {
+        if name.length() == 0 {
+            return false
+        }
+        loan read name as bytes {
+            for index in 0..bytes.length() {
+                if key_byte(bytes[index]) == false || bytes[index] == 46 {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    fn manifest_sources(document: Json) -> Result<Vec<Text>, Text> {
+        let single = json_field(document, document.root, "package.source")
+        let multiple = json_field(document, document.root, "package.sources")
+        match single {
+            Some(index) => {
+                match multiple {
+                    Some(other) => {
+                        other;
+                        return Err("exactly one of package.source or package.sources is required")
+                    }
+                    None => {
+                    }
+                }
+                var output = Vec<Text>.new()
+                output.push(json_text(document, index)?)
+                return Ok(move output)
+            }
+            None => {
+                match multiple {
+                    Some(index) => {
+                        return json_strings(document, index)
+                    }
+                    None => {
+                        return Err("exactly one of package.source or package.sources is required")
+                    }
+                }
+            }
+        }
+    }
+
+    fn manifest_links(document: Json, target: Target) -> Result<Vec<Text>, Text> {
+        let frameworks = link_names(document, "target.macos.frameworks")?
+        let macos = link_names(document, "target.macos.libraries")?
+        let linux = link_names(document, "target.linux.libraries")?
+        var output = Vec<Text>.new()
+        if target.platform == Platform::Macos() {
+            for index in 0..frameworks.length() {
+                output.push("-framework")
+                output.push(frameworks[index].clone())
+            }
+            append_libraries(output, macos)
+        }
+        if target.platform == Platform::Linux() {
+            append_libraries(output, linux)
+        }
+        return Ok(move output)
+    }
+
+    fn link_names(document: Json, field: Text) -> Result<Vec<Text>, Text> {
+        let names = json_optional_strings(document, document.root, field)?
+        for index in 0..names.length() {
+            valid_link_name(names[index])?
+        }
+        return Ok(move names)
+    }
+
+    fn append_libraries(output: write Vec<Text>, libraries: Vec<Text>) -> void {
+        for index in 0..libraries.length() {
+            output.push(std::text::joined("-l", libraries[index]))
+        }
+    }
+
+    fn valid_link_name(value: Text) -> Result<void, Text> {
+        if value.length() == 0 || std::text::contains(value, "\0") {
+            return Err("link names must be nonempty and contain no NUL bytes")
+        }
+        loan read value as bytes {
+            for index in 0..bytes.length() {
+                if key_byte(bytes[index]) == false && bytes[index] != 43 {
+                    return Err("link names must contain only ASCII letters, digits, -, _, . or +")
+                }
+            }
+        }
+        if std::text::equal(value, ".") || std::text::equal(value, "..") {
+            return Err("link names must not be . or ..")
+        }
+        return Ok(())
+    }
+}

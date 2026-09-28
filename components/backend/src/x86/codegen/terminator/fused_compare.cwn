@@ -1,0 +1,214 @@
+module x86 {
+    struct CompareBranch {
+        operator: ir::CompareOperator
+        left: usize
+        right: usize
+        then_block: usize
+        else_block: usize
+        skipped: usize
+        inverted: bool
+    }
+
+    struct ComparisonTail {
+        operator: ir::CompareOperator
+        left: usize
+        right: usize
+        skipped: usize
+        inverted: bool
+    }
+
+    struct ComparisonSearch {
+        block: usize
+        value: usize
+    }
+
+    fn codegen_fused_compare(program: ir::Program, compiler: FunctionCompiler) -> Option<CompareBranch> {
+        var block: usize = 0
+        match read compiler.block {
+            Some(value) => {
+                block = value
+            }
+            None => {
+                return None()
+            }
+        }
+        if compiler.id >= program.functions.length() {
+            return None()
+        }
+        loan read program.functions[compiler.id] as function {
+            if block >= function.blocks.length() {
+                return None()
+            }
+            loan read function.blocks[block] as body {
+                match ir::block_conditional(body) {
+                    None => {
+                        return None()
+                    }
+                    Some(branch) => {
+                        match codegen_comparison_tail(program, compiler, ComparisonSearch {
+                                block: block, value: branch.condition
+                            }) {
+                            None => {
+                                return None()
+                            }
+                            Some(tail) => {
+                                return Some(CompareBranch {
+                                        operator: tail.operator
+                                        left: tail.left
+                                        right: tail.right
+                                        then_block: branch.then_block
+                                        else_block: branch.else_block
+                                        skipped: tail.skipped
+                                        inverted: tail.inverted
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_comparison_tail(program: ir::Program, compiler: FunctionCompiler, search: take ComparisonSearch) -> Option<ComparisonTail> {
+        loan read program.functions[compiler.id].blocks[search.block] as block {
+            var cursor = block.instructions.length()
+            var skipped: usize = 0
+            var inverted = false
+            var sought = search.value
+            while cursor > 0 {
+                cursor = cursor - 1
+                if codegen_single_use_result(block.instructions[cursor], sought, compiler.uses) == false {
+                    return None()
+                }
+                skipped = skipped + 1
+                match read block.instructions[cursor].kind {
+                    ir::InstructionCompare(operator, left, right) => {
+                        return codegen_comparison_tail_result(program, compiler, ComparisonTail {
+                                operator: operator, left: left, right: right, skipped: skipped, inverted: inverted
+                            })
+                    }
+                    _ => {
+                    }
+                }
+                match codegen_boolean_operand(program, compiler, block.instructions[cursor].kind, sought, inverted) {
+                    Some(value) => {
+                        sought = value
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+        }
+        return None()
+    }
+
+    fn codegen_boolean_operand(program: ir::Program, compiler: FunctionCompiler, kind: ir::InstructionKind, sought: usize, inverted: write bool) -> Option<usize> {
+        match read kind {
+            ir::InstructionCast(operator, value, target) => {
+                target
+                if codegen_transparent_boolean_cast(operator) {
+                    return Some(value)
+                }
+            }
+            ir::InstructionUnary(operator, value) => {
+                if codegen_boolean_not(program, compiler, operator, sought) {
+                    inverted = inverted == false
+                    return Some(value)
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn codegen_comparison_tail_result(program: ir::Program, compiler: FunctionCompiler, tail: take ComparisonTail) -> Option<ComparisonTail> {
+        if codegen_comparison_fusable(program, compiler, tail.operator, tail.left) == false {
+            return None()
+        }
+        return Some(move tail)
+    }
+
+    fn codegen_single_use_result(instruction: ir::Instruction, value: usize, uses: Vec<usize>) -> bool {
+        if value >= uses.length() || uses[value] != 1 {
+            return false
+        }
+        match read instruction.result {
+            Some(result) => {
+                return result == value
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_transparent_boolean_cast(operator: ir::CastOperator) -> bool {
+        match read operator {
+            ir::CastZeroExtend => {
+                return true
+            }
+            ir::CastBitcast => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_boolean_not(program: ir::Program, compiler: FunctionCompiler, operator: ir::UnaryOperator, value: usize) -> bool {
+        match read operator {
+            ir::UnaryNot => {
+            }
+            _ => {
+                return false
+            }
+        }
+        match codegen_value_type(program, compiler, value) {
+            Ok(value_type) => {
+                return codegen_integer_bits(value_type) == 1
+            }
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+    }
+
+    fn codegen_compile_compare_branch(program: ir::Program, compiler: write FunctionCompiler, input: take CompareBranch) -> Result<void, CodegenError> {
+        let comparison = CompareInput {
+            result: None()
+            operator: input.operator
+            left: input.left
+            right: input.right
+        }
+        var condition = codegen_emit_integer_compare(program, compiler, comparison)?
+        if input.inverted {
+            condition = normalize_invert_condition(condition)
+        }
+        return codegen_compile_condition_branch(program, compiler, ConditionBranch {
+                condition: condition
+                then_block: input.then_block
+                else_block: input.else_block
+            })
+    }
+
+    fn codegen_comparison_fusable(program: ir::Program, compiler: FunctionCompiler, operator: ir::CompareOperator, left: usize) -> bool {
+        if ir::compare_is_float(operator) {
+            return false
+        }
+        let value_type = match codegen_value_type(program, compiler, left) {
+            Ok(value) => value
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+        match ir::type_size(value_type) {
+            Some(size) => size <= 8
+            None => false
+        }
+    }
+}

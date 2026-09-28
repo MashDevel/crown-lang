@@ -1,0 +1,32 @@
+module x86 {
+    fn encode_fixed(instruction: Instruction, output: write Vec<u8>) -> bool {
+        if encode_register_instruction(instruction, output) {
+            return true
+        }
+        if encode_basic_arithmetic(instruction, output) {
+            return true
+        }
+        if encode_division(instruction, output) {
+            return true
+        }
+        if encode_bit_arithmetic(instruction, output) {
+            return true
+        }
+        if encode_memory_instruction(instruction, output) {
+            return true
+        }
+        if encode_memory_binary(instruction, output) {
+            return true
+        }
+        if encode_float_instruction(instruction, output) {
+            return true
+        }
+        if encode_float_memory(instruction, output) {
+            return true
+        }
+        if encode_privileged_instruction(instruction, output) {
+            return true
+        }
+        return encode_control_instruction(instruction, output)
+    }
+}

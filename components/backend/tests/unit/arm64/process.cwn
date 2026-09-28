@@ -1,0 +1,54 @@
+fn process_object() -> object::CompilerObject {
+    var object = object::new()
+    object.architecture = object::ArchitectureArm64()
+    object.symbols.push(object::Symbol {
+            name: "crown_process_environment", kind: object::SymbolFunction(), binding: object::SymbolImport(), section: None(), offset: 0, size: 0
+        })
+    return move object
+}
+
+fn environment_runtime() -> Result<void, Text> {
+    var object = process_object()
+    arm64::append_process_runtime(object)?
+    environment_object(object)?
+    arm64::append_process_runtime(object)?
+    return testing::expect(object.sections.length() == 1 && object.relocations.length() == 2, "environment helper insertion is idempotent")
+}
+
+fn environment_object(object: object::CompilerObject) -> Result<void, Text> {
+    testing::expect(object.sections.length() == 1 && object.symbols.length() == 2, "environment helper defines one function and data import")?
+    let local = match read object.symbols[0].binding {
+        object::SymbolLocal => true,
+        _ => false
+    }
+    testing::expect(local, "environment accessor is defined locally")?
+    testing::expect(object.symbols[1].kind == object::SymbolData(), "environ is a data import")?
+    testing::expect(object.relocations[0].kind == object::RelocationArmGotPage21(), "environment helper addresses the GOT page")?
+    testing::expect(object.relocations[1].kind == object::RelocationArmGotLoadPageOffset12(), "environment helper loads the GOT slot")?
+    return testing::expect(link_binary::number(object.sections[0].data, 8, 4)? == u64.from(arm64::memory_word(0, 0, 0, 8, true)?), "helper dereferences the environ variable")
+}
+
+fn environment_failures() -> Result<void, Text> {
+    var object = object::new()
+    testing::error(arm64::append_process_runtime(object))?
+    object.architecture = object::ArchitectureArm64()
+    arm64::append_process_runtime(object)?
+    testing::expect(object.sections.length() == 0, "unused environment helper is omitted")?
+    object = process_object()
+    object.symbols[0].kind = object::SymbolData()
+    testing::error(arm64::append_process_runtime(object))?
+    object = process_object()
+    object.symbols.push(object::Symbol {
+            name: "environ", kind: object::SymbolFunction(), binding: object::SymbolImport(), section: None(), offset: 0, size: 0
+        })
+    return testing::error(arm64::append_process_runtime(object))
+}
+
+fn run() -> Result<void, Text> {
+    environment_runtime()?
+    return environment_failures()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

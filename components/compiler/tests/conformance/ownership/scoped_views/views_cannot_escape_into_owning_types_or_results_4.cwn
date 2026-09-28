@@ -1,0 +1,8 @@
+view struct Parser {
+    data: TextView
+}
+fn take_view(value: take Parser) -> void {
+}
+fn main() -> u32 {
+    return 0
+}

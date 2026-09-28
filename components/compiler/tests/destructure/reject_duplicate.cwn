@@ -1,0 +1,13 @@
+struct Pair {
+    first: Vec<u8>, second: Vec<u8>
+}
+fn invalid(value: take Pair) -> void {
+    let {
+        first: left, first: right
+    } = move value
+    left;
+    right
+}
+fn main() -> u32 {
+    return 0
+}

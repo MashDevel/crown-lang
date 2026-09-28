@@ -1,0 +1,91 @@
+fn test_borrowed_text_readers() -> u32 {
+    let value = "λ\0é"
+    loan read value as view {
+        if !std::text::equal(std::text::joined(view, "!"), "λ\0é!") {
+            return 1
+        }
+        if !std::text::equal(std::text::repeat(view, 2), "λ\0éλ\0é") {
+            return 2
+        }
+        if !std::text::equal(std::text::repeat(view, 0), "") {
+            return 3
+        }
+        let parts = std::text::split(view, 0)
+        if parts.length() != 2 || !std::text::list_contains(parts, "é") {
+            return 4
+        }
+        if std::text::list_contains(parts, "missing") {
+            return 5
+        }
+        if std::text::hash(view) != std::text::hash(value) {
+            return 6
+        }
+    }
+    return 0
+}
+
+fn test_text_readers() -> u32 {
+    let borrowed = test_borrowed_text_readers()
+    if borrowed != 0 {
+        return borrowed
+    }
+    let empty = std::text::split("", 0)
+    if empty.length() != 1 || !std::text::equal(empty[0], "") {
+        return 7
+    }
+    let lists = test_text_lists()
+    if lists != 0 {
+        return lists
+    }
+    return test_signed_text_numbers()
+}
+
+fn test_signed_text_numbers() -> u32 {
+    let values: [i64; 5] = [0, -1, 2147483648, -9223372036854775808, 9223372036854775807]
+    let expected = ["0", "-1", "2147483648", "-9223372036854775808", "9223372036854775807"]
+    for index in 0..5 {
+        if !std::text::equal(std::text::signed_decimal(values[index]), expected[index]) {
+            return 8
+        }
+    }
+    var hex = ""
+    for value in 0..256 {
+        std::text::hex_byte(hex, u8.from(value))
+    }
+    if hex.length() != 512 {
+        return 9
+    }
+    return test_hex_digits(hex)
+}
+
+fn test_hex_digits(hex: TextView) -> u32 {
+    let digits = "0123456789abcdef"
+    loan read digits as alphabet {
+        for value in 0..256 {
+            if hex[value * 2] != alphabet[value / 16] {
+                return 10
+            }
+            if hex[value * 2 + 1] != alphabet[value % 16] {
+                return 11
+            }
+        }
+    }
+    return 0
+}
+
+fn test_text_lists() -> u32 {
+    let values = ["λ", "a", "", "a"]
+    var cloned = std::text::clone_list(values)
+    std::text::sort_list(cloned)
+    let expected = ["", "a", "a", "λ"]
+    if !std::sequence::equal(cloned, expected, fn(left, right) {
+            return std::text::equal(left, right)
+        }) {
+        return 12
+    }
+    cloned[0] = "changed"
+    if !std::text::equal(values[2], "") {
+        return 13
+    }
+    return 0
+}

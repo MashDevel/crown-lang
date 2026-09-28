@@ -1,0 +1,16 @@
+enum State {
+    Ready, Waiting, Failed(u32)
+}
+fn inspect(state: take State) -> u32 {
+    match move state {
+        Ready => {
+            return 42
+        }
+        _ => {
+            return 1
+        }
+    }
+}
+fn main() -> u32 {
+    return inspect(Ready())
+}

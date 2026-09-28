@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+. "$(dirname -- "$0")/assets"
+destination="$root/target/bootstrap-release/$release/$host"
+name="crown-$host.tar.gz"
+existing() {
+    verify "$destination/crown" compiler_sha256
+    test -x "$destination/crown"
+}
+if [ -e "$destination" ]; then
+    existing
+else
+    prepare_download
+    download "$name"
+    verify "$stage/$name" compiler_archive_sha256
+    mkdir "$stage/compiler"
+    tar -xzOf "$stage/$name" "crown-$host/crown" > "$stage/compiler/crown"
+    verify "$stage/compiler/crown" compiler_sha256
+    chmod +x "$stage/compiler/crown"
+    install_directory compiler
+fi
+printf '%s\n' "$destination/crown"

@@ -1,0 +1,59 @@
+resource Token {
+    count: Shared<Mutex<u32>>, weight: u32
+    drop {
+        count.lock write as value {
+            value = value + weight
+        }
+    }
+}
+struct Pair<T> {
+    first: T, second: T
+}
+struct Single<T> {
+    value: T
+}
+fn unwrap<T>(input: take Single<T>) -> T {
+    let {
+        value
+    } = move input
+    return move value
+}
+fn consume(count: Shared<Mutex<u32>>) -> void {
+    let pair = Pair<Token> {
+        first: Token {
+            count: count.share(), weight: 1
+        },
+        second: Token {
+            count: count.share(), weight: 2
+        }
+    }
+    let {
+        second: right, first: left
+    } = move pair
+    let single = Single<Token> {
+        value: move left
+    }
+    let token = unwrap(move single)
+    token;
+    right
+}
+fn main() -> u32 {
+    let count = Shared.new(Mutex.new(0))
+    consume(count)
+    count.lock write as value {
+        if value != 3 {
+            return 1
+        }
+    }
+    var {
+        first, second
+    } = Pair<u32> {
+        first: 4, second: 7
+    }
+    first = first + second
+    return if first == 11 {
+        0
+    } else {
+        2
+    }
+}

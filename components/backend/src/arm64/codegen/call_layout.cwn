@@ -1,0 +1,92 @@
+module arm64 {
+    struct CallLayout {
+        locations: Vec<AbiArgument>, copies: Vec<u64>, size: u64
+    }
+    fn call_layout(signature: ir::Signature, variant: AbiVariant) -> Result<CallLayout, Text> {
+        var state = abi_state(variant)
+        var output = CallLayout {
+            locations: Vec<AbiArgument>.new(), copies: Vec<u64>.new(), size: 0
+        }
+        for index in 0..signature.parameters.length() {
+            output.locations.push(parameter_location(signature, index, state)?)
+            output.copies.push(18446744073709551615)
+        }
+        output.size = abi_stack_size(state)?
+        for index in 0..signature.parameters.length() {
+            reserve_argument_copy(output, signature.parameter_abi[index], index)?
+        }
+        return Ok(move output)
+    }
+    fn reserve_argument_copy(layout: write CallLayout, abi: ir::ParameterAbi, index: usize) -> Result<void, Text> {
+        match read abi {
+            ir::ParameterAggregate(aggregate) => {
+                if layout.locations[index].indirect {
+                    let shape = aggregate_type(aggregate)
+                    if shape.size > FRAME_LIMIT - layout.size {
+                        return Err("ARM64 outgoing arguments exceed the frame limit")
+                    }
+                    layout.copies[index] = layout.size
+                    layout.size = abi_align(layout.size + shape.size, 16)?
+                }
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn outgoing_address(compiler: write Compiler, register: u32, offset: u64) -> Result<void, Text> {
+        immediate(compiler, register, offset)
+        emit_encoding(compiler, register_word(2334154752, Registers {
+                    destination: register, left: 31, right: register
+                }))
+        return Ok(())
+    }
+    fn copy_arguments(compiler: write Compiler, signature: ir::Signature, arguments: Vec<usize>, layout: CallLayout) -> Result<void, Text> {
+        for index in 0..arguments.length() {
+            if layout.copies[index] != 18446744073709551615 {
+                outgoing_address(compiler, 0, layout.copies[index])?
+                value_load(compiler, arguments[index], 1)
+                immediate(compiler, 2, parameter_type(signature, index)?.size)
+                call_symbol(compiler, "memcpy")
+            }
+        }
+        return Ok(())
+    }
+    fn indirect_argument(compiler: write Compiler, offset: u64, location: AbiLocation) -> Result<void, Text> {
+        match location {
+            AbiLocation::General(start, count) => {
+                count;
+                outgoing_address(compiler, start, offset)
+            }
+            AbiLocation::Stack(slot, size) => {
+                size;
+                outgoing_address(compiler, 9, offset)?
+                outgoing_store(compiler, 9, slot)
+            }
+            _ => Err("ARM64 indirect argument requires a pointer location")
+        }
+    }
+
+    copy struct CallArgument {
+        value: usize, argument: AbiArgument, copy_offset: u64
+    }
+    copy struct AggregateReturn {
+        index: usize, shape: AbiValue
+    }
+    fn signature_return(signature: ir::Signature) -> Option<AggregateReturn> {
+        for index in 0..signature.parameter_abi.length() {
+            match read signature.parameter_abi[index] {
+                ir::ParameterReturn(aggregate) => {
+                    return Some(AggregateReturn {
+                            index: index, shape: aggregate_type(aggregate)
+                        })
+                }
+                _ => {
+                }
+            }
+        }
+        return None()
+    }
+
+}

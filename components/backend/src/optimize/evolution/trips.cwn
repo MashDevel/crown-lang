@@ -1,0 +1,121 @@
+module optimize {
+    fn evolution_step(function: ir::Function, evolution: LoopEvolution) -> Option<EvolutionStep> {
+        if ir::type_size(evolution.induction.value_type) == Some(16) {
+            return None()
+        }
+        let value = match integer_constant(function, evolution.induction.step) {
+            Some(found) => found
+            None => {
+                return None()
+            }
+        }
+        let mask = ir::integer_mask(evolution.induction.value_type)
+        let step = value & mask
+        if step == 0 {
+            return None()
+        }
+        let negative = step & sign_bit(evolution.induction.value_type) != 0
+        let magnitude = if negative {
+            ((~step) & mask) + 1
+        } else {
+            step
+        }
+        return Some(EvolutionStep {
+                magnitude: magnitude, descending: negative !=(evolution.induction.operator == ir::BinarySubtract())
+            })
+    }
+
+    fn evolution_trip_count(function: ir::Function, evolution: LoopEvolution) -> Option<u64> {
+        let step = match evolution_step(function, evolution) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let domain = match evolution_domain(function, evolution) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if evolution_direction(evolution.operator, step.descending) == false {
+            return None()
+        }
+        let normalized = if step.descending {
+            EvolutionDomain {
+                start: domain.maximum - domain.start, bound: domain.maximum - domain.bound
+                maximum: domain.maximum, inclusive: domain.inclusive
+            }
+        } else {
+            domain
+        }
+        return evolution_forward_count(normalized, step.magnitude)
+    }
+
+    fn evolution_forward_count(domain: EvolutionDomain, step: u64) -> Option<u64> {
+        if domain.start > domain.bound ||(domain.start == domain.bound && domain.inclusive == false) {
+            return Some(0)
+        }
+        let distance = domain.bound - domain.start
+        let quotient = if domain.inclusive {
+            distance / step
+        } else {
+            (distance - 1) / step
+        }
+        if quotient == 18446744073709551615 {
+            return None()
+        }
+        let count = quotient + 1
+        if count >(domain.maximum - domain.start) / step {
+            return None()
+        }
+        return Some(count)
+    }
+
+    fn evolution_domain(function: ir::Function, evolution: LoopEvolution) -> Option<EvolutionDomain> {
+        let start = match integer_constant(function, evolution.induction.start) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let bound = match integer_constant(function, evolution.bound) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let mask = ir::integer_mask(evolution.induction.value_type)
+        let sign = if evolution_signed(evolution.operator) {
+            sign_bit(evolution.induction.value_type)
+        } else {
+            0
+        }
+        return Some(EvolutionDomain {
+                start: (start & mask) ^ sign, bound: (bound & mask) ^ sign
+                maximum: mask, inclusive: evolution_inclusive(evolution.operator)
+            })
+    }
+
+    fn evolution_direction(operator: ir::CompareOperator, descending: bool) -> bool {
+        match operator {
+            ir::CompareUnsignedLess | ir::CompareUnsignedLessEqual | ir::CompareSignedLess | ir::CompareSignedLessEqual => descending == false
+            ir::CompareUnsignedGreater | ir::CompareUnsignedGreaterEqual | ir::CompareSignedGreater | ir::CompareSignedGreaterEqual => descending
+            _ => false
+        }
+    }
+
+    fn evolution_signed(operator: ir::CompareOperator) -> bool {
+        match operator {
+            ir::CompareSignedLess | ir::CompareSignedLessEqual | ir::CompareSignedGreater | ir::CompareSignedGreaterEqual => true
+            _ => false
+        }
+    }
+
+    fn evolution_inclusive(operator: ir::CompareOperator) -> bool {
+        match operator {
+            ir::CompareSignedLessEqual | ir::CompareSignedGreaterEqual | ir::CompareUnsignedLessEqual | ir::CompareUnsignedGreaterEqual => true
+            _ => false
+        }
+    }
+}

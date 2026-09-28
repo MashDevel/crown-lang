@@ -1,0 +1,60 @@
+module std::sequence {
+    fn clone<T>(values: Slice<T>, clone_value: scoped fn(read T) -> T) -> Vec<T> {
+        var output = Vec<T>.with_capacity(values.length())
+        append(output, values, clone_value)
+        return move output
+    }
+
+    fn append<T>(output: write Vec<T>, values: Slice<T>, clone_value: scoped fn(read T) -> T) -> void {
+        for index in 0..values.length() {
+            output.push(clone_value(values[index]))
+        }
+    }
+
+    fn for_each<T>(values: Slice<T>, action: scoped fn(read T) -> void) -> void {
+        for index in 0..values.length() {
+            action(values[index])
+        }
+    }
+
+    fn equal<T>(left: Slice<T>, right: Slice<T>, compare: scoped fn(read T, read T) -> bool) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        for index in 0..left.length() {
+            if !compare(left[index], right[index]) {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn sort<T>(values: write Slice<T>, compare: scoped fn(read T, read T) -> i32) -> void {
+        var root = values.length() / 2
+        while root > 0 {
+            root -= 1
+            sift(values, root, values.length(), compare)
+        }
+        var end = values.length()
+        while end > 1 {
+            end -= 1
+            swap(values[0], values[end])
+            sift(values, 0, end, compare)
+        }
+    }
+
+    fn sift<T>(values: write Slice<T>, start: usize, end: usize, compare: scoped fn(read T, read T) -> i32) -> void {
+        var root = start
+        while root < end / 2 {
+            var child = root * 2 + 1
+            if child + 1 < end && compare(values[child], values[child + 1]) < 0 {
+                child += 1
+            }
+            if compare(values[root], values[child]) >= 0 {
+                return
+            }
+            swap(values[root], values[child])
+            root = child
+        }
+    }
+}

@@ -1,0 +1,64 @@
+module x86 {
+    fn codegen_allocate_value(value: usize, value_type: ir::Type, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        match builder.allocation.floats[value] {
+            Some(register) => {
+                builder.locations[value] = Some(ValueFloatRegister(FloatRegister {
+                            code: register.code
+                        }))
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        match codegen_allocation_register(builder.allocation, value) {
+            Some(register) => {
+                builder.locations[value] = Some(ValueRegister(register))
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        let size = match ir::type_size(value_type) {
+            Some(value_size) => value_size
+            None => {
+                return Err(codegen_error(CodegenUnsupportedType(value_type)))
+            }
+        }
+        if size == 0 || size > 16 {
+            return Err(codegen_error(CodegenUnsupportedType(value_type)))
+        }
+        var alignment = u32.from(size)
+        if alignment > 8 {
+            alignment = 8
+        }
+        let requirements = AllocationRequirements {
+            size: size, alignment: alignment
+        }
+        var offset: i32 = 0
+        if codegen_scalar_spill(value_type) {
+            match codegen_allocate_spill(value, requirements, builder) {
+                Ok(location) => {
+                    offset = location
+                }
+                Err(error) => {
+                    return Err(move error)
+                }
+            }
+        } else {
+            match codegen_allocate_bytes(requirements, builder) {
+                Ok(location) => {
+                    offset = location
+                }
+                Err(error) => {
+                    return Err(move error)
+                }
+            }
+        }
+        builder.locations[value] = Some(ValueSlot(offset))
+        return Ok(())
+    }
+
+    fn codegen_scalar_spill(value_type: ir::Type) -> bool {
+        return codegen_scalar(value_type)
+    }
+}

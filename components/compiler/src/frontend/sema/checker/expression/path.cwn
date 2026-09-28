@@ -1,0 +1,167 @@
+module sema {
+    fn checker_path(checker: write Checker, path: frontend::Path, usage: PathUse) -> Option<ExpressionInfo> {
+        if path.segments.length() == 0 {
+            checker_error(checker, "unknown name or invalid access to a variable");
+            return None()
+        }
+        if view_path_access(checker, path, usage) == false {
+            checker_error(checker, "unknown name or invalid access to a variable");
+            return None()
+        }
+        if validate_place_loans(checker, path, usage) == false {
+            return None()
+        }
+        loan read path.segments[0] as root {
+            match checker_find_variable(checker, root) {
+                None => {
+                    return checker_function_path(checker, path, usage)
+                }
+                Some(key) => {
+                    let request = VariablePathRequest {
+                        usage: usage, key: key
+                    }
+                    return checker_variable_path(checker, path, move request)
+                }
+            }
+        }
+    }
+
+    fn checker_variable_path(checker: write Checker, path: frontend::Path, request: take VariablePathRequest) -> Option<ExpressionInfo> {
+        let variable = checker_variable_copy(checker, request.key)
+        if validate_access(variable, request.usage, path) == false {
+            checker.current_span = path.span
+            checker_error(checker, access_error(variable, request.usage, path))
+            variable_access_note(checker, variable)
+            return None()
+        }
+        match checker_path_type(checker, variable.value_type, path) {
+            None => {
+                return None()
+            }
+            Some(value_type) => {
+                match read request.usage {
+                    MovePath => {
+                        let previous = replace(checker.current_span, path.span)
+                        checker_set_state(checker, request.key, Moved())
+                        checker.current_span = previous
+                    }
+                    _ => {
+                    }
+                }
+                return Some(path_info(checker, move value_type, request.usage))
+            }
+        }
+    }
+
+    fn path_info(checker: Checker, value_type: take Type, usage: PathUse) -> ExpressionInfo {
+        if type_is_copy_with_symbols(checker.symbols, value_type) {
+            return copy_info(move value_type)
+        }
+        match read usage {
+            MovePath => {
+                return owned_info(move value_type)
+            }
+            _ => {
+                return ExpressionInfo {
+                    value_type: move value_type, value: BorrowedValue()
+                }
+            }
+        }
+    }
+
+    fn checker_path_type(checker: write Checker, root: Type, path: frontend::Path) -> Option<Type> {
+        var current = type_copy(root)
+        var index: usize = 1
+        while index < path.segments.length() {
+            if checker_require_field_access(checker, current) == false {
+                return None()
+            }
+            loan read path.segments[index] as name {
+                match checker_field_type(checker, current, name) {
+                    None => {
+                        return None()
+                    }
+                    Some(value_type) => {
+                        current = move value_type
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Some(move current)
+    }
+
+    fn checker_function_path(checker: write Checker, path: frontend::Path, usage: PathUse) -> Option<ExpressionInfo> {
+        if path.segments.length() != 1 {
+            checker_error(checker, "unknown name or invalid access to a variable");
+            return None()
+        }
+        loan read path.segments[0] as name {
+            match find_constant(checker.symbols, name) {
+                Some(index) => {
+                    match read usage {
+                        ReadPath => {
+                        }
+                        _ => {
+                            checker_error(checker, "constant storage is read-only");
+                            return None()
+                        }
+                    }
+                    loan read checker.symbols.constants[index] as constant {
+                        return Some(copy_info(type_copy(constant.value_type)))
+                    }
+                }
+                None => {
+                }
+            }
+            match read usage {
+                MovePath => {
+                    checker_error(checker, "unknown name or invalid access to a variable");
+                    return None()
+                }
+                _ => {
+                }
+            }
+            match find_function(checker.symbols, name) {
+                None => {
+                    checker_error(checker, "unknown name or invalid access to a variable");
+                    return None()
+                }
+                Some(index) => {
+                    return checker_function_value(checker, index)
+                }
+            }
+        }
+    }
+
+    fn checker_function_value(checker: write Checker, index: usize) -> Option<ExpressionInfo> {
+        var valid = true
+        var parameters = Vec<ParameterType>.new()
+        var result = Invalid()
+        loan read checker.symbols.functions[index] as function {
+            if function.unsafe_value || function.type_parameters.length() != 0 {
+                valid = false
+            }
+            var parameter_index: usize = 0
+            while parameter_index < function.parameters.length() {
+                loan read function.parameters[parameter_index] as parameter {
+                    parameters.push(ParameterType {
+                            mode: parameter.mode
+                            value_type: type_copy(parameter.value_type)
+                        })
+                }
+                parameter_index = parameter_index + 1
+            }
+            result = type_copy(function.result)
+        }
+        if valid == false {
+            checker_error(checker, "unknown name or invalid access to a variable");
+            return None()
+        }
+        return Some(copy_info(FunctionType(move parameters, Box.new(move result))))
+    }
+    struct VariablePathRequest {
+        usage: PathUse
+        key: VariableKey
+    }
+}

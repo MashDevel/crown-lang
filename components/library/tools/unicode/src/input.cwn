@@ -1,0 +1,87 @@
+module unicode_tables {
+    fn find(source: Text, needle: Text, start: usize) -> Result<usize, Text> {
+        for index in start..source.length() {
+            if std::text::view_at(source, needle, index) {
+                return Ok(index)
+            }
+        }
+        return Err(std::text::joined("missing Unicode input: ", needle))
+    }
+
+    fn digit(byte: u8, base: u32) -> Option<u32> {
+        match toolchain::hex_digit(byte) {
+            Ok(value) => {
+                if value < base {
+                    return Some(value)
+                }
+            }
+            Err(error) => {
+                error
+            }
+        }
+        return None()
+    }
+
+    fn number(input: write toolchain::Cursor) -> Result<u32, Text> {
+        var base: u32 = 10
+        if std::text::view_at(input.source, "0x", input.position) {
+            base = 16
+            input.position = input.position + 2
+        }
+        let start = input.position
+        var value: u32 = 0
+        while input.position < input.source.length() {
+            match digit(toolchain::peek(input), base) {
+                None => {
+                    break
+                }
+                Some(next) => {
+                    if value >(4294967295 - next) / base {
+                        return Err("Unicode integer overflow")
+                    }
+                    value = value * base + next
+                    input.position = input.position + 1
+                }
+            }
+        }
+        if start == input.position {
+            return Err("expected Unicode integer")
+        }
+        return Ok(value)
+    }
+
+    fn integers(source: Text) -> Result<Vec<u32>, Text> {
+        var input = toolchain::cursor(source.clone())
+        var values = Vec<u32>.new()
+        while input.position < input.source.length() {
+            let byte = toolchain::peek(input)
+            if byte >= 48 && byte <= 57 {
+                values.push(number(input)?)
+            } else {
+                input.position = input.position + 1
+            }
+        }
+        return Ok(move values)
+    }
+
+    fn array(source: Text, name: Text) -> Result<Vec<u32>, Text> {
+        var start: usize = 0
+        while start < source.length() {
+            let position = find(source, name, start)?
+            let end = position + name.length()
+            if end < source.length() && std::text::view_at(source, ":", end) {
+                return array_values(source, end)
+            }
+            start = end
+        }
+        return Err(std::text::joined("missing Unicode array ", name))
+    }
+
+    fn array_values(source: Text, start: usize) -> Result<Vec<u32>, Text> {
+        let equal = find(source, "=", start)?
+        let begin = find(source, "[", equal)? + 1
+        let finish = find(source, "]", begin)?
+        return integers(std::text::slice(source, begin, finish))
+    }
+
+}

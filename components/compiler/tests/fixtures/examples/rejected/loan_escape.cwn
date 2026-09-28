@@ -1,0 +1,7 @@
+fn escape(values: read Slice<u32>) -> Slice<u32> {
+    return values
+}
+
+fn main() -> u32 {
+    return 0
+}

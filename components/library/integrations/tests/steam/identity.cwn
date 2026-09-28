@@ -1,0 +1,10 @@
+fn test_game_identity() -> u32 {
+    let values = ["0", "42", "4294967295", "4294967296", "", "-1", "not a number"]
+    let expected: [u64; 7] = [0, 42, 4294967295, 0, 0, 0, 0]
+    for index in 0..7 {
+        if integration::steam::game_identity(values[index]) != expected[index] {
+            return 43
+        }
+    }
+    return 0
+}

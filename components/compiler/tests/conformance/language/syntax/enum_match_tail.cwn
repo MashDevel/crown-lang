@@ -1,0 +1,9 @@
+fn choose(value: Option<u32>) -> u32 {
+    match value {
+        Some(number) => number,
+        None => 0
+    }
+}
+fn main() -> u32 {
+    choose(Some(42)) + choose(None())
+}

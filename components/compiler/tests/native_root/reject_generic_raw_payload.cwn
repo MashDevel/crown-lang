@@ -1,0 +1,11 @@
+fn wrap<T>(value: take T) -> NativeRoot<T> {
+    return NativeRoot<T>.new(move value)
+}
+fn main() -> u32 {
+    unsafe {
+        let pointer = RawPtr<u64>.from_address(8)
+        let owner: NativeRoot<RawPtr<u64>> = wrap(pointer)
+        owner
+    }
+    return 0
+}

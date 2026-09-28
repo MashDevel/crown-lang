@@ -1,0 +1,84 @@
+module toolchain {
+    struct BuildRequest {
+        compiler: Text, project: Project, output: Text, objects: Vec<Text>, links: Vec<Text>, max_instances: u64, coverage: Text, optimization: OptimizationOptions, target: Target
+    }
+
+    fn build_project(request: BuildRequest) -> Result<Text, Text> {
+        let output = absolute(request.output)?
+        make_directory(parent_path(output))?
+        let input = build_fingerprint(request)?
+        if build_cacheable(request) && fresh(output, input) {
+            return Ok(move output)
+        }
+        let temporary = temporary(parent_path(output))?
+        let directory = temporary_path(temporary)
+        let binary = path_join(directory, file_name(output))
+        compile_project(request, binary)?
+        publish_build(request, binary, output, input)?
+        return Ok(move output)
+    }
+
+    fn build_cacheable(request: BuildRequest) -> bool {
+        return request.coverage.length() == 0 && request.optimization.generate.length() == 0 && request.optimization.use_profile.length() == 0 && request.optimization.report.length() == 0
+    }
+
+    fn compile_project(request: BuildRequest, binary: Text) -> Result<void, Text> {
+        let build = CompileRequest {
+            compiler: request.compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(request.project.sources), max_instances: request.max_instances, coverage: request.coverage.clone(), optimization: optimization_copy(request.optimization), target: request.target
+        }
+        let links = project_links(request)
+        compile_executable(build, request.objects, links)?
+        return Ok(())
+    }
+
+    fn publish_build(request: BuildRequest, binary: Text, output: Text, input: Text) -> Result<void, Text> {
+        if std::text::equal(input, build_fingerprint(request)?) == false {
+            return Err("build inputs changed during compilation")
+        }
+        rename_file(binary, output)?
+        record(output, input)?
+        return Ok(())
+    }
+
+    fn build_links(request: BuildRequest) -> Vec<Text> {
+        var links = project_links(request)
+        for index in 0..request.objects.length() {
+            links.push(request.objects[index].clone())
+        }
+        return move links
+    }
+
+    fn project_links(request: BuildRequest) -> Vec<Text> {
+        var links = std::text::clone_list(request.project.links)
+        for index in 0..request.links.length() {
+            links.push(request.links[index].clone())
+        }
+        return move links
+    }
+
+    fn build_fingerprint(request: BuildRequest) -> Result<Text, Text> {
+        var inputs = Vec<Text>.new()
+        inputs.push(request.compiler.clone())
+        for index in 0..request.project.sources.length() {
+            inputs.push(request.project.sources[index].clone())
+        }
+        for index in 0..request.objects.length() {
+            inputs.push(request.objects[index].clone())
+        }
+        var options = build_links(request)
+        options.push(request.coverage.clone())
+        optimization_arguments(options, request.optimization)
+        options.push(target_name(request.target))
+        if request.target.platform == Platform::Linux() {
+            let libraries = compiler_link_inputs(request)?
+            for index in 0..libraries.length() {
+                inputs.push(libraries[index].clone())
+            }
+            options.push(environment("CROWN_LINUX_INTERPRETER"))
+            options.push(environment("CROWN_LINUX_LIBRARY_PATH"))
+        }
+        options.push("crown-native-linker-v1")
+        options.push(std::text::decimal(request.max_instances))
+        return fingerprint(inputs, options)
+    }
+}

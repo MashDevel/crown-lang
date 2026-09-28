@@ -1,0 +1,13 @@
+struct Packet {
+    value: u32
+}
+
+fn consume(packet: take Packet) -> u32 {
+    return packet.value
+}
+
+fn main() -> u32 {
+    let packet = Packet { value: 42 }
+    consume(move packet)
+    return packet.value
+}

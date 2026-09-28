@@ -1,0 +1,67 @@
+module x86 {
+    fn codegen_add_root_runtime(program: write Program) -> Result<void, CodegenError> {
+        var imports = Vec<Import>.new()
+        var required = false
+        for index in 0..program.imports.length() {
+            if root_runtime_name(program.imports[index].name) {
+                required = true
+            } else {
+                imports.push(import_clone(program.imports[index]))
+            }
+        }
+        if required == false {
+            return Ok(())
+        }
+        program.imports = move imports
+        root_runtime_ownership(program)?
+        root_runtime_declarations(program)?
+        root_runtime_import(program, "free")?
+        root_runtime_import(program, "abort")?
+        return Ok(())
+    }
+
+    fn root_runtime_ownership(program: write Program) -> Result<void, CodegenError> {
+        root_runtime_data(program, "__compiler_root_entries", 40960)?
+        codegen_insert_function(program, root_runtime_register())?
+        codegen_insert_function(program, root_runtime_destroy())?
+        codegen_insert_function(program, root_runtime_acquire())?
+        codegen_insert_function(program, root_runtime_close())?
+        codegen_insert_function(program, root_runtime_release())?
+        codegen_insert_function(program, root_runtime_failure())?
+        return Ok(())
+    }
+
+    fn root_runtime_declarations(program: write Program) -> Result<void, CodegenError> {
+        root_runtime_data(program, "__compiler_root_declarations", 40960)?
+        root_runtime_data(program, "__compiler_root_declaration_lock", 8)?
+        codegen_insert_function(program, root_runtime_lock())?
+        codegen_insert_function(program, root_runtime_declare())?
+        codegen_insert_function(program, root_runtime_publish())?
+        return Ok(())
+    }
+
+    fn root_runtime_data(program: write Program, name: take Text, size: u64) -> Result<void, CodegenError> {
+        var data = data_zero_fill(move name, size)
+        data_align(data, 8)
+        return match program_add_data(program, move data) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                error;
+                Err(codegen_error(CodegenEncodeError()))
+            }
+        }
+    }
+
+    fn root_runtime_import(program: write Program, name: take Text) -> Result<void, CodegenError> {
+        if program_has_function(program, name) {
+            return Ok(())
+        }
+        return match program_add_import(program, move name) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                error;
+                Err(codegen_error(CodegenEncodeError()))
+            }
+        }
+    }
+}

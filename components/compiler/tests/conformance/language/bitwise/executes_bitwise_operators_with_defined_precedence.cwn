@@ -1,0 +1,25 @@
+fn main() -> u32 {
+    let byte: u8 = 170
+    if byte & 15 != 10 {
+        return 1
+    }
+    if byte | 15 != 175 {
+        return 2
+    }
+    if byte ^ 255 != 85 {
+        return 3
+    }
+    if ~byte != 85 {
+        return 4
+    }
+    if 1 + 2 << 3 != 24 {
+        return 5
+    }
+    if 1 | 2 ^ 3 & 1 != 3 {
+        return 6
+    }
+    if 4 & 1 == 0 {
+        return 0
+    }
+    return 7
+}

@@ -1,0 +1,242 @@
+module lowering {
+    struct SignatureRequest {
+        parameters: Vec<sema::ParameterType>
+        result: sema::Type
+        indirect_receiver: bool
+    }
+
+    fn internal_signature(function: sema::Function, symbols: sema::Symbols, values: Vec<sema::Type>) -> Result<ir::Signature, u32> {
+        let request = function_signature_request(function, values, false)
+        return configured_signature(request, symbols)
+    }
+
+    fn implementation_signature(function: sema::Function, symbols: sema::Symbols, values: Vec<sema::Type>) -> Result<ir::Signature, u32> {
+        let request = function_signature_request(function, values, true)
+        return configured_signature(request, symbols)
+    }
+
+    fn callable_signature(parameters: Vec<sema::ParameterType>, result: sema::Type, symbols: sema::Symbols) -> Result<ir::Signature, u32> {
+        let request = SignatureRequest {
+            parameters: sema::parameter_types_copy(parameters)
+            result: sema::type_copy(result)
+            indirect_receiver: false
+        }
+        return configured_signature(request, symbols)
+    }
+
+    fn function_signature_request(function: sema::Function, values: Vec<sema::Type>, indirect_receiver: bool) -> SignatureRequest {
+        var parameters = Vec<sema::ParameterType>.with_capacity(function.parameters.length())
+        var index: usize = 0
+        while index < function.parameters.length() {
+            loan read function.parameters[index] as parameter {
+                parameters.push(sema::ParameterType {
+                        mode: parameter.mode
+                        value_type: sema::substitute(parameter.value_type, values)
+                    })
+            }
+            index = index + 1
+        }
+        return SignatureRequest {
+            parameters: move parameters
+            result: sema::substitute(function.result, values)
+            indirect_receiver: indirect_receiver
+        }
+    }
+
+    fn configured_signature(request: SignatureRequest, symbols: sema::Symbols) -> Result<ir::Signature, u32> {
+        match type_is_direct(symbols, request.result) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result_direct) => {
+                match signature_types(request, symbols, result_direct) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(types) => {
+                        match signature_abi(request, symbols, result_direct) {
+                            Err(error) => {
+                                return Err(error)
+                            }
+                            Ok(abi) => {
+                                var signature = move types
+                                signature.parameter_abi = move abi
+                                signature_signed_parameters(signature, request, result_direct)
+                                return Ok(move signature)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn signature_types(request: SignatureRequest, symbols: sema::Symbols, result_direct: bool) -> Result<ir::Signature, u32> {
+        var inputs = Vec<ir::Type>.new()
+        if result_direct == false {
+            inputs.push(ir::TypePointer())
+        }
+        var index: usize = 0
+        while index < request.parameters.length() {
+            loan read request.parameters[index] as parameter {
+                match signature_parameter(parameter, symbols) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value_type) => {
+                        inputs.push(value_type)
+                    }
+                }
+            }
+            index = index + 1
+        }
+        if result_direct {
+            return signature_direct_result(move inputs, request.result, symbols)
+        }
+        return Ok(ir::signature_new(move inputs, ir::TypeVoid()))
+    }
+
+    fn signature_direct_result(parameters: take Vec<ir::Type>, result: sema::Type, symbols: sema::Symbols) -> Result<ir::Signature, u32> {
+        match ir_type(symbols, result) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value_type) => {
+                return Ok(ir::signature_new(move parameters, value_type))
+            }
+        }
+    }
+
+    fn signature_parameter(parameter: sema::ParameterType, symbols: sema::Symbols) -> Result<ir::Type, u32> {
+        if sema::mode_is_read(parameter.mode) {
+            match type_is_direct(symbols, parameter.value_type) {
+                Err(error) => {
+                    return Err(error)
+                }
+                Ok(direct) => {
+                    if direct {
+                        return ir_type(symbols, parameter.value_type)
+                    }
+                }
+            }
+        }
+        return Ok(ir::TypePointer())
+    }
+
+    fn signature_abi(request: SignatureRequest, symbols: sema::Symbols, result_direct: bool) -> Result<Vec<ir::ParameterAbi>, u32> {
+        var output = Vec<ir::ParameterAbi>.new()
+        if result_direct == false {
+            match register_aggregate_abi(symbols, request.result) {
+                Err(error) => {
+                    return Err(error)
+                }
+                Ok(aggregate) => {
+                    match move aggregate {
+                        Some(value) => {
+                            output.push(ir::ParameterReturn(move value))
+                        }
+                        None => {
+                            output.push(ir::ParameterDirect())
+                        }
+                    }
+                }
+            }
+        }
+        return append_parameter_abi(request, symbols, move output)
+    }
+
+    fn append_parameter_abi(request: SignatureRequest, symbols: sema::Symbols, output: take Vec<ir::ParameterAbi>) -> Result<Vec<ir::ParameterAbi>, u32> {
+        var result = move output
+        var index: usize = 0
+        while index < request.parameters.length() {
+            loan read request.parameters[index] as parameter {
+                if request.indirect_receiver && index == 0 {
+                    result.push(ir::ParameterDirect())
+                } else {
+                    match parameter_abi(parameter, symbols) {
+                        Err(error) => {
+                            return Err(error)
+                        }
+                        Ok(abi) => {
+                            result.push(move abi)
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(move result)
+    }
+
+    fn parameter_abi(parameter: sema::ParameterType, symbols: sema::Symbols) -> Result<ir::ParameterAbi, u32> {
+        if sema::mode_is_read(parameter.mode) {
+            match register_aggregate_abi(symbols, parameter.value_type) {
+                Err(error) => {
+                    return Err(error)
+                }
+                Ok(aggregate) => {
+                    match move aggregate {
+                        Some(value) => {
+                            return Ok(ir::ParameterAggregate(move value))
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return Ok(ir::ParameterDirect())
+    }
+
+    fn register_aggregate_abi(symbols: sema::Symbols, value_type: sema::Type) -> Result<Option<ir::AggregateAbi>, u32> {
+        match ir_type(symbols, value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(ir_type) => {
+                match ir_type {
+                    ir::TypeAggregate(size, alignment) => {
+                        if size > 16 {
+                            return Ok(None())
+                        }
+                        let components = integer_components(size)
+                        if components.length() > 2 {
+                            return Ok(None())
+                        }
+                        return Ok(Some(ir::AggregateRegisters(size, alignment, move components)))
+                    }
+                    _ => {
+                        return Ok(None())
+                    }
+                }
+            }
+        }
+    }
+
+    fn integer_components(size: u64) -> Vec<ir::AbiComponent> {
+        var output = Vec<ir::AbiComponent>.new()
+        var offset: u64 = 0
+        while offset < size {
+            let width = component_width(size - offset)
+            let bytes = ir::integer_width_bytes(width)
+            output.push(ir::AbiComponent {
+                    offset: offset, value_type: ir::TypeInteger(width)
+                })
+            offset = offset + bytes
+        }
+        return move output
+    }
+
+    fn component_width(remaining: u64) -> ir::IntegerWidth {
+        if remaining >= 8 {
+            return ir::IntegerWidth64()
+        }
+        if remaining >= 4 {
+            return ir::IntegerWidth32()
+        }
+        if remaining >= 2 {
+            return ir::IntegerWidth16()
+        }
+        return ir::IntegerWidth8()
+    }
+}

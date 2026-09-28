@@ -1,0 +1,29 @@
+module lowering {
+    const EXPRESSION_TERMINATED: u32 = 0xffffffff
+
+    fn expression_terminated(compiler: FunctionCompiler) -> bool {
+        match compiler.block {
+            None => {
+                return true
+            }
+            Some(value) => {
+                value;
+                return false
+            }
+        }
+    }
+
+    fn statement_outcome(compiler: FunctionCompiler, outcome: Result<void, u32>) -> Result<void, u32> {
+        match outcome {
+            Ok(value) => {
+                return Ok(value)
+            }
+            Err(error) => {
+                if error == EXPRESSION_TERMINATED && expression_terminated(compiler) {
+                    return Ok(())
+                }
+                return Err(error)
+            }
+        }
+    }
+}

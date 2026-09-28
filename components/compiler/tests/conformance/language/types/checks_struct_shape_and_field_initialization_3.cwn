@@ -1,0 +1,9 @@
+struct Pair {
+    left: u32
+}
+fn main() -> u32 {
+    let pair = Pair {
+        other: 1
+    }
+    return 0
+}

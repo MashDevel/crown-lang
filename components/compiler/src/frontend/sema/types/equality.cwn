@@ -1,0 +1,64 @@
+module sema {
+    fn type_supports_equality(symbols: Symbols, value_type: Type) -> bool {
+        if symbols.errors != 0 || type_is_copy_with_symbols(symbols, value_type) == false {
+            return false
+        }
+        match read value_type {
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return type_supports_equality(symbols, value)
+                }
+            }
+            NamedType(index, arguments) => {
+                return named_supports_equality(symbols, index, arguments)
+            }
+            BuiltinType(builtin, arguments) => {
+                return builtin_supports_equality(symbols, builtin, arguments)
+            }
+            FunctionType(parameters, result) => {
+                parameters;
+                result;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn named_supports_equality(symbols: Symbols, index: usize, arguments: Vec<Type>) -> bool {
+        let values = parameter_values(symbols.types[index].type_parameters, arguments)
+        for field in 0..symbols.types[index].fields.length() {
+            let value = substitute(symbols.types[index].fields[field].value_type, values)
+            if type_supports_equality(symbols, value) == false {
+                return false
+            }
+        }
+        return named_variants_support_equality(symbols, index, values)
+    }
+
+    fn builtin_supports_equality(symbols: Symbols, builtin: Builtin, arguments: Vec<Type>) -> bool {
+        if builtin != Option() && builtin != Result() {
+            return builtin_is_copy(builtin) && builtin != Unit()
+        }
+        for index in 0..arguments.length() {
+            if type_is_unit(arguments[index]) == false && type_supports_equality(symbols, arguments[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn named_variants_support_equality(symbols: Symbols, index: usize, values: Vec<Type>) -> bool {
+        for variant in 0..symbols.types[index].variants.length() {
+            for field in 0..symbols.types[index].variants[variant].fields.length() {
+                let value = substitute(symbols.types[index].variants[variant].fields[field], values)
+                if type_supports_equality(symbols, value) == false {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+}

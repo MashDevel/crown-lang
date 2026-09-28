@@ -1,0 +1,85 @@
+fn configuration(root: Text, maximum: usize, lines: usize, tokens: usize) -> Result<void, Text> {
+    var source = "[quality.duplication]\nmax_percent="
+    std::text::append(source, std::text::decimal(u64.from(maximum)))
+    std::text::append(source, std::text::joined("\nmin_lines=", std::text::decimal(u64.from(lines))))
+    std::text::append(source, std::text::joined("\nmin_tokens=", std::text::decimal(u64.from(tokens))))
+    testing::write_file(root, "Crown.toml", source)?
+    return Ok(())
+}
+
+fn measured(root: Text, status: i32, lines: u64, duplicated: u64) -> Result<void, Text> {
+    let arguments = std::text::joined(std::text::joined("duplication|", root), std::text::joined("|--output|", toolchain::path_join(root, "report.json")))
+    let result = testing::invoke(testing::list(arguments), root)?
+    testing::expect(result.status == status, "duplication threshold status")?
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(root, "report.json"))?)?
+    testing::expect(number(document, "lines")? == lines, "corpus lines")?
+    return testing::expect(number(document, "duplicated_lines")? == duplicated, "unique duplicated lines")
+}
+
+fn number(document: toolchain::Json, field: Text) -> Result<u64, Text> {
+    return toolchain::json_integer(document, toolchain::json_required(document, document.root, field)?)
+}
+
+fn cross_file(root: Text) -> Result<void, Text> {
+    configuration(root, 0, 3, 10)?
+    testing::write_file(root, "src/a.cwn", "fn value() -> u32 {\n    return 7\n}\n")?
+    testing::write_file(root, "tests/b.cwn", "fn value()->u32{\nreturn 7\n}\n")?
+    testing::write_file(root, "target/cache.cwn", "ignored output")?
+    testing::write_file(root, "tests/fixtures/fixture.cwn", "ignored fixture")?
+    measured(root, 1, 6, 6)?
+    return thresholds(root)
+}
+
+fn thresholds(root: Text) -> Result<void, Text> {
+    configuration(root, 100, 3, 10)?
+    measured(root, 0, 6, 6)?
+    configuration(root, 99, 3, 10)?
+    measured(root, 1, 6, 6)?
+    configuration(root, 0, 4, 10)?
+    measured(root, 0, 6, 0)?
+    configuration(root, 0, 3, 11)?
+    return measured(root, 0, 6, 0)
+}
+
+fn distinct_and_internal(root: Text) -> Result<void, Text> {
+    configuration(root, 0, 3, 10)?
+    testing::write_file(root, "tests/b.cwn", "fn value() -> u32 {\nreturn 8\n}\n")?
+    measured(root, 0, 6, 0)?
+    testing::write_file(root, "src/a.cwn", std::text::repeat("fn value() -> u32 {\nreturn 7\n}\n", 3))?
+    measured(root, 1, 12, 9)?
+    testing::write_file(root, "tests/b.cwn", "fn value() -> u32 {\nreturn 7\n}\n")?
+    return measured(root, 1, 12, 12)
+}
+
+fn wrapping_and_invalid(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "src/a.cwn", "fn value()\n-> u32\n{ return 7 }\n")?
+    measured(root, 1, 6, 6)?
+    testing::write_file(root, "src/a.cwn", "@\n")?
+    measured(root, 0, 4, 0)?
+    testing::failed_call(root, "duplication|missing")?
+    return Ok(())
+}
+
+fn default_window(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "Crown.toml", "")?
+    let body = std::text::repeat("    let result = 7 + 8\n", 8)
+    let source = std::text::joined(std::text::joined("fn value() -> u32 {\n", body), "    return 7\n}\n")
+    testing::write_file(root, "src/a.cwn", source)?
+    testing::write_file(root, "tests/b.cwn", source)?
+    return measured(root, 1, 22, 22)
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    configuration(root, 0, 3, 10)?
+    measured(root, 0, 0, 0)?
+    cross_file(root)?
+    distinct_and_internal(root)?
+    wrapping_and_invalid(root)?
+    return default_window(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,34 @@
+module frontend {
+    fn linux_executable(input: take object::CompilerObject, options: toolchain::Options) -> Result<u32, Text> {
+        var object = move input
+        for index in 0..options.objects.length() {
+            let external = elf::read_object(toolchain::read_bytes(options.objects[index])?)?
+            link_object::merge(object, move external)?
+        }
+        var settings = linux_link_options(options)?
+        elf::startup_import(object)?;
+        settings.versions = elf::resolve_versions(object, settings)?
+        let bytes = elf::executable(move object, settings)?
+        return write_native_executable(options.output, bytes)
+    }
+
+    fn linux_link_options(options: toolchain::Options) -> Result<elf::Options, Text> {
+        return Ok(elf::Options {
+                interpreter: linux_interpreter(options.target)?, libraries: elf::libraries(options.links)?, versions: Vec<elf::SymbolVersion>.new()
+            })
+    }
+
+    fn linux_interpreter(target: toolchain::Target) -> Result<Text, Text> {
+        let configured = toolchain::environment("CROWN_LINUX_INTERPRETER")
+        if configured.length() != 0 {
+            return Ok(move configured)
+        }
+        if toolchain::host_target() == target {
+            return elf::interpreter(toolchain::read_bytes("/proc/self/exe")?)
+        }
+        if target.architecture == toolchain::Architecture::Arm64() {
+            return Ok("/lib/ld-linux-aarch64.so.1")
+        }
+        return Ok("/lib64/ld-linux-x86-64.so.2")
+    }
+}

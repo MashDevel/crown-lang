@@ -1,0 +1,3 @@
+fn main(arguments: write Arguments) -> u32 {
+    return 0
+}

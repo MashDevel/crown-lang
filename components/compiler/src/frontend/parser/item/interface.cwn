@@ -1,0 +1,49 @@
+module frontend {
+    fn parser_interface(parser: write Parser) -> InterfaceDecl {
+        let start = parser_expect(parser, TokenInterface())
+        let name = parser_identifier(parser)
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var methods = Vec<InterfaceMethod>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            methods.push(parser_interface_method(parser))
+            parser_skip_breaks(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        return InterfaceDecl {
+            name: move name, methods: move methods, span: span_through(start.span, end.span)
+        }
+    }
+
+    fn parser_interface_method(parser: write Parser) -> InterfaceMethod {
+        let start = parser_expect(parser, TokenFn())
+        let name = parser_identifier(parser)
+        parser_expect(parser, TokenLeftParen())
+        let parameters = parser_parameters(parser)
+        parser_expect(parser, TokenArrow())
+        let result = parser_type(parser)
+        let span = span_through(start.span, result.span)
+        parser_line_end(parser)
+        return InterfaceMethod {
+            name: move name, parameters: move parameters, result: move result, span: span
+        }
+    }
+
+    fn parser_impl(parser: write Parser) -> ImplDecl {
+        let start = parser_expect(parser, TokenImpl())
+        let interface_name = parser_identifier(parser)
+        parser_expect(parser, TokenFor())
+        let target = parser_type(parser)
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var methods = Vec<Function>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            methods.push(parser_function(parser))
+            parser_skip_breaks(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        return ImplDecl {
+            interface_name: move interface_name, target: move target, methods: move methods, span: span_through(start.span, end.span)
+        }
+    }
+}

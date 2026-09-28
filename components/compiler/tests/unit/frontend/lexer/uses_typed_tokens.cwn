@@ -1,0 +1,78 @@
+fn token_is(tokens: read Vec<frontend::Token>, index: read usize, expected: take frontend::TokenKind) -> bool {
+    if index >= tokens.length() {
+        return false
+    }
+    loan read tokens[index] as token {
+        return frontend::token_kind_equal(token.kind, expected)
+    }
+}
+
+fn valid_source() -> bool {
+    let source = frontend_test_source("fn main() -> u32 { return 42 }")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return false
+        }
+        Ok(tokens) => {
+            if tokens.length() != 11 {
+                return false
+            }
+            if token_is(tokens, 0, frontend::TokenFn()) == false {
+                return false
+            }
+            if token_is(tokens, 1, frontend::TokenIdentifier()) == false {
+                return false
+            }
+            if token_is(tokens, 4, frontend::TokenArrow()) == false {
+                return false
+            }
+            if token_is(tokens, 8, frontend::TokenInteger()) == false {
+                return false
+            }
+            if tokens[8].integer != 42 {
+                return false
+            }
+            return token_is(tokens, 10, frontend::TokenEnd())
+        }
+    }
+}
+
+fn invalid_source(value: take Text) -> bool {
+    let source = frontend_test_source(move value)
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Ok(tokens) => {
+            tokens;
+            return false
+        }
+        Err(diagnostics) => {
+            return diagnostics.length() == 1
+        }
+    }
+}
+
+fn valid_negation() -> bool {
+    let source = frontend_test_source("! !=")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Ok(tokens) => {
+            return tokens.length() == 3 && token_is(tokens, 0, frontend::TokenBang()) && token_is(tokens, 1, frontend::TokenBangEqual())
+        }
+        Err(diagnostics) => {
+            diagnostics;
+            return false
+        }
+    }
+}
+
+fn main() -> u32 {
+    if valid_source() == false {
+        return 1
+    }
+    if invalid_source("18446744073709551616") == false {
+        return 2
+    }
+    if valid_negation() == false {
+        return 3
+    }
+    return 42
+}

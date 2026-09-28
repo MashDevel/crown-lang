@@ -1,0 +1,33 @@
+fn inspect(arguments: read Arguments) -> u32 {
+    if arguments.length() != 5 {
+        return 1
+    }
+    if arguments[1].length() != 5 {
+        return 2
+    }
+    if arguments[1][0] != 104 {
+        return 3
+    }
+    if arguments[1][4] != 111 {
+        return 4
+    }
+    if arguments[2].length() != 0 {
+        return 5
+    }
+    if arguments[3].length() != 2 {
+        return 6
+    }
+    if arguments[3][0] != 195 {
+        return 7
+    }
+    if arguments[3][1] != 169 {
+        return 8
+    }
+    if arguments[4].length() != 4 {
+        return 9
+    }
+    return 0
+}
+fn main(arguments: read Arguments) -> u32 {
+    return inspect(arguments)
+}

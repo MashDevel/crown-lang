@@ -1,0 +1,212 @@
+fn value(size: u64, alignment: u32, kind: arm64::AbiKind) -> arm64::AbiValue {
+    return arm64::AbiValue {
+        size: size, alignment: alignment, kind: kind
+    }
+}
+
+fn assigned(state: write arm64::AbiState, input: arm64::AbiValue, variadic: bool, location: arm64::AbiLocation, indirect: bool) -> bool {
+    match arm64::abi_argument(state, input, variadic) {
+        Ok(actual) => actual.location == location && actual.indirect == indirect
+        Err(error) => {
+            error;
+            false
+        }
+    }
+}
+
+fn stack_packing(variant: arm64::AbiVariant, stride: u64) -> bool {
+    var state = arm64::abi_state(variant)
+    let byte = value(1, 1, arm64::AbiKind::Integer())
+    for index in 0..8 {
+        if assigned(state, byte, false, arm64::AbiLocation::General(u32.from(index), 1), false) == false {
+            return false
+        }
+    }
+    if assigned(state, byte, false, arm64::AbiLocation::Stack(0, stride), false) == false {
+        return false
+    }
+    if assigned(state, byte, false, arm64::AbiLocation::Stack(stride, stride), false) == false {
+        return false
+    }
+    match arm64::abi_stack_size(state) {
+        Ok(size) => size == 16
+        Err(error) => {
+            error;
+            false
+        }
+    }
+}
+
+fn wide_alignment(variant: arm64::AbiVariant, register: u32) -> bool {
+    var state = arm64::abi_state(variant)
+    if assigned(state, value(8, 8, arm64::AbiKind::Integer()), false, arm64::AbiLocation::General(0, 1), false) == false {
+        return false
+    }
+    return assigned(state, value(16, 16, arm64::AbiKind::Integer()), false, arm64::AbiLocation::General(register, 2), false)
+}
+
+fn variadic_arguments() -> bool {
+    var darwin = arm64::abi_state(arm64::AbiVariant::Darwin())
+    var linux = arm64::abi_state(arm64::AbiVariant::Aapcs64())
+    let integer = value(8, 8, arm64::AbiKind::Integer())
+    let float = value(8, 8, arm64::AbiKind::Float())
+    if assigned(darwin, integer, false, arm64::AbiLocation::General(0, 1), false) == false {
+        return false
+    }
+    if assigned(linux, integer, false, arm64::AbiLocation::General(0, 1), false) == false {
+        return false
+    }
+    if assigned(darwin, integer, true, arm64::AbiLocation::Stack(0, 8), false) == false {
+        return false
+    }
+    if assigned(linux, integer, true, arm64::AbiLocation::General(1, 1), false) == false {
+        return false
+    }
+    if assigned(darwin, float, true, arm64::AbiLocation::Stack(8, 8), false) == false {
+        return false
+    }
+    return assigned(linux, float, true, arm64::AbiLocation::Simd(0, 1), false)
+}
+
+fn aggregates() -> bool {
+    var state = arm64::abi_state(arm64::AbiVariant::Aapcs64())
+    if assigned(state, value(0, 1, arm64::AbiKind::Aggregate()), false, arm64::AbiLocation::Omitted(), false) == false {
+        return false
+    }
+    if assigned(state, value(16, 8, arm64::AbiKind::Aggregate()), false, arm64::AbiLocation::General(0, 2), false) == false {
+        return false
+    }
+    if assigned(state, value(24, 8, arm64::AbiKind::Aggregate()), false, arm64::AbiLocation::General(2, 1), true) == false {
+        return false
+    }
+    match arm64::abi_result(value(24, 8, arm64::AbiKind::Aggregate())) {
+        Ok(result) => result.indirect && result.location == arm64::AbiLocation::General(8, 1)
+        Err(error) => {
+            error;
+            false
+        }
+    }
+}
+
+fn simd_arguments() -> bool {
+    var state = arm64::abi_state(arm64::AbiVariant::Aapcs64())
+    let float = value(8, 8, arm64::AbiKind::Float())
+    for index in 0..7 {
+        if assigned(state, float, false, arm64::AbiLocation::Simd(u32.from(index), 1), false) == false {
+            return false
+        }
+    }
+    let pair = value(16, 8, arm64::AbiKind::Homogeneous(2, 8))
+    if assigned(state, pair, false, arm64::AbiLocation::Stack(0, 16), false) == false {
+        return false
+    }
+    if assigned(state, float, false, arm64::AbiLocation::Stack(16, 8), false) == false {
+        return false
+    }
+    return assigned(state, value(8, 8, arm64::AbiKind::Integer()), false, arm64::AbiLocation::General(0, 1), false)
+}
+
+fn invalid(input: arm64::AbiValue) -> bool {
+    match arm64::abi_validate(input) {
+        Err(error) => {
+            error;
+            true
+        }
+        Ok(result) => {
+            result;
+            false
+        }
+    }
+}
+
+fn invalid_values() -> bool {
+    if invalid(value(8, 0, arm64::AbiKind::Integer())) == false {
+        return false
+    }
+    if invalid(value(8, 3, arm64::AbiKind::Integer())) == false {
+        return false
+    }
+    if invalid(value(3, 1, arm64::AbiKind::Integer())) == false {
+        return false
+    }
+    if invalid(value(16, 16, arm64::AbiKind::Float())) == false {
+        return false
+    }
+    if invalid(value(4, 4, arm64::AbiKind::Vector())) == false {
+        return false
+    }
+    if invalid(value(0, 8, arm64::AbiKind::Homogeneous(0, 8))) == false {
+        return false
+    }
+    if invalid(value(40, 8, arm64::AbiKind::Homogeneous(5, 8))) == false {
+        return false
+    }
+    if invalid(value(8, 8, arm64::AbiKind::Homogeneous(2, 8))) == false {
+        return false
+    }
+    return invalid(value(2, 1, arm64::AbiKind::Homogeneous(2, 1)))
+}
+
+fn overflow_checks() -> bool {
+    var state = arm64::abi_state(arm64::AbiVariant::Darwin())
+    state.integer = 8
+    state.stack = 18446744073709551615
+    match arm64::abi_argument(state, value(1, 1, arm64::AbiKind::Integer()), false) {
+        Ok(result) => {
+            result;
+            return false
+        }
+        Err(error) => {
+            error;
+        }
+    }
+    match arm64::abi_stack_size(state) {
+        Ok(size) => {
+            size;
+            false
+        }
+        Err(error) => {
+            error;
+            true
+        }
+    }
+}
+
+fn result_registers() -> bool {
+    match arm64::abi_result(value(32, 8, arm64::AbiKind::Homogeneous(4, 8))) {
+        Ok(result) => result.indirect == false && result.location == arm64::AbiLocation::Simd(0, 4)
+        Err(error) => {
+            error;
+            false
+        }
+    }
+}
+
+fn validation_tests() -> bool {
+    return invalid_values() && overflow_checks() && result_registers()
+}
+
+fn main() -> u32 {
+    if stack_packing(arm64::AbiVariant::Darwin(), 1) == false {
+        return 1
+    }
+    if stack_packing(arm64::AbiVariant::Aapcs64(), 8) == false {
+        return 2
+    }
+    if wide_alignment(arm64::AbiVariant::Darwin(), 1) == false {
+        return 3
+    }
+    if wide_alignment(arm64::AbiVariant::Aapcs64(), 2) == false {
+        return 4
+    }
+    if variadic_arguments() == false {
+        return 5
+    }
+    if aggregates() == false || simd_arguments() == false {
+        return 6
+    }
+    if validation_tests() == false {
+        return 7
+    }
+    return 42
+}

@@ -1,0 +1,39 @@
+module arm64 {
+    fn partial_size(size: u64) -> u64 {
+        return if size < 8 {
+            size
+        } else {
+            8
+        }
+    }
+    fn load_partial(compiler: write Compiler, register: u32, base: u32, offset: u64, size: u64) -> Result<void, Text> {
+        if size - offset >= 8 {
+            emit_encoding(compiler, memory_word(register, base, u32.from(offset), 8, true))
+            return Ok(())
+        }
+        immediate(compiler, register, 0)
+        var byte = offset
+        while byte < size {
+            emit_encoding(compiler, memory_word(15, base, u32.from(byte), 1, true))
+            let shift = u32.from((byte - offset) * 8)
+            emit_registers(compiler, 2852126720 |(shift << 10), register, register, 15)
+            byte = byte + 1
+        }
+        return Ok(())
+    }
+    fn store_partial(compiler: write Compiler, register: u32, base: u32, offset: u64, size: u64) -> Result<void, Text> {
+        if size - offset >= 8 {
+            emit_encoding(compiler, memory_word(register, base, u32.from(offset), 8, false))
+            return Ok(())
+        }
+        var byte = offset
+        while byte < size {
+            let shift = u32.from((byte - offset) * 8)
+            emit_registers(compiler, 2856321024 |(shift << 10), 15, 31, register)
+            emit_encoding(compiler, memory_word(15, base, u32.from(byte), 1, false))
+            byte = byte + 1
+        }
+        return Ok(())
+    }
+
+}

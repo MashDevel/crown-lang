@@ -1,0 +1,215 @@
+module ir {
+    fn instruction_replace_uses(kind: write InstructionKind, from: usize, to: usize) -> void {
+        let empty = Vec<Option<usize>>.new()
+        loan read empty as values {
+            let replacement = Replacement {
+                from: from, to: to, values: values, direct: false
+            }
+            instruction_replace_mapped_uses(kind, replacement)
+        }
+    }
+
+    fn instruction_replace_mapped_uses(kind: write InstructionKind, replacement: Replacement) -> void {
+        if replace_basic_uses(kind, replacement) {
+            return
+        }
+        if replace_memory_uses(kind, replacement) {
+            return
+        }
+        replace_call_uses(kind, replacement)
+    }
+
+    fn replace_basic_uses(kind: write InstructionKind, replacement: Replacement) -> bool {
+        match write kind {
+            InstructionVectorSplat(value, target) => {
+                target;
+                replace_value(value, replacement)
+            }
+            InstructionBinary(operator, left, right) => {
+                operator
+                replace_value(left, replacement)
+                replace_value(right, replacement)
+            }
+            InstructionUnary(operator, value) => {
+                operator;
+                replace_value(value, replacement)
+            }
+            InstructionCompare(operator, left, right) => {
+                operator
+                replace_value(left, replacement)
+                replace_value(right, replacement)
+            }
+            InstructionCast(operator, value, target) => {
+                operator;
+                target;
+                replace_value(value, replacement)
+            }
+            InstructionMemory(memory) => {
+                return replace_scalar_memory_uses(memory, replacement)
+            }
+
+            _ => {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn replace_scalar_memory_uses(instruction_memory_kind: write MemoryInstruction, replacement: Replacement) -> bool {
+        match write instruction_memory_kind {
+            MemoryStackSlot(size, alignment) => {
+                size;
+                alignment
+            }
+            MemoryLoad(address, value_type, alignment, volatile) => {
+                value_type;
+                alignment;
+                volatile
+                replace_value(address, replacement)
+            }
+            MemoryStore(address, value, alignment, volatile) => {
+                alignment;
+                volatile
+                replace_value(address, replacement)
+                replace_value(value, replacement)
+            }
+            MemoryOffset(base, offset) => {
+                replace_value(base, replacement)
+                replace_value(offset, replacement)
+            }
+            _ => {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn replace_memory_uses(kind: write InstructionKind, replacement: Replacement) -> bool {
+        match write kind {
+            InstructionMemory(instruction_memory_kind) => {
+                match write instruction_memory_kind {
+                    MemoryGlobalAddress(global) => {
+                        global
+                    }
+                    MemorySymbolAddress(symbol) => {
+                        symbol
+                    }
+                    MemoryFunctionAddress(function) => {
+                        function
+                    }
+                    MemoryCopy(destination, source, size) => {
+                        replace_value(destination, replacement)
+                        replace_value(source, replacement)
+                        replace_value(size, replacement)
+                    }
+                    MemorySet(destination, value, size) => {
+                        replace_value(destination, replacement)
+                        replace_value(value, replacement)
+                        replace_value(size, replacement)
+                    }
+                    MemoryRepeat(destination, source, size, count) => {
+                        replace_value(destination, replacement)
+                        replace_value(source, replacement)
+                        replace_value(size, replacement)
+                        replace_value(count, replacement)
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+
+            _ => {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn replace_call_uses(kind: write InstructionKind, replacement: Replacement) -> void {
+        match write kind {
+            InstructionCall(function, arguments, result) => {
+                function;
+                result
+                replace_values(arguments, replacement)
+            }
+            InstructionCallIndirect(function, signature, arguments) => {
+                signature
+                replace_value(function, replacement)
+                replace_values(arguments, replacement)
+            }
+            InstructionPhi(value_type, incoming) => {
+                value_type
+                var index: usize = 0
+                while index < incoming.length() {
+                    replace_value(incoming[index].value, replacement)
+                    index = index + 1
+                }
+            }
+            InstructionSelect(condition, then_value, else_value) => {
+                replace_value(condition, replacement)
+                replace_value(then_value, replacement)
+                replace_value(else_value, replacement)
+            }
+            _ => {
+            }
+        }
+    }
+
+    view struct Replacement {
+        from: usize
+        to: usize
+        values: Slice<Option<usize>>
+        direct: bool
+    }
+
+    fn replace_value(value: write usize, replacement: Replacement) -> void {
+        if replacement.values.length() == 0 {
+            if value == replacement.from {
+                value = replacement.to
+            }
+            return
+        }
+        if replacement.direct {
+            replace_direct_value(value, replacement.values)
+            return
+        }
+        replace_chained_value(value, replacement.values)
+    }
+
+    fn replace_direct_value(value: write usize, mapping: Slice<Option<usize>>) -> void {
+        if value >= mapping.length() {
+            return
+        }
+        match read mapping[value] {
+            Some(next) => {
+                value = next
+            }
+            None => {
+            }
+        }
+    }
+
+    fn replace_chained_value(value: write usize, mapping: Slice<Option<usize>>) -> void {
+        var count: usize = 0
+        while count < mapping.length() && value < mapping.length() {
+            match read mapping[value] {
+                Some(next) => {
+                    value = next
+                }
+                None => {
+                    return
+                }
+            }
+            count = count + 1
+        }
+    }
+
+    fn replace_values(values: write Vec<usize>, replacement: Replacement) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            replace_value(values[index], replacement)
+            index = index + 1
+        }
+    }
+}

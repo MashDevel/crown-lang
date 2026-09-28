@@ -1,0 +1,36 @@
+module profile {
+    fn runtime_hit() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::LoadSymbolAddress(x86::R8(), "crown_cov_data"))
+        instructions.push(x86::Load(x86::R8(), x86::R8(), 0))
+        instructions.push(x86::ShiftLeftImmediate(x86::Rdi(), 3))
+        instructions.push(x86::Add(x86::R8(), x86::Rdi()))
+        instructions.push(x86::Load(x86::Rax(), x86::R8(), 0))
+        instructions.push(x86::Label(x86::InternalLabel(0)))
+        instructions.push(x86::CompareImmediate(x86::Rax(), -1))
+        instructions.push(x86::JumpIf(x86::Equal(), x86::InternalLabel(1)))
+        instructions.push(x86::Move(x86::R9(), x86::Rax()))
+        instructions.push(x86::AddImmediate(x86::R9(), 1))
+        instructions.push(x86::CompareExchangeMemory(x86::CompareExchangeMemoryArgs {
+                    address: x86::R8(), value: x86::R9(), width: x86::Qword()
+                }))
+        instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(0)))
+        instructions.push(x86::Label(x86::InternalLabel(1)))
+        instructions.push(x86::Return())
+        var function = x86::function_new("crown_profile_hit", move instructions)
+        x86::function_export(function)
+        return move function
+    }
+
+    fn append_runtime(object: write object::CompilerObject, bytes: u64, directory: Text) -> Result<void, Text> {
+        if bytes == 0 {
+            return Ok(())
+        }
+        if object.architecture == object::ArchitectureArm64() {
+            let runtime = arm64::instrumentation_object(bytes, toolchain::path_join(directory, "run.XXXXXX"), true)?
+            return link_object::merge(object, move runtime)
+        }
+        let runtime = coverage::instrumentation_object(bytes, toolchain::path_join(directory, "run.XXXXXX"), runtime_hit(), "cannot initialize Crown profiling")?
+        return link_object::merge(object, move runtime)
+    }
+}

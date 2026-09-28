@@ -1,0 +1,71 @@
+module frontend {
+    fn capture_call(context: write SourceCapture, value: write Expression) -> void {
+        let span = value.span
+        var replacement: Option<ExpressionKind> = None()
+        match write value.kind {
+            ExpressionCall(name, arguments) => {
+                let text = sema::name_text(context.source, name)
+                if std::text::equal(text, "source_call") {
+                    replacement = capture_invocation(context, arguments, span)
+                }
+                if std::text::equal(text, "source_location") {
+                    if arguments.length() != 0 {
+                        capture_failure(context, span, "source_location requires no arguments")
+                    }
+                    var site = capture_site(context, span, Span {
+                            source: span.source, start: span.start, end: span.start, line: span.line, column: span.column
+                        })
+                    let {
+                        kind, span: site_span, depth
+                    } = move site
+                    replacement = Some(move kind)
+                }
+            },
+            _ => {
+            }
+        }
+        match move replacement {
+            Some(kind) => {
+                value.kind = move kind
+            },
+            None => {
+            }
+        }
+    }
+    fn capture_invocation(context: write SourceCapture, arguments: write Vec<Expression>, span: Span) -> Option<ExpressionKind> {
+        if arguments.length() != 2 {
+            capture_failure(context, span, "source_call requires a callback and one expression")
+            return None()
+        }
+        let callback = match capture_callback(arguments[0]) {
+            Some(name) => move name,
+            None => {
+                capture_failure(context, arguments[0].span, "source_call callback must name a function or typed callback binding");
+                return None()
+            }
+        }
+        let site = capture_site(context, span, arguments[1].span)
+        let value = replace(arguments[1], expression(ExpressionUnit(), span))
+        var forwarded = Vec<Expression>.new()
+        forwarded.push(move site)
+        forwarded.push(move value)
+        return Some(ExpressionCall(move callback, move forwarded))
+    }
+    fn capture_callback(value: Expression) -> Option<Name> {
+        match read value.kind {
+            ExpressionPath(path) => {
+                if path.segments.length() == 1 {
+                    return Some(name_copy(path.segments[0]))
+                }
+            },
+            _ => {
+            }
+        }
+        return None()
+    }
+    fn capture_failure(context: write SourceCapture, span: Span, message: take Text) -> void {
+        context.errors.push(CaptureFailure {
+                span: span, message: move message
+            })
+    }
+}

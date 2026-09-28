@@ -1,0 +1,10 @@
+resource Item { value: u32, drop { print(value) } }
+
+fn main() -> u32 {
+    for index in 0..4 {
+        let item = Item { value: u32.from(index) }
+        if index == 0 { continue }
+        if index == 1 { break }
+    }
+    return 42
+}

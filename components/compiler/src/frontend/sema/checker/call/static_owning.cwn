@@ -1,0 +1,134 @@
+module sema {
+    fn checker_owning_static(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                method
+                if arguments.length() != 1 {
+                    checker_error(checker, "invalid owner construction: check the payload type and use move for owned values");
+                    return None()
+                }
+                var element: Option<Type> = None()
+                match read reference.kind {
+                    frontend::TypeNamed(name, types) => {
+                        name;
+                        element = checker_owning_element(checker, types, arguments)
+                    }
+                    _ => {
+                        checker_error(checker, "invalid owner construction: check the payload type and use move for owned values")
+                    }
+                }
+                match move element {
+                    None => {
+                        return None()
+                    }
+                    Some(value_type) => {
+                        if checker_require_storable(checker, value_type) == false {
+                            return None()
+                        }
+                        var types = Vec<Type>.new()
+                        types.push(move value_type)
+                        return Some(owned_info(BuiltinType(builtin, move types)))
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid owner construction: check the payload type and use move for owned values");
+                return None()
+            }
+        }
+    }
+
+    fn checker_owning_element(checker: write Checker, types: Vec<frontend::TypeRef>, arguments: Vec<frontend::Expression>) -> Option<Type> {
+        if types.length() > 1 {
+            checker_error(checker, "invalid owner construction: check the payload type and use move for owned values");
+            return None()
+        }
+        if types.length() == 1 {
+            var expected = Invalid()
+            loan read types[0] as reference {
+                expected = checker_resolve_type(checker, reference)
+            }
+            loan read arguments[0] as value {
+                checker_value(checker, value, expected)
+            }
+            return Some(move expected)
+        }
+        loan read arguments[0] as value {
+            match checker_expression(checker, value) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    if type_is_copy_with_symbols(checker.symbols, info.value_type) == false && value_is_owned(info.value) == false {
+                        checker_error(checker, "invalid owner construction: check the payload type and use move for owned values")
+                        return None()
+                    }
+                    return Some(concrete(info.value_type))
+                }
+            }
+        }
+    }
+
+    fn checker_raw_pointer_static(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        if checker.unsafe_depth == 0 {
+            checker_error(checker, "invalid owner construction: check the payload type and use move for owned values");
+            return None()
+        }
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                if arguments.length() != 1 {
+                    checker_error(checker, "invalid owner construction: check the payload type and use move for owned values");
+                    return None()
+                }
+                match static_type_argument(checker, reference) {
+                    None => {
+                        return None()
+                    }
+                    Some(element) => {
+                        if name_is(checker.symbols.source, method, "from_address") {
+                            loan read arguments[0] as value {
+                                let expected = builtin_leaf(USize())
+                                checker_value(checker, value, expected)
+                            }
+                        } else {
+                            if name_is(checker.symbols.source, method, "cast") == false {
+                                checker_error(checker, "invalid owner construction: check the payload type and use move for owned values")
+                                return None()
+                            }
+                            checker_require_raw_pointer(checker, arguments)
+                        }
+                        var types = Vec<Type>.new()
+                        types.push(move element)
+                        return Some(copy_info(BuiltinType(RawPtr(), move types)))
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid owner construction: check the payload type and use move for owned values");
+                return None()
+            }
+        }
+    }
+
+    fn checker_require_raw_pointer(checker: write Checker, arguments: Vec<frontend::Expression>) -> void {
+        loan read arguments[0] as value {
+            match checker_expression(checker, value) {
+                None => {
+                }
+                Some(info) => {
+                    match read info.value_type {
+                        BuiltinType(builtin, types) => {
+                            types
+                            if builtin != RawPtr() {
+                                checker_error(checker, "invalid owner construction: check the payload type and use move for owned values")
+                            }
+                        }
+                        _ => {
+                            checker_error(checker, "invalid owner construction: check the payload type and use move for owned values")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

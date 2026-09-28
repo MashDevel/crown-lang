@@ -1,0 +1,13 @@
+copy struct Point { x: u32 }
+struct Pair { left: u32, right: u32 }
+fn add(left: take Point, right: take Point) -> u32 { return left.x + right.x }
+fn main() -> u32 {
+    let point = Point { x: 7 }
+    var pair = Pair { left: 0, right: 0 }
+    loan write pair.left as left {
+        loan write pair.right as right { left = add(point, point); right = 14 }
+    }
+    let old = replace(pair.left, pair.left + 1)
+    swap(pair.left, pair.right)
+    return old + pair.left + pair.right - 1
+}

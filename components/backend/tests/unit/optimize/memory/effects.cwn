@@ -1,0 +1,104 @@
+fn effect_function(name: take Text, effect: u8) -> Result<ir::Function, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var function = ir::function_new(move name, ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let value = safety_integer(function, ir::IntegerWidth64(), 9)
+    if effect & 1 != 0 {
+        safety_append(function, block, ir::InstructionLoad(0, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    }
+    if effect & 2 != 0 {
+        safety_append(function, block, ir::InstructionStore(0, value, 8, false))?
+    }
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    return Ok(move function)
+}
+
+fn call_effect_case(effect: u8) -> Result<void, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, effect_function("callee", effect)?)
+    let effects = optimize::memory_effects(program)
+    safety_require(optimize::memory_call_effect(0, effects) == effect, 1)?
+    var function = effect_function("caller", 0)?
+    function.blocks[0].terminator = None()
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    safety_append(function, 0, ir::InstructionLoad(0, value_type, 8, false))?
+    var arguments = Vec<usize>.new()
+    arguments.push(0)
+    safety_append(function, 0, ir::InstructionCall(0, move arguments, ir::TypeVoid()))?
+    safety_append(function, 0, ir::InstructionLoad(0, value_type, 8, false))?
+    safety_terminate(function, 0, ir::TerminatorReturn(None()))?
+    let expected: usize = if effect & 2 == 0 {
+        1
+    } else {
+        0
+    }
+    safety_require(optimize::load_with_effects(function, effects) == expected, 2)?
+    ir::program_add_function(program, move function)
+    return check_transitive_effects(program, effect, effects)
+}
+
+fn main() -> u32 {
+    for effect in 0..4 {
+        match call_effect_case(u8.from(effect)) {
+            Ok(done) => {
+                done
+            }
+            Err(error) => {
+                return error
+            }
+        }
+    }
+    return safety_status(call_regions())
+}
+
+fn call_regions() -> Result<void, u32> {
+    call_region(false, false)?
+    call_region(true, false)?
+    call_region(false, true)?
+    return Ok(())
+}
+
+fn call_region(shared: bool, imported: bool) -> Result<void, u32> {
+    var program = ir::program_new()
+    var callee = effect_function("writer", 2)?
+    if imported {
+        callee.linkage = ir::LinkageImport()
+        callee.blocks = Vec<ir::BasicBlock>.new()
+    }
+    ir::program_add_function(program, move callee)
+    let effects = optimize::memory_effects(program)
+    var caller = call_region_caller(shared)?
+    let expected: usize = if shared || imported {
+        0
+    } else {
+        1
+    }
+    return safety_require(optimize::load_with_effects(caller, effects) == expected, 5)
+}
+
+fn call_region_caller(shared: bool) -> Result<ir::Function, u32> {
+    var caller = effect_function("reader", 0)?
+    caller.blocks[0].terminator = None()
+    let first = safety_append(caller, 0, ir::InstructionStackSlot(8, 8))?
+    let second = if shared {
+        first
+    } else {
+        safety_append(caller, 0, ir::InstructionStackSlot(8, 8))?
+    }
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    safety_append(caller, 0, ir::InstructionLoad(first, value_type, 8, false))?
+    var arguments = Vec<usize>.new()
+    arguments.push(second)
+    safety_append(caller, 0, ir::InstructionCall(0, move arguments, ir::TypeVoid()))?
+    safety_append(caller, 0, ir::InstructionLoad(first, value_type, 8, false))?
+    safety_terminate(caller, 0, ir::TerminatorReturn(None()))?
+    return Ok(move caller)
+}
+
+fn check_transitive_effects(program: ir::Program, effect: u8, effects: Shared<Vec<optimize::MemoryEffect>>) -> Result<void, u32> {
+    let transitive = optimize::memory_effects(program)
+    safety_require(optimize::memory_call_effect(1, transitive) ==(effect | 1), 3)?
+    safety_require(optimize::memory_call_effect(99, effects) == 3, 4)?
+    return Ok(())
+}

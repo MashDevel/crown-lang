@@ -1,0 +1,1 @@
+fn main() -> u32 { let value = unsafe { let text = "hello"; text }; return 0 }

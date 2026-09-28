@@ -1,0 +1,31 @@
+module lowering {
+    fn root_type_key(boxed: sema::Type) -> Text {
+        var key = "root_type_"
+        let drop_key = drop_function_key(boxed)
+        std::text::append(key, drop_key)
+        return move key
+    }
+    fn declare_root_type_tags(compiler: write Compiler) -> void {
+        for index in 0..compiler.drop_types.length() {
+            var value_type = sema::Invalid()
+            loan read compiler.drop_types[index] as value {
+                value_type = sema::type_copy(value)
+            }
+            if sema::type_builtin(value_type) == sema::Box() {
+                let key = root_type_key(value_type)
+                declare_global(compiler, key.clone(), move key)
+            }
+        }
+    }
+    fn root_type_pointer(compiler: write FunctionCompiler, value_type: sema::Type) -> Result<usize, u32> {
+        let boxed = root_box_type(value_type)?
+        let key = root_type_key(boxed)
+        let target = match function_global_id(compiler, key) {
+            Some(value) => value,
+            None => {
+                return Err(771)
+            }
+        }
+        return function_append_value(compiler, ir::InstructionGlobalAddress(target))
+    }
+}

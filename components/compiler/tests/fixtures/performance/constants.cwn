@@ -1,0 +1,39 @@
+fn constant_matches(function: read ir::Function, id: read usize, expected: read u64) -> bool {
+    let constant = ir::ConstantInteger(expected)
+    match ir::function_constant_value(function, id) {
+        Some(value) => { return ir::constant_equal(value, constant) }
+        None => { return false }
+    }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth8())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("indexed", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    var index: usize = 0
+    var ids = Vec<usize>.new()
+    while index < 128 {
+        ir::function_new_value(function, value_type)
+        let constant = ir::ConstantInteger(u64.from(index))
+        ids.push(ir::function_constant(function, value_type, constant))
+        index = index + 1
+    }
+    let normalized = ir::ConstantInteger(u64.from(298))
+    let duplicate = ir::function_constant(function, value_type, normalized)
+    if duplicate != ids[42] || function.constants.length() != 128 { return 1 }
+    index = 0
+    while index < ids.length() {
+        if constant_matches(function, ids[index], u64.from(index)) == false { return 2 }
+        match ir::function_constant_value(function, ids[index] - 1) { Some(value) => { value; return 3 } None => {} }
+        index = index + 1
+    }
+    match ir::function_constant_value(function, 100000) { Some(value) => { value; return 4 } None => {} }
+    match ir::function_constant_type(function, duplicate) { Some(value) => { if ir::type_equal(value, value_type) == false { return 5 } } None => { return 6 } }
+    let copied = ir::function_copy(function)
+    let taken = ir::function_take(function)
+    if constant_matches(copied, duplicate, 42) == false { return 7 }
+    if constant_matches(taken, duplicate, 42) == false { return 8 }
+    if function.constant_indices.length() != 0 { return 9 }
+    return 42
+}

@@ -1,0 +1,28 @@
+fn expired() -> Handle<u32> {
+    var arena = Arena<u32>.new()
+    return arena.insert(42)
+}
+
+fn main() -> u32 {
+    let old = expired()
+    for index in 0..10000 {
+        index
+        var arena = Arena<u32>.new()
+        let current = arena.insert(7)
+        if arena.contains(old) || old == current {
+            return 1
+        }
+        match arena.remove(old) {
+            Some(value) => {
+                value;
+                return 2
+            }
+            None => {
+            }
+        }
+        if arena.contains(current) == false {
+            return 3
+        }
+    }
+    return 0
+}

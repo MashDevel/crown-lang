@@ -1,0 +1,64 @@
+module elf {
+    const X86_PROPERTY_AND_FIRST: u64 = 3221225474
+    const X86_PROPERTY_AND_LAST: u64 = 3221258239
+    const X86_PROPERTY_OR_AND_FIRST: u64 = 3221291008
+    const X86_PROPERTY_OR_AND_LAST: u64 = 3221323775
+
+    fn read_note_section(bytes: Vec<u8>, header: ObjectSection, architecture: object::Architecture) -> Result<void, Text> {
+        if header.flags != 2 || header.alignment != 8 {
+            return Err("GNU property notes require read-only storage aligned to eight bytes")
+        }
+        let notes = link_binary::part(bytes, header.offset, header.size)?
+        var offset: usize = 0
+        while offset < notes.length() {
+            let end = gnu_note_end(notes, offset)?
+            read_gnu_properties(notes, offset + 16, end, architecture)?
+            offset = end
+        }
+        return Ok(())
+    }
+
+    fn gnu_note_end(bytes: Vec<u8>, offset: usize) -> Result<usize, Text> {
+        if bytes.length() - offset < 16 {
+            return Err("truncated GNU property note")
+        }
+        gnu_note_identity(bytes, offset)?
+        let size = usize.from(link_binary::number(bytes, offset + 4, 4)?)
+        if size > bytes.length() - offset - 16 || size % 8 != 0 {
+            return Err("invalid GNU property note size")
+        }
+        return Ok(offset + 16 + size)
+    }
+
+    fn gnu_note_identity(bytes: Vec<u8>, offset: usize) -> Result<void, Text> {
+        if link_binary::number(bytes, offset, 4)? != 4 || link_binary::number(bytes, offset + 8, 4)? != 5 || link_binary::number(bytes, offset + 12, 4)? != 5590599 {
+            return Err("unsupported allocated ELF note")
+        }
+        return Ok(())
+    }
+
+    fn read_gnu_properties(bytes: Vec<u8>, start: usize, end: usize, architecture: object::Architecture) -> Result<void, Text> {
+        var offset = start
+        while offset < end {
+            if end - offset < 16 {
+                return Err("truncated GNU property record")
+            }
+            if link_binary::number(bytes, offset + 4, 4)? != 4 {
+                return Err("GNU integer property must contain four bytes")
+            }
+            let kind = link_binary::number(bytes, offset, 4)?
+            if property_requires_all_inputs(kind, architecture) == false {
+                return Err("unsupported required GNU property")
+            }
+            offset = offset + 16
+        }
+        return Ok(())
+    }
+
+    fn property_requires_all_inputs(kind: u64, architecture: object::Architecture) -> bool {
+        if architecture == object::ArchitectureArm64() {
+            return kind == 3221225472
+        }
+        return (kind >= X86_PROPERTY_AND_FIRST && kind <= X86_PROPERTY_AND_LAST) ||(kind >= X86_PROPERTY_OR_AND_FIRST && kind <= X86_PROPERTY_OR_AND_LAST)
+    }
+}

@@ -1,0 +1,153 @@
+module optimize {
+    fn vector_body_valid(function: ir::Function, plan: write VectorPlan) -> Result<void, Text> {
+        loan read function.blocks[plan.evolution.body] as body {
+            for index in 0..body.instructions.length() {
+                vector_instruction_valid(function, plan, body.instructions[index])?
+            }
+            match read body.terminator {
+                Some(terminator) => {
+                    match read terminator {
+                        ir::TerminatorBranch(target) => {
+                            if target == plan.evolution.induction.header {
+                                return Ok(())
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return Err("body does not branch directly to the loop header")
+    }
+
+    fn vector_instruction_valid(function: ir::Function, plan: write VectorPlan, instruction: ir::Instruction) -> Result<void, Text> {
+        match read instruction.kind {
+            ir::InstructionMemory(memory) => vector_memory_valid(function, plan, instruction.result, memory)
+            ir::InstructionBinary(operator, left, right) => vector_binary_valid(plan, instruction.result, operator, ir::BinaryValues {
+                    left: left, right: right
+                })
+            ir::InstructionCast(operator, value, target) => {
+                target;
+                if plan.widened[value] || operator != ir::CastZeroExtend() {
+                    return Err("loop contains an unsupported cast")
+                }
+                return Ok(())
+            }
+            _ => Err("loop contains a call, branch-dependent operation, or unsupported instruction")
+        }
+    }
+
+    fn vector_binary_valid(plan: write VectorPlan, result: Option<usize>, operator: ir::BinaryOperator, values: ir::BinaryValues) -> Result<void, Text> {
+        if plan.widened[values.left] == false && plan.widened[values.right] == false {
+            if ir::binary_may_trap(operator) {
+                return Err("scalar operation may trap")
+            }
+            return Ok(())
+        }
+        let target = match ir::vector_type(plan.scalar) {
+            Some(value) => value
+            None => {
+                return Err("element type has no vector representation")
+            }
+        }
+        if ir::vector_binary_supported(target, operator) == false {
+            return Err("operation has no supported SSE2 lowering for this element type")
+        }
+        if vector_operand_valid(plan, values.left) == false || vector_operand_valid(plan, values.right) == false {
+            return Err("operation depends on an unsupported scalar recurrence")
+        }
+        match result {
+            Some(value) => {
+                plan.widened[value] = true
+            }
+            None => {
+                return Err("vector operation has no result")
+            }
+        }
+        return Ok(())
+    }
+
+    fn vector_operand_valid(plan: VectorPlan, value: usize) -> bool {
+        return plan.widened[value] || plan.inside[value] == false
+    }
+
+    fn vector_memory_valid(function: ir::Function, plan: write VectorPlan, result: Option<usize>, memory: ir::MemoryInstruction) -> Result<void, Text> {
+        match read memory {
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                alignment;
+                if volatile {
+                    return Err("volatile load preserves scalar execution")
+                }
+                return vector_load_valid(function, plan, result, address, value_type)
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                alignment;
+                if volatile {
+                    return Err("volatile store preserves scalar execution")
+                }
+                return vector_store_valid(function, plan, address, value)
+            }
+            ir::MemoryOffset(base, offset) => {
+                if plan.widened[base] || plan.widened[offset] {
+                    return Err("address depends on vector data")
+                }
+                return Ok(())
+            }
+            _ => Err("loop contains an unsupported memory operation")
+        }
+    }
+
+    fn vector_load_valid(function: ir::Function, plan: write VectorPlan, result: Option<usize>, address: usize, value_type: ir::Type) -> Result<void, Text> {
+        if vector_scalar_valid(plan, value_type) == false {
+            return Err("load element types are unsupported or inconsistent")
+        }
+        let id = match result {
+            Some(value) => value
+            None => {
+                return Err("load has no result")
+            }
+        }
+        plan.widened[id] = true
+        return vector_add_access(function, plan, address, false)
+    }
+
+    fn vector_store_valid(function: ir::Function, plan: write VectorPlan, address: usize, value: usize) -> Result<void, Text> {
+        if vector_operand_valid(plan, value) == false {
+            return Err("stored value depends on a scalar recurrence")
+        }
+        if vector_scalar_valid(plan, function.values[value]) == false {
+            return Err("store element types are unsupported or inconsistent")
+        }
+        return vector_add_access(function, plan, address, true)
+    }
+
+    fn vector_scalar_valid(plan: write VectorPlan, value_type: ir::Type) -> bool {
+        let vector = match ir::vector_type(value_type) {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        if plan.lanes == 0 {
+            plan.scalar = value_type
+            plan.lanes = ir::vector_lanes(vector)
+        }
+        return ir::type_equal(plan.scalar, value_type)
+    }
+
+    fn vector_add_access(function: ir::Function, plan: write VectorPlan, address: usize, writing: bool) -> Result<void, Text> {
+        if plan.accesses.length() >= 8 {
+            return Err("runtime alias-check budget exceeded")
+        }
+        match vector_access(function, plan, address, writing) {
+            Some(access) => {
+                plan.accesses.push(access);
+                return Ok(())
+            }
+            None => Err("memory address is not a contiguous affine access from an invariant base")
+        }
+    }
+}

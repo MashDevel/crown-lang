@@ -1,0 +1,19 @@
+module toolchain {
+    fn bedrock_runtime() -> Text {
+        let configured = environment("CROWN_BEDROCK_RUNTIME")
+        if configured.length() != 0 {
+            return move configured
+        }
+        return "/apps/runtime/crown.elf"
+    }
+
+    fn validate_native_build(options: Options) -> Result<void, Text> {
+        if options.coverage.length() != 0 {
+            return Err("coverage is not supported for Bedrock executables")
+        }
+        if options.objects.length() != 0 || options.links.length() != 0 {
+            return Err("Bedrock executables use the native runtime linker")
+        }
+        return Ok(())
+    }
+}

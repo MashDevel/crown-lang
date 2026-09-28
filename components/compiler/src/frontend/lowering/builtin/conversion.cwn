@@ -1,0 +1,119 @@
+module lowering {
+    struct Conversion {
+        value: usize
+        source: sema::Type
+        target: sema::Type
+    }
+
+    fn integer_conversion(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Conversion) -> Result<usize, u32> {
+        if sema::type_builtin(request.target) == sema::Char() {
+            let conversion = Conversion {
+                value: request.value, source: sema::type_copy(request.source), target: sema::builtin_leaf(sema::U32())
+            }
+            let value = integer_conversion(compiler, symbols, conversion)?
+            return character_conversion(compiler, value)
+        }
+        if sema::type_is_float(request.source) || sema::type_is_float(request.target) {
+            return float_conversion(compiler, symbols, request)
+        }
+        if sema::type_is_integer(request.source) == false && sema::type_builtin(request.source) != sema::Char() {
+            return Err(164)
+        }
+        return integer_conversion_value(compiler, symbols, request)
+    }
+
+    fn integer_conversion_value(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Conversion) -> Result<usize, u32> {
+        let source = layout(symbols, request.source)?
+        let target = layout(symbols, request.target)?
+        if conversion_is_lossless(request, source.size * 8, target.size * 8) {
+            return integer_conversion_cast(compiler, symbols, request)
+        }
+        let wide = integer_widen(compiler, request.value, conversion_is_signed(request.source))?
+        let finish = WideFinish {
+            value: wide, value_type: sema::type_copy(request.target), conversion: true
+        }
+        return integer_finish_wide(compiler, symbols, finish)
+    }
+
+    fn conversion_is_lossless(request: Conversion, source_bits: u64, target_bits: u64) -> bool {
+        let source_signed = conversion_is_signed(request.source)
+        let target_signed = conversion_is_signed(request.target)
+        if source_signed == target_signed {
+            return target_bits >= source_bits
+        }
+        return source_signed == false && target_signed && target_bits > source_bits
+    }
+
+    fn integer_conversion_cast(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Conversion) -> Result<usize, u32> {
+        let source = layout(symbols, request.source)?
+        let target = layout(symbols, request.target)?
+        var operator = ir::CastBitcast()
+        if target.size < source.size {
+            operator = ir::CastTruncate()
+        }
+        if target.size > source.size {
+            operator = ir::CastZeroExtend()
+            if conversion_is_signed(request.source) {
+                operator = ir::CastSignExtend()
+            }
+        }
+        let target_type = ir_type(symbols, request.target)?
+        return function_append_value(compiler, ir::InstructionCast(operator, request.value, target_type))
+    }
+
+    fn conversion_is_signed(value_type: sema::Type) -> bool {
+        if sema::type_builtin(value_type) == sema::Char() {
+            return false
+        }
+        return integer_is_signed(value_type)
+    }
+
+    fn character_conversion(compiler: write FunctionCompiler, value: usize) -> Result<usize, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth32())
+        let maximum = function_integer(compiler, value_type, 1114111)
+        let upper = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), value, maximum))?
+        function_guard_with(compiler, upper, "numeric_conversion")?
+        let d800 = function_integer(compiler, value_type, 55296)
+        let dfff = function_integer(compiler, value_type, 57343)
+        let below = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), value, d800))?
+        let above = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedGreater(), value, dfff))?
+        let valid = function_append_value(compiler, ir::InstructionBinary(ir::BinaryOr(), below, above))?
+        function_guard_with(compiler, valid, "numeric_conversion")?
+        return Ok(value)
+    }
+
+    fn integer_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 1 {
+                    return Err(165)
+                }
+                var left: usize = 0
+                loan read receiver as value {
+                    left = function_scalar_expression(compiler, analysis, value)?
+                }
+                var right: usize = 0
+                loan read arguments[0] as value {
+                    right = function_scalar_expression(compiler, analysis, value)?
+                }
+                let operator = wrapping_integer_operator(analysis.checker.symbols, method)
+                let result = function_append_value(compiler, ir::InstructionBinary(operator, left, right))?
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                return Ok(ScalarValue(result, move value_type))
+            }
+            _ => {
+                return Err(166)
+            }
+        }
+    }
+    fn wrapping_integer_operator(symbols: sema::Symbols, method: frontend::Name) -> ir::BinaryOperator {
+        var operator = ir::BinaryAdd()
+        if sema::name_is(symbols.source, method, "wrapping_sub") {
+            operator = ir::BinarySubtract()
+        }
+        if sema::name_is(symbols.source, method, "wrapping_mul") {
+            operator = ir::BinaryMultiply()
+        }
+        return operator
+    }
+}

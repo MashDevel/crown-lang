@@ -1,0 +1,36 @@
+module toolchain {
+    copy struct StructuralLimits {
+        file_lines: usize, function_lines: usize, cyclomatic: usize, cognitive: usize, nesting: usize, parameters: usize
+    }
+    copy struct FormatRules {
+        indent_width: usize, max_blank_lines: usize, final_newline: bool
+    }
+    copy struct DuplicationRules {
+        max_percent: usize, min_lines: usize, min_tokens: usize
+    }
+    copy struct QualityRules {
+        limits: StructuralLimits, format: FormatRules, duplication: DuplicationRules
+    }
+
+    fn quality_defaults() -> QualityRules {
+        return QualityRules {
+            limits: StructuralLimits {
+                file_lines: 300, function_lines: 60, cyclomatic: 10, cognitive: 15, nesting: 4, parameters: 5
+            }
+            format: FormatRules {
+                indent_width: 4, max_blank_lines: 1, final_newline: true
+            }
+            duplication: DuplicationRules {
+                max_percent: 3, min_lines: 6, min_tokens: 50
+            }
+        }
+    }
+
+    fn manifest_fields() -> Text {
+        return "|package.name|package.source|package.sources|package.exclude|target.macos.frameworks|target.macos.libraries|target.linux.libraries|quality.max_file_lines|quality.max_function_lines|quality.max_cyclomatic|quality.max_cognitive|quality.max_nesting|quality.max_parameters|quality.duplication.max_percent|quality.duplication.min_lines|quality.duplication.min_tokens|format.indent_width|format.max_blank_lines|format.final_newline|"
+    }
+
+    fn manifest_section(section: Text) -> bool {
+        return std::text::contains("|package|target|target.macos|target.linux|quality|quality.duplication|format|", std::text::joined(std::text::joined("|", section), "|"))
+    }
+}

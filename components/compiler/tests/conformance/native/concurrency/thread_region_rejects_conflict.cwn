@@ -1,0 +1,11 @@
+fn main() -> u32 {
+    var value: u32 = 0
+    thread_scope {
+        let started = spawn[write value] {
+            value = 1
+        }
+        started
+        value = 2
+    }
+    return value
+}

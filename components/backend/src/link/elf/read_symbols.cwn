@@ -1,0 +1,84 @@
+module elf {
+    fn read_object_symbols(reader: write ObjectReader) -> Result<void, Text> {
+        let count = object_table(reader, reader.symbol_table, 24)?
+        let strings = symbol_strings(reader)?
+        for index in 0..count {
+            reader.required_symbols.push(false)
+        }
+        mark_object_references(reader)?
+        for index in 0..count {
+            let offset = reader.headers[reader.symbol_table].offset + index * 24
+            let symbol = read_object_symbol(reader, strings, offset, index)?
+            reader.symbols.push(symbol)
+        }
+        return Ok(())
+    }
+
+    fn read_object_symbol(reader: write ObjectReader, strings: Vec<u8>, offset: usize, index: usize) -> Result<Option<usize>, Text> {
+        let info = link_binary::number(reader.bytes, offset + 4, 1)?
+        let section = usize.from(link_binary::number(reader.bytes, offset + 6, 2)?)
+        if object_symbol_required(reader, info, section, index)? == false {
+            return Ok(None())
+        }
+        let kind = object_symbol_type(info)?
+        let name = object_symbol_name(reader.bytes, strings, offset, index)?
+        let id = reader.output.symbols.length()
+        reader.output.symbols.push(object::Symbol {
+                name: move name, kind: kind,
+                binding: object_symbol_binding(info, section), section: reader.sections[section],
+                offset: link_binary::number(reader.bytes, offset + 8, 8)?, size: link_binary::number(reader.bytes, offset + 16, 8)?
+            })
+        return Ok(Some(id))
+    }
+
+    fn object_symbol_type(info: u64) -> Result<object::SymbolKind, Text> {
+        if (info >> 4) > 1 {
+            return Err("ELF weak and unique symbols are not supported")
+        }
+        if (info & 15) > 3 {
+            return Err("unsupported ELF symbol type")
+        }
+        return Ok(if (info & 15) == 2 {
+                object::SymbolFunction()
+            } else {
+                object::SymbolData()
+            })
+    }
+
+    fn object_symbol_required(reader: ObjectReader, info: u64, section: usize, index: usize) -> Result<bool, Text> {
+        if index == 0 ||(info & 15) == 4 {
+            return Ok(false)
+        }
+        if section == 0 {
+            return Ok(reader.required_symbols[index])
+        }
+        if section >= reader.sections.length() {
+            return Err("ELF absolute, common, and extended section symbols are not supported")
+        }
+        return Ok(match read reader.sections[section] {
+                Some(value) => {
+                    value;
+                    true
+                }
+                None => false
+            })
+    }
+
+    fn object_symbol_name(bytes: Vec<u8>, strings: Vec<u8>, offset: usize, index: usize) -> Result<Text, Text> {
+        let name = link_binary::terminated(strings, usize.from(link_binary::number(bytes, offset, 4)?))?
+        if name.length() == 0 {
+            return Ok(std::text::joined("elf-local-", std::text::decimal(u64.from(index))))
+        }
+        return Ok(move name)
+    }
+
+    fn object_symbol_binding(info: u64, section: usize) -> object::SymbolBinding {
+        if section == 0 {
+            return object::SymbolImport()
+        }
+        if (info >> 4) == 0 {
+            return object::SymbolLocal()
+        }
+        return object::SymbolGlobal()
+    }
+}

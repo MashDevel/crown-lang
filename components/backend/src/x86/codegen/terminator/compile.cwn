@@ -1,0 +1,147 @@
+module x86 {
+    fn codegen_compile_terminator(program: ir::Program, compiler: write FunctionCompiler, terminator: ir::Terminator) -> Result<void, CodegenError> {
+        match read terminator {
+            ir::TerminatorBranch(target) => {
+                return codegen_branch_to(program, compiler, target)
+            }
+            ir::TerminatorConditional(condition, then_block, else_block) => {
+                return codegen_compile_conditional(program, compiler, ir::ConditionalBranch {
+                        condition: condition
+                        then_block: then_block
+                        else_block: else_block
+                    })
+            }
+            ir::TerminatorReturn(value) => {
+                return codegen_compile_return(program, compiler, value)
+            }
+            ir::TerminatorUnreachable => {
+                codegen_emit(compiler, Trap())
+                return Ok(())
+            }
+            ir::TerminatorSwitch(value, cases, default) => {
+                return codegen_compile_switch(program, compiler, SwitchInput {
+                        value: value
+                        cases: codegen_switch_cases_copy(cases)
+                        default: default
+                    })
+            }
+        }
+    }
+
+    struct ConditionBranch {
+        condition: Condition
+        then_block: usize
+        else_block: usize
+    }
+
+    fn codegen_compile_conditional(program: ir::Program, compiler: write FunctionCompiler, branch: take ir::ConditionalBranch) -> Result<void, CodegenError> {
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: branch.condition, register: Rax()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        codegen_emit(compiler, Test(Rax(), Rax()))
+        return codegen_compile_condition_branch(program, compiler, ConditionBranch {
+                condition: NotEqual()
+                then_block: branch.then_block
+                else_block: branch.else_block
+            })
+    }
+
+    fn codegen_compile_condition_branch(program: ir::Program, compiler: write FunctionCompiler, branch: take ConditionBranch) -> Result<void, CodegenError> {
+        let then_edge = codegen_internal_label(compiler)
+        codegen_emit(compiler, JumpIf(branch.condition, local_label_copy(then_edge)))
+        match codegen_branch_to(program, compiler, branch.else_block) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        codegen_emit(compiler, Label(move then_edge))
+        return codegen_branch_to(program, compiler, branch.then_block)
+    }
+
+    fn codegen_compile_return(program: ir::Program, compiler: write FunctionCompiler, value: Option<usize>) -> Result<void, CodegenError> {
+        match read value {
+            Some(result) => {
+                let value_type = codegen_value_type(program, compiler, result)?
+                if codegen_type_is_wide(value_type) {
+                    return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                }
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: result, register: Rax()
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+                if ir::type_is_float(value_type) {
+                    let width = codegen_float_width(value_type)?
+                    codegen_emit(compiler, MoveToFloat(width, Xmm0(), Rax()))
+                }
+            }
+            None => {
+                let done = codegen_load_register_aggregate_return(program, compiler)?
+                done
+            }
+        }
+        codegen_epilogue(compiler)
+        return Ok(())
+    }
+
+    fn codegen_load_register_aggregate_return(program: ir::Program, compiler: write FunctionCompiler) -> Result<void, CodegenError> {
+        loan read program.functions[compiler.id] as function {
+            var index: usize = 0
+            while index < function.parameters.length() {
+                match read function.signature.parameter_abi[index] {
+                    ir::ParameterReturn(aggregate) => {
+                        match read aggregate {
+                            ir::AggregateRegisters(size, alignment, components) => {
+                                size;
+                                alignment
+                                let returned = ReturnAggregate {
+                                    value: function.parameters[index]
+                                    components: codegen_abi_components_copy(components)
+                                }
+                                return codegen_load_return_components(program, compiler, move returned)
+                            }
+                            ir::AggregateMemory(size, alignment) => {
+                                size;
+                                alignment
+                            }
+                        }
+                    }
+                    _ => {
+                    }
+                }
+                index = index + 1
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_load_return_components(program: ir::Program, compiler: write FunctionCompiler, returned: take ReturnAggregate) -> Result<void, CodegenError> {
+        codegen_load_value(program, compiler, ValueAccess {
+                value: returned.value, register: R11()
+            })?
+        var registers = ReturnRegisters {
+            integer: 0, float: 0
+        }
+        var index: usize = 0
+        while index < returned.components.length() {
+            codegen_load_next_return_component(compiler, returned.components[index], registers)?
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,6 @@
+fn duplicate(value: read Result<Text, u32>) -> Result<Text, u32> {
+    return value
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,47 @@
+module x86 {
+    enum EncodeErrorKind {
+        BranchOutOfRange
+        DuplicateData
+        DuplicateFunction
+        DuplicateLabel
+        DuplicateSymbol
+        InvalidDataAlignment
+        InvalidDataReference
+        InvalidEntry
+        UnknownFunction
+        UnknownSymbol
+        UnknownLabel
+        UnsupportedInstruction
+        ObjectFailure
+    }
+
+    struct EncodeError {
+        kind: EncodeErrorKind
+        name: Option<Text>
+        object: Option<object::Error>
+    }
+
+    fn named_error(kind: take EncodeErrorKind, name: take Text) -> EncodeError {
+        return EncodeError {
+            kind: move kind, name: Some(move name), object: None()
+        }
+    }
+
+    fn encode_error(kind: take EncodeErrorKind) -> EncodeError {
+        return EncodeError {
+            kind: move kind, name: None(), object: None()
+        }
+    }
+
+    fn object_error(error: take object::Error) -> EncodeError {
+        return EncodeError {
+            kind: ObjectFailure(), name: None(), object: Some(move error)
+        }
+    }
+
+    fn unsupported_error() -> EncodeError {
+        return EncodeError {
+            kind: UnsupportedInstruction(), name: None(), object: None()
+        }
+    }
+}

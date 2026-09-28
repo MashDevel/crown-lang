@@ -1,0 +1,86 @@
+fn local_slots() -> Result<void, Text> {
+    let function = chain_function(32, ir::TypeInteger(ir::IntegerWidth64()))
+    let frame = arm64::frame_new(function)?
+    testing::expect(frame.size == 16, "scalar chains use one saved register without temporary stack slots")?
+    for index in 0..function.values.length() {
+        testing::expect(arm64::frame_register(frame, index) == 19, "dead arithmetic operands release their register")?
+        testing::error(arm64::frame_value(frame, index))?
+    }
+    let wide = arm64::frame_new(chain_function(32, ir::TypeInteger(ir::IntegerWidth128())))?
+    testing::expect(wide.size == 48, "wide chains reuse aligned sixteen-byte slots")?
+    return testing::expect(wide.values[1] % 16 == 0 && wide.values[2] % 16 == 0, "wide slot alignment")
+}
+
+fn crossing_values() -> Result<void, Text> {
+    var function = chain_function(6, ir::TypeInteger(ir::IntegerWidth128()))
+    let result = ir::function_new_value(function, ir::TypeInteger(ir::IntegerWidth128()))
+    function.blocks[0].terminator = Some(ir::TerminatorBranch(1))
+    var block = ir::basic_block_new()
+    block.instructions.push(ir::Instruction {
+            result: Some(result), kind: ir::InstructionBinary(ir::BinaryAnd(), 1, 6)
+        })
+    block.terminator = Some(ir::TerminatorReturn(Some(result)))
+    function.blocks.push(move block)
+    let lifetimes = arm64::frame_lifetimes(function)?
+    testing::expect(lifetimes[1].local == false && lifetimes[6].local == false, "cross-block values retain dedicated storage")?
+    let frame = arm64::frame_new(function)?
+    for index in 2..6 {
+        testing::expect(frame.values[index] != frame.values[1] && frame.values[index] != frame.values[6], "local reuse preserves crossing values")?
+    }
+    return Ok(())
+}
+
+fn phi_values() -> Result<void, Text> {
+    var function = chain_function(3, ir::TypeInteger(ir::IntegerWidth128()))
+    let result = ir::function_new_value(function, ir::TypeInteger(ir::IntegerWidth128()))
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(ir::PhiIncoming {
+            block: 0, value: 1
+        })
+    function.blocks[0].instructions.push(ir::Instruction {
+            result: Some(result), kind: ir::InstructionPhi(ir::TypeInteger(ir::IntegerWidth128()), move incoming)
+        })
+    let lifetimes = arm64::frame_lifetimes(function)?
+    testing::expect(lifetimes[1].local == false && lifetimes[result].local == false, "phi results and incoming edge values retain dedicated slots")?
+    let frame = arm64::frame_new(function)?
+    testing::expect(frame.values[1] != frame.values[2] && frame.values[result] != frame.values[3], "phi storage cannot alias temporary values")?
+    return testing::expect(arm64::frame_copy(frame, result)? != frame.values[result], "parallel copies retain separate staging storage")
+}
+
+fn slot_boundaries() -> Result<void, Text> {
+    var frame = arm64::frame_new(chain_function(0, ir::TypeInteger(ir::IntegerWidth64())))?
+    var slots = Vec<arm64::FrameSlot>.new()
+    let first = arm64::FrameLifetime {
+        block: 0, first: 0, last: 1, local: true
+    }
+    let narrow = arm64::frame_local_slot(frame, slots, first, 8)?
+    let wide = arm64::frame_local_slot(frame, slots, arm64::FrameLifetime {
+            block: 0, first: 2, last: 3, local: true
+        }, 16)?
+    testing::expect(wide != narrow && wide % 16 == 0, "wide values cannot reuse undersized slots")?
+    let reused = arm64::frame_local_slot(frame, slots, arm64::FrameLifetime {
+            block: 1, first: 0, last: 5, local: true
+        }, 16)?
+    return testing::expect(reused == wide, "local slot storage is reused between blocks")
+}
+
+fn invalid_values() -> Result<void, Text> {
+    var function = chain_function(2, ir::TypeInteger(ir::IntegerWidth64()))
+    function.blocks[0].instructions[0].result = Some(99)
+    testing::error(arm64::frame_new(function))?
+    function.blocks[0].instructions[0].result = Some(1)
+    function.blocks[0].terminator = Some(ir::TerminatorReturn(Some(99)))
+    return testing::error(arm64::frame_new(function))
+}
+
+fn run() -> Result<void, Text> {
+    local_slots()?
+    crossing_values()?
+    phi_values()?
+    slot_boundaries()?
+    return invalid_values()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

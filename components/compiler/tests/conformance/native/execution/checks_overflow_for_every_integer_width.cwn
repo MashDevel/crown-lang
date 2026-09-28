@@ -1,0 +1,7 @@
+fn overflow() -> i8 {
+    return 127 + 1
+}
+fn main() -> u32 {
+    overflow()
+    return 0
+}

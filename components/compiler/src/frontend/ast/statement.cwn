@@ -1,0 +1,59 @@
+module frontend {
+    struct Statement {
+        kind: StatementKind
+        span: Span
+        depth: u32
+    }
+
+    enum StatementKind {
+        StatementBind(Name, bool, Option<TypeRef>, Expression)
+        StatementAssign(Expression, Expression)
+        StatementUpdate(Expression, BinaryOperator, Expression)
+        StatementDestructure(bool, Vec<StructBinding>, Expression)
+        StatementReturn(Expression, bool)
+        StatementPrint(Expression)
+        StatementExpression(Expression)
+        StatementLoan(LoanMode, Expression, Name, Vec<Statement>)
+        StatementLock(LoanMode, Path, Name, Vec<Statement>)
+        StatementArenaAccess(LoanMode, Box<Expression>, Box<Expression>, Name, Vec<Statement>)
+        StatementIf(Expression, Vec<Statement>, Vec<Statement>)
+        StatementMatch(MatchExpression)
+        StatementUnsafe(Vec<Statement>)
+        StatementThreadScope(Vec<Statement>)
+        StatementWhile(Expression, Vec<Statement>)
+        StatementFor(Name, Expression, Expression, Vec<Statement>)
+        StatementBreak
+        StatementContinue
+    }
+
+    struct StructBinding {
+        field: Name
+        binding: Name
+    }
+
+    struct MatchArm {
+        pattern: Pattern
+        body: Vec<Statement>
+        span: Span
+    }
+
+    struct Pattern {
+        choices: Vec<PatternKind>
+        bindings: Vec<Name>
+        span: Span
+    }
+
+    enum PatternKind {
+        PatternVariant(Name)
+        PatternText(Span)
+        PatternInteger(u64, bool)
+        PatternWildcard
+    }
+
+    struct MatchExpression {
+        access: Option<LoanMode>
+        value: Expression
+        arms: Vec<MatchArm>
+        span: Span
+    }
+}

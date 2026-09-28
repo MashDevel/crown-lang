@@ -1,0 +1,185 @@
+module sema {
+    copy enum ValueKind {
+        CopyValue
+        OwnedValue
+        BorrowedValue
+    }
+
+    copy enum VariableAccess {
+        OwnedAccess
+        ReadAccess
+        WriteAccess
+    }
+
+    copy enum VariableState {
+        Available
+        ReadLoaned(usize)
+        WriteLoaned
+        Moved
+    }
+
+    copy enum PathUse {
+        ReadPath
+        WritePath
+        MovePath
+        ReassignPath
+    }
+
+    struct Variable {
+        name: frontend::Name
+        value_type: Type
+        copy_value: bool
+        mutable_value: bool
+        state: VariableState
+        access: VariableAccess
+        span: frontend::Span
+        state_span: frontend::Span
+    }
+
+    struct Scope {
+        variables: Vec<Variable>
+    }
+
+    struct ExpressionRecord {
+        function: Option<usize>
+        resource_owner: Option<usize>
+        span: frontend::Span
+        value_type: Type
+        value: ValueKind
+    }
+
+    struct ExpressionInfo {
+        value_type: Type
+        value: ValueKind
+    }
+
+    copy enum CaptureKind {
+        CaptureCopy
+        CaptureMove
+        CaptureShare
+        CaptureRead
+        CaptureWrite
+    }
+
+    struct SpawnCapture {
+        name: frontend::Name
+        value_type: Type
+        kind: CaptureKind
+    }
+
+    struct SpawnRecord {
+        function: Option<usize>
+        resource_owner: Option<usize>
+        span: frontend::Span
+        captures: Vec<SpawnCapture>
+    }
+
+    struct ScopedCapture {
+        name: frontend::Name
+        value_type: Type
+        mode: frontend::Mode
+    }
+
+    struct ClosureRecord {
+        resource_owner: Option<usize>
+        span: frontend::Span
+        value_type: Type
+        function: Option<usize>
+        captures: Vec<ScopedCapture>
+    }
+
+    struct GenericCall {
+        caller: Option<usize>
+        resource_owner: Option<usize>
+        span: frontend::Span
+        function: usize
+        arguments: Vec<Type>
+    }
+
+    struct GenericUse {
+        caller: usize
+        callee: usize
+        arguments: Vec<Type>
+        span: frontend::Span
+    }
+
+    struct FunctionInstance {
+        function: usize
+        arguments: Vec<Type>
+    }
+
+    struct Analysis {
+        checker: Checker
+        instances: Vec<FunctionInstance>
+        errors: u32
+    }
+
+    struct Checker {
+        module_name: Text
+        symbols: Symbols
+        scopes: Vec<Scope>
+        place_loans: Vec<PlaceLoan>
+        thread_regions: Vec<ThreadRegion>
+        result: Type
+        root_declarations: Vec<ExpressionRecord>
+        expressions: Vec<ExpressionRecord>
+        resource_instances: Vec<Type>
+        generic_calls: Vec<GenericCall>
+        generic_uses: Vec<GenericUse>
+        spawns: Vec<SpawnRecord>
+        closures: Vec<ClosureRecord>
+        max_instances: usize
+        current_function: Option<usize>
+        current_resource: Option<usize>
+        type_parameters: Vec<frontend::Name>
+        unsafe_depth: usize
+        returns_allowed: bool
+        continuing: bool
+        loop_states: Vec<LoopState>
+        errors: u32
+        current_span: frontend::Span
+        diagnostics: Vec<Diagnostic>
+    }
+
+    fn checker_new(symbols: take Symbols) -> Checker {
+        return Checker {
+            module_name: ""
+            symbols: move symbols
+            scopes: Vec<Scope>.new()
+            place_loans: Vec<PlaceLoan>.new()
+            thread_regions: Vec<ThreadRegion>.new()
+            result: BuiltinType(Unit(), Vec<Type>.new())
+            root_declarations: Vec<ExpressionRecord>.new()
+            expressions: Vec<ExpressionRecord>.new()
+            resource_instances: Vec<Type>.new()
+            generic_calls: Vec<GenericCall>.new()
+            generic_uses: Vec<GenericUse>.new()
+            spawns: Vec<SpawnRecord>.new()
+            closures: Vec<ClosureRecord>.new()
+            max_instances: 128
+            current_function: None()
+            current_resource: None()
+            type_parameters: Vec<frontend::Name>.new()
+            unsafe_depth: 0
+            returns_allowed: true
+            continuing: true
+            loop_states: Vec<LoopState>.new()
+            errors: 0
+            current_span: empty_span()
+            diagnostics: Vec<Diagnostic>.new()
+        }
+    }
+
+    fn scope_new() -> Scope {
+        return Scope {
+            variables: Vec<Variable>.new()
+        }
+    }
+
+    fn expression_info_copy(value: ExpressionInfo) -> ExpressionInfo {
+        return ExpressionInfo {
+            value_type: type_copy(value.value_type)
+            value: value.value
+        }
+    }
+}

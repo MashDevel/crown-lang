@@ -1,0 +1,113 @@
+module x86 {
+    struct PackedScan {
+        loads: Vec<usize>
+        binaries: Vec<usize>
+        stores: Vec<usize>
+        end: usize
+    }
+
+    struct PackedLane {
+        left: usize
+        right: usize
+        destination: usize
+        left_load: usize
+        right_load: usize
+        operator: ir::BinaryOperator
+    }
+
+    struct PackedSequence {
+        end: usize
+        left_load: usize
+        right_load: usize
+        store: usize
+        left: usize
+        right: usize
+        destination: usize
+        operator: ir::BinaryOperator
+    }
+
+    copy struct PackedAddress {
+        root: usize
+        offset: i32
+    }
+
+    fn packed_scan(block: ir::BasicBlock, position: SequencePosition) -> Option<PackedScan> {
+        var scan = PackedScan {
+            loads: Vec<usize>.new(), binaries: Vec<usize>.new(), stores: Vec<usize>.new(), end: position.index
+        }
+        while scan.end < position.limit && scan.end - position.index < 24 {
+            let index = scan.end
+            if packed_scan_instruction(block.instructions[index].kind, index, scan) == false {
+                return None()
+            }
+            scan.end = scan.end + 1
+            if scan.stores.length() == 2 {
+                if packed_scan_ready(scan) == false {
+                    return None()
+                }
+                return Some(move scan)
+            }
+            if scan.loads.length() > 4 || scan.binaries.length() > 2 {
+                return None()
+            }
+        }
+        return None()
+    }
+
+    fn packed_scan_instruction(kind: ir::InstructionKind, index: usize, scan: write PackedScan) -> bool {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryOffset(base, offset) => {
+                        base;
+                        offset;
+                        return true
+                    }
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        address;
+                        alignment;
+                        if volatile || ir::type_equal(value_type, ir::TypeFloat(ir::FloatWidth64())) == false {
+                            return false
+                        }
+                        scan.loads.push(index)
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        address;
+                        value;
+                        alignment;
+                        if volatile {
+                            return false
+                        }
+                        scan.stores.push(index)
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            ir::InstructionBinary(operator, left, right) => {
+                left;
+                right;
+                if packed_operator(operator) == false {
+                    return false
+                }
+                scan.binaries.push(index)
+            }
+            _ => {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn packed_operator(operator: ir::BinaryOperator) -> bool {
+        return operator == ir::BinaryFloatAdd() || operator == ir::BinaryFloatSubtract() || operator == ir::BinaryFloatMultiply() || operator == ir::BinaryFloatDivide()
+    }
+
+    fn packed_scan_ready(scan: PackedScan) -> bool {
+        if scan.loads.length() != 4 || scan.binaries.length() != 2 {
+            return false
+        }
+        return scan.loads[3] < scan.stores[0] && scan.binaries[1] < scan.stores[0]
+    }
+}

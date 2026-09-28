@@ -1,0 +1,37 @@
+module optimize {
+    fn dead_store_observe(function: ir::Function, scan: LoadScan, pending: Vec<PendingStore>, kind: ir::InstructionKind) -> Vec<PendingStore> {
+        var output = Vec<PendingStore>.new()
+        for index in 0..pending.length() {
+            if memory_instruction_touches(function, scan, pending[index].access, kind, 3) == false {
+                output.push(PendingStore {
+                        access: pending[index].access, instruction: pending[index].instruction
+                    })
+            }
+        }
+        return move output
+    }
+
+    fn pending_stores_copy(pending: Vec<PendingStore>) -> Vec<PendingStore> {
+        var output = Vec<PendingStore>.with_capacity(pending.length())
+        for index in 0..pending.length() {
+            output.push(PendingStore {
+                    access: pending[index].access, instruction: pending[index].instruction
+                })
+        }
+        return move output
+    }
+
+    fn pending_stores_disjoint(function: ir::Function, scan: LoadScan, pending: Vec<PendingStore>, access: LoadAccess) -> Vec<PendingStore> {
+        var output = Vec<PendingStore>.new()
+        for index in 0..pending.length() {
+            loan read pending[index] as store {
+                if load_disjoint(function, scan, store.access, access) {
+                    output.push(PendingStore {
+                            access: store.access, instruction: store.instruction
+                        })
+                }
+            }
+        }
+        return move output
+    }
+}

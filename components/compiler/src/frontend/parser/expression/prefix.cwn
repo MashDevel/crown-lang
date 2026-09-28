@@ -1,0 +1,80 @@
+module frontend {
+    fn parser_move(parser: write Parser, start: Span) -> Expression {
+        let path = parser_path(parser)
+        let span = span_through(start, path.span)
+        return expression(ExpressionMove(move path), span)
+    }
+
+    fn parser_spawn(parser: write Parser, start: Span) -> Expression {
+        var configuration = Vec<Expression>.new()
+        if parser_at(parser, TokenLeftParen()) {
+            let arguments = parser_arguments(parser)
+            let {
+                values, end
+            } = move arguments
+            configuration = move values
+            if configuration.length() == 0 {
+                parser_report(parser, UnexpectedToken())
+            }
+        }
+        if parser_at(parser, TokenLeftBracket()) {
+            return parser_scoped_spawn(parser, start, move configuration)
+        }
+        if configuration.length() != 0 && configuration.length() != 2 {
+            parser_report(parser, UnexpectedToken())
+        }
+        parser_expect(parser, TokenMove())
+        let body = parser_block(parser)
+        let end = parser_previous_span(parser)
+        return expression(ExpressionSpawn(move configuration, move body), span_through(start, end))
+    }
+
+    fn parser_negate(parser: write Parser, start: Span, structs: bool) -> Expression {
+        let value = parser_postfix(parser, structs)
+        let span = span_through(start, value.span)
+        return expression(ExpressionNegate(Box.new(move value)), span)
+    }
+
+    fn parser_bitwise_not(parser: write Parser, start: Span, structs: bool) -> Expression {
+        let value = parser_postfix(parser, structs)
+        let span = span_through(start, value.span)
+        return expression(ExpressionBitwiseNot(Box.new(move value)), span)
+    }
+
+    fn parser_closure(parser: write Parser, start: Span) -> Expression {
+        let captures = parser_closure_captures(parser)
+        parser_expect(parser, TokenLeftParen())
+        var parameters = Vec<Name>.new()
+        while parser_at(parser, TokenRightParen()) == false && parser_at(parser, TokenEnd()) == false {
+            parameters.push(parser_identifier(parser))
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+        }
+        parser_expect(parser, TokenRightParen())
+        var body = parser_block(parser)
+        parser_function_tail(body)
+        let end = parser_previous_span(parser)
+        return expression(ExpressionClosure(move captures, move parameters, move body), span_through(start, end))
+    }
+    fn parser_prefix_primary(parser: write Parser, token: Token, structs: bool) -> Expression {
+        match read token.kind {
+            TokenUnsafe => {
+                return parser_unsafe_expression(parser, token.span)
+            }
+            TokenBang => {
+                return parser_boolean_not(parser, token.span, structs)
+            }
+            TokenMinus => {
+                return parser_negate(parser, token.span, structs)
+            }
+            TokenTilde => {
+                return parser_bitwise_not(parser, token.span, structs)
+            }
+            _ => {
+                parser_report(parser, UnexpectedToken())
+                return expression(ExpressionUnit(), token.span)
+            }
+        }
+    }
+}

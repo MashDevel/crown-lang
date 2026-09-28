@@ -1,0 +1,14 @@
+module sema {
+    fn scoped_thread_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() != 0 {
+            return None()
+        }
+        if name_is(checker.symbols.source, method, "started") {
+            return Some(empty_method(false, builtin_leaf(Bool())))
+        }
+        if name_is(checker.symbols.source, method, "join") {
+            return Some(empty_method(false, builtin_leaf(Unit())))
+        }
+        return None()
+    }
+}

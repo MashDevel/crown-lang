@@ -1,0 +1,152 @@
+module optimize {
+    fn range_relation(function: ir::Function, state: RangeProofState, query: RangeComparisonQuery) -> Option<bool> {
+        match read query.operator {
+            ir::CompareUnsignedGreaterEqual => {
+            }
+            _ => {
+                return None()
+            }
+        }
+        if range_minimum_contains(function, state, query.right, query.left, 0) {
+            return Some(true)
+        }
+        if range_addend_query(state, query) == false {
+            return None()
+        }
+        let left_query = RangeProofQuery {
+            block: query.block, value: state.binaries[query.left].left
+        }
+        let right_query = RangeProofQuery {
+            block: query.block, value: state.binaries[query.left].right
+        }
+        let left_value = match proof_value_range(function, state, left_query) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        let right_value = match proof_value_range(function, state, right_query) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        let value_type = match ir::function_value_type(function, query.left) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let full = match type_range(value_type) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        if left_value.maximum > 18446744073709551615 - right_value.maximum {
+            return None()
+        }
+        if left_value.maximum + right_value.maximum > full.maximum {
+            return None()
+        }
+        Some(true)
+    }
+
+    fn range_minimum_contains(function: ir::Function, state: RangeProofState, value: usize, bound: usize, depth: usize) -> bool {
+        if value == bound {
+            return true
+        }
+        if depth >= state.definitions.length() || value >= state.definitions.length() {
+            return false
+        }
+        var location_block: usize = 0
+        var location_instruction: usize = 0
+        loan read state.definitions[value] as location {
+            location_block = location.block;
+            location_instruction = location.instruction
+        }
+        if location_block >= function.blocks.length() {
+            return false
+        }
+        match read function.blocks[location_block].instructions[location_instruction].kind {
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                match range_minimum_values(function, state, condition, then_value, else_value) {
+                    None => {
+                        return false
+                    }
+                    Some(values) => {
+                        if range_minimum_contains(function, state, values.left, bound, depth + 1) {
+                            return true
+                        }
+                        return range_minimum_contains(function, state, values.right, bound, depth + 1)
+                    }
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    struct RangeValuePair {
+        left: usize
+        right: usize
+    }
+
+    fn range_minimum_values(function: ir::Function, state: RangeProofState, condition: usize, then_value: usize, else_value: usize) -> Option<RangeValuePair> {
+        if condition >= state.definitions.length() {
+            return None()
+        }
+        var location_block: usize = 0
+        var location_instruction: usize = 0
+        loan read state.definitions[condition] as location {
+            location_block = location.block;
+            location_instruction = location.instruction
+        }
+        if location_block >= function.blocks.length() {
+            return None()
+        }
+        match read function.blocks[location_block].instructions[location_instruction].kind {
+            ir::InstructionCompare(operator, left, right) => {
+                if range_selects_minimum(operator, left, right, then_value, else_value) {
+                    return Some(RangeValuePair {
+                            left: left, right: right
+                        })
+                }
+                return None()
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn range_addend_query(state: RangeProofState, query: RangeComparisonQuery) -> bool {
+        if query.left >= state.binaries.length() || state.binaries[query.left].present == false {
+            return false
+        }
+        match read state.binaries[query.left].operator {
+            ir::BinaryAdd => {
+            }
+            _ => {
+                return false
+            }
+        }
+        if query.right != state.binaries[query.left].left && query.right != state.binaries[query.left].right {
+            return false
+        }
+        true
+    }
+
+    fn range_selects_minimum(operator: ir::CompareOperator, left: usize, right: usize, then_value: usize, else_value: usize) -> bool {
+        let ascending = then_value == left && else_value == right
+        let descending = then_value == right && else_value == left
+        match read operator {
+            ir::CompareUnsignedLess => ascending
+            ir::CompareUnsignedLessEqual => ascending
+            ir::CompareUnsignedGreater => descending
+            ir::CompareUnsignedGreaterEqual => descending
+            _ => false
+        }
+    }
+}

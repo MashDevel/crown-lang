@@ -1,0 +1,28 @@
+module sema {
+    fn check_instance_spawns(checker: write Checker, instance: FunctionInstance) -> void {
+        for index in 0..checker.spawns.length() {
+            let owner = checker.spawns[index].function
+            if resource_owner_matches(owner, instance.function) {
+                check_spawn_instance(checker, index, instance.arguments)
+            }
+        }
+    }
+    fn check_resource_spawns(checker: write Checker, instance: ResourceExpansion) -> void {
+        for index in 0..checker.spawns.length() {
+            let owner = checker.spawns[index].resource_owner
+            if resource_owner_matches(owner, instance.symbol) {
+                check_spawn_instance(checker, index, instance.arguments)
+            }
+        }
+    }
+    fn check_spawn_instance(checker: write Checker, index: usize, arguments: Vec<Type>) -> void {
+        for capture in 0..checker.spawns[index].captures.length() {
+            let value = substitute(checker.spawns[index].captures[capture].value_type, arguments)
+            var visiting = Vec<usize>.new()
+            if type_transferable(checker.symbols, value, visiting) == false {
+                checker.current_span = checker.spawns[index].span
+                checker_error(checker, "spawn requires transferable owned captures")
+            }
+        }
+    }
+}

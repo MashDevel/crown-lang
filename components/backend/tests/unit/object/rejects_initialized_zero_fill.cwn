@@ -1,0 +1,36 @@
+fn main() -> u32 {
+    var object = object::new()
+    var bytes = Vec<u8>.new()
+    bytes.push(1)
+    match object::add_section(object, object::Section {
+            name: ".bss"
+            kind: object::SectionZeroFill()
+            alignment: 8
+            data: move bytes
+            memory_size: 8
+        }) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    match object::finish_relocatable(move object) {
+        Ok(value) => {
+            value;
+            return 2
+        }
+        Err(error) => {
+            match read error.kind {
+                object::ErrorZeroFillContainsData => {
+                    return 42
+                }
+                _ => {
+                    return 3
+                }
+            }
+        }
+    }
+}

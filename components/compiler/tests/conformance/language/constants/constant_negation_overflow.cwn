@@ -1,0 +1,5 @@
+const MIN: i8 = -128
+const BAD: i8 = -MIN
+fn main() -> u32 {
+    0
+}

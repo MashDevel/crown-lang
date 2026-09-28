@@ -1,0 +1,156 @@
+module optimize {
+    struct StrengthRewrite {
+        block: usize
+        instruction: usize
+        operator: ir::BinaryOperator
+        value: u64
+        value_type: ir::Type
+    }
+
+    fn strength(function: write ir::Function) -> usize {
+        let rewrites = find_strength_rewrites(function)
+        var index: usize = 0
+        while index < rewrites.length() {
+            loan read rewrites[index] as rewrite {
+                let constant = ir::ConstantInteger(rewrite.value)
+                let right = ir::function_constant(function, rewrite.value_type, constant)
+                apply_strength_rewrite(function, rewrite, right)
+            }
+            index = index + 1
+        }
+        return rewrites.length()
+    }
+
+    fn find_strength_rewrites(function: ir::Function) -> Vec<StrengthRewrite> {
+        var output = Vec<StrengthRewrite>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    match strength_rewrite(function, instruction, block, index) {
+                        Some(rewrite) => {
+                            output.push(move rewrite)
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn strength_rewrite(function: ir::Function, instruction: ir::Instruction, block: usize, index: usize) -> Option<StrengthRewrite> {
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                left
+                match strength_replacement(function, operator, right) {
+                    Some(replacement) => {
+                        match read instruction.result {
+                            Some(result) => {
+                                match ir::function_value_type(function, result) {
+                                    Some(value_type) => {
+                                        return Some(StrengthRewrite {
+                                                block: block
+                                                instruction: index
+                                                operator: strength_operator(operator)
+                                                value: replacement
+                                                value_type: value_type
+                                            })
+                                    }
+                                    None => {
+                                        return None()
+                                    }
+                                }
+                            }
+                            None => {
+                                return None()
+                            }
+                        }
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn strength_replacement(function: ir::Function, operator: ir::BinaryOperator, right: usize) -> Option<u64> {
+        match integer_constant(function, right) {
+            Some(divisor) => {
+                if divisor == 0 ||(divisor &(divisor - 1)) != 0 {
+                    return None()
+                }
+                match read operator {
+                    ir::BinaryUnsignedDivide => {
+                        return Some(u64.from(trailing_zeros(divisor)))
+                    }
+                    ir::BinaryUnsignedRemainder => {
+                        return Some(divisor - 1)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn strength_operator(operator: ir::BinaryOperator) -> ir::BinaryOperator {
+        match read operator {
+            ir::BinaryUnsignedDivide => {
+                return ir::BinaryShiftRightUnsigned()
+            }
+            ir::BinaryUnsignedRemainder => {
+                return ir::BinaryAnd()
+            }
+            _ => {
+                return operator
+            }
+        }
+    }
+
+    fn trailing_zeros(value: u64) -> u32 {
+        var output: u32 = 0
+        var remaining = value
+        while (remaining & 1) == 0 {
+            output = output + 1
+            remaining = remaining >> 1
+        }
+        return output
+    }
+
+    fn apply_strength_rewrite(function: write ir::Function, rewrite: StrengthRewrite, right: usize) -> void {
+        var left: Option<usize> = None()
+        match read function.blocks[rewrite.block].instructions[rewrite.instruction].kind {
+            ir::InstructionBinary(operator, value, old_right) => {
+                operator;
+                old_right;
+                left = Some(value)
+            }
+            _ => {
+            }
+        }
+        match left {
+            Some(value) => {
+                function.blocks[rewrite.block].instructions[rewrite.instruction].kind = ir::InstructionBinary(
+                    rewrite.operator,
+                    value,
+                    right
+                )
+            }
+            None => {
+            }
+        }
+    }
+}

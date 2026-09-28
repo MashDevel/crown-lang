@@ -1,0 +1,203 @@
+module sema {
+    fn capture_expression(checker: Checker, scan: write CaptureScan, expression: frontend::Expression) -> void {
+        capture_expression_kind(checker, scan, expression.kind)
+    }
+
+    fn capture_expression_kind(checker: Checker, scan: write CaptureScan, kind: frontend::ExpressionKind) -> void {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                capture_path(checker, scan, path)
+            }
+            frontend::ExpressionMove(path) => {
+                capture_path(checker, scan, path)
+            }
+            frontend::ExpressionCall(name, arguments) => {
+                name;
+                capture_expressions(checker, scan, arguments)
+            }
+            frontend::ExpressionStaticCall(value_type, name, arguments) => {
+                value_type;
+                name;
+                capture_expressions(checker, scan, arguments)
+            }
+            frontend::ExpressionMethodCall(receiver, name, arguments) => {
+                name
+                loan read receiver as value {
+                    capture_expression(checker, scan, value)
+                }
+                capture_expressions(checker, scan, arguments)
+            }
+            frontend::ExpressionStruct(value_type, fields) => {
+                value_type;
+                capture_fields(checker, scan, fields)
+            }
+            _ => capture_operand_expression(checker, scan, kind)
+        }
+    }
+
+    fn capture_slice(checker: Checker, scan: write CaptureScan, kind: frontend::ExpressionKind) -> void {
+        match read kind {
+            frontend::ExpressionSlice(target, start, end) => {
+                loan read target as value {
+                    capture_expression(checker, scan, value)
+                }
+                loan read start as value {
+                    capture_expression(checker, scan, value)
+                }
+                loan read end as value {
+                    capture_expression(checker, scan, value)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn capture_closure(checker: Checker, scan: write CaptureScan, kind: frontend::ExpressionKind) -> void {
+        match read kind {
+            frontend::ExpressionClosure(captures, parameters, body) => {
+                for index in 0..captures.length() {
+                    capture_name(checker, scan, captures[index].name)
+                }
+                let length = scan.locals.length()
+                var index: usize = 0
+                while index < parameters.length() {
+                    loan read parameters[index] as name {
+                        capture_local(scan, name)
+                    }
+                    index = index + 1
+                }
+                capture_statements(checker, scan, body)
+                capture_scope_end(scan, length)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn capture_path(checker: Checker, scan: write CaptureScan, path: frontend::Path) -> void {
+        if path.segments.length() > 0 {
+            loan read path.segments[0] as name {
+                capture_name(checker, scan, name)
+            }
+        }
+    }
+
+    fn capture_expressions(checker: Checker, scan: write CaptureScan, values: Vec<frontend::Expression>) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                capture_expression(checker, scan, value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn capture_fields(checker: Checker, scan: write CaptureScan, values: Vec<frontend::FieldValue>) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                capture_expression(checker, scan, value.value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn capture_control_expression(checker: Checker, scan: write CaptureScan, kind: frontend::ExpressionKind) -> void {
+        match read kind {
+            frontend::ExpressionMatch(expression) => {
+                loan read expression as value {
+                    capture_match(checker, scan, value)
+                }
+            }
+            frontend::ExpressionUnsafe(body) => {
+                capture_block(checker, scan, body)
+            }
+            frontend::ExpressionConditional(conditional) => {
+                loan read conditional.condition as value {
+                    capture_expression(checker, scan, value)
+                }
+                capture_block(checker, scan, conditional.then_body)
+                capture_block(checker, scan, conditional.else_body)
+            }
+            frontend::ExpressionScopedSpawn(stack, captures, body) => {
+                capture_expressions(checker, scan, stack);
+                captures;
+                capture_statements(checker, scan, body)
+            }
+            frontend::ExpressionSpawn(configuration, body) => {
+                capture_expressions(checker, scan, configuration)
+                capture_statements(checker, scan, body)
+            }
+            frontend::ExpressionClosure(captures, parameters, body) => {
+                captures;
+                parameters;
+                body;
+                capture_closure(checker, scan, kind)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn capture_operand_expression(checker: Checker, scan: write CaptureScan, kind: frontend::ExpressionKind) -> void {
+        match read kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                operator
+                loan read left as value {
+                    capture_expression(checker, scan, value)
+                }
+                loan read right as value {
+                    capture_expression(checker, scan, value)
+                }
+            }
+            frontend::ExpressionTry(value) => {
+                loan read value as item {
+                    capture_expression(checker, scan, item)
+                }
+            }
+            frontend::ExpressionNegate(value) => {
+                loan read value as item {
+                    capture_expression(checker, scan, item)
+                }
+            }
+            frontend::ExpressionBitwiseNot(value) => {
+                loan read value as item {
+                    capture_expression(checker, scan, item)
+                }
+            }
+            frontend::ExpressionArrayRepeat(value, length) => {
+                length;
+                loan read value as item {
+                    capture_expression(checker, scan, item)
+                }
+            }
+            frontend::ExpressionArray(values) => {
+                capture_expressions(checker, scan, values)
+            }
+            frontend::ExpressionIndex(target, index) => {
+                loan read target as value {
+                    capture_expression(checker, scan, value)
+                }
+                loan read index as value {
+                    capture_expression(checker, scan, value)
+                }
+            }
+            frontend::ExpressionSlice(target, start, end) => {
+                target;
+                start;
+                end;
+                capture_slice(checker, scan, kind)
+            }
+            frontend::ExpressionField(target, name) => {
+                name;
+                loan read target as value {
+                    capture_expression(checker, scan, value)
+                }
+            }
+            _ => {
+                capture_control_expression(checker, scan, kind)
+            }
+        }
+    }
+}

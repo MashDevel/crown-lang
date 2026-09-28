@@ -1,0 +1,2 @@
+fn invalid(fixed: i32, ...value: i32) -> i32 { return fixed + value }
+fn main() -> u32 { return 0 }

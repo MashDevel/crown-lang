@@ -1,0 +1,111 @@
+module optimize {
+    fn promotion_facts(function: ir::Function, slot: usize) -> PromotionFacts {
+        var used = Vec<bool>.with_capacity(function.blocks.length())
+        var defines = Vec<bool>.with_capacity(function.blocks.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            let facts = promotion_block_facts(function.blocks[block], slot)
+            used.push(facts.used)
+            defines.push(facts.defines)
+            block = block + 1
+        }
+        PromotionFacts {
+            used_before_definition: move used
+            defines: move defines
+            live_in: false_values(function.blocks.length())
+            live_out: false_values(function.blocks.length())
+        }
+    }
+
+    copy struct PromotionBlockFacts {
+        used: bool, defines: bool
+    }
+
+    fn promotion_block_facts(block: ir::BasicBlock, slot: usize) -> PromotionBlockFacts {
+        var facts = PromotionBlockFacts {
+            used: false, defines: false
+        }
+        var index: usize = 0
+        while index < block.instructions.length() {
+            promotion_instruction_facts(block.instructions[index].kind, slot, facts)
+            index = index + 1
+        }
+        facts
+    }
+
+    fn solve_promotion_liveness(function: ir::Function, facts: write PromotionFacts) -> void {
+        var changed = true
+        while changed {
+            changed = false
+            var cursor = function.blocks.length()
+            while cursor > 0 {
+                let index = cursor - 1
+                let live_out = successor_live_in(function, facts, index)
+                let live_in = facts.used_before_definition[index] || live_out && facts.defines[index] == false
+                if live_in != facts.live_in[index] || live_out != facts.live_out[index] {
+                    changed = true
+                }
+                facts.live_in[index] = live_in
+                facts.live_out[index] = live_out
+                cursor = cursor - 1
+            }
+        }
+    }
+
+    fn successor_live_in(function: ir::Function, facts: PromotionFacts, block: usize) -> bool {
+        match read function.blocks[block].terminator {
+            Some(terminator) => {
+                let targets = ir::terminator_targets(terminator)
+                var index: usize = 0
+                while index < targets.length() {
+                    if facts.live_in[targets[index]] {
+                        return true
+                    }
+                    index = index + 1
+                }
+            }
+            None => {
+            }
+        }
+        return false
+    }
+
+    fn false_values(length: usize) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(false);
+            index = index + 1
+        }
+        return move output
+    }
+    fn promotion_instruction_facts(kind: ir::InstructionKind, slot: usize, facts: write PromotionBlockFacts) -> void {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        if address == slot && facts.defines == false {
+                            facts.used = true
+                        }
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        value;
+                        alignment;
+                        volatile
+                        if address == slot {
+                            facts.defines = true
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+}

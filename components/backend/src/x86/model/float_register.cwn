@@ -1,0 +1,105 @@
+module x86 {
+    copy struct FloatRegister {
+        code: u8
+    }
+
+    fn Xmm0() -> FloatRegister {
+        FloatRegister {
+            code: 0
+        }
+    }
+
+    fn Xmm1() -> FloatRegister {
+        FloatRegister {
+            code: 1
+        }
+    }
+
+    fn Xmm2() -> FloatRegister {
+        FloatRegister {
+            code: 2
+        }
+    }
+
+    fn Xmm3() -> FloatRegister {
+        FloatRegister {
+            code: 3
+        }
+    }
+
+    fn Xmm4() -> FloatRegister {
+        FloatRegister {
+            code: 4
+        }
+    }
+
+    fn Xmm5() -> FloatRegister {
+        FloatRegister {
+            code: 5
+        }
+    }
+
+    fn Xmm6() -> FloatRegister {
+        FloatRegister {
+            code: 6
+        }
+    }
+
+    fn Xmm7() -> FloatRegister {
+        FloatRegister {
+            code: 7
+        }
+    }
+
+    fn Xmm8() -> FloatRegister {
+        FloatRegister {
+            code: 8
+        }
+    }
+
+    fn Xmm9() -> FloatRegister {
+        FloatRegister {
+            code: 9
+        }
+    }
+
+    fn Xmm10() -> FloatRegister {
+        FloatRegister {
+            code: 10
+        }
+    }
+
+    fn Xmm11() -> FloatRegister {
+        FloatRegister {
+            code: 11
+        }
+    }
+
+    fn Xmm12() -> FloatRegister {
+        FloatRegister {
+            code: 12
+        }
+    }
+
+    fn Xmm13() -> FloatRegister {
+        FloatRegister {
+            code: 13
+        }
+    }
+
+    fn Xmm14() -> FloatRegister {
+        FloatRegister {
+            code: 14
+        }
+    }
+
+    fn Xmm15() -> FloatRegister {
+        FloatRegister {
+            code: 15
+        }
+    }
+
+    fn float_register_code(register: FloatRegister) -> u8 {
+        register.code
+    }
+}

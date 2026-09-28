@@ -1,0 +1,13 @@
+enum Item {
+    Value(u32)
+}
+fn inspect(item: read Item) -> u32 {
+    match write item {
+        Value(value) => {
+            return value
+        }
+    }
+}
+fn main() -> u32 {
+    return 0
+}

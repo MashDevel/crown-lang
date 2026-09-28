@@ -1,0 +1,72 @@
+module frontend {
+    struct CaptureFailure {
+        span: Span, message: Text
+    }
+    struct SourceCapture {
+        source: Shared<Vec<u8>>, files: Vec<SourceBundleFile>, base: usize,
+        generated: Vec<u8>, errors: Vec<CaptureFailure>
+    }
+    fn capture_name(text: take Text, span: Span) -> Name {
+        return Name {
+            text: move text, span: span
+        }
+    }
+    fn capture_type(text: take Text, span: Span) -> TypeRef {
+        return TypeRef {
+            kind: TypeNamed(capture_name(move text, span), Vec<TypeRef>.new()), span: span
+        }
+    }
+    fn source_site_declaration(span: Span) -> StructDecl {
+        var fields = Vec<Field>.new()
+        fields.push(capture_field("file", "Text", span))
+        fields.push(capture_field("line", "usize", span))
+        fields.push(capture_field("column", "usize", span))
+        fields.push(capture_field("expression", "Text", span))
+        return StructDecl {
+            view_value: false, name: capture_name("SourceSite", span), copy_value: false,
+            parameters: Vec<Name>.new(), fields: move fields, span: span
+        }
+    }
+    fn capture_field(name: take Text, value_type: take Text, span: Span) -> Field {
+        return Field {
+            private_value: false, name: capture_name(move name, span), value_type: capture_type(move value_type, span), span: span
+        }
+    }
+    fn source_capture_expand(bundle: write SourceBundle, program: write Program) -> bool {
+        var files = Vec<SourceBundleFile>.new()
+        for index in 0..bundle.files.length() {
+            files.push(SourceBundleFile {
+                    path: bundle.files[index].path.clone(), start: bundle.files[index].start, end: bundle.files[index].end
+                })
+        }
+        var context = SourceCapture {
+            source: bundle.source.share(), files: move files, base: bundle.length,
+            generated: Vec<u8>.new(), errors: Vec<CaptureFailure>.new()
+        }
+        capture_program(context, program)
+        for index in 0..context.errors.length() {
+            print_diagnostic(bundle, context.errors[index].span, context.errors[index].message)
+        }
+        if context.errors.length() != 0 {
+            return false
+        }
+        let span = Span {
+            source: 0, start: 0, end: 0, line: 1, column: 1
+        }
+        program.structs.push(source_site_declaration(span))
+        if context.generated.length() != 0 {
+            var bytes = Vec<u8>.new()
+            loan read bundle.source as original {
+                loan read original as view {
+                    std::bytes::append(bytes, view)
+                }
+            }
+            loan read context.generated as generated {
+                std::bytes::append(bytes, generated)
+            }
+            bundle.length = bytes.length()
+            bundle.source = Shared.new(move bytes)
+        }
+        return true
+    }
+}

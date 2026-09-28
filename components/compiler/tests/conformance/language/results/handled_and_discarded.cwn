@@ -1,0 +1,50 @@
+resource Guard {
+    count: Shared<Mutex<u32>>
+    drop {
+        count.lock write as value {
+            value = value + 1
+        }
+    }
+}
+
+fn success(count: Shared<Mutex<u32>>) -> Result<Guard, u32> {
+    return Ok(Guard {
+            count: count.share()
+        })
+}
+
+fn propagate() -> Result<u32, u32> {
+    return Err(7)
+}
+fn forwarded() -> Result<u32, u32> {
+    return Ok(propagate()?)
+}
+
+fn main() -> u32 {
+    let count = Shared.new(Mutex.new(u32.from(0)))
+    std::discard(success(count))
+    count.lock write as value {
+        if value != 1 {
+            return 1
+        }
+    }
+    match forwarded() {
+        Ok(value) => {
+            value;
+            return 2
+        }
+        Err(error) => {
+            if error != 7 {
+                return 3
+            }
+        }
+    }
+    let owned = success(count)
+    std::discard(move owned)
+    count.lock write as value {
+        if value != 2 {
+            return 4
+        }
+    }
+    return 0
+}

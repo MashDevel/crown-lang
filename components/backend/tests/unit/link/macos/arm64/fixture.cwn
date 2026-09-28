@@ -1,0 +1,33 @@
+fn arm_macho_fixture() -> Result<object::CompilerObject, Text> {
+    var output = object::new()
+    output.architecture = object::ArchitectureArm64()
+    var compiler = arm64::runtime_compiler(0)
+    arm64::immediate(compiler, 0, 42)
+    arm64::emit(compiler, 3596551104)
+    arm64::runtime_export(output, compiler, "main")?
+    output.entry = Some(0)
+    return Ok(move output)
+}
+fn arm_macho_import() -> Result<object::CompilerObject, Text> {
+    var output = object::new()
+    output.architecture = object::ArchitectureArm64()
+    var compiler = arm64::runtime_compiler(0)
+    arm64::immediate(compiler, 0, 42)
+    arm64::call_symbol(compiler, "exit")
+    arm64::emit(compiler, 3558866944)
+    arm64::runtime_export(output, compiler, "main")?
+    output.entry = link_object::existing_symbol(output, "main")
+    return Ok(move output)
+}
+fn arm_macho_address() -> Result<object::CompilerObject, Text> {
+    var output = object::new()
+    output.architecture = object::ArchitectureArm64()
+    arm64::runtime_data(output, "answer", std::bytes::filled(8, 42), object::SectionData())
+    var compiler = arm64::runtime_compiler(0)
+    arm64::symbol_address(compiler, "answer", 9)
+    arm64::emit_encoding(compiler, arm64::memory_word(0, 9, 0, 1, true))
+    arm64::emit(compiler, 3596551104)
+    arm64::runtime_export(output, compiler, "main")?
+    output.entry = link_object::existing_symbol(output, "main")
+    return Ok(move output)
+}

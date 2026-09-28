@@ -1,0 +1,35 @@
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+fn named<T>() -> fn(take T) -> T {
+    return identity
+}
+fn anonymous<T>() -> fn(take T) -> T {
+    return fn(value) {
+        return move value
+    }
+}
+fn apply<T>(value: take T, action: scoped fn(take T) -> T) -> T {
+    return action(move value)
+}
+
+fn main() -> u32 {
+    let first: fn(take u32) -> u32 = named()
+    let second: fn(take Text) -> Text = named()
+    let third: fn(take u32) -> u32 = anonymous()
+    let fourth: fn(take Text) -> Text = anonymous()
+    if first(12) + third(30) != 42 {
+        return 1
+    }
+    let left = second("hello")
+    let right = fourth("world")
+    if left.length() != 5 || right.length() != 5 {
+        return 2
+    }
+    let number: u64 = apply(u64.from(42), identity)
+    let decimal: f64 = apply(f64.from(42), identity)
+    if number != 42 || decimal != f64.from(42) {
+        return 3
+    }
+    return 0
+}

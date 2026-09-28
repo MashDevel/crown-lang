@@ -1,0 +1,21 @@
+module toolchain {
+    const SPAWN_ACTION_WORDS: usize = 1
+    const SPAWN_ATTRIBUTE_WORDS: usize = 1
+    const OUTPUT_OPEN_FLAGS: i32 = 1537
+    const LOCK_OPEN_FLAGS: i32 = 514
+    const MONOTONIC_CLOCK: i32 = 6
+
+    extern "c" {
+        fn raw_mkdir(path: RawPtr<u8>, mode: u16) -> i32 = "mkdir"
+        fn raw_chmod(path: RawPtr<u8>, mode: u16) -> i32 = "chmod"
+        fn raw_open(path: RawPtr<u8>, flags: i32, mode: u16) -> i32 = "open"
+        fn raw_actions_open(actions: RawPtr<RawPtr<u8>>, descriptor: i32, path: RawPtr<u8>, flags: i32, mode: u16) -> i32 = "posix_spawn_file_actions_addopen"
+        fn raw_environment() -> RawPtr<RawPtr<RawPtr<u8>>> = "_NSGetEnviron"
+    }
+
+    unsafe fn process_environment() -> RawPtr<RawPtr<u8>> {
+        unsafe {
+            return raw_environment().read()
+        }
+    }
+}

@@ -1,0 +1,105 @@
+module x86 {
+    copy struct Register {
+        code: u8
+    }
+
+    fn Rax() -> Register {
+        Register {
+            code: 0
+        }
+    }
+
+    fn Rcx() -> Register {
+        Register {
+            code: 1
+        }
+    }
+
+    fn Rdx() -> Register {
+        Register {
+            code: 2
+        }
+    }
+
+    fn Rbx() -> Register {
+        Register {
+            code: 3
+        }
+    }
+
+    fn Rsp() -> Register {
+        Register {
+            code: 4
+        }
+    }
+
+    fn Rbp() -> Register {
+        Register {
+            code: 5
+        }
+    }
+
+    fn Rsi() -> Register {
+        Register {
+            code: 6
+        }
+    }
+
+    fn Rdi() -> Register {
+        Register {
+            code: 7
+        }
+    }
+
+    fn R8() -> Register {
+        Register {
+            code: 8
+        }
+    }
+
+    fn R9() -> Register {
+        Register {
+            code: 9
+        }
+    }
+
+    fn R10() -> Register {
+        Register {
+            code: 10
+        }
+    }
+
+    fn R11() -> Register {
+        Register {
+            code: 11
+        }
+    }
+
+    fn R12() -> Register {
+        Register {
+            code: 12
+        }
+    }
+
+    fn R13() -> Register {
+        Register {
+            code: 13
+        }
+    }
+
+    fn R14() -> Register {
+        Register {
+            code: 14
+        }
+    }
+
+    fn R15() -> Register {
+        Register {
+            code: 15
+        }
+    }
+
+    fn register_code(register: Register) -> u8 {
+        register.code
+    }
+}

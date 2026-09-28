@@ -1,0 +1,90 @@
+module lowering {
+    fn match_arm(compiler: write FunctionCompiler, analysis: sema::Analysis, arm: frontend::MatchArm) -> Result<void, u32> {
+        coverage_arm(compiler, arm.span)?
+        bind_match_arm(compiler, analysis, arm)?
+        match_arm_contents(compiler, analysis, arm.body)?
+        return function_pop_scope(compiler)
+    }
+
+    fn bind_match_arm(compiler: write FunctionCompiler, analysis: sema::Analysis, arm: frontend::MatchArm) -> Result<void, u32> {
+        let fields = match_fields(compiler, analysis, arm)?
+        if fields.length() != arm.pattern.bindings.length() {
+            return Err(213)
+        }
+        function_push_scope(compiler)
+        bind_match_source(compiler, arm)?
+        return bind_match_fields(compiler, analysis, arm, fields)
+    }
+
+    fn bind_match_fields(compiler: write FunctionCompiler, analysis: sema::Analysis, arm: frontend::MatchArm, fields: Vec<FieldLayout>) -> Result<void, u32> {
+        let flow = compiler.matches.length() - 1
+        var borrowed = false
+        match read compiler.matches[flow].access {
+            Some(mode) => {
+                mode;
+                borrowed = true
+            }
+            None => {
+            }
+        }
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as field {
+                let source = function_offset(compiler, compiler.matches[flow].address, field.offset)?
+                let target = match_field_target(compiler, analysis.checker.symbols, field, source, borrowed)?
+                loan read arm.pattern.bindings[index] as name {
+                    function_add_binding(compiler, Binding {
+                            name: frontend::name_copy(name), value_type: sema::type_copy(field.value_type), address: target, owned: borrowed == false, available: true, depth: compiler.scope_depth
+                        })
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn match_field_target(compiler: write FunctionCompiler, symbols: sema::Symbols, field: FieldLayout, source: usize, borrowed: bool) -> Result<usize, u32> {
+        if borrowed {
+            return Ok(source)
+        }
+        let target = function_stack(compiler, symbols, field.value_type)?
+        let value = AddressValue(source, sema::type_copy(field.value_type))
+        let transfer = CopyRequest {
+            destination: target, value: move value
+        }
+        function_copy(compiler, symbols, transfer)?
+        return Ok(target)
+    }
+
+    fn match_fields(compiler: FunctionCompiler, analysis: sema::Analysis, arm: frontend::MatchArm) -> Result<Vec<FieldLayout>, u32> {
+        let flow = compiler.matches.length() - 1
+        var fields = Vec<FieldLayout>.new()
+        if sema::type_is_integer(compiler.matches[flow].value_type) == false {
+            match read arm.pattern.choices[0] {
+                frontend::PatternVariant(name) => {
+                    loan read compiler.matches[flow] as current {
+                        let layout = layout_variant(analysis.checker.symbols, current.value_type, name)?
+                        fields = field_layouts_copy(layout.fields)
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+        return Ok(move fields)
+    }
+
+    fn field_layouts_copy(values: Vec<FieldLayout>) -> Vec<FieldLayout> {
+        var output = Vec<FieldLayout>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(FieldLayout {
+                        offset: value.offset, value_type: sema::type_copy(value.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

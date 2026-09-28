@@ -1,0 +1,31 @@
+struct Owner {
+    name: Text
+}
+fn validate(owner: read Owner) -> Result<void, u32> {
+    owner
+    return Ok(())
+}
+fn finish(owner: take Owner) -> Result<Owner, u32> {
+    match validate(owner) {
+        Err(error) => {
+            return Err(error)
+        }
+        Ok(value) => {
+            value;
+            return Ok(move owner)
+        }
+    }
+}
+fn main() -> u32 {
+    match finish(Owner {
+            name: "valid"
+        }) {
+        Ok(owner) => {
+            owner;
+            return 42
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}

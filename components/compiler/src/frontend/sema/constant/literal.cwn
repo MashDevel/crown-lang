@@ -1,0 +1,70 @@
+module sema {
+    fn constant_literal(symbols: Symbols, context: ConstantContext, expression: frontend::Expression) -> Result<ConstantScalar, Text> {
+        let builtin = constant_expression_builtin(context, expression.span)?
+        return constant_literal_kind(symbols, builtin, expression.kind)
+    }
+
+    fn constant_literal_kind(symbols: Symbols, builtin: Builtin, kind: frontend::ExpressionKind) -> Result<ConstantScalar, Text> {
+        var bits: u64 = 0
+        match read kind {
+            frontend::ExpressionInteger(value) => {
+                bits = value
+            }
+            frontend::ExpressionBoolean(value) => {
+                return Ok(constant_boolean(value))
+            }
+            frontend::ExpressionFloat(span) => {
+                if builtin == F32() {
+                    bits = u64.from(frontend::float32_bits(symbols.source, span))
+                }
+                else {
+                    bits = frontend::float64_bits(symbols.source, span)
+                }
+            }
+            frontend::ExpressionCharacter(span) => {
+                match frontend::character_scalar(symbols.source, span) {
+                    Some(value) => {
+                        bits = u64.from(value)
+                    }
+                    None => {
+                        return Err("invalid constant character")
+                    }
+                }
+            }
+            _ => {
+                return Err("constant expression requires literals, constants, or scalar operators")
+            }
+        }
+        return Ok(ConstantScalar {
+                builtin: builtin, bits: bits
+            })
+    }
+
+    fn constant_negate(symbols: write Symbols, context: ConstantContext, expression: frontend::Expression) -> Result<ConstantScalar, Text> {
+        let scalar = constant_expression(symbols, context, expression)?
+        let builtin = scalar.builtin
+        if builtin == F32() {
+            return Ok(ConstantScalar {
+                    builtin: scalar.builtin, bits: scalar.bits ^ 0x8000_0000
+                })
+        }
+        if builtin == F64() {
+            return Ok(ConstantScalar {
+                    builtin: scalar.builtin, bits: scalar.bits ^ 0x8000_0000_0000_0000
+                })
+        }
+        match read expression.kind {
+            frontend::ExpressionInteger(value) => {
+                return constant_encode(ConstantMagnitude {
+                        negative: true, value: value
+                    }, scalar.builtin)
+            }
+            _ => {
+            }
+        }
+        let value = constant_magnitude(scalar)
+        return constant_encode(ConstantMagnitude {
+                negative: value.negative == false, value: value.value
+            }, scalar.builtin)
+    }
+}

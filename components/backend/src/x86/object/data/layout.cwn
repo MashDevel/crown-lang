@@ -1,0 +1,69 @@
+module x86 {
+    fn align_data_bytes(bytes: write Vec<u8>, alignment: u64, name: Text) -> Result<void, EncodeError> {
+        var target: u64 = 0
+        match align_data_size(u64.from(bytes.length()), alignment, name) {
+            Ok(value) => {
+                target = value
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+        while u64.from(bytes.length()) < target {
+            bytes.push(0)
+        }
+        return Ok(())
+    }
+
+    fn align_data_size(value: u64, alignment: u64, name: Text) -> Result<u64, EncodeError> {
+        if alignment == 0 ||(alignment &(alignment - 1)) != 0 {
+            return Err(named_error(InvalidDataAlignment(), name.clone()))
+        }
+        let mask = alignment - 1
+        if value > 18446744073709551615 - mask {
+            return Err(named_error(InvalidDataAlignment(), name.clone()))
+        }
+        return Ok((value + mask) & ~mask)
+    }
+
+    fn commit_data_symbols(program: Program, object: write object::CompilerObject, state: write ObjectState) -> Result<void, EncodeError> {
+        var index = state.pending_first
+        while index < state.pending.length() {
+            var data_index: usize = 0
+            var data_offset: u64 = 0
+            loan read state.pending[index] as pending {
+                data_index = pending.data
+                data_offset = pending.offset
+            }
+            loan read program.data[data_index] as data {
+                var binding = object::SymbolLocal()
+                if data.exported {
+                    binding = object::SymbolGlobal()
+                }
+                let symbol = object::Symbol {
+                    name: data.name.clone()
+                    kind: object::SymbolData()
+                    binding: move binding
+                    section: Some(state.active_section)
+                    offset: data_offset
+                    size: data.memory_size
+                }
+                match object::add_symbol(object, move symbol) {
+                    Ok(id) => {
+                        state.symbols.push(ObjectSymbolName {
+                                name: data.name.clone(), symbol: id
+                            })
+                        state.placements.push(DataPlacement {
+                                data: data_index, section: state.active_section, offset: data_offset
+                            })
+                    }
+                    Err(error) => {
+                        return Err(object_error(move error))
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

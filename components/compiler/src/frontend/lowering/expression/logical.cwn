@@ -1,0 +1,73 @@
+module lowering {
+    struct LogicalBranch {
+        right: usize
+        ready: usize
+        bypass: ir::PhiIncoming
+    }
+
+    fn logical_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                loan read left as first {
+                    loan read right as second {
+                        return lower_logical(compiler, analysis, first, operator, second)
+                    }
+                }
+            }
+            _ => {
+                return Err(108)
+            }
+        }
+    }
+
+    fn lower_logical(compiler: write FunctionCompiler, analysis: sema::Analysis, left: frontend::Expression, operator: frontend::BinaryOperator, right: frontend::Expression) -> Result<Value, u32> {
+        let condition = function_condition(compiler, analysis, left)?
+        let branch = logical_branch(compiler, condition, operator)?
+        function_select_block(compiler, branch.right)
+        let value = function_scalar_expression(compiler, analysis, right)?
+        let right_exit = match read compiler.block {
+            Some(block) => block
+            None => {
+                return Err(107)
+            }
+        }
+        function_finish(compiler, ir::TerminatorBranch(branch.ready))?
+        function_select_block(compiler, branch.ready)
+        var incoming = Vec<ir::PhiIncoming>.new()
+        incoming.push(ir::PhiIncoming {
+                block: branch.bypass.block, value: branch.bypass.value
+            })
+        incoming.push(ir::PhiIncoming {
+                block: right_exit, value: value
+            })
+        let result = function_append_value(compiler, ir::InstructionPhi(ir::TypeInteger(ir::IntegerWidth1()), move incoming))?
+        return Ok(ScalarValue(result, sema::builtin_leaf(sema::Bool())))
+    }
+
+    fn logical_branch(compiler: write FunctionCompiler, condition: usize, operator: frontend::BinaryOperator) -> Result<LogicalBranch, u32> {
+        let right = function_new_block(compiler)?
+        let bypass = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        var then_block = right
+        var else_block = bypass
+        var bypass_integer: u64 = 0
+        match read operator {
+            frontend::BinaryLogicalOr => {
+                then_block = bypass
+                else_block = right
+                bypass_integer = 1
+            }
+            _ => {
+            }
+        }
+        function_finish(compiler, ir::TerminatorConditional(condition, then_block, else_block))?
+        function_select_block(compiler, bypass)
+        let value = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth1()), bypass_integer)
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        return Ok(LogicalBranch {
+                right: right, ready: ready, bypass: ir::PhiIncoming {
+                    block: bypass, value: value
+                }
+            })
+    }
+}

@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let values = [1, 2]
+    return values[false]
+}

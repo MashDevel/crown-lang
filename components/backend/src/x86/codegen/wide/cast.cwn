@@ -1,0 +1,86 @@
+module x86 {
+    fn codegen_wide_cast(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        let result = codegen_wide_result(compiler, input.result)?
+        let source_wide = codegen_value_is_wide(program, compiler, input.value)
+        let target_wide = codegen_value_is_wide(program, compiler, result)
+        if codegen_float_cast(input.operator) {
+            return codegen_wide_float_cast(program, compiler, move input)
+        }
+        if source_wide && target_wide {
+            codegen_load_wide(program, compiler, WideValueAccess {
+                    value: input.value, registers: WideRegisters {
+                        low: Rax(), high: Rdx()
+                    }
+                })?
+            return codegen_store_wide(compiler, result, WideRegisters {
+                    low: Rax(), high: Rdx()
+                })
+        }
+        if source_wide {
+            return codegen_truncate_wide(program, compiler, move input)
+        }
+        if target_wide {
+            return codegen_extend_wide(program, compiler, move input)
+        }
+        return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+    }
+
+    fn codegen_truncate_wide(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        match read input.operator {
+            ir::CastTruncate => {
+            }
+            ir::CastBitcast => {
+            }
+            ir::CastIntegerToPointer => {
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+            }
+        }
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.value, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result, source: Rax()
+            })
+    }
+
+    fn codegen_extend_wide(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        match read input.operator {
+            ir::CastSignExtend => {
+                codegen_load_signed(program, compiler, ValueAccess {
+                        value: input.value, register: Rax()
+                    })?
+                codegen_emit(compiler, Move(Rdx(), Rax()))
+                codegen_emit(compiler, MoveImmediate(Rcx(), 63))
+                codegen_emit(compiler, ShiftRightArithmetic(Rdx()))
+            }
+            ir::CastZeroExtend => {
+                codegen_load_wide_zero_extension(program, compiler, input.value)?
+            }
+            ir::CastPointerToInteger => {
+                codegen_load_wide_zero_extension(program, compiler, input.value)?
+            }
+            ir::CastBitcast => {
+                codegen_load_wide_zero_extension(program, compiler, input.value)?
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+            }
+        }
+        let result = codegen_wide_result(compiler, input.result)?
+        return codegen_store_wide(compiler, result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_load_wide_zero_extension(program: ir::Program, compiler: write FunctionCompiler, value: usize) -> Result<void, CodegenError> {
+        codegen_load_value(program, compiler, ValueAccess {
+                value: value, register: Rax()
+            })?
+        codegen_emit(compiler, MoveImmediate(Rdx(), 0))
+        return Ok(())
+    }
+}

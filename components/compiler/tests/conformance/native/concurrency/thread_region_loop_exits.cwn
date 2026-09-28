@@ -1,0 +1,22 @@
+fn main() -> u32 {
+    var output: u32 = 0
+    for index in 0..2 {
+        thread_scope {
+            let child = spawn[write output] {
+                output = output + 1
+            }
+            if child.started() == false {
+                return 1
+            }
+            if index == 0 {
+                continue
+            }
+            break
+        }
+    }
+    return if output == 2 {
+        0
+    } else {
+        2
+    }
+}

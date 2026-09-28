@@ -1,0 +1,111 @@
+fn register_chain() -> Result<void, Text> {
+    var program = ir::program_new()
+    ir::program_add_function(program, chain_function(32, ir::TypeInteger(ir::IntegerWidth64())))
+    let compiler = arm64::compile_function(program, 0, arm64::AbiVariant::Aapcs64())?
+    arm64::finish_encoding(compiler)?
+    testing::expect(compiler.bytes.length() <= 256, "arithmetic directly consumes allocated registers")?
+    for index in 0..compiler.bytes.length() / 4 {
+        let word = u32.from(link_binary::number(compiler.bytes, index * 4, 4)?)
+        testing::expect(scratch_frame_access(word) == false, "scalar arithmetic intermediates stay in registers")?
+    }
+    return Ok(())
+}
+
+fn scratch_frame_access(word: u32) -> bool {
+    let base = (word >> 5) & 31
+    let register = word & 31
+    let opcode = word & 4290772992
+    let memory = opcode == 4177526784 || opcode == 4181721088
+    return memory && base == 28 &&(register == 9 || register == 10)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn register_pressure() -> Result<void, Text> {
+    let function = pressure_function(24)
+    let frame = arm64::frame_new(function)?
+    for index in 0..9 {
+        let register = arm64::frame_register(frame, index)
+        testing::expect(register == 19 + u32.from(index), "overlapping parameters occupy distinct preserved registers")?
+        testing::error(arm64::frame_value(frame, index))?
+        testing::expect(frame.saved[index] < frame.size, "every allocated preserved register has a save slot")?
+    }
+    spilled_parameters(frame)?
+    return testing::expect(arm64::frame_register(frame, 999) == arm64::REGISTER_SPILLED, "unknown values have no allocated register")
+}
+
+fn spilled_parameters(frame: arm64::Frame) -> Result<void, Text> {
+    for index in 9..24 {
+        let register = arm64::frame_register(frame, index)
+        testing::expect(register == arm64::REGISTER_SPILLED, "register pressure spills excess live values")?
+        testing::expect(arm64::frame_value(frame, index)? % 8 == 0, "spilled values retain aligned storage")?
+    }
+    return Ok(())
+}
+
+fn loop_registers() -> Result<void, Text> {
+    let function = rotating_function()
+    let frame = arm64::frame_new(function)?
+    let left = arm64::frame_register(frame, 5)
+    let right = arm64::frame_register(frame, 6)
+    testing::expect(left != arm64::REGISTER_SPILLED && right != arm64::REGISTER_SPILLED, "loop-carried values receive registers")?
+    testing::expect(left != right, "parallel phi inputs remain distinct")?
+    testing::expect(arm64::frame_copy(frame, 5)? != arm64::frame_copy(frame, 6)?, "phi cycles keep separate staging storage")?
+    let eligible = arm64::register_eligibility(function)
+    let liveness = ir::value_liveness(function, eligible)
+    let intervals = arm64::register_intervals(function, liveness)
+    testing::expect(intervals[0].first == 0 && intervals[0].last >= intervals[7].last, "loop-invariant parameter stays live over the backedge")?
+    return Ok(())
+}
+
+fn allocation_boundaries() -> Result<void, Text> {
+    let empty = ir::function_new("empty", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    let allocated = arm64::allocate_registers(empty)
+    testing::expect(allocated.length() == 0, "empty functions have no allocations")?
+    testing::expect(arm64::register_scalar(ir::TypeVoid()) == false, "void has no scalar register representation")?
+    testing::expect(arm64::register_scalar(ir::TypeInteger(ir::IntegerWidth128())) == false, "wide values retain their complete representation")?
+    let wide = arm64::frame_new(chain_function(8, ir::TypeInteger(ir::IntegerWidth128())))?
+    for index in 0..wide.values.length() {
+        testing::expect(arm64::frame_register(wide, index) == arm64::REGISTER_SPILLED, "wide arithmetic does not lose its high half")?
+    }
+    return Ok(())
+}
+
+fn spill_selection() -> Result<void, Text> {
+    let function = pressure_with_temporary()
+    let frame = arm64::frame_new(function)?
+    testing::expect(arm64::frame_register(frame, 8) == arm64::REGISTER_SPILLED, "short-lived temporaries displace longer-lived values when registers are full")?
+    testing::expect(arm64::frame_register(frame, function.values.length() - 2) == 27, "the temporary receives the released register")?
+    testing::expect(arm64::frame_value(frame, 8)? < frame.size, "displaced parameters retain a spill slot for their entire lifetime")?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    register_chain()?
+    register_pressure()?
+    spill_selection()?
+    loop_registers()?
+    aggregate_return_lifetime()?
+    allocation_boundaries()?
+    return malformed_graphs()
+}
+
+fn malformed_graphs() -> Result<void, Text> {
+    var function = chain_function(0, ir::TypeInteger(ir::IntegerWidth64()))
+    function.parameters[0] = 99
+    testing::error(arm64::frame_new(function))?
+    function.parameters[0] = 0
+    function.blocks[0].terminator = Some(ir::TerminatorBranch(99))
+    return testing::error(arm64::frame_new(function))
+}
+
+fn aggregate_return_lifetime() -> Result<void, Text> {
+    let function = aggregate_return_function()
+    let frame = arm64::frame_new(function)?
+    let pointer = arm64::frame_register(frame, 0)
+    let temporary = arm64::frame_register(frame, 2)
+    testing::expect(pointer != arm64::REGISTER_SPILLED, "the aggregate return address receives a register")?
+    return testing::expect(pointer != temporary, "aggregate return addresses remain live until the epilogue")
+}

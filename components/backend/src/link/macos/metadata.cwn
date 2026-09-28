@@ -1,0 +1,14 @@
+module macho {
+    struct MetadataLayout {
+        bindings: usize, exports: usize, strings: usize
+    }
+
+    fn metadata_layout(image: Image) -> MetadataLayout {
+        let bindings = link_binary::aligned(image.rebases.length(), 8)
+        let exports = link_binary::aligned(bindings + image.bindings.length(), 8)
+        let strings = link_binary::aligned(exports + image.exports.length(), 8)
+        return MetadataLayout {
+            bindings: bindings, exports: exports, strings: strings
+        }
+    }
+}

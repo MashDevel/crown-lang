@@ -1,0 +1,6 @@
+fn value() -> u8 {
+    return 256
+}
+fn main() -> u32 {
+    return 0
+}

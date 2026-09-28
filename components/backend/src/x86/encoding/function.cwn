@@ -1,0 +1,105 @@
+module x86 {
+    fn encode_function(program: Program, function: Function, offset: u64) -> Result<EncodedFunction, EncodeError> {
+        var labels = Vec<LabelOffset>.new()
+        match collect_labels(function) {
+            Ok(value) => {
+                labels = move value
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+        var encoder = EncodedFunction {
+            name: function.name.clone()
+            exported: function.exported
+            offset: offset
+            bytes: Vec<u8>.new()
+            calls: Vec<NamedReference>.new()
+            references: Vec<NamedReference>.new()
+            labels: move labels
+        }
+        var index: usize = 0
+        while index < function.instructions.length() {
+            loan read function.instructions[index] as instruction {
+                match encode_function_instruction(program, encoder, instruction) {
+                    Ok(value) => {
+                        value
+                    }
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(move encoder)
+    }
+
+    fn encode_function_instruction(program: Program, encoder: write EncodedFunction, instruction: Instruction) -> Result<void, EncodeError> {
+        match read instruction {
+            Label(name) => {
+                name;
+                return Ok(())
+            }
+            Call(name) => {
+                return encode_call(program, encoder, name)
+            }
+            LoadLabelAddress(register, name) => {
+                return encode_label_address(encoder, register, name)
+            }
+            LoadSymbolAddress(register, name) => {
+                return encode_symbol_address(program, encoder, SymbolAddressInput {
+                        register: register_code(register)
+                        name: name.clone()
+                    })
+            }
+            Jump(name) => {
+                return encode_jump(encoder, name)
+            }
+            JumpIf(condition, name) => {
+                return encode_conditional(encoder, condition, name)
+            }
+            JumpTableEntry(name) => {
+                return encode_jump(encoder, name)
+            }
+            _ => {
+                if encode_fixed(instruction, encoder.bytes) {
+                    return Ok(())
+                }
+                return Err(unsupported_error())
+            }
+        }
+    }
+
+    fn encode_call(program: Program, encoder: write EncodedFunction, name: Text) -> Result<void, EncodeError> {
+        if program_has_function(program, name) == false && program_has_import(program, name) == false {
+            return Err(named_error(UnknownFunction(), name.clone()))
+        }
+        encoder.bytes.push(232)
+        encoder.calls.push(NamedReference {
+                offset: u64.from(encoder.bytes.length()), name: name.clone(), indirect: false
+            })
+        emit_i32(encoder.bytes, 0)
+        return Ok(())
+    }
+
+    fn encode_symbol_address(program: Program, encoder: write EncodedFunction, input: take SymbolAddressInput) -> Result<void, EncodeError> {
+        if program_has_symbol(program, input.name) == false {
+            return Err(named_error(UnknownSymbol(), input.name.clone()))
+        }
+        let code = input.register
+        encoder.bytes.push(72 |((code >> 3) << 2))
+        let indirect = program_has_import(program, input.name)
+        encoder.bytes.push(if indirect {
+                139
+            } else {
+                141
+            })
+        encoder.bytes.push(((code & 7) << 3) | 5)
+        encoder.references.push(NamedReference {
+                offset: u64.from(encoder.bytes.length()), name: input.name.clone(), indirect: indirect
+            })
+        emit_i32(encoder.bytes, 0)
+        return Ok(())
+    }
+}

@@ -1,0 +1,34 @@
+module optimize {
+    fn cast_range(operator: ir::CastOperator, source: Range, target: ir::Type) -> Option<Range> {
+        match read operator {
+            ir::CastZeroExtend => {
+                return Some(range_copy(source))
+            }
+            _ => {
+            }
+        }
+        match type_range(target) {
+            None => {
+                return None()
+            }
+            Some(full) => {
+                match read operator {
+                    ir::CastBitcast => {
+                        return Some(Range {
+                                minimum: range_min(source.minimum, full.maximum)
+                                maximum: range_min(source.maximum, full.maximum)
+                            })
+                    }
+                    ir::CastTruncate => {
+                        if source.maximum <= full.maximum {
+                            return Some(range_copy(source))
+                        }
+                    }
+                    _ => {
+                    }
+                }
+                return Some(move full)
+            }
+        }
+    }
+}

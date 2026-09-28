@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let owner = NativeRoot<Text>.new("owned")
+    let duplicate = owner
+    duplicate
+    return 0
+}

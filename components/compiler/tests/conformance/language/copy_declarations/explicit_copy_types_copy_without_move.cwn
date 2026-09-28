@@ -1,0 +1,24 @@
+copy struct Point {
+    x: u32, y: u32
+}
+copy enum State {
+    Idle, Active(u32)
+}
+fn inspect(point: read Point) -> u32 {
+    return point.x + point.y
+}
+fn main() -> u32 {
+    let point = Point {
+        x: 20, y: 22
+    }
+    let duplicate = point
+    let state = Active(duplicate.x)
+    match state {
+        Active(value) => {
+            return inspect(point) + value - 20
+        }
+        Idle => {
+            return 0
+        }
+    }
+}

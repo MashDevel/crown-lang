@@ -1,0 +1,87 @@
+module optimize {
+    fn remap_program(program: write ir::Program, mapping: ProgramMapping) -> void {
+        var index: usize = 0
+        while index < program.functions.length() {
+            remap_function(program.functions[index], mapping)
+            index = index + 1
+        }
+        index = 0
+        while index < program.globals.length() {
+            remap_global(program.globals[index], mapping)
+            index = index + 1
+        }
+        match program.entry {
+            Some(entry) => {
+                program.entry = Some(mapping.functions[entry])
+            }
+            None => {
+            }
+        }
+    }
+
+    fn remap_function(function: write ir::Function, mapping: ProgramMapping) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                remap_instruction(function.blocks[block].instructions[index], mapping)
+                index = index + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn remap_instruction(instruction: write ir::Instruction, mapping: ProgramMapping) -> void {
+        match remap_reference(instruction.kind, mapping) {
+            Some(kind) => {
+                instruction.kind = move kind
+            }
+            None => {
+            }
+        }
+    }
+
+    fn remap_reference(kind: ir::InstructionKind, mapping: ProgramMapping) -> Option<ir::InstructionKind> {
+        match read kind {
+            ir::InstructionCall(function, arguments, result) => {
+                return Some(ir::InstructionCall(mapping.functions[function], ir::usize_values_copy(arguments), result))
+            }
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryFunctionAddress(function) => {
+                        return Some(ir::InstructionFunctionAddress(mapping.functions[function]))
+                    }
+                    ir::MemoryGlobalAddress(global) => {
+                        return Some(ir::InstructionGlobalAddress(mapping.globals[global]))
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn remap_global(global: write ir::Global, mapping: ProgramMapping) -> void {
+        var index: usize = 0
+        while index < global.references.length() {
+            global.references[index].target = remap_global_target(global.references[index].target, mapping)
+            index = index + 1
+        }
+    }
+
+    fn remap_global_target(target: ir::GlobalReferenceTarget, mapping: ProgramMapping) -> ir::GlobalReferenceTarget {
+        match read target {
+            ir::GlobalReferenceFunction(function) => {
+                return ir::GlobalReferenceFunction(mapping.functions[function])
+            }
+            ir::GlobalReferenceGlobal(value) => {
+                return ir::GlobalReferenceGlobal(mapping.globals[value])
+            }
+        }
+    }
+}

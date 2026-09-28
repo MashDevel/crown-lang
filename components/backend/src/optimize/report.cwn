@@ -1,0 +1,104 @@
+module optimize {
+    struct Report {
+        iterations: usize
+        constants_folded: usize
+        branches_simplified: usize
+        instructions_removed: usize
+        slots_promoted: usize
+        slots_scalarized: usize
+        phis_simplified: usize
+        blocks_removed: usize
+        blocks_merged: usize
+        strength_reduced: usize
+        calls_inlined: usize
+        comparisons_proven: usize
+        casts_simplified: usize
+        identities_simplified: usize
+        expressions_eliminated: usize
+        switches_formed: usize
+        selects_formed: usize
+        loads_eliminated: usize
+        instructions_hoisted: usize
+        branches_threaded: usize
+        loops_vectorized: usize
+        interprocedural_changes: usize
+        functions_specialized: usize
+    }
+
+    fn report_new() -> Report {
+        return Report {
+            iterations: 0
+            constants_folded: 0
+            branches_simplified: 0
+            instructions_removed: 0
+            slots_promoted: 0
+            slots_scalarized: 0
+            phis_simplified: 0
+            blocks_removed: 0
+            blocks_merged: 0
+            strength_reduced: 0
+            calls_inlined: 0
+            comparisons_proven: 0
+            casts_simplified: 0
+            identities_simplified: 0
+            expressions_eliminated: 0
+            switches_formed: 0
+            selects_formed: 0
+            loads_eliminated: 0
+            instructions_hoisted: 0
+            branches_threaded: 0
+            loops_vectorized: 0
+            interprocedural_changes: 0
+            functions_specialized: 0
+        }
+    }
+
+    fn report_changed(report: Report) -> bool {
+        if report_values_changed(report) {
+            return true
+        }
+        if report_flow_changed(report) {
+            return true
+        }
+        return report_memory_changed(report)
+    }
+
+    fn report_values_changed(report: Report) -> bool {
+        return report.constants_folded != 0 || report.instructions_removed != 0 || report.phis_simplified != 0 || report.strength_reduced != 0 || report.casts_simplified != 0 || report.identities_simplified != 0 || report.expressions_eliminated != 0
+    }
+
+    fn report_flow_changed(report: Report) -> bool {
+        return report.branches_simplified != 0 || report.blocks_removed != 0 || report.blocks_merged != 0 || report.comparisons_proven != 0 || report.switches_formed != 0 || report.selects_formed != 0 || report.branches_threaded != 0
+    }
+
+    fn report_memory_changed(report: Report) -> bool {
+        return report.slots_promoted != 0 || report.loads_eliminated != 0 || report.instructions_hoisted != 0
+    }
+
+    fn report_merge(report: write Report, value: Report) -> void {
+        if value.iterations > report.iterations {
+            report.iterations = value.iterations
+        }
+        report.constants_folded = report.constants_folded + value.constants_folded
+        report.branches_simplified = report.branches_simplified + value.branches_simplified
+        report.instructions_removed = report.instructions_removed + value.instructions_removed
+        report.slots_promoted = report.slots_promoted + value.slots_promoted
+        report.slots_scalarized = report.slots_scalarized + value.slots_scalarized
+        report.phis_simplified = report.phis_simplified + value.phis_simplified
+        report.blocks_removed = report.blocks_removed + value.blocks_removed
+        report.blocks_merged = report.blocks_merged + value.blocks_merged
+        report.strength_reduced = report.strength_reduced + value.strength_reduced
+        report.comparisons_proven = report.comparisons_proven + value.comparisons_proven
+        report.casts_simplified = report.casts_simplified + value.casts_simplified
+        report.identities_simplified = report.identities_simplified + value.identities_simplified
+        report.expressions_eliminated = report.expressions_eliminated + value.expressions_eliminated
+        report.switches_formed = report.switches_formed + value.switches_formed
+        report.selects_formed = report.selects_formed + value.selects_formed
+        report.loads_eliminated = report.loads_eliminated + value.loads_eliminated
+        report.instructions_hoisted = report.instructions_hoisted + value.instructions_hoisted
+        report.branches_threaded = report.branches_threaded + value.branches_threaded
+        report.loops_vectorized = report.loops_vectorized + value.loops_vectorized
+        report.interprocedural_changes = report.interprocedural_changes + value.interprocedural_changes
+        report.functions_specialized = report.functions_specialized + value.functions_specialized
+    }
+}

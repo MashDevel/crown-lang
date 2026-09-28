@@ -1,0 +1,46 @@
+module lowering {
+    fn integer_add(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        let result = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), operation.left, operation.right))?
+        var valid: usize = 0
+        if integer_is_signed(operation.value_type) {
+            let request = IntegerResult {
+                left: operation.left, right: operation.right, result: result, value_type: sema::type_copy(operation.value_type)
+            }
+            valid = integer_signed_add_valid(compiler, symbols, request)?
+        } else {
+            valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedGreaterEqual(), result, operation.left))?
+        }
+        function_guard_with(compiler, valid, "integer_overflow")?
+        return Ok(result)
+    }
+
+    fn integer_signed_add_valid(compiler: write FunctionCompiler, symbols: sema::Symbols, request: IntegerResult) -> Result<usize, u32> {
+        let left_changed = function_append_value(compiler, ir::InstructionBinary(ir::BinaryXor(), request.left, request.result))?
+        let right_changed = function_append_value(compiler, ir::InstructionBinary(ir::BinaryXor(), request.right, request.result))?
+        let overflow = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), left_changed, right_changed))?
+        let value_type = ir_type(symbols, request.value_type)?
+        let zero = function_integer(compiler, value_type, 0)
+        return function_append_value(compiler, ir::InstructionCompare(ir::CompareSignedGreaterEqual(), overflow, zero))
+    }
+
+    fn integer_subtract(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        let result = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), operation.left, operation.right))?
+        if integer_is_signed(operation.value_type) {
+            let request = IntegerResult {
+                left: operation.left, right: operation.right, result: result, value_type: sema::type_copy(operation.value_type)
+            }
+            let valid = integer_signed_subtract_valid(compiler, symbols, request)?
+            function_guard_with(compiler, valid, "integer_overflow")?
+        }
+        return Ok(result)
+    }
+
+    fn integer_signed_subtract_valid(compiler: write FunctionCompiler, symbols: sema::Symbols, request: IntegerResult) -> Result<usize, u32> {
+        let changed_inputs = function_append_value(compiler, ir::InstructionBinary(ir::BinaryXor(), request.left, request.right))?
+        let changed_result = function_append_value(compiler, ir::InstructionBinary(ir::BinaryXor(), request.left, request.result))?
+        let overflow = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), changed_inputs, changed_result))?
+        let value_type = ir_type(symbols, request.value_type)?
+        let zero = function_integer(compiler, value_type, 0)
+        return function_append_value(compiler, ir::InstructionCompare(ir::CompareSignedGreaterEqual(), overflow, zero))
+    }
+}

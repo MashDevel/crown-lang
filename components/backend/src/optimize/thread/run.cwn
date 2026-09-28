@@ -1,0 +1,89 @@
+module optimize {
+    fn thread(function: write ir::Function) -> usize {
+        var count: usize = 0
+        var active = true
+        while active {
+            match thread_find(function) {
+                None => {
+                    active = false
+                }
+                Some(plan) => {
+                    if thread_apply(function, move plan) {
+                        count = count + 1
+                    } else {
+                        active = false
+                    }
+                }
+            }
+        }
+        return count
+    }
+
+    fn thread_apply(function: write ir::Function, plan: take ThreadPlan) -> bool {
+        if plan.source >= function.blocks.length() {
+            return false
+        }
+        function.blocks[plan.source].terminator = Some(ir::terminator_copy(plan.terminator))
+        thread_remove_incoming(function, plan.through, plan.source)
+        var index: usize = 0
+        while index < plan.successors.length() {
+            loan read plan.successors[index] as successor {
+                thread_add_incoming(function, successor.block, plan.source, successor.values)
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn thread_remove_incoming(function: write ir::Function, block: usize, source: usize) -> void {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            loan write function.blocks[block].instructions[index].kind as kind {
+                match write kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        value_type;
+                        thread_filter_incoming(incoming, source)
+                    }
+                    _ => {
+                        return
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn thread_filter_incoming(values: write Vec<ir::PhiIncoming>, source: usize) -> void {
+        var output = Vec<ir::PhiIncoming>.new()
+        var index: usize = 0
+        while index < values.length() {
+            if values[index].block != source {
+                output.push(ir::PhiIncoming {
+                        block: values[index].block, value: values[index].value
+                    })
+            }
+            index = index + 1
+        }
+        values = move output
+    }
+
+    fn thread_add_incoming(function: write ir::Function, block: usize, source: usize, values: Vec<usize>) -> void {
+        var index: usize = 0
+        while index < values.length() && index < function.blocks[block].instructions.length() {
+            loan write function.blocks[block].instructions[index].kind as kind {
+                match write kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        value_type;
+                        incoming.push(ir::PhiIncoming {
+                                block: source, value: values[index]
+                            })
+                    }
+                    _ => {
+                        return
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+}

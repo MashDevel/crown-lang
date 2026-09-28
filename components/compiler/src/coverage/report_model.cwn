@@ -1,0 +1,87 @@
+module coverage {
+    copy struct Counts {
+        lines: usize, covered_lines: usize, branches: usize, covered_branches: usize
+    }
+    struct FileReport {
+        path: Text, lines: Vec<u8>, counts: Counts, missed_branches: Text
+    }
+    struct PackageReport {
+        path: Text, counts: Counts
+    }
+    struct Report {
+        files: Vec<FileReport>, packages: Vec<PackageReport>, counts: Counts, test_counts: Counts, runs: usize
+    }
+
+    fn counts() -> Counts {
+        return Counts {
+            lines: 0, covered_lines: 0, branches: 0, covered_branches: 0
+        }
+    }
+
+    fn sum(target: write Counts, value: Counts) -> void {
+        target.lines = target.lines + value.lines
+        target.covered_lines = target.covered_lines + value.covered_lines
+        target.branches = target.branches + value.branches
+        target.covered_branches = target.covered_branches + value.covered_branches
+    }
+
+    fn passes(value: Counts) -> bool {
+        return value.covered_lines * 100 >= value.lines * 95 && value.covered_branches * 100 >= value.branches * 95
+    }
+
+    fn file_index(files: write Vec<FileReport>, path: take Text) -> usize {
+        for index in 0..files.length() {
+            if std::text::equal(files[index].path, path) {
+                return index
+            }
+        }
+        let index = files.length()
+        files.push(FileReport {
+                path: move path, lines: Vec<u8>.new(), counts: counts(), missed_branches: ""
+            })
+        return index
+    }
+
+    fn test_source(path: Text) -> bool {
+        var directory = toolchain::parent_path(path)
+        while directory.length() > 1 {
+            let name = toolchain::file_name(directory)
+            if std::text::equal(name, "src") {
+                return false
+            }
+            if std::text::equal(name, "tests") {
+                return true
+            }
+            directory = toolchain::parent_path(directory)
+        }
+        return false
+    }
+
+    fn package_path(path: Text) -> Text {
+        var directory = toolchain::parent_path(path)
+        while directory.length() > 1 {
+            let name = toolchain::file_name(directory)
+            if std::text::equal(name, "src") || std::text::equal(name, "tests") {
+                return toolchain::parent_path(directory)
+            }
+            if toolchain::exists(toolchain::path_join(directory, "Crown.toml")) {
+                return move directory
+            }
+            directory = toolchain::parent_path(directory)
+        }
+        return toolchain::parent_path(path)
+    }
+
+    fn package_index(packages: write Vec<PackageReport>, path: take Text) -> usize {
+        for index in 0..packages.length() {
+            if std::text::equal(packages[index].path, path) {
+                return index
+            }
+        }
+        let index = packages.length()
+        packages.push(PackageReport {
+                path: move path, counts: counts()
+            })
+        return index
+    }
+}

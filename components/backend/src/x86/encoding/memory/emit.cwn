@@ -1,0 +1,97 @@
+module x86 {
+    fn emit_memory(output: write Vec<u8>, encoding: take RawMemoryEncoding) -> void {
+        match read encoding.prefix {
+            Some(prefix) => {
+                output.push(prefix)
+            }
+            None => {
+            }
+        }
+        if encoding.wide {
+            output.push(rex(encoding.register, 0, encoding.base))
+        } else {
+            output.push(rex_narrow(encoding.register, 0, encoding.base))
+        }
+        output.push(encoding.first_opcode)
+        match read encoding.second_opcode {
+            Some(opcode) => {
+                output.push(opcode)
+            }
+            None => {
+            }
+        }
+        let mode = displacement_mode(encoding.base, encoding.offset)
+        output.push(modrm(mode, encoding.register, encoding.base))
+        if encoding.base & 7 == 4 {
+            output.push(36)
+        }
+        emit_displacement(output, encoding.base, encoding.offset)
+    }
+
+    fn emit_indexed(output: write Vec<u8>, encoding: take RawIndexedEncoding) -> void {
+        match read encoding.prefix {
+            Some(prefix) => {
+                output.push(prefix)
+            }
+            None => {
+            }
+        }
+        let registers = normalize_index(encoding.base, encoding.index, encoding.scale)
+        let base = u8.from(registers & 255)
+        let index = u8.from((registers >> 8) & 255)
+        let scale = u8.from((registers >> 16) & 255)
+        if encoding.wide {
+            output.push(rex(encoding.register, index, base))
+        } else {
+            output.push(rex_narrow(encoding.register, index, base))
+        }
+        output.push(encoding.opcode)
+        let mode = displacement_mode(base, 0)
+        output.push(modrm(mode, encoding.register, 4))
+        output.push((scale_bits(scale) << 6) |((index & 7) << 3) |(base & 7))
+        emit_displacement(output, base, 0)
+    }
+
+    fn normalize_index(base: u8, index: u8, scale: u8) -> u32 {
+        if index & 7 == 4 && scale == 1 {
+            return u32.from(index) |(u32.from(base) << 8) |(1 << 16)
+        }
+        return u32.from(base) |(u32.from(index) << 8) |(u32.from(scale) << 16)
+    }
+
+    fn scale_bits(scale: u8) -> u8 {
+        if scale == 1 {
+            return 0
+        }
+        if scale == 2 {
+            return 1
+        }
+        if scale == 4 {
+            return 2
+        }
+        if scale == 8 {
+            return 3
+        }
+        return 0
+    }
+
+    fn displacement_mode(base: u8, offset: i32) -> u8 {
+        if offset == 0 && base & 7 != 5 {
+            return 0
+        }
+        if offset >= -128 && offset <= 127 {
+            return 1
+        }
+        return 2
+    }
+
+    fn emit_displacement(output: write Vec<u8>, base: u8, offset: i32) -> void {
+        let mode = displacement_mode(base, offset)
+        if mode == 1 {
+            emit_i8(output, i8.from(offset))
+        }
+        if mode == 2 {
+            emit_i32(output, offset)
+        }
+    }
+}

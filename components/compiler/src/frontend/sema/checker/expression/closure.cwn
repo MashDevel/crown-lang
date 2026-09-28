@@ -1,0 +1,180 @@
+module sema {
+    struct ClosureSignature {
+        parameters: Vec<ParameterType>
+        result: Type
+    }
+
+    struct ClosureExpectation {
+        signature: ClosureSignature, scoped: bool
+    }
+
+    struct CheckerSaved {
+        scopes: Vec<Scope>
+        place_loans: Vec<PlaceLoan>
+        thread_regions: Vec<ThreadRegion>
+        result: Type
+        unsafe_depth: usize
+        returns_allowed: bool
+        continuing: bool
+        loop_states: Vec<LoopState>
+    }
+
+    fn checker_closure(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match closure_signature(expected) {
+            None => {
+                checker_error(checker, "closure requires a known function type");
+                return None()
+            }
+            Some(signature) => {
+                let expectation = ClosureExpectation {
+                    signature: move signature, scoped: type_is_scoped_function(expected)
+                }
+                return checker_apply_closure(checker, kind, expectation)
+            }
+        }
+    }
+
+    fn closure_signature(expected: Type) -> Option<ClosureSignature> {
+        let callable = callable_type(expected)
+        match read callable {
+            FunctionType(parameters, result) => {
+                loan read result as value {
+                    return Some(ClosureSignature {
+                            parameters: parameter_types_copy(parameters), result: type_copy(value)
+                        })
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn checker_apply_closure(checker: write Checker, kind: frontend::ExpressionKind, expected: ClosureExpectation) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionClosure(captures, names, body) => {
+                if names.length() != expected.signature.parameters.length() {
+                    checker_error(checker, "closure parameter count does not match the expected function type");
+                    return None()
+                }
+                if captures.length() != 0 && expected.scoped == false {
+                    checker_error(checker, "capturing closures require a scoped callback parameter");
+                    return None()
+                }
+                let errors = checker.errors
+                let captured = checker_closure_captures(checker, captures)
+                if checker.errors != errors {
+                    return None()
+                }
+                let span = checker.current_span
+                let saved = checker_save(checker)
+                checker_begin_closure(checker, expected.signature)
+                checker_bind_captures(checker, captured)
+                checker_closure_parameters(checker, names, expected.signature.parameters)
+                checker_statements(checker, body)
+                let value_type = checker_closure_value(checker, expected)
+                checker_restore(checker, saved)
+                checker.closures.push(ClosureRecord {
+                        resource_owner: checker.current_resource
+                        span: span, value_type: type_copy(value_type), function: checker.current_function, captures: move captured
+                    })
+                return Some(closure_expression_info(move value_type, expected.scoped))
+            }
+            _ => {
+                checker_error(checker, "invalid closure expression");
+                return None()
+            }
+        }
+    }
+
+    fn checker_closure_value(checker: write Checker, expected: ClosureExpectation) -> Type {
+        if type_is_infer(checker.result) {
+            checker.result = builtin_leaf(Unit())
+        }
+        if type_is_unit(checker.result) == false && checker.continuing {
+            checker_error(checker, "closure must return a value on every path")
+        }
+        let value = FunctionType(parameter_types_copy(expected.signature.parameters), Box.new(type_copy(checker.result)))
+        if expected.scoped {
+            return ScopedFunction(Box.new(move value))
+        }
+        return move value
+    }
+
+    fn closure_expression_info(value: take Type, scoped: bool) -> ExpressionInfo {
+        if scoped {
+            return ExpressionInfo {
+                value_type: move value, value: BorrowedValue()
+            }
+        }
+        return copy_info(move value)
+    }
+
+    fn checker_begin_closure(checker: write Checker, signature: ClosureSignature) -> void {
+        checker.scopes = Vec<Scope>.new()
+        checker.place_loans = Vec<PlaceLoan>.new()
+        checker.thread_regions = Vec<ThreadRegion>.new()
+        checker_push_scope(checker)
+        checker.result = type_copy(signature.result)
+        checker.unsafe_depth = 0
+        checker.returns_allowed = true
+        checker.continuing = true
+        checker.loop_states = Vec<LoopState>.new()
+    }
+
+    fn checker_save(checker: Checker) -> CheckerSaved {
+        return CheckerSaved {
+            scopes: scopes_copy(checker.scopes)
+            place_loans: place_loans_copy(checker.place_loans)
+            thread_regions: thread_regions_copy(checker.thread_regions)
+            result: type_copy(checker.result)
+            unsafe_depth: checker.unsafe_depth
+            returns_allowed: checker.returns_allowed
+            continuing: checker.continuing
+            loop_states: loop_states_copy(checker.loop_states)
+        }
+    }
+
+    fn checker_restore(checker: write Checker, saved: CheckerSaved) -> void {
+        checker.scopes = scopes_copy(saved.scopes)
+        checker.place_loans = place_loans_copy(saved.place_loans)
+        checker.thread_regions = thread_regions_copy(saved.thread_regions)
+        checker.result = type_copy(saved.result)
+        checker.unsafe_depth = saved.unsafe_depth
+        checker.returns_allowed = saved.returns_allowed
+        checker.continuing = saved.continuing
+        checker.loop_states = loop_states_copy(saved.loop_states)
+    }
+
+    fn checker_closure_parameters(checker: write Checker, names: Vec<frontend::Name>, parameters: Vec<ParameterType>) -> void {
+        var index: usize = 0
+        while index < names.length() {
+            loan read names[index] as name {
+                loan read parameters[index] as parameter {
+                    let variable = Variable {
+                        name: frontend::name_copy(name)
+                        value_type: type_copy(parameter.value_type)
+                        copy_value: type_is_copy_with_symbols(checker.symbols, parameter.value_type)
+                        mutable_value: mode_is_write(parameter.mode) || type_is_scoped_function(parameter.value_type)
+                        state: Available()
+                        access: closure_parameter_access(checker.symbols, parameter)
+                        state_span: name.span
+                        span: name.span
+                    }
+                    checker_add_variable(checker, move variable)
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn closure_parameter_access(symbols: Symbols, parameter: ParameterType) -> VariableAccess {
+        if type_is_scoped_function(parameter.value_type) {
+            return WriteAccess()
+        }
+        if type_is_copy_with_symbols(symbols, parameter.value_type) && mode_is_write(parameter.mode) == false || mode_is_take(parameter.mode) {
+            return OwnedAccess()
+        }
+        return mode_access(parameter.mode)
+    }
+}

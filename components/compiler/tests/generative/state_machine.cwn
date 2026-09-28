@@ -1,0 +1,50 @@
+fn advance(values: write Vec<u32>, state: write u32, turn: u32) -> void {
+    state = state.wrapping_mul(1664525)
+    state = state.wrapping_add(1013904223)
+    let index = usize.from(state >> 28)
+    let other = (index + 5) % 16
+    if turn % 3 == 0 {
+        values[index] = values[index].wrapping_add(values[other]) ^ state
+        return
+    }
+    let previous = values[index]
+    if turn % 3 == 1 {
+        values[index] = values[other]
+        values[other] = previous ^ state
+        return
+    }
+    values[index] = ((previous << 7) |(previous >> 25)) ^ values[other]
+}
+
+fn measure(seed: u32) -> u32 {
+    var state = seed
+    var values = Vec<u32>.new()
+    for index in 0..16 {
+        values.push(seed.wrapping_add(u32.from(index)))
+    }
+    for turn in 0..256 {
+        advance(values, state, u32.from(turn))
+    }
+    var checksum: u32 = 0
+    for index in 0..16 {
+        checksum = checksum.wrapping_mul(37)
+        checksum = checksum.wrapping_add(values[index])
+    }
+    checksum ^ state
+}
+
+fn read_seed(text: TextView) -> u32 {
+    var seed: u32 = 0
+    for index in 0..text.length() {
+        seed = seed * 10 + u32.from(text[index] - 48)
+    }
+    seed
+}
+
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() != 2 {
+        return 1
+    }
+    print(measure(read_seed(arguments[1])))
+    0
+}

@@ -1,0 +1,43 @@
+copy struct Pair {
+    first: u32, second: u32
+}
+copy struct Container {
+    entries: [Pair; 2]
+}
+fn modify(values: write[u32; 3]) -> void {
+    unsafe {
+        values.as_raw().offset(1).write(17)
+    }
+}
+fn main() -> u32 {
+    var values: [u32; 3] = [2, 3, 5]
+    modify(values)
+    if values[1] != 17 {
+        return 1
+    }
+    var container = Container {
+        entries: [Pair {
+                first: 7, second: 11
+            }, Pair {
+                first: 13, second: 19
+            }]
+    }
+    unsafe {
+        let value = container.entries.as_raw().offset(1).read()
+        if value.first != 13 || value.second != 19 {
+            return 2
+        }
+        container.entries.as_raw().write(Pair {
+                first: 23, second: 29
+            })
+    }
+    if container.entries[0].second != 29 {
+        return 3
+    }
+    let empty: [u8; 0] = []
+    unsafe {
+        let pointer = empty.as_raw();
+        pointer;
+    }
+    return 42
+}

@@ -1,0 +1,10 @@
+module lowering {
+    fn function_exclusive_parameters(function: write ir::Function, semantic: sema::Function) -> void {
+        let offset = function.parameters.length() - semantic.parameters.length()
+        for index in 0..semantic.parameters.length() {
+            if sema::mode_is_write(semantic.parameters[index].mode) {
+                function.exclusive_parameters.push(function.parameters[index + offset])
+            }
+        }
+    }
+}

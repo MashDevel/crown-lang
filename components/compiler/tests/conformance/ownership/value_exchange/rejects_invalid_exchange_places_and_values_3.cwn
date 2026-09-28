@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    var value = 1
+    swap(value, true)
+    return value
+}

@@ -1,0 +1,88 @@
+module campaign {
+    struct NumericCase {
+        kind: Text, operation: Text, left: Text, right: Text, expected: Text, index: usize
+    }
+
+    fn numeric_case(row: Text, index: usize) -> Result<NumericCase, Text> {
+        let fields = std::text::split(row, 9)
+        if fields.length() != 5 {
+            return Err("invalid numeric reference row")
+        }
+        return Ok(NumericCase {
+                kind: fields[0].clone(), operation: fields[1].clone(), left: fields[2].clone(), right: fields[3].clone(), expected: fields[4].clone(), index: index
+            })
+    }
+
+    fn numeric_expression(value: NumericCase, left: Text, right: Text) -> Text {
+        if std::text::starts(value.operation, "wrapping_") {
+            return std::text::joined(std::text::joined(std::text::joined(left, "."), value.operation), std::text::joined(std::text::joined("(", right), ")"))
+        }
+        return std::text::joined(std::text::joined(std::text::joined(left, " "), value.operation), std::text::joined(" ", right))
+    }
+
+    fn salted(kind: Text, value: Text) -> Text {
+        let operator = if std::text::starts(kind, "f") {
+            " + salt"
+        } else {
+            " ^ salt"
+        }
+        return std::text::joined(std::text::joined(std::text::joined("(", value), operator), ")")
+    }
+
+    fn numeric_check(value: NumericCase) -> Text {
+        let suffix = std::text::decimal(u64.from(value.index))
+        let left = std::text::joined("left", suffix)
+        let right = std::text::joined("right", suffix)
+        var source = std::text::joined(std::text::joined("let ", left), std::text::joined(": ", value.kind))
+        std::text::append(source, std::text::joined(" = ", salted(value.kind, value.left)))
+        std::text::append(source, std::text::joined(std::text::joined("\nlet ", right), std::text::joined(": ", value.kind)))
+        std::text::append(source, std::text::joined(" = ", salted(value.kind, value.right)))
+        let comparison = std::text::contains("|==|!=|<|<=|>|>=|", std::text::joined(std::text::joined("|", value.operation), "|"))
+        let kind = if comparison {
+            "bool"
+        } else {
+            value.kind.clone()
+        }
+        std::text::append(source, std::text::joined(std::text::joined("\nlet actual", suffix), std::text::joined(": ", kind)))
+        std::text::append(source, std::text::joined(" = ", numeric_expression(value, left, right)))
+        std::text::append(source, std::text::joined(std::text::joined("\nif actual", suffix), " != "))
+        std::text::append(source, value.expected)
+        std::text::append(source, std::text::joined(" { return ", std::text::decimal(u64.from(value.index + 1))))
+        std::text::append(source, " }\n")
+        return move source
+    }
+
+    fn numeric_function(values: Vec<NumericCase>, start: usize) -> Text {
+        let end = if start + 8 < values.length() {
+            start + 8
+        } else {
+            values.length()
+        }
+        let name = std::text::joined("verify", std::text::decimal(u64.from(start)))
+        var output = std::text::joined(std::text::joined("fn ", name), std::text::joined("(salt: ", values[start].kind))
+        std::text::append(output, ") -> u32 {\n")
+        for index in start..end {
+            std::text::append(output, numeric_check(values[index]))
+        }
+        std::text::append(output, "0\n}\n")
+        return move output
+    }
+
+    fn numeric_source(values: Vec<NumericCase>) -> Text {
+        var definitions = ""
+        var calls = "fn main(arguments: Arguments) -> u32 {\nlet salt = arguments.length() - 1\n"
+        var start: usize = 0
+        while start < values.length() {
+            std::text::append(definitions, numeric_function(values, start))
+            let suffix = std::text::decimal(u64.from(start))
+            std::text::append(calls, std::text::joined(std::text::joined("let result", suffix), " = verify"))
+            std::text::append(calls, std::text::joined(suffix, std::text::joined("(", values[start].kind)))
+            std::text::append(calls, std::text::joined(".from(salt)); if result", suffix))
+            std::text::append(calls, std::text::joined(" != 0 { print(result", suffix))
+            std::text::append(calls, "); return 1 }\n")
+            start = start + 8
+        }
+        std::text::append(calls, "0\n}\n")
+        return std::text::joined(definitions, calls)
+    }
+}

@@ -1,0 +1,169 @@
+fn parser_add_operator(operator: read frontend::BinaryOperator) -> bool {
+    match operator {
+        frontend::BinaryAdd => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn parser_add_kind(kind: read frontend::ExpressionKind) -> bool {
+    match read kind {
+        frontend::ExpressionBinary(left, operator, right) => {
+            left;
+            right;
+            return parser_add_operator(operator)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn parser_assignment(kind: read frontend::StatementKind) -> bool {
+    match read kind {
+        frontend::StatementAssign(target, value) => {
+            target;
+            return parser_add_expression(value)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn parser_add_expression(value: read frontend::Expression) -> bool {
+    return parser_add_kind(value.kind)
+}
+
+fn parser_loan(kind: read frontend::StatementKind) -> bool {
+    match read kind {
+        frontend::StatementLoan(mode, source, name, body) => {
+            mode;
+            source;
+            name;
+            return body.length() == 1 && parser_assignment(body[0].kind)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn parser_loan_shape(program: read frontend::Program) -> bool {
+    if program.structs.length() != 1 || program.functions.length() != 1 {
+        return false
+    }
+    if program.structs[0].fields.length() != 2 || program.functions[0].body.length() != 3 {
+        return false
+    }
+    return parser_loan(program.functions[0].body[1].kind)
+}
+
+fn parser_loans() -> bool {
+    let source = frontend_test_source("struct Pair { left: u32, right: u32 }\nfn main() -> u32 {\nvar pair = Pair { left: 2, right: 3 }\nloan write pair.left as value { value = value * 4 + 1 }\nreturn pair.left }")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(program) => {
+            return parser_loan_shape(program)
+        }
+    }
+}
+
+fn parser_if(kind: read frontend::StatementKind) -> bool {
+    match read kind {
+        frontend::StatementIf(value, left, right) => {
+            value;
+            return left.length() == 1 && right.length() == 1
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn parser_semicolons() -> bool {
+    let source = frontend_test_source("fn main() -> u32 { if true { return 1; } else { return 2; } }")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(program) => {
+            return program.functions.length() == 1 && parser_if(program.functions[0].body[0].kind)
+        }
+    }
+}
+
+fn parser_copy_shape(program: read frontend::Program) -> bool {
+    if program.constants.length() != 1 || program.structs.length() != 1 || program.enums.length() != 1 {
+        return false
+    }
+    return program.structs[0].copy_value && program.enums[0].copy_value
+}
+
+fn parser_copy_declarations() -> bool {
+    let source = frontend_test_source("const MASK: u32 = 0xff\ncopy struct Point { x: u32, y: u32 }\ncopy enum Flag { Off, On }\nfn main() -> u32 { return MASK }")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(program) => {
+            return parser_copy_shape(program)
+        }
+    }
+}
+
+fn parser_rejects(value: take Text) -> bool {
+    let source = frontend_test_source(move value)
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            return errors.length() > 0
+        }
+        Ok(program) => {
+            program;
+            return false
+        }
+    }
+}
+
+fn parser_incomplete_expressions() -> bool {
+    if parser_rejects("fn main() -> u32 { return") == false {
+        return false
+    }
+    if parser_rejects("fn main() -> u32 { let value =") == false {
+        return false
+    }
+    return parser_rejects("fn main() -> u32 { var value = 0; value +=")
+}
+
+fn main() -> u32 {
+    if parser_loans() == false {
+        return 1
+    }
+    if parser_semicolons() == false {
+        return 2
+    }
+    if parser_copy_declarations() == false {
+        return 3
+    }
+    if parser_rejects("wat") == false {
+        return 4
+    }
+    if parser_rejects("fn main() -> u32 { let = 1 }") == false {
+        return 5
+    }
+    if parser_rejects("fn first(copy: read u32) -> u32 { return copy }\nfn second() -> u32 { return 0 }") == false {
+        return 6
+    }
+    if parser_incomplete_expressions() == false {
+        return 7
+    }
+    return 42
+}

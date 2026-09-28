@@ -1,0 +1,91 @@
+fn aggregate_signature(homogeneous: bool) -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    if homogeneous {
+        parameters.push(ir::TypePointer())
+    }
+    parameters.push(ir::TypePointer())
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    var abi = Vec<ir::ParameterAbi>.new()
+    if homogeneous {
+        abi.push(ir::ParameterReturn(homogeneous_abi()))
+        abi.push(ir::ParameterAggregate(homogeneous_abi()))
+    } else {
+        abi.push(ir::ParameterAggregate(ir::AggregateMemory(24, 8)))
+    }
+    signature.parameter_abi = move abi
+    return move signature
+}
+
+fn homogeneous_abi() -> ir::AggregateAbi {
+    var components = Vec<ir::AbiComponent>.new()
+    for index in 0..2 {
+        components.push(ir::AbiComponent {
+                offset: u64.from(index) * 4, value_type: ir::TypeFloat(ir::FloatWidth32())
+            })
+    }
+    return ir::AggregateRegisters(8, 4, move components)
+}
+
+fn aggregate_callee(homogeneous: bool) -> Result<ir::Function, u32> {
+    var function = ir::function_new("callee", aggregate_signature(homogeneous), ir::LinkageLocal())
+    let block = safety_block(function)?
+    if homogeneous {
+        let size = safety_integer(function, ir::IntegerWidth64(), 8)
+        safety_append(function, block, ir::InstructionMemoryCopy(function.parameters[0], function.parameters[1], size))?;
+    } else {
+        let changed = safety_integer(function, ir::IntegerWidth64(), 77)
+        safety_append(function, block, ir::InstructionStore(function.parameters[0], changed, 8, false))?;
+    }
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    return Ok(move function)
+}
+
+fn aggregate_call(function: write ir::Function, block: usize, source: usize, homogeneous: bool) -> Result<usize, u32> {
+    var arguments = Vec<usize>.new()
+    var result = source
+    if homogeneous {
+        result = safety_append(function, block, ir::InstructionStackSlot(8, 8))?
+        arguments.push(result)
+    }
+    arguments.push(source)
+    safety_append(function, block, ir::InstructionCall(0, move arguments, ir::TypeVoid()))?;
+    return Ok(result)
+}
+
+fn aggregate_caller(homogeneous: bool) -> Result<ir::Function, u32> {
+    var function = ir::function_new("caller", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let size: u64 = if homogeneous {
+        8
+    } else {
+        24
+    }
+    let source = safety_append(function, block, ir::InstructionStackSlot(size, 8))?
+    let expected = safety_integer(function, ir::IntegerWidth64(), if homogeneous {
+            4656722015766446080
+        } else {
+            42
+        })
+    safety_append(function, block, ir::InstructionStore(source, expected, 8, false))?;
+    let result = aggregate_call(function, block, source, homogeneous)?
+    let actual = safety_append(function, block, ir::InstructionLoad(result, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    safety_return_equal(function, block, actual, expected)?
+    return Ok(move function)
+}
+
+fn aggregate_program(homogeneous: bool) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, aggregate_callee(homogeneous)?)
+    ir::program_add_function(program, aggregate_caller(homogeneous)?)
+    program.entry = Some(1)
+    return Ok(move program)
+}
+
+fn run() -> Result<void, u32> {
+    arm_execute(aggregate_program(true)?)?
+    return arm_execute(aggregate_program(false)?)
+}
+
+fn main() -> u32 {
+    return safety_status(run())
+}

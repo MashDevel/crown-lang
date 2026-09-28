@@ -1,0 +1,63 @@
+module frontend {
+    fn build_executable(options: toolchain::Options) -> Result<u32, Text> {
+        toolchain::validate_native_build(options)?
+        let request = toolchain::project_build_request("", options)?
+        let checked = checked_sources(request.project.sources, usize.from(request.max_instances))?
+        let object = instrumented_object(move checked, options.coverage, options.optimization, options.target)?
+        let bytes = bedrock::executable(object, toolchain::bedrock_runtime())?
+        toolchain::make_directory(toolchain::parent_path(request.output))?
+        toolchain::write_bytes(request.output, bytes)?
+        return Ok(0)
+    }
+
+    fn native_executable(options: toolchain::Options) -> Result<u32, Text> {
+        let sources = toolchain::frontend_paths(options.paths, 0, options.target)?
+        let checked = checked_sources(sources, usize.from(options.max_instances))?
+        var object = instrumented_object(move checked, options.coverage, options.optimization, options.target)?
+        if options.target.platform == toolchain::Platform::Linux() {
+            return linux_executable(move object, options)
+        }
+        append_external_objects(object, options.objects)?
+        let bytes = macho::executable(object, macho::libraries(options.links)?)?
+        return write_native_executable(options.output, bytes)
+    }
+
+    fn write_native_executable(path: Text, bytes: Vec<u8>) -> Result<u32, Text> {
+        toolchain::write_bytes(path, bytes)?
+        toolchain::executable(path)?
+        return Ok(0)
+    }
+
+    fn append_external_objects(object: write object::CompilerObject, paths: Vec<Text>) -> Result<void, Text> {
+        for index in 0..paths.length() {
+            let external = macho::read_object(toolchain::read_bytes(paths[index])?)?
+            link_object::merge(object, move external)?
+        }
+        return Ok(())
+    }
+
+    fn checked_object(source: take CheckedSource) -> Result<object::CompilerObject, Text> {
+        return instrumented_object(move source, "", toolchain::optimization_options(), toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock()))
+    }
+
+    fn instrumented_object(source: take CheckedSource, directory: Text, optimization: toolchain::OptimizationOptions, target: toolchain::Target) -> Result<object::CompilerObject, Text> {
+        match move source {
+            CheckedSource::Source(bundle, program, analysis) => {
+                let instrumentation = coverage::prepare(bundle, program, directory)?
+                let bytes = coverage::instrumentation_bytes(instrumentation)
+                let settings = compile_settings(bundle, optimization, target)?
+                match compile_object(move analysis, move program, move instrumentation, settings) {
+                    Err(error) => {
+                        print_compile_error(error)
+                        return Err("native compilation failed")
+                    }
+                    Ok(value) => {
+                        var object = move value
+                        append_coverage(object, directory, bytes)?
+                        return Ok(move object)
+                    }
+                }
+            }
+        }
+    }
+}

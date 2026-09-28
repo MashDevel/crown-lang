@@ -1,0 +1,44 @@
+fn main() -> u32 {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::Label(x86::BlockLabel(0)))
+    instructions.push(x86::Compare(x86::Rax(), x86::Rbx()))
+    instructions.push(x86::JumpIf(x86::Equal(), x86::BlockLabel(1)))
+    instructions.push(x86::Jump(x86::BlockLabel(0)))
+    instructions.push(x86::Label(x86::BlockLabel(1)))
+    instructions.push(x86::Return())
+    let function = x86::function_new("main", move instructions)
+    var program = x86::program_new("main")
+    match x86::program_add_function(program, move function) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    loan read program.functions[0] as source_function {
+        match x86::encode_function(program, source_function, 0) {
+            Err(error) => {
+                error;
+                return 2
+            }
+            Ok(encoded) => {
+                return check_encoded(encoded)
+            }
+        }
+    }
+}
+
+fn check_encoded(encoded: x86::EncodedFunction) -> u32 {
+    if encoded.bytes.length() != 10 {
+        return 3
+    }
+    if encoded.bytes[3] != 15 || encoded.bytes[4] != 133 {
+        return 4
+    }
+    if encoded.bytes[5] != 247 || encoded.bytes[6] != 255 {
+        return 5
+    }
+    return 42
+}

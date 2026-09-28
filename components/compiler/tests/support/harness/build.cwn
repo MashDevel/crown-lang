@@ -1,0 +1,37 @@
+module testing_cache {
+    fn environment(root: Text, output: Text) -> harness::Environment {
+        return harness::Environment {
+            compiler: toolchain::path_join(root, "compiler"), root: root.clone(), output: toolchain::path_join(root, output), coverage: ""
+        }
+    }
+
+    fn sources(root: Text) -> Vec<Text> {
+        return testing::list(toolchain::path_join(root, "source.cwn"))
+    }
+
+    fn fixture(root: Text) -> Result<void, Text> {
+        let compiler = "#!/bin/sh\nset -eu\ncase \"$1\" in _link_inputs) printf '[]'; exit 0;; _executable) ;; *) exit 1;; esac\nprintf x >> \"${0%/*}/compiles\"\nif [ -f \"${0%/*}/fail\" ]; then exit 1; fi\nif [ -f \"${0%/*}/change\" ]; then printf x >> \"${0%/*}/source.cwn\"; fi\ncp \"${0%/*}/fixture\" \"$3\"\nchmod +x \"$3\"\n"
+        let path = testing::write_file(root, "compiler", compiler)?
+        toolchain::executable(path)?
+        testing::write_file(root, "source.cwn", "first")?
+        testing::write_file(root, "compiles", "")?
+        testing::write_file(root, "runs", "")?
+        testing::write_file(root, "fixture", "#!/bin/sh\nprintf x >> \"${0%/*}/../runs\"\nexit 42\n")?
+        return Ok(())
+    }
+
+    fn count(root: Text, name: Text, expected: usize) -> Result<void, Text> {
+        let value = toolchain::read_text(toolchain::path_join(root, name))?
+        return testing::expect(value.length() == expected, std::text::joined("unexpected ", name))
+    }
+
+    fn build(environment: harness::Environment, budget: u64) -> Result<Text, Text> {
+        return harness::build_program(environment, sources(environment.root), budget)
+    }
+
+    fn execute(environment: harness::Environment) -> Result<void, Text> {
+        let binary = build(environment, 128)?
+        let status = toolchain::execute(toolchain::command(testing::list(binary)))?
+        return testing::expect(status == 42, "cached test executes with its expected status")
+    }
+}

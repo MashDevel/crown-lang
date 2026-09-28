@@ -1,0 +1,14 @@
+fn consume(value: read Text, ignored: take u32) -> void {
+    value;
+    ignored
+}
+fn empty(values: write Vec<Text>) -> u32 {
+    values.clear()
+    return 0
+}
+fn main() -> u32 {
+    var values = Vec<Text>.new()
+    values.push("held")
+    consume(values[0], empty(values))
+    return 0
+}

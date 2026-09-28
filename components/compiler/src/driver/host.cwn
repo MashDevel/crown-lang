@@ -1,0 +1,34 @@
+fn crown_host_command(arguments: Vec<Text>) -> Result<u32, Text> {
+    if arguments.length() > 1 && std::text::equal(arguments[1], "_launch") {
+        toolchain::launch(arguments)?;
+        return Ok(0)
+    }
+    return crown_command(arguments)
+}
+
+fn crown_options(arguments: Vec<Text>, options: toolchain::Options) -> Result<u32, Text> {
+    match read options.command {
+        "build" => crown_build_options(arguments, options)
+        "_executable" => frontend::native_executable(options)
+        "_link_inputs" => frontend::link_inputs(options)
+        "parse" | "check" | "compile" => Ok(frontend::execute_command(toolchain::frontend_request(options)?))
+        _ => crown_tool_options(arguments, options)
+    }
+}
+
+fn crown_tool_options(arguments: Vec<Text>, options: toolchain::Options) -> Result<u32, Text> {
+    match read options.command {
+        "duplication" => duplication::command(options.paths, options.output)
+        "coverage" => coverage::command(options.paths, options.output)
+        "fmt" => formatting::command(toolchain::quality_paths(options.paths)?, options.check_only)
+        "lint" => inspect::command(toolchain::frontend_paths(options.paths, 0, options.target)?, options.output, usize.from(options.max_instances))
+        _ => toolchain::execute_options(toolchain::absolute(arguments[0])?, options)
+    }
+}
+
+fn crown_build_options(arguments: Vec<Text>, options: toolchain::Options) -> Result<u32, Text> {
+    if options.target == toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock()) {
+        return frontend::build_executable(options)
+    }
+    return toolchain::execute_options(toolchain::absolute(arguments[0])?, options)
+}

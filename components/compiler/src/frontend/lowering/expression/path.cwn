@@ -1,0 +1,143 @@
+module lowering {
+    fn path_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, path: frontend::Path) -> Result<Value, u32> {
+        if path.segments.length() == 0 {
+            return Err(53)
+        }
+        if path.segments.length() > 1 {
+            let place = path_place(compiler, analysis, path)?
+            return place_value(compiler, analysis.checker.symbols, place)
+        }
+        let index = match function_binding_index(compiler, analysis.checker.symbols.source, path.segments[0]) {
+            None => {
+                return named_value(compiler, analysis, path.segments[0])
+            }
+            Some(value) => value
+        }
+        let binding = binding_copy(compiler.bindings[index])
+        if binding.available == false {
+            return Err(54)
+        }
+        let place = Place {
+            address: binding.address, value_type: sema::type_copy(binding.value_type)
+        }
+        place_value(compiler, analysis.checker.symbols, place)
+    }
+
+    fn named_value(compiler: write FunctionCompiler, analysis: sema::Analysis, name: frontend::Name) -> Result<Value, u32> {
+        match sema::find_constant(analysis.checker.symbols, name) {
+            Some(index) => constant_value(compiler, analysis.checker.symbols, analysis.checker.symbols.constants[index])
+            None => function_value(compiler, analysis, name)
+        }
+    }
+
+    fn constant_value(compiler: write FunctionCompiler, symbols: sema::Symbols, constant: sema::Constant) -> Result<Value, u32> {
+        match constant.value {
+            sema::ConstantArrayResolved => {
+                return array_constant_value(compiler, constant)
+            }
+            sema::ConstantResolved(scalar) => {
+                let kind = scalar.builtin
+                if kind == sema::F32() || kind == sema::F64() {
+                    return constant_float(compiler, scalar)
+                }
+                return constant_integer(compiler, symbols, constant.value_type, scalar.bits)
+            }
+            _ => {
+                return Err(229)
+            }
+        }
+    }
+
+    fn constant_float(compiler: write FunctionCompiler, scalar: sema::ConstantScalar) -> Result<Value, u32> {
+        var value: usize = 0
+        if scalar.builtin == sema::F32() {
+            value = ir::function_constant(compiler.ir, ir::TypeFloat(ir::FloatWidth32()), ir::ConstantFloat32(u32.from(scalar.bits)))
+        } else {
+            value = ir::function_constant(compiler.ir, ir::TypeFloat(ir::FloatWidth64()), ir::ConstantFloat64(scalar.bits))
+        }
+        return Ok(ScalarValue(value, sema::builtin_leaf(scalar.builtin)))
+    }
+
+    fn constant_integer(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type, value: u64) -> Result<Value, u32> {
+        let ir_type = ir_type(symbols, value_type)?
+        let id = function_integer(compiler, ir_type, value)
+        return Ok(ScalarValue(id, sema::type_copy(value_type)))
+    }
+
+    fn move_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, path: frontend::Path) -> Result<Value, u32> {
+        match path_expression(compiler, analysis, path) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                if path.segments.length() == 1 {
+                    loan read path.segments[0] as name {
+                        match function_binding_index(compiler, analysis.checker.symbols.source, name) {
+                            Some(index) => {
+                                compiler.bindings[index].available = false
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                }
+                return Ok(move value)
+            }
+        }
+    }
+
+    fn function_value(compiler: write FunctionCompiler, analysis: sema::Analysis, name: frontend::Name) -> Result<Value, u32> {
+        match sema::find_function(analysis.checker.symbols, name) {
+            None => {
+                return Err(55)
+            }
+            Some(function) => {
+                let request = CallStateRequest {
+                    function: function, span: name.span
+                }
+                let arguments = generic_arguments(compiler, analysis, request)
+                match find_function_in_values(compiler.tables.functions, function, arguments) {
+                    None => {
+                        return Err(56)
+                    }
+                    Some(binding) => {
+                        let address = function_append_value(compiler, ir::InstructionFunctionAddress(binding.function))?
+                        loan read analysis.checker.symbols.functions[function] as semantic {
+                            let parameters = semantic_parameter_types(semantic.parameters)
+                            let schema = sema::FunctionType(move parameters, Box.new(sema::type_copy(semantic.result)))
+                            let value_type = sema::substitute(schema, arguments)
+                            return Ok(ScalarValue(address, move value_type))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn find_function_in_values(values: Vec<FunctionBinding>, function: usize, arguments: Vec<sema::Type>) -> Option<FunctionBinding> {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as binding {
+                if binding.semantic_function == function && sema::type_vectors_equal(binding.arguments, arguments) {
+                    return Some(function_binding_copy(binding))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn semantic_parameter_types(values: Vec<sema::NamedParameter>) -> Vec<sema::ParameterType> {
+        var output = Vec<sema::ParameterType>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(sema::ParameterType {
+                        mode: value.mode, value_type: sema::type_copy(value.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

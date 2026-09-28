@@ -1,0 +1,54 @@
+fn valid_symbols() -> bool {
+    let source = frontend_test_source("struct Pair<T> { left: T, right: T }\nenum Choice<T> { First(T), Empty }\ninterface Show { fn show(self: read Self) -> void }\nimpl Show for Pair<u32> { fn show(self: read Pair<u32>) -> void { self } }\nfn choose(value: read u32) -> u32 { return value }\nfn main() -> u32 { return choose(0) }\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return false
+        }
+        Ok(program) => {
+            let symbols = sema::collect_symbols(source.bytes.share(), program)
+            if symbols.errors != 0 {
+                return false
+            }
+            if symbols.types.length() != 3 {
+                return false
+            }
+            if symbols.functions.length() != 4 {
+                return false
+            }
+            if symbols.implementations.length() != 1 {
+                return false
+            }
+            loan read symbols.types[0] as pair {
+                if pair.type_parameters.length() != 1 || pair.fields.length() != 2 {
+                    return false
+                }
+            }
+            return true
+        }
+    }
+}
+
+fn invalid_symbols() -> bool {
+    let source = frontend_test_source("struct Pair<T, T> { left: Missing }\nfn same(value: read u32) -> u32 { return value }\nfn same(value: read u32) -> u32 { return value }\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return false
+        }
+        Ok(program) => {
+            let symbols = sema::collect_symbols(source.bytes.share(), program)
+            return symbols.errors >= 3
+        }
+    }
+}
+
+fn main() -> u32 {
+    if valid_symbols() == false {
+        return 1
+    }
+    if invalid_symbols() == false {
+        return 2
+    }
+    return 42
+}

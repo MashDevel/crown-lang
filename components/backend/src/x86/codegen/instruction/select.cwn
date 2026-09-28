@@ -1,0 +1,40 @@
+module x86 {
+    fn codegen_compile_select(program: ir::Program, compiler: write FunctionCompiler, input: take SelectInput) -> Result<void, CodegenError> {
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.else_value, register: Rax()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.then_value, register: Rcx()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.condition, register: Rdx()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        codegen_emit(compiler, Test(Rdx(), Rdx()))
+        codegen_emit(compiler, ConditionalMove(NotEqual(), Rax(), Rcx()))
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: Rax()
+            })
+    }
+}

@@ -1,0 +1,6 @@
+struct Record {
+    value: u32
+}
+fn main() -> usize {
+    return Record.offset_of("missing")
+}

@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let values = [4, 7]
+    unsafe {
+        return values.get_unchecked(1)
+    }
+}

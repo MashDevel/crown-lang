@@ -1,0 +1,13 @@
+module x86 {
+    fn codegen_variadic_arguments(compiler: write FunctionCompiler, signature: ir::Signature) -> Result<void, CodegenError> {
+        if ir::value_present(signature.variadic_start) == false {
+            return Ok(())
+        }
+        var assignment = abi_assignment_new()
+        for index in 0..signature.parameters.length() {
+            abi_assign(signature.parameters[index], signature.parameter_abi[index], assignment)?;
+        }
+        codegen_emit(compiler, MoveImmediate(Rax(), i64.from(assignment.float)))
+        return Ok(())
+    }
+}

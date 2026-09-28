@@ -1,0 +1,80 @@
+fn sample_object() -> object::CompilerObject {
+    var output = object::new()
+    var bytes = Vec<u8>.new()
+    bytes.push(184)
+    bytes.push(42)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(195)
+    output.sections.push(object::Section {
+            name: ".text", kind: object::SectionText(), alignment: 16,
+            memory_size: u64.from(bytes.length()), data: move bytes
+        })
+    output.symbols.push(object::Symbol {
+            name: "main", kind: object::SymbolFunction(), binding: object::SymbolGlobal(),
+            section: Some(0), offset: 0, size: 6
+        })
+    output.entry = Some(0)
+    return move output
+}
+
+fn import_object() -> object::CompilerObject {
+    var output = sample_object()
+    var bytes = std::bytes::filled(14, 0)
+    bytes[0] = 72
+    bytes[1] = 131
+    bytes[2] = 236
+    bytes[3] = 8
+    bytes[4] = 191
+    bytes[5] = 42
+    bytes[9] = 232
+    output.sections[0].data = move bytes
+    output.sections[0].memory_size = 14
+    output.symbols[0].size = 14
+    output.symbols.push(object::Symbol {
+            name: "exit", kind: object::SymbolFunction(), binding: object::SymbolImport(),
+            section: None(), offset: 0, size: 0
+        })
+    output.relocations.push(object::Relocation {
+            section: 0, offset: 10, kind: object::RelocationPcRelativeCall32(), symbol: 1,
+            subtract: None(), addend: -4
+        })
+    return move output
+}
+
+fn initialized_object() -> object::CompilerObject {
+    var output = sample_object()
+    var bytes = std::bytes::filled(18, 0)
+    bytes[0] = 139
+    bytes[1] = 5
+    bytes[6] = 195
+    bytes[7] = 199
+    bytes[8] = 5
+    bytes[13] = 42
+    bytes[17] = 195
+    output.sections[0].data = move bytes
+    output.sections[0].memory_size = 18
+    output.symbols[0].size = 7
+    output.sections.push(object::Section {
+            name: ".data", kind: object::SectionData(), alignment: 8,
+            memory_size: 4, data: std::bytes::filled(4, 0)
+        })
+    output.symbols.push(object::Symbol {
+            name: "crown_cov_init", kind: object::SymbolFunction(), binding: object::SymbolGlobal(),
+            section: Some(0), offset: 7, size: 11
+        })
+    output.symbols.push(object::Symbol {
+            name: "answer", kind: object::SymbolData(), binding: object::SymbolLocal(),
+            section: Some(1), offset: 0, size: 4
+        })
+    output.relocations.push(object::Relocation {
+            section: 0, offset: 2, kind: object::RelocationPcRelative32(), symbol: 2,
+            subtract: None(), addend: -4
+        })
+    output.relocations.push(object::Relocation {
+            section: 0, offset: 9, kind: object::RelocationPcRelative32(), symbol: 2,
+            subtract: None(), addend: -8
+        })
+    return move output
+}

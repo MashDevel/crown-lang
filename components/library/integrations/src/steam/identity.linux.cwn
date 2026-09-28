@@ -1,0 +1,48 @@
+module integration::steam {
+    extern "c" {
+        fn raw_getenv(name: RawPtr<u8>) -> RawPtr<u8> = "getenv"
+    }
+    copy struct WindowIdentity {
+        display: RawPtr<u8>, window: u64, name: RawPtr<u8>, class: RawPtr<u8>
+    }
+    fn environment_identity() -> u64 {
+        unsafe {
+            var value = raw_getenv("SteamGameId\0".as_raw())
+            if value == RawPtr<u8>.from_address(0) {
+                value = raw_getenv("SteamAppId\0".as_raw())
+            }
+            if value == RawPtr<u8>.from_address(0) {
+                return 0
+            }
+            var bytes = Vec<u8>.new()
+            for index in 0..11 {
+                let byte = value.offset(index).read()
+                if byte == 0 {
+                    return integration::steam::game_identity(std::text::from_bytes_lossy(bytes))
+                }
+                bytes.push(byte)
+            }
+        }
+        return 0
+    }
+
+    unsafe fn identify(library: std::dylib::Library, window: WindowIdentity) -> void {
+        unsafe {
+            var names = Vec<RawPtr<u8>>.new()
+            names.push(window.name);
+            names.push(window.class)
+            native::x11::class_hint(library, window.display, window.window, names.as_raw())
+            let identity = environment_identity()
+            if identity == 0 {
+                return
+            }
+            let property = native::x11::intern_atom(library, window.display, "STEAM_GAME\0".as_raw(), 0)
+            var values = Vec<u64>.new()
+            values.push(identity)
+            native::x11::change_property(library, native::x11::Property {
+                    display: window.display, window: window.window, property: property
+                    kind: 6, format: 32, mode: 0, data: RawPtr<u8>.cast(values.as_raw()), count: 1
+                })
+        }
+    }
+}

@@ -1,0 +1,116 @@
+module x86 {
+    fn codegen_color_values(values: Vec<usize>, state: write ColorState) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            let value = values[index]
+            match codegen_choose_register(value, state) {
+                Some(register) => {
+                    if codegen_register_is_callee(register) {
+                        state.saved = state.saved | codegen_register_bit(register)
+                    }
+                    state.values[value] = Some(register)
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn codegen_choose_register(value: usize, state: ColorState) -> Option<Register> {
+        let forbidden = codegen_color_forbidden(value, state)
+        match codegen_available_register(state.preferred[value], forbidden) {
+            Some(register) => {
+                return Some(register)
+            }
+            None => {
+            }
+        }
+        match codegen_choose_affinity(value, forbidden, state) {
+            Some(register) => {
+                return Some(register)
+            }
+            None => {
+                return codegen_choose_general(forbidden)
+            }
+        }
+    }
+
+    fn codegen_choose_affinity(value: usize, forbidden: u16, state: ColorState) -> Option<Register> {
+        var cursor: usize = 0
+        while cursor < state.values.length() {
+            var neighbor: usize = 0
+            match ir::bitset_next(state.affinities[value], cursor) {
+                Some(next) => {
+                    neighbor = next
+                }
+                None => {
+                    return None()
+                }
+            }
+            match codegen_available_register(state.values[neighbor], forbidden) {
+                Some(register) => {
+                    return Some(register)
+                }
+                None => {
+                }
+            }
+            cursor = neighbor + 1
+        }
+        return None()
+    }
+
+    fn codegen_choose_general(forbidden: u16) -> Option<Register> {
+        var index: usize = 0
+        while index < 12 {
+            let candidate = codegen_allocatable_register(index)
+            match codegen_available_register(candidate, forbidden) {
+                Some(register) => {
+                    return Some(register)
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn codegen_color_forbidden(value: usize, state: ColorState) -> u16 {
+        var forbidden = state.forbidden[value]
+        var cursor: usize = 0
+        while cursor < state.values.length() {
+            var neighbor: usize = 0
+            match ir::bitset_next(state.graph[value], cursor) {
+                Some(next) => {
+                    neighbor = next
+                }
+                None => {
+                    return forbidden
+                }
+            }
+            match read state.values[neighbor] {
+                Some(register) => {
+                    forbidden = forbidden | codegen_register_bit(register)
+                }
+                None => {
+                }
+            }
+            cursor = neighbor + 1
+        }
+        return forbidden
+    }
+
+    fn codegen_available_register(candidate: Option<Register>, forbidden: u16) -> Option<Register> {
+        match read candidate {
+            Some(register) => {
+                if forbidden & codegen_register_bit(register) == 0 {
+                    return Some(register)
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+}

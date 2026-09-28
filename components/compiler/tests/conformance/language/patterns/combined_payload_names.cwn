@@ -1,0 +1,3 @@
+copy enum Kind { A(u32), B(u32) }
+fn f(value: Kind) -> u32 { match value { A(x) | B(y) => 0 } }
+fn main() -> u32 { 0 }

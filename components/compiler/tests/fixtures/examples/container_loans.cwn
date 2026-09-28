@@ -1,0 +1,13 @@
+fn first(values: read Vec<u32>) -> u32 { return values[0] }
+fn text_length(value: read Text) -> u32 { return u32.from(value.length()) }
+
+fn main() -> u32 {
+    var values = Vec<u32>.new()
+    values.push(38)
+    let shared = Shared.new(move values)
+    let text = Box.new("test")
+    var total: u32 = 0
+    loan read shared as items { total = first(items) }
+    loan read text as value { total = total + text_length(value) }
+    return total
+}

@@ -1,0 +1,29 @@
+module lowering {
+    fn bind_match_source(compiler: write FunctionCompiler, arm: frontend::MatchArm) -> Result<void, u32> {
+        let index = compiler.matches.length() - 1
+        if match_pattern_is_wildcard(arm.pattern) == false {
+            return match_drop_source(compiler, index)
+        }
+        match compiler.matches[index].access {
+            Some(mode) => {
+                mode;
+                return Ok(())
+            },
+            None => {
+            }
+        }
+        if type_is_copy(compiler, compiler.matches[index].value_type) {
+            return Ok(())
+        }
+        let binding = Binding {
+            name: frontend::Name {
+                text: "$match-scrutinee", span: arm.span
+            },
+            value_type: sema::type_copy(compiler.matches[index].value_type),
+            address: compiler.matches[index].address,
+            owned: true, available: true, depth: compiler.scope_depth
+        }
+        function_add_binding(compiler, move binding)
+        return Ok(())
+    }
+}

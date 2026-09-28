@@ -1,0 +1,81 @@
+module sema {
+    fn named_path(name: frontend::Name) -> frontend::Path {
+        var segments = Vec<frontend::Name>.new()
+        segments.push(frontend::name_copy(name))
+        return frontend::Path {
+            segments: move segments, span: name.span
+        }
+    }
+
+    fn checker_closure_captures(checker: write Checker, captures: Vec<frontend::ClosureCapture>) -> Vec<ScopedCapture> {
+        var output = Vec<ScopedCapture>.new()
+        for index in 0..captures.length() {
+            loan read captures[index] as capture {
+                checker_capture(checker, capture, output)
+            }
+        }
+        return move output
+    }
+
+    fn checker_capture(checker: write Checker, capture: frontend::ClosureCapture, output: write Vec<ScopedCapture>) -> void {
+        let previous = replace(checker.current_span, capture.name.span)
+        for index in 0..output.length() {
+            if names_equal(checker.symbols.source, output[index].name, capture.name) {
+                checker_error(checker, "duplicate closure capture");
+                checker.current_span = previous;
+                return
+            }
+        }
+        match checker_find_variable(checker, capture.name) {
+            None => {
+                checker_error(checker, "closure captures must name local variables or parameters")
+            }
+            Some(key) => {
+                let variable = checker_variable_copy(checker, key)
+                var usage = ReadPath()
+                if mode_is_write(capture.mode) {
+                    usage = WritePath()
+                }
+                if type_is_scoped_function(variable.value_type) && mode_is_write(capture.mode) == false {
+                    checker_error(checker, "a scoped callback requires a write capture")
+                }
+                let path = named_path(capture.name)
+                match checker_path(checker, path, usage) {
+                    None => {
+                    }
+                    Some(info) => {
+                        info
+                        var requested = frontend::LoanRead()
+                        if mode_is_write(capture.mode) {
+                            requested = frontend::LoanWrite()
+                        }
+                        checker.place_loans.push(PlaceLoan {
+                                depth: checker.scopes.length(), path: frontend::path_copy(path), mode: frontend::LoanRead(), origin: capture.name.span, duration: LoanCallEnd(), requested: requested
+                            })
+                        output.push(ScopedCapture {
+                                name: frontend::name_copy(capture.name), value_type: type_copy(variable.value_type), mode: capture.mode
+                            })
+                    }
+                }
+            }
+        }
+        checker.current_span = previous
+    }
+
+    fn checker_bind_captures(checker: write Checker, captures: Vec<ScopedCapture>) -> void {
+        for index in 0..captures.length() {
+            loan read captures[index] as capture {
+                checker_add_variable(checker, Variable {
+                        name: frontend::name_copy(capture.name)
+                        value_type: type_copy(capture.value_type)
+                        copy_value: type_is_copy_with_symbols(checker.symbols, capture.value_type)
+                        mutable_value: mode_is_write(capture.mode)
+                        state: Available()
+                        access: mode_access(capture.mode)
+                        span: capture.name.span
+                        state_span: capture.name.span
+                    })
+            }
+        }
+    }
+}

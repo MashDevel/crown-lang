@@ -1,0 +1,3 @@
+[package]
+name = "crown_library_tests"
+sources = ["../src", "."]

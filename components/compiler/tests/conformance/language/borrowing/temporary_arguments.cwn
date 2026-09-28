@@ -1,0 +1,43 @@
+resource Item {
+    code: u32, drop {
+        print(code)
+    }
+}
+
+fn sum(left: Item, right: Item) -> u32 {
+    left.code + right.code
+}
+fn copied(value: Item) -> Item {
+    Item {
+        code: value.code + 1
+    }
+}
+fn count<T>(value: T) -> u32 {
+    value;
+    7
+}
+fn text_length(value: Text) -> usize {
+    value.length()
+}
+
+fn main() -> u32 {
+    let value = sum(Item {
+            code: 1
+        }, copied(Item {
+                code: 2
+            }))
+    print(value)
+    let indirect = sum
+    print(indirect(Item {
+                code: 4
+            }, Item {
+                code: 5
+            }))
+    print(count(Item {
+                code: 6
+            }))
+    if text_length("héllo") != 6 {
+        return 1
+    }
+    return 42
+}

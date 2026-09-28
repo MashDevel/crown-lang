@@ -1,0 +1,56 @@
+fn main() -> u32 {
+    let source = frontend_test_source("struct Intermediate<T> { value: T }\nfn consume<T>(value: Intermediate<T>) -> void { value; }\nfn wrap<T>(value: take T) -> void { let intermediate = Intermediate<T> { value: move value }; consume(intermediate) }\nfn main() -> u32 { wrap(7); wrap(\"owned\"); return 0 }")
+    let program = match frontend::parse(source.bytes.share(), source.length, 0) {
+        Ok(value) => move value
+        Err(diagnostics) => {
+            diagnostics;
+            return 1
+        }
+    }
+    var analysis = sema::analyze(source.bytes.share(), program)
+    if analysis.errors != 0 {
+        return 2
+    }
+    if boundary_records(analysis) != 0 {
+        return 3
+    }
+    let input = lowering::ProgramInput {
+        analysis: move analysis, program: move program
+    }
+    var compiler = lowering::compiler_new()
+    match lowering::declare_program(compiler, input.analysis) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            return error
+        }
+    }
+    match lowering::lower_program(compiler, input) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            return error
+        }
+    }
+    return 0
+}
+
+fn boundary_records(analysis: write sema::Analysis) -> u32 {
+    var compiler = lowering::compiler_new()
+    let expression = sema::ExpressionRecord {
+        resource_owner: None()
+        function: None(), span: sema::empty_span(), value_type: sema::ParameterType(0), value: sema::OwnedValue()
+    }
+    lowering::include_expression_drop_types(compiler, analysis, expression)
+    if compiler.drop_types.length() != 0 {
+        return 1
+    }
+    analysis.instances.push(sema::FunctionInstance {
+            function: 18446744073709551615, arguments: Vec<sema::Type>.new()
+        })
+    lowering::include_instance_drop_types(compiler, analysis)
+    analysis.instances.pop()
+    return 0
+}

@@ -1,0 +1,17 @@
+module frontend {
+    enum DiagnosticKind {
+        UnexpectedCharacter
+        InvalidInteger
+        InvalidFloat
+        InvalidCharacter
+        InvalidText
+        MissingToken
+        UnexpectedToken
+        SyntaxDepthExceeded
+    }
+
+    struct Diagnostic {
+        kind: DiagnosticKind
+        span: Span
+    }
+}

@@ -1,0 +1,100 @@
+module optimize {
+    fn phi_states(function: ir::Function) -> Vec<PhiState> {
+        var states = initial_phi_states(function)
+        var changed = true
+        while changed {
+            changed = false
+            var block: usize = 0
+            while block < function.blocks.length() {
+                var index: usize = 0
+                while index < function.blocks[block].instructions.length() {
+                    changed = update_phi_state(function.blocks[block].instructions[index], states) || changed
+                    index = index + 1
+                }
+                block = block + 1
+            }
+        }
+        return move states
+    }
+
+    fn initial_phi_states(function: ir::Function) -> Vec<PhiState> {
+        var output = Vec<PhiState>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(PhiUnknown());
+            index = index + 1
+        }
+        index = 0
+        while index < function.parameters.length() {
+            output[function.parameters[index]] = PhiOverdefined()
+            index = index + 1
+        }
+        index = 0
+        while index < function.constants.length() {
+            loan read function.constants[index] as entry {
+                output[entry.id] = PhiConstant(ir::constant_copy(entry.value))
+            }
+            index = index + 1
+        }
+        mark_non_phi_results(function, output)
+        return move output
+    }
+
+    fn mark_non_phi_results(function: ir::Function, states: write Vec<PhiState>) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                if ir::instruction_is_phi(function.blocks[block].instructions[index].kind) == false {
+                    match read function.blocks[block].instructions[index].result {
+                        Some(result) => {
+                            states[result] = PhiOverdefined()
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn update_phi_state(instruction: ir::Instruction, states: write Vec<PhiState>) -> bool {
+        match read instruction.result {
+            None => {
+                return false
+            }
+            Some(result) => {
+                match read instruction.kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        value_type
+                        var state = PhiUnknown()
+                        var index: usize = 0
+                        while index < incoming.length() {
+                            let value = incoming[index].value
+                            var operand_state = PhiUnknown()
+                            loan read states[value] as current {
+                                operand_state = phi_state_copy(current)
+                            }
+                            let next = phi_join(state, operand_state)
+                            state = move next
+                            index = index + 1
+                        }
+                        var old = PhiUnknown()
+                        loan read states[result] as current {
+                            old = phi_state_copy(current)
+                        }
+                        let next = phi_join(old, state)
+                        let changed = phi_state_equal(next, old) == false
+                        states[result] = move next
+                        return changed
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+}

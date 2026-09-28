@@ -1,0 +1,23 @@
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+fn call(action: scoped fn() -> u32) -> u32 {
+    return action()
+}
+resource Guard {
+    id: u32
+    drop {
+        let action: fn(take u32) -> u32 = identity
+        let value = call(fn[read id]() {
+                return identity(id)
+            })
+        print(action(value))
+    }
+}
+fn main() -> u32 {
+    let guard = Guard {
+        id: 42
+    };
+    guard;
+    return 0
+}

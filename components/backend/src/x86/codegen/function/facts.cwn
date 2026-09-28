@@ -1,0 +1,90 @@
+module x86 {
+    fn codegen_symbol_addresses(function: ir::Function) -> Vec<Option<Text>> {
+        var output = codegen_empty_symbols(function.values.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    codegen_record_symbol(instruction, output)
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn codegen_empty_symbols(length: usize) -> Vec<Option<Text>> {
+        var output = Vec<Option<Text>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_record_symbol(instruction: ir::Instruction, output: write Vec<Option<Text>>) -> void {
+        match read instruction.result {
+            Some(value) => {
+                match read instruction.kind {
+                    ir::InstructionMemory(instruction_memory_kind) => {
+                        match read instruction_memory_kind {
+                            ir::MemorySymbolAddress(symbol) => {
+                                output[value] = Some(symbol.clone())
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+    }
+
+    fn codegen_value_uses(function: ir::Function) -> Vec<usize> {
+        var output = codegen_usize_values(function.values.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    codegen_count_operands(ir::instruction_operands(instruction.kind), output)
+                }
+                index = index + 1
+            }
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    codegen_count_operands(ir::terminator_operands(terminator), output)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn codegen_usize_values(length: usize) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(0);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_count_operands(operands: take Vec<usize>, counts: write Vec<usize>) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            counts[operands[index]] = counts[operands[index]] + 1
+            index = index + 1
+        }
+    }
+}

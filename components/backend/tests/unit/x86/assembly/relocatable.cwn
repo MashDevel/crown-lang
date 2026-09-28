@@ -1,0 +1,82 @@
+fn library_assembly() -> Result<void, u32> {
+    var program = x86::program_relocatable()
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::Return())
+    var function = x86::function_new("identity", move instructions)
+    x86::function_export(function)
+    match x86::program_add_function(program, move function) {
+        Ok(value) => {
+            value
+        },
+        Err(error) => {
+            error;
+            return Err(2)
+        }
+    }
+    let object = match x86::encode_program(program) {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return Err(3)
+        }
+    }
+    let assembly = x86::assembly_relocatable(object, x86::AssemblyFormat::MachO())?
+    if std::text::contains(assembly, ".globl _identity") == false {
+        return Err(4)
+    }
+    if std::text::contains(assembly, "_main") {
+        return Err(5)
+    }
+    match x86::assembly(object, x86::AssemblyFormat::MachO()) {
+        Ok(value) => {
+            value;
+            return Err(6)
+        },
+        Err(error) => {
+            if error != 1 {
+                return Err(7)
+            }
+        }
+    }
+    return Ok(())
+}
+
+fn invalid_assembly() -> Result<void, u32> {
+    var object = object::new()
+    let empty = x86::assembly_relocatable(object, x86::AssemblyFormat::Elf())?
+    if std::text::contains(empty, "main") {
+        return Err(8)
+    }
+    object.sections.push(object::Section {
+            name: "invalid", kind: object::SectionText(), alignment: 3, data: Vec<u8>.new(), memory_size: 0
+        })
+    return match x86::assembly_relocatable(object, x86::AssemblyFormat::Elf()) {
+        Ok(value) => {
+            value;
+            Err(9)
+        },
+        Err(error) => {
+            if error == 1 {
+                Ok(())
+            } else {
+                Err(10)
+            }
+        }
+    }
+}
+
+fn run() -> Result<void, u32> {
+    library_assembly()?
+    invalid_assembly()?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(value) => {
+            value;
+            42
+        },
+        Err(error) => error
+    }
+}

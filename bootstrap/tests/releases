@@ -1,0 +1,83 @@
+release_package() {
+    fixture
+    seed
+    fetch
+    mkdir -p "$project/target/bootstrap" "$project/bootstrap/tests/fixtures"
+    cp "$root/bootstrap/tests/fixtures/hello.cwn" "$project/bootstrap/tests/fixtures/hello.cwn"
+    printf 'target/\nbootstrap/%s/\n' "$host" > "$project/.gitignore"
+    printf 'fixture\n' > "$project/README.md"
+    cat > "$project/target/bootstrap/crown" <<'SH'
+#!/bin/sh
+set -eu
+test "$1" = build
+test "$CC" = /unavailable
+printf 'local metadata\n' > "$CROWN_ROOT/.DS_Store"
+printf 'untracked staging output\n' > "$CROWN_ROOT/untracked-stage"
+printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "${CROWN_TEST_SMOKE_OUTPUT:-42}" > "$4"
+chmod +x "$4"
+SH
+    chmod +x "$project/target/bootstrap/crown"
+    git -C "$project" init -q
+    git -C "$project" add .
+    git -C "$project" -c user.name=Fixture -c user.email=fixture@example.invalid -c core.hooksPath=/dev/null commit -qm fixture
+    printf 'untracked\n' > "$project/untracked"
+    sh "$project/bootstrap/package-release" "$assets/package"
+    mkdir "$assets/extracted"
+    tar -xzf "$assets/package/crown-$host.tar.gz" -C "$assets/extracted"
+    test -x "$assets/extracted/crown-$host/crown"
+    test ! -e "$assets/extracted/crown-$host/untracked"
+    test ! -e "$assets/extracted/crown-$host/.DS_Store"
+    test ! -e "$assets/extracted/crown-$host/untracked-stage"
+    tar --numeric-owner -tvzf "$assets/package/crown-$host.tar.gz" > "$assets/members"
+    awk '$2 != "0/0" && !($3 == "0" && $4 == "0") { exit 1 }' "$assets/members"
+    cmp "$project/bootstrap/$host/compiler.s" "$assets/extracted/crown-$host/bootstrap/$host/compiler.s"
+    compiler_digest=$(awk -v field=compiler_sha256 -f "$root/bootstrap/digest.awk" "$assets/package/crown-bootstrap-$host.lock.json")
+    test "$compiler_digest" = "$(sh "$root/bootstrap/checksum" "$project/target/bootstrap/crown")"
+    archive_digest=$(awk -v field=compiler_archive_sha256 -f "$root/bootstrap/digest.awk" "$assets/package/crown-bootstrap-$host.lock.json")
+    test "$archive_digest" = "$(sh "$root/bootstrap/checksum" "$assets/package/crown-$host.tar.gz")"
+    test "$(wc -l < "$assets/package/SHA256SUMS-$host" | tr -d ' ')" = 4
+    expect_failure env CROWN_TEST_SMOKE_OUTPUT=13 sh "$project/bootstrap/package-release" "$assets/failed"
+    test ! -e "$assets/failed/crown-$host.tar.gz"
+    printf 'dirty\n' >> "$project/README.md"
+    expect_failure sh "$project/bootstrap/package-release" "$assets/dirty"
+}
+publication_fixture() {
+    fixture
+    mkdir "$project/bin"
+    for target in x86_64-macos arm64-macos x86_64-linux arm64-linux; do
+        for file in "crown-$target.tar.gz" "crown-bootstrap-$target.s.gz" "crown-bootstrap-$target.json" "crown-bootstrap-$target.lock.json"; do
+            printf 'fixture %s\n' "$file" > "$assets/$file"
+            printf '%s  %s\n' "$(sh "$root/bootstrap/checksum" "$assets/$file")" "$file" >> "$assets/SHA256SUMS-$target"
+        done
+    done
+    cat > "$project/bin/gh" <<'SH'
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$CROWN_TEST_GH_LOG"
+case "$1:$2" in
+    api:*) printf '%s\n' fixture-commit ;;
+    release:create) test "${CROWN_TEST_CREATE_FAILURE:-0}" = 0 ;;
+esac
+SH
+    cat > "$project/bin/sha256sum" <<'SH'
+#!/bin/sh
+exec shasum -a 256 "$@"
+SH
+    chmod +x "$project/bin/gh" "$project/bin/sha256sum"
+}
+publish() {
+    env PATH="$project/bin:$PATH" CROWN_TEST_GH_LOG="$project/gh.log" RELEASE_TAG=v0.1.0 RELEASE_COMMIT=fixture-commit GH_REPO=fixture/repository sh "$project/bootstrap/publish-release" "$assets"
+}
+release_publication() {
+    publication_fixture
+    publish > "$scratch/publish.log"
+    test "$(wc -l < "$project/gh.log" | tr -d ' ')" = 3
+    test "$(wc -l < "$assets/SHA256SUMS" | tr -d ' ')" = 16
+    : > "$project/gh.log"
+    CROWN_TEST_CREATE_FAILURE=1 expect_failure publish
+    test "$(wc -l < "$project/gh.log" | tr -d ' ')" = 2
+    : > "$project/gh.log"
+    printf 'corrupt' >> "$assets/crown-arm64-linux.tar.gz"
+    expect_failure publish
+    test ! -s "$project/gh.log"
+}

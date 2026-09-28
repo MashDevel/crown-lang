@@ -1,0 +1,155 @@
+module sema {
+    fn checker_special_method(checker: write Checker, kind: frontend::ExpressionKind, receiver: Type) -> Option<Option<ExpressionInfo>> {
+        match read kind {
+            frontend::ExpressionMethodCall(target, method, arguments) => {
+                target;
+                arguments
+                if name_is(checker.symbols.source, method, "get_unchecked") {
+                    return Some(checker_get_unchecked(checker, kind, receiver))
+                }
+                return checker_special_receiver(checker, kind, receiver, method)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn checker_special_receiver(checker: write Checker, kind: frontend::ExpressionKind, receiver: Type, method: frontend::Name) -> Option<Option<ExpressionInfo>> {
+        if builtin_is_float(type_builtin(receiver)) && name_is(checker.symbols.source, method, "to_bits") {
+            return Some(checker_float_bits_method(checker, kind, type_builtin(receiver)))
+        }
+        match read receiver {
+            ArrayType(element, length) => {
+                length
+                if name_is(checker.symbols.source, method, "as_raw") {
+                    loan read element as value {
+                        return Some(checker_array_raw(checker, kind, value))
+                    }
+                }
+                return None()
+            }
+            _ => checker_builtin_raw_receiver(checker, kind, receiver, method)
+        }
+    }
+
+    fn checker_builtin_raw_receiver(checker: write Checker, kind: frontend::ExpressionKind, receiver: Type, method: frontend::Name) -> Option<Option<ExpressionInfo>> {
+        match read receiver {
+            BuiltinType(builtin, types) => {
+                if builtin == RawPtr() {
+                    return Some(checker_raw_pointer_method(checker, kind, types))
+                }
+                if name_is(checker.symbols.source, method, "as_raw") == false {
+                    return None()
+                }
+                if builtin == Text() || builtin == TextView() {
+                    return Some(checker_as_raw(checker, kind, builtin_leaf(U8())))
+                }
+                if builtin == Vec() && types.length() == 1 {
+                    return Some(checker_as_raw(checker, kind, type_copy(types[0])))
+                }
+                return None()
+            }
+            _ => None()
+        }
+    }
+
+    fn checker_get_unchecked(checker: write Checker, kind: frontend::ExpressionKind, receiver: Type) -> Option<ExpressionInfo> {
+        if checker.unsafe_depth == 0 {
+            checker_error(checker, "this operation requires unsafe and compatible argument types");
+            return None()
+        }
+        match read kind {
+            frontend::ExpressionMethodCall(target, method, arguments) => {
+                target;
+                method
+                if arguments.length() != 1 {
+                    checker_error(checker, "this operation requires unsafe and compatible argument types");
+                    return None()
+                }
+                match indexed_element(receiver) {
+                    None => {
+                        checker_error(checker, "this operation requires unsafe and compatible argument types");
+                        return None()
+                    }
+                    Some(element) => {
+                        if type_is_copy_with_symbols(checker.symbols, element) == false {
+                            checker_error(checker, "this operation requires unsafe and compatible argument types");
+                            return None()
+                        }
+                        loan read arguments[0] as argument {
+                            let expected = builtin_leaf(USize())
+                            checker_value(checker, argument, expected)
+                        }
+                        return Some(copy_info(move element))
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "this operation requires unsafe and compatible argument types");
+                return None()
+            }
+        }
+    }
+
+    fn checker_as_raw(checker: write Checker, kind: frontend::ExpressionKind, element: take Type) -> Option<ExpressionInfo> {
+        if checker.unsafe_depth == 0 {
+            checker_error(checker, "this operation requires unsafe and compatible argument types");
+            return None()
+        }
+        match read kind {
+            frontend::ExpressionMethodCall(target, method, arguments) => {
+                target;
+                method
+                if arguments.length() != 0 {
+                    checker_error(checker, "this operation requires unsafe and compatible argument types");
+                    return None()
+                }
+                var types = Vec<Type>.new()
+                types.push(move element)
+                return Some(copy_info(BuiltinType(RawPtr(), move types)))
+            }
+            _ => {
+                checker_error(checker, "this operation requires unsafe and compatible argument types");
+                return None()
+            }
+        }
+    }
+
+    fn checker_raw_pointer_method(checker: write Checker, kind: frontend::ExpressionKind, types: Vec<Type>) -> Option<ExpressionInfo> {
+        if checker.unsafe_depth == 0 {
+            checker_error(checker, "this operation requires unsafe and compatible argument types");
+            return None()
+        }
+        if types.length() != 1 {
+            checker_error(checker, "this operation requires unsafe and compatible argument types");
+            return None()
+        }
+        match read kind {
+            frontend::ExpressionMethodCall(target, method, arguments) => {
+                target
+                return checker_raw_pointer_operation(checker, method, arguments, types[0])
+            }
+            _ => {
+                checker_error(checker, "this operation requires unsafe and compatible argument types");
+                return None()
+            }
+        }
+    }
+    fn checker_raw_pointer_operation(checker: write Checker, method: frontend::Name, arguments: Vec<frontend::Expression>, element: Type) -> Option<ExpressionInfo> {
+        if name_is(checker.symbols.source, method, "offset") {
+            return raw_pointer_offset(checker, arguments, element)
+        }
+        if name_is(checker.symbols.source, method, "read") || name_is(checker.symbols.source, method, "read_volatile") {
+            return raw_pointer_read(checker, arguments, element)
+        }
+        if name_is(checker.symbols.source, method, "write") || name_is(checker.symbols.source, method, "write_volatile") {
+            return raw_pointer_write(checker, arguments, element)
+        }
+        if name_is(checker.symbols.source, method, "fill") {
+            return raw_pointer_fill(checker, arguments, element)
+        }
+        checker_error(checker, "this operation requires unsafe and compatible argument types")
+        return None()
+    }
+}

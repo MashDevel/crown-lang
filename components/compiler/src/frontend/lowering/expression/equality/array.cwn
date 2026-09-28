@@ -1,0 +1,97 @@
+module lowering {
+    struct ArrayEquality {
+        values: Equality
+        length: usize
+        index_address: usize
+        result_address: usize
+        header: usize
+        body: usize
+        exit: usize
+    }
+
+    fn array_equality(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality) -> Result<usize, u32> {
+        match read request.value_type {
+            sema::ArrayType(element, length) => {
+                loan read element as value {
+                    return compare_array_elements(compiler, symbols, request, value, length)
+                }
+            }
+            _ => {
+                return Err(101)
+            }
+        }
+    }
+
+    fn compare_array_elements(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality, element: sema::Type, length: usize) -> Result<usize, u32> {
+        let index_type = sema::builtin_leaf(sema::USize())
+        let bool_type = sema::builtin_leaf(sema::Bool())
+        let index_address = function_stack(compiler, symbols, index_type)?
+        let result_address = function_stack(compiler, symbols, bool_type)?
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 0)
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth1()), 1)
+        let index_store = StoreRequest {
+            address: index_address, value: zero, value_type: sema::type_copy(index_type)
+        }
+        function_store(compiler, symbols, index_store)?
+        let result_store = StoreRequest {
+            address: result_address, value: one, value_type: sema::type_copy(bool_type)
+        }
+        function_store(compiler, symbols, result_store)?
+
+        let values = Equality {
+            left: request.left, right: request.right, value_type: sema::type_copy(element)
+        }
+        let header = function_new_block(compiler)?
+        let body = function_new_block(compiler)?
+        let exit = function_new_block(compiler)?
+        let loop = ArrayEquality {
+            values: move values, length: length, index_address: index_address, result_address: result_address, header: header, body: body, exit: exit
+        }
+        array_equality_loop(compiler, symbols, loop)?
+        let load = Place {
+            address: result_address, value_type: sema::type_copy(bool_type)
+        }
+        return function_load(compiler, symbols, load)
+    }
+
+    fn array_equality_loop(compiler: write FunctionCompiler, symbols: sema::Symbols, loop: ArrayEquality) -> Result<void, u32> {
+        function_finish(compiler, ir::TerminatorBranch(loop.header))?
+        function_select_block(compiler, loop.header)
+        let load = Place {
+            address: loop.index_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, load)?
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let length = function_integer(compiler, size_type, u64.from(loop.length))
+        let within = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), index, length))?
+        function_finish(compiler, ir::TerminatorConditional(within, loop.body, loop.exit))?
+        function_select_block(compiler, loop.body)
+        compare_array_element(compiler, symbols, loop, index)?
+        function_select_block(compiler, loop.exit)
+        return Ok(())
+    }
+    fn compare_array_element(compiler: write FunctionCompiler, symbols: sema::Symbols, loop: ArrayEquality, index: usize) -> Result<void, u32> {
+        let layout = layout(symbols, loop.values.value_type)?
+        let size = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), layout.size)
+        let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), index, size))?
+        let left = function_append_value(compiler, ir::InstructionOffset(loop.values.left, offset))?
+        let right = function_append_value(compiler, ir::InstructionOffset(loop.values.right, offset))?
+        let part = Equality {
+            left: left, right: right, value_type: sema::type_copy(loop.values.value_type)
+        }
+        let equal = equality_value(compiler, symbols, part)?
+        let store = StoreRequest {
+            address: loop.result_address, value: equal, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        function_store(compiler, symbols, store)?
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), index, one))?
+        let advance = StoreRequest {
+            address: loop.index_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, advance)?
+        function_finish(compiler, ir::TerminatorConditional(equal, loop.header, loop.exit))?
+        return Ok(())
+    }
+
+}

@@ -1,0 +1,3 @@
+[package]
+name = "unicode-tables-tests"
+sources = [".", "../src", "../../../../toolchain/src", "../../../../toolchain/tests/support", "../../../src"]

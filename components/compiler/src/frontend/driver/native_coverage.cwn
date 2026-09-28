@@ -1,0 +1,14 @@
+module frontend {
+    fn append_coverage(object: write object::CompilerObject, directory: Text, bytes: u64) -> Result<void, Text> {
+        if directory.length() == 0 {
+            return Ok(())
+        }
+        let path = toolchain::path_join(directory, "run.XXXXXX")
+        let runtime = if object.architecture == object::ArchitectureArm64() {
+            arm64::instrumentation_object(bytes, path, false)?
+        } else {
+            coverage::runtime_object(bytes, path)?
+        }
+        return link_object::merge(object, move runtime)
+    }
+}

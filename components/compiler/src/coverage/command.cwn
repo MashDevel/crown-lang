@@ -1,0 +1,88 @@
+module coverage {
+    fn command(paths: Vec<Text>, output: Text) -> Result<u32, Text> {
+        if paths.length() == 0 {
+            return Err("usage: crown coverage <directories...> [--output report.json]")
+        }
+        let report = load_reports(paths)?
+        let document = report_json(report)
+        if output.length() == 0 {
+            toolchain::say(document)
+        } else {
+            toolchain::write_text(output, document)?
+        }
+        if report.runs == 0 {
+            toolchain::failure("coverage has no recorded executions");
+            return Ok(1)
+        }
+        if report.packages.length() == 0 {
+            toolchain::failure("coverage has no source packages");
+            return Ok(1)
+        }
+        for index in 0..report.packages.length() {
+            if passes(report.packages[index].counts) == false {
+                toolchain::failure("coverage is below 95% line or branch coverage");
+                return Ok(1)
+            }
+        }
+        return Ok(0)
+    }
+
+    fn report_json(report: Report) -> Text {
+        var output = "{\"version\":1"
+        inspect::number_field(output, "runs", report.runs)
+        std::text::append(output, ",\"totals\":")
+        std::text::append(output, counts_json(report.counts))
+        std::text::append(output, ",\"tests\":")
+        std::text::append(output, counts_json(report.test_counts))
+        std::text::append(output, ",\"files\":[")
+        for index in 0..report.files.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, file_report_json(report.files[index]))
+        }
+        std::text::append(output, "],\"packages\":[")
+        for index in 0..report.packages.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, "{\"path\":")
+            std::text::append(output, toolchain::json_quoted(report.packages[index].path))
+            std::text::append(output, ",\"counts\":")
+            std::text::append(output, counts_json(report.packages[index].counts))
+            output.push('}')
+        }
+        std::text::append(output, "]}\n")
+        return move output
+    }
+
+    fn counts_json(value: Counts) -> Text {
+        var output = std::text::joined("{\"lines\":", std::text::decimal(u64.from(value.lines)))
+        inspect::number_field(output, "covered_lines", value.covered_lines)
+        inspect::number_field(output, "branches", value.branches)
+        inspect::number_field(output, "covered_branches", value.covered_branches)
+        output.push('}')
+        return move output
+    }
+
+    fn file_report_json(file: FileReport) -> Text {
+        var output = std::text::joined("{\"path\":", toolchain::json_quoted(file.path))
+        std::text::append(output, ",\"counts\":")
+        std::text::append(output, counts_json(file.counts))
+        std::text::append(output, ",\"missed_lines\":[")
+        var first = true
+        for line in 0..file.lines.length() {
+            if file.lines[line] == 1 {
+                if first == false {
+                    output.push(',')
+                }
+                std::text::append(output, std::text::decimal(u64.from(line)))
+                first = false
+            }
+        }
+        std::text::append(output, "],\"missed_branches\":[")
+        std::text::append(output, file.missed_branches)
+        std::text::append(output, "]}")
+        return move output
+    }
+}

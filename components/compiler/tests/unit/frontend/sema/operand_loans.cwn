@@ -1,0 +1,87 @@
+fn operand_errors(body: Text) -> u32 {
+    var text = "fn consume(values: take Vec<u32>) -> usize { return values.length() - 1 }\nfn clear(values: write Vec<u32>) -> usize { values = Vec<u32>.new()\nreturn 0 }\nfn main() -> u32 { var values = Vec<u32>.new()\nvalues.push(7)\n"
+    std::text::append(text, body)
+    std::text::append(text, "\nreturn 0 }")
+    return program_errors(move text)
+}
+
+fn program_errors(text: take Text) -> u32 {
+    let source = frontend_test_source(move text)
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics
+            return 999
+        }
+        Ok(program) => {
+            let analysis = sema::analyze(source.bytes.share(), program)
+            return analysis.errors
+        }
+    }
+}
+
+fn operands_have_errors(cases: read Slice<Text>, expected: u32) -> bool {
+    for index in 0..cases.length() {
+        if operand_errors(cases[index]) != expected {
+            return false
+        }
+    }
+    return true
+}
+
+fn rejected_operands() -> bool {
+    let bodies = [
+        "loan read values[consume(move values)..1] as part { part.length() }",
+        "loan write values[0..clear(values)] as part { part.length() }",
+        "values.push(u32.from(consume(move values)))",
+        "values.push(u32.from(clear(values)))",
+        "let item = values[clear(values)]\nitem",
+        "values[clear(values)] = 1"
+    ]
+    loan read bodies as cases {
+        return operands_have_errors(cases, 1)
+    }
+}
+
+fn accepted_operands() -> bool {
+    let bodies = [
+        "loan read values[0..values.length()] as part { part.length() }\nclear(values)",
+        "loan write values[values.length()..values.length()] as part { part.length() }\nconsume(move values)",
+        "values.push(u32.from(values.length()))\nclear(values)",
+        "loan read values[0..1] as first { loan read values[0..first.length()] as second { second.length() } }"
+    ]
+    loan read bodies as cases {
+        return operands_have_errors(cases, 0)
+    }
+}
+
+fn failed_operands_release_reservations() -> bool {
+    let bodies = [
+        "loan read values[false..1] as part { part.length() }\nclear(values)",
+        "values.push(false)\nconsume(move values)",
+        "loan read values[clear(values)..1] as part { part.length() }\nclear(values)"
+    ]
+    loan read bodies as cases {
+        return operands_have_errors(cases, 1)
+    }
+}
+
+fn arena_operands_are_protected() -> bool {
+    let text = "fn consume(values: take Arena<u32>, key: Handle<u32>) -> Handle<u32> { values\nreturn key }\nfn main() -> u32 { var values = Arena<u32>.new()\nlet key = values.insert(7)\nvalues.with(consume(move values, key)) as read item { item }\nreturn 0 }"
+    return program_errors(move text) == 1
+}
+
+fn main() -> u32 {
+    if rejected_operands() == false {
+        return 1
+    }
+    if accepted_operands() == false {
+        return 2
+    }
+    if failed_operands_release_reservations() == false {
+        return 3
+    }
+    if arena_operands_are_protected() == false {
+        return 4
+    }
+    return 42
+}

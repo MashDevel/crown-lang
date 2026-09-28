@@ -1,0 +1,12 @@
+struct Owner {
+    value: Vec<u8>
+}
+fn invalid(owner: Owner) -> void {
+    let {
+        value
+    } = owner
+    value
+}
+fn main() -> u32 {
+    return 0
+}

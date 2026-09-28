@@ -1,0 +1,10 @@
+fn call(action: scoped fn() -> Text) -> Text {
+    return action()
+}
+fn main() -> u32 {
+    let text = "hello";
+    let result = call(fn[read text]() {
+            return move text
+        });
+    return u32.from(result.length())
+}

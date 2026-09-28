@@ -1,0 +1,113 @@
+module optimize {
+    fn phi(function: write ir::Function) -> usize {
+        var replacements = none_usize(function.values.length())
+        install_constant_phi_replacements(function, replacements)
+        var added: usize = 1
+        while added != 0 {
+            added = add_phi_replacements(function, replacements)
+        }
+        ir::function_replace_uses_many(function, replacements)
+        remove_results(function, replacements, ir::value_present)
+        return count_some(replacements)
+    }
+
+    fn install_constant_phi_replacements(function: write ir::Function, replacements: write Vec<Option<usize>>) -> void {
+        let states = phi_states(function)
+        var rewrites = Vec<PhiConstantRewrite>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            collect_constant_phis(function, block, states, rewrites)
+            block = block + 1
+        }
+        var index: usize = 0
+        while index < rewrites.length() {
+            loan read rewrites[index] as rewrite {
+                let value = ir::function_constant(function, rewrite.value_type, rewrite.constant)
+                replacements[rewrite.result] = Some(value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn collect_constant_phis(function: ir::Function, block: usize, states: Vec<PhiState>, output: write Vec<PhiConstantRewrite>) -> void {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            match read function.blocks[block].instructions[index].result {
+                Some(result) => {
+                    match read function.blocks[block].instructions[index].kind {
+                        ir::InstructionPhi(value_type, incoming) => {
+                            incoming
+                            match read states[result] {
+                                PhiConstant(constant) => {
+                                    output.push(PhiConstantRewrite {
+                                            result: result
+                                            value_type: value_type
+                                            constant: ir::constant_copy(constant)
+                                        })
+                                }
+                                _ => {
+                                }
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn add_phi_replacements(function: write ir::Function, replacements: write Vec<Option<usize>>) -> usize {
+        var rewrites = Vec<PhiRewrite>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            find_phi_replacements(function, block, replacements, rewrites)
+            block = block + 1
+        }
+        var added: usize = 0
+        var index: usize = 0
+        while index < rewrites.length() {
+            loan read rewrites[index] as rewrite {
+                let value = materialize_phi_replacement(function, rewrite.replacement)
+                let resolved = resolve_phi_value(value, replacements)
+                if resolved != rewrite.result && phi_creates_cycle(rewrite.result, resolved, replacements) == false {
+                    replacements[rewrite.result] = Some(resolved)
+                    added = added + 1
+                }
+            }
+            index = index + 1
+        }
+        return added
+    }
+
+    fn find_phi_replacements(function: ir::Function, block: usize, replacements: Vec<Option<usize>>, output: write Vec<PhiRewrite>) -> void {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            match read function.blocks[block].instructions[index].result {
+                Some(result) => {
+                    var existing: Option<usize> = None()
+                    loan read replacements[result] as value {
+                        existing = option_usize_value(value)
+                    }
+                    if replacement_missing(existing) {
+                        match phi_replacement(function, result, function.blocks[block].instructions[index].kind, replacements) {
+                            Some(replacement) => {
+                                output.push(PhiRewrite {
+                                        result: result, replacement: move replacement
+                                    })
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+}

@@ -1,0 +1,39 @@
+module lowering {
+    fn unchecked_index_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var container: usize = 0
+        var container_type = sema::Invalid()
+        var index_value: usize = 0
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 1 || sema::name_is(analysis.checker.symbols.source, method, "get_unchecked") == false {
+                    return Err(353)
+                }
+                loan read receiver as value {
+                    let place = expression_place_info(compiler, analysis, value)?
+                    container = place.address
+                    container_type = sema::type_copy(place.value_type)
+                }
+                loan read arguments[0] as value {
+                    index_value = function_scalar_expression(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(354)
+            }
+        }
+        var element_type = sema::Invalid()
+        match sema::indexed_element(container_type) {
+            Some(value) => {
+                element_type = move value
+            }
+            None => {
+                return Err(356)
+            }
+        }
+        let state = IndexState {
+            container: container, index: index_value, container_type: move container_type, element_type: move element_type, checked: false
+        }
+        let place = finish_index_place(compiler, analysis.checker.symbols, move state)?
+        return stored_place_value(compiler, analysis.checker.symbols, place)
+    }
+}

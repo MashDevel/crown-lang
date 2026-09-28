@@ -1,0 +1,62 @@
+fn json_roundtrip() -> Result<void, Text> {
+    let values = testing::list("|plain|é λ 😀|\"\\\n\t\r\0|é😀")
+    for index in 0..values.length() {
+        let document = toolchain::json(toolchain::json_quoted(values[index]))?
+        testing::expect(std::text::equal(toolchain::json_text(document, document.root)?, values[index]), "JSON string roundtrip")?
+    }
+    json_nested()?
+    return Ok(())
+}
+
+fn invalid_json() -> Result<void, Text> {
+    let values = testing::list("|[1,]|{\"x\":1,}|{\"x\":1,\"x\":2}|01|+1|1.|1e|true false|\"\\ud800\"|\"\\ud800\\u0041\"|\"\\udc00\"|\"\\x\"|\"a\n\"|{1:2}|\"unterminated|tru|fals|nul|[1 2]|{\"x\" 1}|{\"x\":}|[\"a\" \"b\"]|{\"x\":1 \"y\":2}")
+    for index in 0..values.length() {
+        testing::error(toolchain::json(values[index].clone()))?
+    }
+    testing::error(toolchain::json(std::text::joined(std::text::repeat("[", 65), std::text::joined("0", std::text::repeat("]", 65)))))?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    json_roundtrip()?;
+    invalid_json()?;
+    json_escape_forms()?;
+    bounded_json()?;
+    return Ok(())
+}
+
+fn json_escape_forms() -> Result<void, Text> {
+    let document = toolchain::json("\"\\b\\f\\n\\r\"")?
+    let value = toolchain::json_text(document, document.root)?
+    loan read value as bytes {
+        return testing::expect(bytes.length() == 4 && bytes[0] == 8 && bytes[1] == 12 && bytes[2] == 10 && bytes[3] == 13, "JSON control escapes")
+    }
+}
+fn bounded_json() -> Result<void, Text> {
+    let source = std::text::joined(std::text::repeat("[", 64), std::text::joined("0", std::text::repeat("]", 64)))
+    testing::error(toolchain::json(source.clone()))?
+    let parsed = toolchain::json_bounded(source.clone(), 128)?
+    testing::expect(parsed.values.length() == 65, "custom JSON depth retains full document")?
+    testing::error(toolchain::json_bounded("0", 0))?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn json_nested() -> Result<void, Text> {
+    let document = toolchain::json("{\"nested\":[true,false,null,-1.25e+3,{\"escaped\":\"\\ud83d\\ude00\"}]}")?
+    let array = toolchain::json_array_values(document, toolchain::json_required(document, document.root, "nested")?)?
+    testing::expect(array.length() == 5, "JSON nested values")?
+    let value = toolchain::json_text(document, toolchain::json_required(document, array[4], "escaped")?)?
+    testing::expect(std::text::equal(value, "😀"), "JSON surrogate pair")?
+    json_query_failures(document, array)?
+    return Ok(())
+}
+
+fn json_query_failures(document: toolchain::Json, array: Vec<usize>) -> Result<void, Text> {
+    testing::error(toolchain::json_known_fields(document, document.root, "|other|"))?
+    testing::error(toolchain::json_integer(document, array[0]))?
+    testing::error(toolchain::json_required(document, document.root, "missing"))?
+    return Ok(())
+}

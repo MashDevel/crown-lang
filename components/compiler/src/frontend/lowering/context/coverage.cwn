@@ -1,0 +1,16 @@
+module lowering {
+    fn declare_coverage_imports(compiler: write Compiler) -> void {
+        var enabled = false
+        match read compiler.tables.coverage {
+            Some(value) => {
+                value;
+                enabled = true
+            }
+            None => {
+            }
+        }
+        if enabled {
+            add_runtime_import(compiler, "crown_cov_hit")
+        }
+    }
+}

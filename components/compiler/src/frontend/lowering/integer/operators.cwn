@@ -1,0 +1,154 @@
+module lowering {
+    fn integer_is_signed(value_type: sema::Type) -> bool {
+        let kind = sema::type_builtin(value_type)
+        return sema::builtin_is_signed(kind)
+    }
+
+    fn integer_comparison_operator(operator: frontend::BinaryOperator, signed: bool) -> Result<ir::CompareOperator, u32> {
+        match read operator {
+            frontend::BinaryEqual => {
+                return Ok(ir::CompareEqual())
+            }
+            frontend::BinaryNotEqual => {
+                return Ok(ir::CompareNotEqual())
+            }
+            _ => integer_ordering_operator(operator, signed)
+        }
+    }
+
+    fn integer_binary_operator(operator: frontend::BinaryOperator, signed: bool) -> Result<ir::BinaryOperator, u32> {
+        match read operator {
+            frontend::BinaryAdd => {
+                return Ok(ir::BinaryAdd())
+            }
+            frontend::BinarySubtract => {
+                return Ok(ir::BinarySubtract())
+            }
+            frontend::BinaryMultiply => {
+                return Ok(ir::BinaryMultiply())
+            }
+            frontend::BinaryDivide => {
+                if signed {
+                    return Ok(ir::BinarySignedDivide())
+                };
+                return Ok(ir::BinaryUnsignedDivide())
+            }
+            frontend::BinaryRemainder => {
+                if signed {
+                    return Ok(ir::BinarySignedRemainder())
+                };
+                return Ok(ir::BinaryUnsignedRemainder())
+            }
+            _ => integer_bitwise_operator(operator, signed)
+        }
+    }
+
+    fn integer_is_bitwise(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryBitwiseAnd => {
+                return true
+            }
+            frontend::BinaryBitwiseOr => {
+                return true
+            }
+            frontend::BinaryBitwiseXor => {
+                return true
+            }
+            frontend::BinaryShiftLeft => {
+                return true
+            }
+            frontend::BinaryShiftRight => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn integer_is_shift(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryShiftLeft => {
+                return true
+            }
+            frontend::BinaryShiftRight => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn integer_is_division(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryDivide => {
+                return true
+            }
+            frontend::BinaryRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn integer_ordering_operator(operator: frontend::BinaryOperator, signed: bool) -> Result<ir::CompareOperator, u32> {
+        match read operator {
+            frontend::BinaryLess => {
+                if signed {
+                    return Ok(ir::CompareSignedLess())
+                };
+                return Ok(ir::CompareUnsignedLess())
+            }
+            frontend::BinaryLessEqual => {
+                if signed {
+                    return Ok(ir::CompareSignedLessEqual())
+                };
+                return Ok(ir::CompareUnsignedLessEqual())
+            }
+            frontend::BinaryGreater => {
+                if signed {
+                    return Ok(ir::CompareSignedGreater())
+                };
+                return Ok(ir::CompareUnsignedGreater())
+            }
+            frontend::BinaryGreaterEqual => {
+                if signed {
+                    return Ok(ir::CompareSignedGreaterEqual())
+                };
+                return Ok(ir::CompareUnsignedGreaterEqual())
+            }
+            _ => {
+                return Err(109)
+            }
+        }
+    }
+
+    fn integer_bitwise_operator(operator: frontend::BinaryOperator, signed: bool) -> Result<ir::BinaryOperator, u32> {
+        match read operator {
+            frontend::BinaryBitwiseAnd => {
+                return Ok(ir::BinaryAnd())
+            }
+            frontend::BinaryBitwiseOr => {
+                return Ok(ir::BinaryOr())
+            }
+            frontend::BinaryBitwiseXor => {
+                return Ok(ir::BinaryXor())
+            }
+            frontend::BinaryShiftLeft => {
+                return Ok(ir::BinaryShiftLeft())
+            }
+            frontend::BinaryShiftRight => {
+                if signed {
+                    return Ok(ir::BinaryShiftRightSigned())
+                };
+                return Ok(ir::BinaryShiftRightUnsigned())
+            }
+            _ => {
+                return Err(110)
+            }
+        }
+    }
+}

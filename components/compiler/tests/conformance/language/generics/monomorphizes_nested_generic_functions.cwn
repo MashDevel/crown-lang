@@ -1,0 +1,12 @@
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+fn relay<T>(value: take T) -> T {
+    return identity(move value)
+}
+fn main() -> u32 {
+    let text = identity("crown")
+    let length = text.length()
+    length
+    return relay(7)
+}

@@ -1,0 +1,94 @@
+module arm64 {
+    fn compile_binary(function: ir::Function, compiler: write Compiler, operator: ir::BinaryOperator, left: usize, right: usize) -> Result<void, Text> {
+        let value_type = function.values[left]
+        if ir::type_is_vector(value_type) {
+            return vector_binary(function, compiler, operator, left, right)
+        }
+        if value_size(value_type)? == 16 {
+            return wide_binary(compiler, operator, left, right)
+        }
+        if ir::binary_is_float(operator) == false && ir::binary_may_trap(operator) == false {
+            return register_binary(compiler, operator, value_type, left, right)
+        }
+        value_load(compiler, left, 9)
+        value_load(compiler, right, 10)
+        if ir::binary_is_float(operator) {
+            return compile_float_binary(compiler, operator, value_type)
+        }
+        if signed_binary(operator) {
+            normalize(compiler, value_type, 9, true)
+            normalize(compiler, value_type, 10, true)
+        }
+        if ir::binary_may_trap(operator) {
+            return compile_division(compiler, operator)
+        }
+        return Err("invalid ARM64 binary operation")
+    }
+    fn signed_binary(operator: ir::BinaryOperator) -> bool {
+        return operator == ir::BinarySignedDivide() || operator == ir::BinarySignedRemainder() || operator == ir::BinaryShiftRightSigned()
+    }
+    fn compile_division(compiler: write Compiler, operator: ir::BinaryOperator) -> Result<void, Text> {
+        emit_encoding(compiler, compare_word(10, 31))
+        emit_encoding(compiler, conditional_branch(8, 1))
+        emit(compiler, 3558866944)
+        let operation = if signed_binary(operator) {
+            IntegerOperation::SignedDivide()
+        } else {
+            IntegerOperation::UnsignedDivide()
+        }
+        emit_encoding(compiler, integer_word(operation, Registers {
+                    destination: 11, left: 9, right: 10
+                }))
+        if operator == ir::BinarySignedRemainder() || operator == ir::BinaryUnsignedRemainder() {
+            emit_encoding(compiler, integer_word(IntegerOperation::Multiply(), Registers {
+                        destination: 11, left: 11, right: 10
+                    }))
+            emit_encoding(compiler, integer_word(IntegerOperation::Subtract(), Registers {
+                        destination: 9, left: 9, right: 11
+                    }))
+        } else {
+            emit_registers(compiler, 2852126720, 9, 31, 11)
+        }
+        return Ok(())
+    }
+    fn compile_unary(function: ir::Function, compiler: write Compiler, operator: ir::UnaryOperator, value: usize) -> Result<void, Text> {
+        value_load(compiler, value, 9)
+        if value_size(function.values[value])? == 16 {
+            value_high(compiler, value, 10)
+            if operator == ir::UnaryNegate() {
+                wide_negate(compiler, 9, 10)
+                return Ok(())
+            }
+            emit_registers(compiler, 2854223872, 9, 31, 9)
+            emit_registers(compiler, 2854223872, 10, 31, 10)
+            return Ok(())
+        }
+        match operator {
+            ir::UnaryNegate => emit_registers(compiler, 3405774848, 9, 31, 9)
+            ir::UnaryNot => emit_registers(compiler, 2854223872, 9, 31, 9)
+            ir::UnaryFloatNegate => {
+                let double = ir::type_is_float64(function.values[value])
+                emit_encoding(compiler, float_move_bits(0, 9, true, double))
+                emit_encoding(compiler, float_negate(0, 0, double))
+                emit_encoding(compiler, float_move_bits(9, 0, false, double))
+            }
+        }
+        return Ok(())
+    }
+
+    fn integer_operation(operator: ir::BinaryOperator) -> Result<IntegerOperation, Text> {
+        let operation = match operator {
+            ir::BinaryAdd => IntegerOperation::Add()
+            ir::BinarySubtract => IntegerOperation::Subtract()
+            ir::BinaryMultiply => IntegerOperation::Multiply()
+            ir::BinaryAnd => IntegerOperation::And()
+            ir::BinaryOr => IntegerOperation::Or()
+            ir::BinaryXor => IntegerOperation::Xor()
+            _ => {
+                return Err("invalid ARM64 integer operation")
+            }
+        }
+        return Ok(operation)
+    }
+
+}

@@ -1,0 +1,11 @@
+enum Kind {
+    A(u32), B(Text)
+}
+fn f(value: take Kind) -> u32 {
+    match move value {
+        A(x) | B(x) => 0
+    }
+}
+fn main() -> u32 {
+    0
+}

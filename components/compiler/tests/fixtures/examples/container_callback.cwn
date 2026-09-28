@@ -1,0 +1,17 @@
+struct Map<T> { entries: Vec<T> }
+struct Count { value: u32 }
+fn with_entry<T, C>(map: write Map<T>, context: write C, action: read fn(write T, write C) -> void) -> void {
+    action(map.entries[0], context)
+}
+fn add(value: write Text, count: write Count) -> void {
+    value.push('!')
+    count.value = u32.from(value.length())
+}
+fn main() -> u32 {
+    var entries = Vec<Text>.new()
+    entries.push("*")
+    var map = Map<Text> { entries: move entries }
+    var count = Count { value: 0 }
+    with_entry(map, count, add)
+    return count.value + 40
+}

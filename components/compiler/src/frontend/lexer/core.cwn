@@ -1,0 +1,149 @@
+module frontend {
+    fn lex(source: take Shared<Vec<u8>>, length: usize, source_id: usize) -> Result<Vec<Token>, Vec<Diagnostic>> {
+        var lexer = lexer_new(move source, length, source_id)
+        while lexer.offset < lexer.length {
+            lexer_scan(lexer)
+        }
+        let end = LexerMark {
+            offset: lexer.offset, line: lexer.line, column: lexer.column
+        }
+        lexer_push(lexer, LexerTokenInput {
+                kind: TokenEnd(), mark: move end, integer: 0
+            })
+        let diagnostics = lexer_take_diagnostics(lexer)
+        if diagnostics.length() != 0 {
+            return Err(move diagnostics)
+        }
+        return Ok(lexer_take_tokens(lexer))
+    }
+
+    fn lexer_scan(lexer: write Lexer) -> void {
+        let mark = LexerMark {
+            offset: lexer.offset, line: lexer.line, column: lexer.column
+        }
+        let value = lexer_advance(lexer)
+        if value == 32 || value == 9 || value == 13 {
+            return
+        }
+        if value == 10 {
+            lexer_push(lexer, LexerTokenInput {
+                    kind: TokenNewline(), mark: lexer_mark_copy(mark), integer: 0
+                });
+            return
+        }
+        if lexer_is_alpha(value) {
+            lexer_identifier(lexer, mark);
+            return
+        }
+        if lexer_is_digit(value) {
+            lexer_number(lexer, mark);
+            return
+        }
+        if value == 39 {
+            lexer_character(lexer, mark);
+            return
+        }
+        if value == 34 {
+            lexer_text(lexer, mark);
+            return
+        }
+        lexer_symbol(lexer, value, mark)
+    }
+
+    fn lexer_push(lexer: write Lexer, input: take LexerTokenInput) -> void {
+        var tokens = lexer_take_tokens(lexer)
+        tokens.push(Token {
+                kind: input.kind
+                span: Span {
+                    source: lexer.source_id
+                    start: input.mark.offset
+                    end: lexer.offset
+                    line: input.mark.line
+                    column: input.mark.column
+                }
+                integer: input.integer
+            })
+        lexer.tokens = Some(move tokens)
+    }
+
+    fn lexer_error(lexer: write Lexer, kind: take DiagnosticKind, mark: LexerMark) -> void {
+        var diagnostics = lexer_take_diagnostics(lexer)
+        diagnostics.push(Diagnostic {
+                kind: move kind
+                span: Span {
+                    source: lexer.source_id
+                    start: mark.offset
+                    end: lexer.offset
+                    line: mark.line
+                    column: mark.column
+                }
+            })
+        lexer.diagnostics = Some(move diagnostics)
+    }
+
+    fn lexer_advance(lexer: write Lexer) -> u8 {
+        let value = source_byte(lexer.source, lexer.offset)
+        lexer.offset = lexer.offset + 1
+        if value == 10 {
+            lexer.line = lexer.line + 1
+            lexer.column = 1
+        } else {
+            lexer.column = lexer.column + 1
+        }
+        return value
+    }
+
+    fn lexer_peek(lexer: Lexer) -> Option<u8> {
+        if lexer.offset >= lexer.length {
+            return None()
+        }
+        return Some(source_byte(lexer.source, lexer.offset))
+    }
+
+    fn lexer_peek_next(lexer: Lexer) -> Option<u8> {
+        if lexer.offset + 1 >= lexer.length {
+            return None()
+        }
+        return Some(source_byte(lexer.source, lexer.offset + 1))
+    }
+
+    fn lexer_peek_or_zero(lexer: Lexer) -> u8 {
+        match lexer_peek(lexer) {
+            Some(value) => {
+                return value
+            }
+            None => {
+                return 0
+            }
+        }
+    }
+
+    fn lexer_peek_next_or_zero(lexer: Lexer) -> u8 {
+        match lexer_peek_next(lexer) {
+            Some(value) => {
+                return value
+            }
+            None => {
+                return 0
+            }
+        }
+    }
+
+    fn lexer_is_alpha(value: u8) -> bool {
+        if value >= 65 && value <= 90 {
+            return true
+        }
+        if value >= 97 && value <= 122 {
+            return true
+        }
+        return value == 95
+    }
+
+    fn lexer_is_digit(value: u8) -> bool {
+        return value >= 48 && value <= 57
+    }
+
+    fn lexer_is_alphanumeric(value: u8) -> bool {
+        return lexer_is_alpha(value) || lexer_is_digit(value)
+    }
+}

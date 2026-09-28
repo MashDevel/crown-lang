@@ -1,0 +1,116 @@
+module lowering {
+    struct FunctionBinding {
+        semantic_function: usize
+        arguments: Vec<sema::Type>
+        function: usize
+        signature: ir::Signature
+    }
+
+    struct ImportBinding {
+        semantic_function: usize
+        function: usize
+    }
+
+    struct NamedFunction {
+        name: Text
+        function: usize
+    }
+
+    struct NamedGlobal {
+        name: Text
+        global: usize
+    }
+
+    struct Compiler {
+        output: ir::Program
+        tables: Tables
+        drop_types: Vec<sema::Type>
+        errors: u32
+    }
+
+    struct ProgramInput {
+        analysis: sema::Analysis
+        program: frontend::Program
+    }
+
+    fn compiler_new() -> Compiler {
+        return Compiler {
+            output: ir::program_new()
+            tables: tables_new()
+            drop_types: Vec<sema::Type>.new()
+            errors: 0
+        }
+    }
+
+    fn function_binding_copy(value: FunctionBinding) -> FunctionBinding {
+        return FunctionBinding {
+            semantic_function: value.semantic_function
+            arguments: sema::types_copy(value.arguments)
+            function: value.function
+            signature: ir::signature_copy(value.signature)
+        }
+    }
+
+    fn find_function(compiler: Compiler, semantic_function: usize, arguments: Vec<sema::Type>) -> Option<FunctionBinding> {
+        var index: usize = 0
+        while index < compiler.tables.functions.length() {
+            loan read compiler.tables.functions[index] as binding {
+                if binding.semantic_function == semantic_function && sema::type_vectors_equal(binding.arguments, arguments) {
+                    return Some(function_binding_copy(binding))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn find_import(compiler: Compiler, semantic_function: usize) -> Option<usize> {
+        var index: usize = 0
+        while index < compiler.tables.imports.length() {
+            if compiler.tables.imports[index].semantic_function == semantic_function {
+                return Some(compiler.tables.imports[index].function)
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn find_runtime_import(compiler: Compiler, name: Text) -> Option<usize> {
+        var index: usize = 0
+        while index < compiler.tables.runtime_imports.length() {
+            loan read compiler.tables.runtime_imports[index] as binding {
+                if std::text::equal(binding.name, name) {
+                    return Some(binding.function)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn find_generated_function(compiler: Compiler, name: Text) -> Option<usize> {
+        var index: usize = 0
+        while index < compiler.tables.generated_functions.length() {
+            loan read compiler.tables.generated_functions[index] as binding {
+                if std::text::equal(binding.name, name) {
+                    return Some(binding.function)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn find_global(compiler: Compiler, name: Text) -> Option<usize> {
+        var index: usize = 0
+        while index < compiler.tables.globals.length() {
+            loan read compiler.tables.globals[index] as binding {
+                if std::text::equal(binding.name, name) {
+                    return Some(binding.global)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+}

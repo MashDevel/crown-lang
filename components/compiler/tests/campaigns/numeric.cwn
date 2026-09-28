@@ -1,0 +1,51 @@
+module campaign {
+    fn numeric(environment: harness::Environment, name: Text) -> Result<void, Text> {
+        let table = reference(environment.root, name)?
+        var values = Vec<NumericCase>.new()
+        var results = harness::report()
+        for index in 0..table.rows.length() {
+            let value = numeric_case(table.rows[index], index)?
+            if numeric_batch_complete(values, value) {
+                numeric_batch(environment, values, results);
+                values = Vec<NumericCase>.new()
+            }
+            values.push(move value)
+        }
+        if values.length() != 0 {
+            numeric_batch(environment, values, results)
+        }
+        toolchain::say(std::text::joined(std::text::decimal(u64.from(table.rows.length())), " independent numeric assertions"))
+        if harness::finish_report(results, environment.output)? != 0 {
+            return Err("numeric reference mismatch")
+        }
+        return Ok(())
+    }
+
+    fn numeric_batch_complete(values: Vec<NumericCase>, value: NumericCase) -> bool {
+        if values.length() == 0 {
+            return false
+        }
+        return values.length() == 128 || std::text::equal(values[0].kind, value.kind) == false
+    }
+
+    fn numeric_batch(environment: harness::Environment, values: Vec<NumericCase>, results: write harness::Report) -> void {
+        let name = std::text::joined(std::text::joined(values[0].kind, "-"), std::text::decimal(u64.from(values[0].index)))
+        let result = generated_program(environment, name, numeric_source(values))
+        harness::record_result(results, harness::outcome(name, move result))
+    }
+
+    fn generated_program(environment: harness::Environment, name: Text, source: Text) -> Result<void, Text> {
+        let directory = toolchain::path_join(environment.output, name)
+        toolchain::make_directory(directory)?
+        let path = toolchain::path_join(directory, "main.cwn")
+        toolchain::write_text(path, source)?
+        let sources = toolchain::require_sources(toolchain::single_source(path, toolchain::host_target()))?
+        let context = harness::Environment {
+            coverage: "",
+            compiler: environment.compiler.clone(), root: environment.root.clone(), output: move directory
+        }
+        var arguments = Vec<Text>.new()
+        arguments.push(harness::build_program(context, sources, 128)?)
+        return harness::verify_clean(harness::invoke(move arguments, context.output)?)
+    }
+}

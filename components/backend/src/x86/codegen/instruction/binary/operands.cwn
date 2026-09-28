@@ -1,0 +1,102 @@
+module x86 {
+    fn codegen_load_direct_operands(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<RegisterPair, CodegenError> {
+        let destination = codegen_direct_destination(compiler, input)
+        match codegen_frame_register(compiler.frame, input.left) {
+            Some(register) => {
+                if register_equal(register, destination) == false {
+                    match codegen_load_value(program, compiler, ValueAccess {
+                            value: input.left, register: destination
+                        }) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+            }
+            None => {
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: input.left, register: destination
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+        }
+        let source = codegen_direct_source(compiler, input.right)
+        match codegen_frame_register(compiler.frame, input.right) {
+            Some(register) => {
+                register
+            }
+            None => {
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: input.right, register: source
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+        }
+        return Ok(RegisterPair {
+                destination: destination, source: source
+            })
+    }
+
+    fn codegen_direct_destination(compiler: FunctionCompiler, input: BinaryInput) -> Register {
+        var output: Option<Register> = None()
+        match read input.result {
+            Some(result) => {
+                output = codegen_frame_register(compiler.frame, result)
+            }
+            None => {
+            }
+        }
+        let left = codegen_frame_register(compiler.frame, input.left)
+        let right = codegen_frame_register(compiler.frame, input.right)
+        match read output {
+            Some(register) => {
+                if codegen_option_register_equal(left, register) {
+                    return register
+                }
+                if codegen_option_register_equal(right, register) == false {
+                    return register
+                }
+            }
+            None => {
+            }
+        }
+        return R11()
+    }
+
+    fn codegen_direct_source(compiler: FunctionCompiler, value: usize) -> Register {
+        match codegen_frame_register(compiler.frame, value) {
+            Some(register) => {
+                return register
+            }
+            None => {
+                return Rcx()
+            }
+        }
+    }
+
+    fn codegen_option_register_equal(value: Option<Register>, expected: Register) -> bool {
+        match read value {
+            Some(register) => {
+                return register_equal(register, expected)
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}

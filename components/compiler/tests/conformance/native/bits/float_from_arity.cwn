@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let value = f64.from_bits();
+    value;
+    return 0
+}

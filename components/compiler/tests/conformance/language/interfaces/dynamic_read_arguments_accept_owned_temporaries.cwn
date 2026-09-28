@@ -1,0 +1,17 @@
+interface Compare {
+    fn compare(self: read Self, other: read Text) -> u32
+}
+struct Value {
+    item: u32
+}
+impl Compare for Value {
+    fn compare(self: read Value, other: read Text) -> u32 {
+        return u32.from(other.length())
+    }
+}
+fn main() -> u32 {
+    let value: dynamic Compare = Value {
+        item: 1
+    }
+    return value.compare("temporary")
+}

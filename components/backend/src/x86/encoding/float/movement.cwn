@@ -1,0 +1,68 @@
+module x86 {
+    fn encode_float_movement(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            MoveFloat(width, destination, source) => {
+                emit_float_operation(output, float_registers(width, destination, source), 16);
+                return true
+            }
+            MoveFromFloat(width, destination, source) => {
+                emit_float_integer(output, float_integer(width, u16.from(float_register_code(source)) |(u16.from(register_code(destination)) << 8), float_width_code(width) == 1), 126);
+                return true
+            }
+            MoveToFloat(width, destination, source) => {
+                emit_float_integer(output, float_integer(width, u16.from(float_register_code(destination)) |(u16.from(register_code(source)) << 8), float_width_code(width) == 1), 110);
+                return true
+            }
+            ConvertFloat(values) => {
+                emit_float_operation(output, float_registers(values.source_width, values.destination, values.source), 90);
+                return true
+            }
+            SignedToFloat(values) => {
+                emit_signed_to_float(output, values);
+                return true
+            }
+            FloatToSigned(values) => {
+                emit_float_to_signed(output, values);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn float_integer(width: FloatWidth, registers: u16, wide: bool) -> FloatIntegerEncoding {
+        return FloatIntegerEncoding {
+            width: float_width_code(width)
+            float_register: u8.from(registers & 255)
+            integer_register: u8.from(registers >> 8)
+            wide: wide
+        }
+    }
+
+    fn emit_float_integer(output: write Vec<u8>, values: take FloatIntegerEncoding, opcode: u8) -> void {
+        output.push(102)
+        emit_float_rex(output, values.wide, u16.from(values.float_register) |(u16.from(values.integer_register) << 8))
+        output.push(15)
+        output.push(opcode)
+        output.push(modrm(3, values.float_register, values.integer_register))
+    }
+
+    fn emit_signed_to_float(output: write Vec<u8>, values: SignedToFloatArgs) -> void {
+        let input = float_integer(values.width, u16.from(float_register_code(values.destination)) |(u16.from(register_code(values.source)) << 8), values.source_64)
+        output.push(float_width_prefix(input.width))
+        emit_float_rex(output, input.wide, u16.from(input.float_register) |(u16.from(input.integer_register) << 8))
+        output.push(15)
+        output.push(42)
+        output.push(modrm(3, input.float_register, input.integer_register))
+    }
+
+    fn emit_float_to_signed(output: write Vec<u8>, values: FloatToSignedArgs) -> void {
+        let input = float_integer(values.width, u16.from(float_register_code(values.source)) |(u16.from(register_code(values.destination)) << 8), values.destination_64)
+        output.push(float_width_prefix(input.width))
+        emit_float_rex(output, input.wide, u16.from(input.integer_register) |(u16.from(input.float_register) << 8))
+        output.push(15)
+        output.push(44)
+        output.push(modrm(3, input.integer_register, input.float_register))
+    }
+}

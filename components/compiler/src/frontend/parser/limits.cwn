@@ -1,0 +1,25 @@
+module frontend {
+    const SYNTAX_DEPTH_LIMIT: u32 = 128
+
+    fn parser_depth_allowed(parser: write Parser, depth: u32) -> bool {
+        if parser.stopped {
+            return false
+        }
+        if depth <= SYNTAX_DEPTH_LIMIT {
+            return true
+        }
+        parser_report(parser, SyntaxDepthExceeded())
+        parser.stopped = true
+        parser.pending_greater = 0
+        parser.offset = parser.tokens.length() - 1
+        return false
+    }
+
+    fn parser_enter(parser: write Parser) -> bool {
+        if parser_depth_allowed(parser, parser.depth + 1) == false {
+            return false
+        }
+        parser.depth = parser.depth + 1
+        return true
+    }
+}

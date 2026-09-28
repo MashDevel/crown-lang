@@ -1,0 +1,71 @@
+module sema {
+    fn checker_return(checker: write Checker, value: frontend::Expression) -> void {
+        if checker.returns_allowed == false {
+            checker_error(checker, "invalid implementation or resource destructor");
+            return
+        }
+        if type_is_infer(checker.result) {
+            match checker_expression(checker, value) {
+                Some(info) => {
+                    checker.result = concrete(info.value_type)
+                    if value_is_borrowed(info.value) && type_is_copy_with_symbols(checker.symbols, info.value_type) == false {
+                        checker_error(checker, "borrowed values cannot escape their scope")
+                    }
+                    checker_require_storable(checker, info.value_type)
+                }
+                None => {
+                }
+            }
+        } else {
+            let expected = type_copy(checker.result)
+            checker_value(checker, value, expected)
+        }
+        checker.continuing = false
+    }
+
+    fn checker_print(checker: write Checker, value: frontend::Expression) -> void {
+        match checker_expression(checker, value) {
+            None => {
+            }
+            Some(info) => {
+                var valid = type_is_bool(info.value_type)
+                match read info.value_type {
+                    BuiltinType(builtin, arguments) => {
+                        arguments
+                        if builtin == U32() {
+                            valid = true
+                        }
+                    }
+                    _ => {
+                    }
+                }
+                if valid == false {
+                    checker_error(checker, "invalid print, break, or continue statement")
+                }
+            }
+        }
+    }
+
+    fn checker_unsafe(checker: write Checker, body: Vec<frontend::Statement>) -> void {
+        checker.unsafe_depth = checker.unsafe_depth + 1
+        checker_push_scope(checker)
+        checker_statements(checker, body)
+        checker_pop_scope(checker)
+        checker.unsafe_depth = checker.unsafe_depth - 1
+    }
+
+    fn checker_break(checker: write Checker) -> void {
+        if checker_loop_exit(checker) == false {
+            return
+        }
+        checker.loop_states[checker.loop_states.length() - 1].breaks = true
+        checker.continuing = false
+    }
+
+    fn checker_continue(checker: write Checker) -> void {
+        if checker_loop_exit(checker) == false {
+            return
+        }
+        checker.continuing = false
+    }
+}

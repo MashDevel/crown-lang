@@ -1,0 +1,86 @@
+fn argument_program(exported: bool, varying: bool, escaped: bool) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    let integer = ir::TypeInteger(ir::IntegerWidth32())
+    ir::program_add_function(program, argument_callee(exported)?)
+    var caller = ir::function_new("caller", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageExport())
+    safety_block(caller)?
+    for index in 0..2 {
+        let constant = safety_integer(caller, ir::IntegerWidth32(), if varying {
+                u64.from(index)
+            } else {
+                42
+            })
+        var arguments = Vec<usize>.new();
+        arguments.push(constant)
+        safety_append(caller, 0, ir::InstructionCall(0, move arguments, integer))?
+    }
+    if escaped {
+        safety_append(caller, 0, ir::InstructionFunctionAddress(0))?
+    }
+    safety_terminate(caller, 0, ir::TerminatorReturn(None()))?
+    ir::program_add_function(program, move caller)
+    return Ok(move program)
+}
+
+fn argument_callee(exported: bool) -> Result<ir::Function, u32> {
+    let integer = ir::TypeInteger(ir::IntegerWidth32())
+    var parameters = Vec<ir::Type>.new();
+    parameters.push(integer)
+    var callee = ir::function_new("callee", ir::signature_new(move parameters, integer), if exported {
+            ir::LinkageExport()
+        } else {
+            ir::LinkageLocal()
+        })
+    safety_block(callee)?
+    safety_terminate(callee, 0, ir::TerminatorReturn(Some(0)))?
+    return Ok(move callee)
+}
+
+fn argument_case(exported: bool, varying: bool, escaped: bool) -> Result<void, u32> {
+    var program = argument_program(exported, varying, escaped)?
+    let expected: usize = if exported || varying || escaped {
+        0
+    } else {
+        1
+    }
+    safety_require(optimize::interprocedural(program) == expected, 1)?
+    let uses = optimize::value_uses(program.functions[0])
+    safety_require((uses[0] == 0) ==(expected == 1), 2)?
+    safety_require(optimize::interprocedural(program) == 0, 3)?
+    return Ok(())
+}
+
+fn indirect_case(compatible: bool) -> Result<void, u32> {
+    var program = argument_program(false, false, false)?
+    let integer = if compatible {
+        ir::TypeInteger(ir::IntegerWidth32())
+    } else {
+        ir::TypeInteger(ir::IntegerWidth64())
+    }
+    let address = safety_append(program.functions[1], 0, ir::InstructionFunctionAddress(0))?
+    let value = ir::function_constant(program.functions[1], integer, ir::ConstantInteger(7))
+    var parameters = Vec<ir::Type>.new();
+    parameters.push(integer)
+    var arguments = Vec<usize>.new();
+    arguments.push(value)
+    safety_append(program.functions[1], 0, ir::InstructionCallIndirect(address, ir::signature_new(move parameters, integer), move arguments))?
+    return safety_require(optimize::resolve_indirect(program) == if compatible {
+            1
+        } else {
+            0
+        }, 4)
+}
+
+fn argument_cases() -> Result<void, u32> {
+    argument_case(false, false, false)?
+    argument_case(true, false, false)?
+    argument_case(false, true, false)?
+    argument_case(false, false, true)?
+    indirect_case(true)?
+    indirect_case(false)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(argument_cases())
+}

@@ -1,0 +1,204 @@
+module lowering {
+    struct ArenaState {
+        address: usize
+        element: sema::Type
+    }
+
+    fn static_arena(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference
+                if arguments.length() != 0 || sema::name_is(analysis.checker.symbols.source, method, "new") == false {
+                    return Err(260)
+                }
+            }
+            _ => {
+                return Err(261)
+            }
+        }
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let arena = function_zeroed_stack(compiler, analysis.checker.symbols, value_type)?
+        let identity = arena_new_identity(compiler)?
+        let address = function_offset(compiler, arena, 40)?
+        function_store(compiler, analysis.checker.symbols, StoreRequest {
+                address: address, value: identity, value_type: sema::builtin_leaf(sema::USize())
+            })?
+        return Ok(AddressValue(arena, move value_type))
+    }
+
+    fn arena_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 1 {
+                    return Err(263)
+                }
+                if sema::name_is(analysis.checker.symbols.source, method, "insert") {
+                    receiver;
+                    return arena_insert(compiler, analysis, expression)
+                }
+                if sema::name_is(analysis.checker.symbols.source, method, "contains") {
+                    receiver;
+                    return arena_contains(compiler, analysis, expression)
+                }
+                if sema::name_is(analysis.checker.symbols.source, method, "remove") {
+                    receiver;
+                    return arena_remove(compiler, analysis, expression)
+                }
+                return Err(264)
+            }
+            _ => {
+                return Err(265)
+            }
+        }
+    }
+
+    struct ArenaInsertion {
+        position: ArenaPosition
+        address: usize
+    }
+
+    fn arena_insert(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                loan read receiver as arena {
+                    let place = expression_place_info(compiler, analysis, arena)?
+                    return lower_arena_insert(compiler, analysis, place, arguments[0], expression)
+                }
+            }
+            _ => {
+                return Err(269)
+            }
+        }
+    }
+
+    fn lower_arena_insert(compiler: write FunctionCompiler, analysis: sema::Analysis, place: Place, argument: frontend::Expression, expression: frontend::Expression) -> Result<Value, u32> {
+        let slot = arena_prepare_insert(compiler, analysis.checker.symbols, place)?
+        copy_expression_to(compiler, analysis, argument, slot.address)?
+        arena_mark_live(compiler, analysis.checker.symbols, ArenaPosition {
+                arena: slot.position.arena, index: slot.position.index
+            })?
+        arena_increment_length(compiler, analysis.checker.symbols, place.address)?
+        let result_type = function_expression_type(compiler, analysis, expression)?
+        let handle = ArenaHandleState {
+            position: ArenaPosition {
+                arena: slot.position.arena, index: slot.position.index
+            }, result_type: move result_type
+        }
+        return arena_make_handle(compiler, analysis.checker.symbols, handle)
+    }
+
+    fn arena_prepare_insert(compiler: write FunctionCompiler, symbols: sema::Symbols, place: Place) -> Result<ArenaInsertion, u32> {
+        let element = arena_element_type(place.value_type)?
+        let state = ArenaState {
+            address: place.address, element: sema::type_copy(element)
+        }
+        let index = arena_slot(compiler, symbols, move state)?
+        let data = function_load_pointer(compiler, place.address)?
+        let item = ArenaItem {
+            data: data, index: index, element: move element
+        }
+        let address = arena_element_address(compiler, symbols, move item)?
+        return Ok(ArenaInsertion {
+                position: ArenaPosition {
+                    arena: place.address, index: index
+                }, address: address
+            })
+    }
+
+    fn arena_remove(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var place = Place {
+            address: 0, value_type: sema::Invalid()
+        }
+        var handle: usize = 0
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                loan read receiver as arena {
+                    place = expression_place_info(compiler, analysis, arena)?
+                }
+                loan read arguments[0] as handle_value {
+                    handle = arena_aggregate_expression(compiler, analysis, handle_value)?
+                }
+            }
+            _ => {
+                return Err(273)
+            }
+        }
+        let element = arena_element_type(place.value_type)?
+        let result_type = function_expression_type(compiler, analysis, expression)?
+        let result = arena_empty_option(compiler, analysis.checker.symbols, result_type)?
+        let removal = ArenaRemovalState {
+            arena: place.address, handle: handle, result: result, result_type: sema::type_copy(result_type), element: move element
+        }
+        arena_remove_handle(compiler, analysis.checker.symbols, removal)?
+        return Ok(AddressValue(result, move result_type))
+    }
+
+    fn arena_element_type(value_type: sema::Type) -> Result<sema::Type, u32> {
+        match sema::arena_element(value_type) {
+            Some(element) => {
+                return Ok(move element)
+            }
+            None => {
+                return Err(267)
+            }
+        }
+    }
+
+    fn arena_aggregate_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        match function_expression(compiler, analysis, expression) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                match move value {
+                    AddressValue(address, value_type) => {
+                        value_type;
+                        return Ok(address)
+                    }
+                    _ => {
+                        return Err(268)
+                    }
+                }
+            }
+        }
+    }
+
+    fn arena_contains(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        return arena_contains_kind(compiler, analysis, expression.kind)
+    }
+
+    fn arena_contains_kind(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                var arena: usize = 0
+                var handle: usize = 0
+                loan read receiver as value {
+                    arena = expression_place(compiler, analysis, value)?
+                }
+                loan read arguments[0] as value {
+                    handle = arena_aggregate_expression(compiler, analysis, value)?
+                }
+                let valid = arena_valid(compiler, analysis.checker.symbols, ArenaPosition {
+                        arena: arena, index: handle
+                    })?
+                return Ok(ScalarValue(valid, sema::builtin_leaf(sema::Bool())))
+            }
+            _ => {
+                return Err(264)
+            }
+        }
+    }
+    fn arena_remove_handle(compiler: write FunctionCompiler, symbols: sema::Symbols, removal: ArenaRemovalState) -> Result<void, u32> {
+        let valid = arena_valid(compiler, symbols, ArenaPosition {
+                arena: removal.arena, index: removal.handle
+            })?
+        let ready = function_begin_guarded_block(compiler, valid)?
+        arena_remove_item(compiler, symbols, removal)?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+}

@@ -1,0 +1,118 @@
+module x86 {
+    fn codegen_compile_compare(program: ir::Program, compiler: write FunctionCompiler, input: take CompareInput) -> Result<void, CodegenError> {
+        if ir::compare_is_float(input.operator) {
+            return codegen_float_compare(program, compiler, move input)
+        }
+        match codegen_emit_integer_compare(program, compiler, input) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(condition) => {
+                codegen_emit(compiler, Set(condition, Rax()))
+                return codegen_store_result(program, compiler, ResultStore {
+                        result: input.result
+                        source: Rax()
+                    })
+            }
+        }
+    }
+
+    fn codegen_float_compare(program: ir::Program, compiler: write FunctionCompiler, input: take CompareInput) -> Result<void, CodegenError> {
+        let width = codegen_float_value_width(program, compiler, input.left)?
+        codegen_load_float_operand(program, compiler, FloatValueAccess {
+                value: input.left, register: Xmm0()
+            })?
+        codegen_load_float_operand(program, compiler, FloatValueAccess {
+                value: input.right, register: Xmm1()
+            })?
+        codegen_emit(compiler, FloatCompare(width, Xmm0(), Xmm1()))
+        match read input.operator {
+            ir::CompareFloatUnorderedNotEqual => {
+                codegen_emit(compiler, Set(NotEqual(), Rax()))
+                codegen_emit(compiler, Set(Parity(), Rcx()))
+                codegen_emit(compiler, Or(Rax(), Rcx()))
+            }
+            _ => {
+                let condition = codegen_float_condition(input.operator)?
+                codegen_emit(compiler, Set(condition, Rax()))
+                codegen_emit(compiler, Set(NotParity(), Rcx()))
+                codegen_emit(compiler, And(Rax(), Rcx()))
+            }
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: Rax()
+            })
+    }
+
+    fn codegen_float_condition(operator: ir::CompareOperator) -> Result<Condition, CodegenError> {
+        match read operator {
+            ir::CompareFloatOrderedEqual => {
+                return Ok(Equal())
+            }
+            ir::CompareFloatOrderedNotEqual => {
+                return Ok(NotEqual())
+            }
+            ir::CompareFloatOrderedLess => {
+                return Ok(Below())
+            }
+            ir::CompareFloatOrderedLessEqual => {
+                return Ok(BelowOrEqual())
+            }
+            ir::CompareFloatOrderedGreater => {
+                return Ok(Above())
+            }
+            ir::CompareFloatOrderedGreaterEqual => {
+                return Ok(AboveOrEqual())
+            }
+            _ => {
+                return Err(codegen_error(CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_emit_integer_compare(program: ir::Program, compiler: write FunctionCompiler, input: CompareInput) -> Result<Condition, CodegenError> {
+        match codegen_emit_immediate_compare(program, compiler, input)? {
+            Some(condition) => {
+                return Ok(condition)
+            }
+            None => {
+            }
+        }
+        match codegen_emit_memory_compare(program, compiler, input)? {
+            Some(condition) => {
+                return Ok(condition)
+            }
+            None => {
+            }
+        }
+        var condition = Equal()
+        match codegen_condition(input.operator) {
+            Some(value) => {
+                condition = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        codegen_load_compare_operands(program, compiler, input)?
+        codegen_emit(compiler, Compare(R11(), Rcx()))
+        return Ok(condition)
+    }
+
+    fn codegen_load_compare_operands(program: ir::Program, compiler: write FunctionCompiler, input: CompareInput) -> Result<void, CodegenError> {
+        let left = ValueAccess {
+            value: input.left, register: R11()
+        }
+        let right = ValueAccess {
+            value: input.right, register: Rcx()
+        }
+        if ir::compare_is_signed(input.operator) {
+            codegen_load_signed(program, compiler, move left)?
+            return codegen_load_signed(program, compiler, move right)
+        } else {
+            codegen_load_value(program, compiler, move left)?
+            return codegen_load_value(program, compiler, move right)
+        }
+    }
+}

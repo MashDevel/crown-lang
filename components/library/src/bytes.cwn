@@ -1,0 +1,39 @@
+module std {
+    module bytes {
+        fn filled(length: usize, value: u8) -> Vec<u8> {
+            var output = Vec<u8>.with_capacity(length)
+            for index in 0..length {
+                index;
+                output.push(value)
+            }
+            return move output
+        }
+
+        fn append(output: write Vec<u8>, source: Slice<u8>) -> void {
+            std::sequence::append(output, source, fn(value) {
+                    return value
+                })
+        }
+
+        fn clone(source: Slice<u8>) -> Vec<u8> {
+            return std::sequence::clone(source, fn(value) {
+                    return value
+                })
+        }
+
+        fn read_u16_le(source: Slice<u8>, offset: usize) -> u16 {
+            return u16.from(source[offset]) | u16.from(source[offset + 1]) << 8
+        }
+
+        fn read_u32_le(source: Slice<u8>, offset: usize) -> u32 {
+            let lower = u32.from(read_u16_le(source, offset))
+            return lower | u32.from(read_u16_le(source, offset + 2)) << 16
+        }
+
+        fn write_u32_le(output: write Vec<u8>, offset: usize, value: u32) -> void {
+            for index in 0..4 {
+                output[offset + index] = u8.from(value >> u32.from(index * 8) & 255)
+            }
+        }
+    }
+}

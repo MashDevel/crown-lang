@@ -1,0 +1,123 @@
+module arm64 {
+    fn codegen(program: take ir::Program, variant: AbiVariant) -> Result<object::CompilerObject, Text> {
+        match ir::validate_program(program) {
+            Err(error) => {
+                error;
+                return Err("invalid IR for ARM64 code generation")
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        return codegen_validated(move program, variant)
+    }
+    fn codegen_validated(input: take ir::Program, variant: AbiVariant) -> Result<object::CompilerObject, Text> {
+        var program = move input
+        for index in 0..program.functions.length() {
+            if ir::function_is_import(program.functions[index]) == false {
+                ir::function_compact_values(program.functions[index])
+            }
+        }
+        var output = object::new()
+        output.architecture = object::ArchitectureArm64()
+        declare_symbols(program, output)
+        output.entry = Some(program_entry(program)?)
+        emit_globals(program, output)?
+        compile_functions(program, output, variant)?
+        append_root_runtime(output)?
+        append_stack_runtime(output)?
+        append_process_runtime(output)?
+        append_arena_runtime(output)?
+        return Ok(move output)
+    }
+    fn program_entry(program: ir::Program) -> Result<usize, Text> {
+        match program.entry {
+            Some(index) => {
+                return Ok(index)
+            },
+            None => {
+            }
+        }
+        for index in 0..program.functions.length() {
+            if ir::function_is_import(program.functions[index]) == false {
+                return Ok(index)
+            }
+        }
+        return Err("ARM64 program has no entry function")
+    }
+    fn compile_functions(program: ir::Program, output: write object::CompilerObject, variant: AbiVariant) -> Result<void, Text> {
+        var symbols = symbol_map(output)
+        for index in 0..program.functions.length() {
+            if ir::function_is_import(program.functions[index]) == false {
+                var compiler = compile_function(program, index, variant)?
+                insert_indexed_function(output, compiler, index, symbols)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn declare_symbols(program: ir::Program, output: write object::CompilerObject) -> void {
+        for index in 0..program.functions.length() {
+            loan read program.functions[index] as function {
+                let binding = match function.linkage {
+                    ir::LinkageImport => object::SymbolImport()
+                    ir::LinkageExport => object::SymbolGlobal()
+                    ir::LinkageLocal => object::SymbolLocal()
+                }
+                output.symbols.push(object::Symbol {
+                        name: function.name.clone(), kind: object::SymbolFunction(), binding: move binding, section: None(), offset: 0, size: 0
+                    })
+            }
+        }
+        for index in 0..program.globals.length() {
+            loan read program.globals[index] as global {
+                let binding = if global.exported {
+                    object::SymbolGlobal()
+                } else {
+                    object::SymbolLocal()
+                }
+                output.symbols.push(object::Symbol {
+                        name: global.name.clone(), kind: object::SymbolData(), binding: move binding, section: None(), offset: 0, size: global.size
+                    })
+            }
+        }
+    }
+    fn symbol_index(output: write object::CompilerObject, name: Text, kind: object::SymbolKind) -> usize {
+        match link_object::existing_symbol(output, name) {
+            Some(index) => {
+                return index
+            },
+            None => {
+            }
+        }
+        let index = output.symbols.length()
+        output.symbols.push(object::Symbol {
+                name: name.clone(), kind: kind, binding: object::SymbolImport(), section: None(), offset: 0, size: 0
+            })
+        return index
+    }
+    fn insert_function(output: write object::CompilerObject, compiler: write Compiler, symbol: usize) -> Result<void, Text> {
+        var symbols = symbol_map(output)
+        return insert_indexed_function(output, compiler, symbol, symbols)
+    }
+    fn insert_indexed_function(output: write object::CompilerObject, compiler: write Compiler, symbol: usize, symbols: write std::map::TextMap<usize>) -> Result<void, Text> {
+        finish_encoding(compiler)?
+        let section = output.sections.length()
+        let size = u64.from(compiler.bytes.length())
+        for index in 0..compiler.symbols.length() {
+            loan read compiler.symbols[index] as fixup {
+                let target = indexed_symbol(output, symbols, fixup)
+                output.relocations.push(object::Relocation {
+                        section: section, offset: fixup.offset, kind: fixup.kind, symbol: target, subtract: None(), addend: 0
+                    })
+            }
+        }
+        output.symbols[symbol].section = Some(section)
+        output.symbols[symbol].size = size
+        output.sections.push(object::Section {
+                name: output.symbols[symbol].name.clone(), kind: object::SectionText(), alignment: 4, data: replace(compiler.bytes, Vec<u8>.new()), memory_size: size
+            })
+        return Ok(())
+    }
+
+}

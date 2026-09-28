@@ -1,0 +1,12 @@
+fn inspect(values: Slice<u32>) -> u32 {
+    loan read values[0..3] as outside {
+        return u32.from(outside.length())
+    }
+}
+
+fn main() -> u32 {
+    let values = [1, 2]
+    loan read values as view {
+        return inspect(view)
+    }
+}

@@ -1,0 +1,14 @@
+fn main() -> u32 {
+    let value = Some(1)
+    match value {
+        Some(item) => {
+            return item
+        },
+        Some(other) => {
+            return other
+        },
+        None => {
+            return 0
+        }
+    }
+}

@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    char.from(1114112)
+    return 0
+}

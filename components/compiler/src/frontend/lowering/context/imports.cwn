@@ -1,0 +1,70 @@
+module lowering {
+    fn declare_foreign_imports(compiler: write Compiler, symbols: sema::Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as function {
+                if function.foreign {
+                    let name = symbol_text(symbols.source, function.symbol)
+                    let id = add_import(compiler, move name)
+                    compiler.tables.imports.push(ImportBinding {
+                            semantic_function: index, function: id
+                        })
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn declare_runtime_imports(compiler: write Compiler) -> void {
+        declare_coverage_imports(compiler)
+        add_runtime_import(compiler, "abort")
+        add_runtime_import(compiler, "dprintf")
+        add_runtime_import(compiler, "free")
+        add_runtime_import(compiler, "malloc")
+        add_runtime_import(compiler, "crown_arena_identity")
+        add_runtime_import(compiler, "memcmp")
+        add_runtime_import(compiler, "pthread_mutex_destroy")
+        add_runtime_import(compiler, "pthread_mutex_init")
+        add_runtime_import(compiler, "pthread_mutex_lock")
+        add_runtime_import(compiler, "pthread_mutex_unlock")
+        add_runtime_import(compiler, "pthread_create")
+        add_runtime_import(compiler, "crown_thread_create_stack")
+        add_runtime_import(compiler, "crown_pthread_create_stack")
+        add_runtime_import(compiler, "crown_root_declare")
+        add_runtime_import(compiler, "crown_root_declare_publish")
+        add_runtime_import(compiler, "crown_root_register")
+        add_runtime_import(compiler, "crown_root_acquire")
+        add_runtime_import(compiler, "crown_root_close")
+        add_runtime_import(compiler, "crown_root_release")
+        add_runtime_import(compiler, "pthread_join")
+        add_runtime_import(compiler, "pthread_rwlock_destroy")
+        add_runtime_import(compiler, "pthread_rwlock_init")
+        add_runtime_import(compiler, "pthread_rwlock_rdlock")
+        add_runtime_import(compiler, "pthread_rwlock_unlock")
+        add_runtime_import(compiler, "pthread_rwlock_wrlock")
+        add_runtime_import(compiler, "realloc")
+        add_runtime_import(compiler, "write")
+    }
+
+    fn add_runtime_import(compiler: write Compiler, name: take Text) -> void {
+        let id = add_import(compiler, name.clone())
+        compiler.tables.runtime_imports.push(NamedFunction {
+                name: move name, function: id
+            })
+    }
+
+    fn add_import(compiler: write Compiler, name: take Text) -> usize {
+        var index: usize = 0
+        while index < compiler.output.functions.length() {
+            loan read compiler.output.functions[index] as function {
+                if ir::function_is_import(function) && std::text::equal(function.name, name) {
+                    return index
+                }
+            }
+            index = index + 1
+        }
+        let signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        let function = ir::function_new(move name, move signature, ir::LinkageImport())
+        return ir::program_add_function(compiler.output, move function)
+    }
+}

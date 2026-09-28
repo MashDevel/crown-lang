@@ -1,0 +1,45 @@
+fn integer(flag: read bool) -> u32 {
+    return if flag {
+        21
+    } else {
+        0
+    }
+}
+
+fn boolean(flag: read bool) -> bool {
+    return if flag {
+        true
+    } else {
+        false
+    }
+}
+
+fn floating(flag: read bool) -> f64 {
+    return if flag {
+        1.5
+    } else {
+        2.5
+    }
+}
+
+fn identity<T>(flag: read bool, value: take T) -> T {
+    return if flag {
+        move value
+    } else {
+        move value
+    }
+}
+
+fn main() -> u32 {
+    if boolean(true) == false || boolean(false) {
+        return 1
+    }
+    if floating(true) + floating(false) != 4.0 {
+        return 2
+    }
+    let copied = identity(false, 21)
+    if copied != 21 {
+        return 3
+    }
+    return integer(true) + identity(true, 21)
+}

@@ -1,0 +1,76 @@
+module ir {
+    struct ValueLiveness {
+        used: Vec<bool>
+        blocks: Vec<BlockLiveness>
+    }
+
+    struct PhiInput {
+        block: usize
+        value: usize
+    }
+
+    struct BlockLiveness {
+        definitions: ir::BitSet
+        uses: ir::BitSet
+        phi_definitions: ir::BitSet
+        phi_inputs: Vec<PhiInput>
+        live_in: ir::BitSet
+        live_out: ir::BitSet
+    }
+
+    struct LivenessRecordState {
+        eligible: Vec<bool>
+        used: Vec<bool>
+    }
+
+    fn flags_new(length: usize) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(false);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn flags_copy(values: Vec<bool>) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn flags_from_slice(values: Slice<bool>) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn bitset_graph(length: usize) -> Vec<ir::BitSet> {
+        var output = Vec<ir::BitSet>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(ir::bitset_new(length));
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn liveness_empty(values: usize) -> BlockLiveness {
+        return BlockLiveness {
+            definitions: ir::bitset_new(values)
+            uses: ir::bitset_new(values)
+            phi_definitions: ir::bitset_new(values)
+            phi_inputs: Vec<PhiInput>.new()
+            live_in: ir::bitset_new(values)
+            live_out: ir::bitset_new(values)
+        }
+    }
+}

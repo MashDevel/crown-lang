@@ -1,0 +1,141 @@
+module sema {
+    fn validate_function_rules(symbols: write Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            symbols.current_span = symbols.functions[index].name.span
+            let errors = function_rule_errors(symbols, symbols.functions[index])
+            report_function_errors(symbols, errors)
+            index = index + 1
+        }
+    }
+
+    fn parameter_invalid(symbols: Symbols, parameter: NamedParameter) -> bool {
+        if callable_views_valid(symbols, parameter.value_type) == false {
+            return true
+        }
+        if type_is_unit(parameter.value_type) {
+            return true
+        }
+        if type_contains_view(symbols, parameter.value_type) == false {
+            return false
+        }
+        let kind = type_builtin(parameter.value_type)
+        if type_direct_view(symbols, parameter.value_type) == false {
+            return true
+        }
+        if mode_is_take(parameter.mode) {
+            return true
+        }
+        if (kind == TextView() || kind == Arguments()) && mode_is_write(parameter.mode) {
+            return true
+        }
+        return false
+    }
+
+    fn foreign_type_valid(value_type: Type, result: bool) -> bool {
+        if type_is_unit(value_type) {
+            return result
+        }
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                let kind = builtin
+                if builtin_is_constant(kind) {
+                    return arguments.length() == 0
+                }
+                return kind == RawPtr() && arguments.length() == 1
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn validate_main(symbols: write Symbols) -> void {
+        var found = false
+        var valid = false
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as function {
+                if function_is_free(function) && name_is(symbols.source, function.name, "main") {
+                    found = true
+                    valid = main_signature(function)
+                }
+            }
+            index = index + 1
+        }
+        if found == false || valid == false {
+            symbols_error(symbols, "main must be a safe non-generic function returning u32, with optional read Arguments")
+        }
+    }
+
+    fn function_is_free(function: Function) -> bool {
+        match read function.kind {
+            FreeFunction => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn main_signature(function: Function) -> bool {
+        if function.foreign || function.unsafe_value || function.type_parameters.length() != 0 {
+            return false
+        }
+        if type_builtin(function.result) != U32() {
+            return false
+        }
+        if function.parameters.length() == 0 {
+            return true
+        }
+        if function.parameters.length() != 1 {
+            return false
+        }
+        loan read function.parameters[0] as parameter {
+            return mode_is_read(parameter.mode) && type_builtin(parameter.value_type) == Arguments()
+        }
+    }
+
+    fn mode_is_read(mode: frontend::Mode) -> bool {
+        match read mode {
+            frontend::ModeRead => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn report_function_errors(symbols: write Symbols, errors: u32) -> void {
+        if errors == 0 {
+            return
+        }
+        symbols.errors = symbols.errors + errors - 1
+        symbols_error(symbols, "invalid function signature: check parameter modes, returned views, and foreign ABI types")
+    }
+
+    fn function_rule_errors(symbols: Symbols, function: Function) -> u32 {
+        var errors: u32 = 0
+        if callable_views_valid(symbols, function.result) == false || type_contains_view(symbols, function.result) {
+            errors = errors + 1
+        }
+        var parameter: usize = 0
+        while parameter < function.parameters.length() {
+            loan read function.parameters[parameter] as value {
+                if parameter_invalid(symbols, value) {
+                    errors = errors + 1
+                }
+                if function.foreign && foreign_type_valid(value.value_type, false) == false {
+                    errors = errors + 1
+                }
+            }
+            parameter = parameter + 1
+        }
+        if function.foreign && foreign_type_valid(function.result, true) == false {
+            errors = errors + 1
+        }
+        errors
+    }
+}

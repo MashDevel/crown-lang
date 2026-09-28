@@ -1,0 +1,82 @@
+fn main() -> u32 {
+    let result_type = ir::TypeInteger(ir::IntegerWidth64())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), result_type)
+    var function = ir::function_new("answer", move signature, ir::LinkageExport())
+    let constant_value = ir::ConstantInteger(u64.from(42))
+    let constant = ir::function_constant(function, result_type, constant_value)
+    var block: usize = 0
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(constant))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 2
+        }
+    }
+    var ir = ir::program_new()
+    let id = ir::program_add_function(ir, move function)
+    ir::program_set_entry(ir, id)
+    var instructions = Vec<x86::Instruction>.new()
+    match x86::codegen_compile_function(ir, id) {
+        Err(error) => {
+            error;
+            return 3
+        }
+        Ok(value) => {
+            instructions = move value
+        }
+    }
+    let machine_function = x86::function_new("answer", move instructions)
+    var machine = x86::program_new("answer")
+    match x86::program_add_function(machine, move machine_function) {
+        Err(error) => {
+            error;
+            return 4
+        }
+        Ok(value) => {
+            value
+        }
+    }
+    match x86::encode_program(machine) {
+        Err(error) => {
+            error;
+            return 5
+        }
+        Ok(object) => {
+            return check_object(object)
+        }
+    }
+    return 42
+}
+
+fn check_object(object: object::CompilerObject) -> u32 {
+    if object.sections.length() != 1 {
+        return 6
+    }
+    if object.sections[0].data.length() != 13 {
+        return 7
+    }
+    if object.sections[0].data[0] != 85 {
+        return 8
+    }
+    if object.sections[0].data[4] != 72 || object.sections[0].data[5] != 199 {
+        return 9
+    }
+    if object.sections[0].data[7] != 42 {
+        return 10
+    }
+    if object.sections[0].data[11] != 93 || object.sections[0].data[12] != 195 {
+        return 11
+    }
+    return 42
+}

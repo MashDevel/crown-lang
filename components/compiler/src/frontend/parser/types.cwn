@@ -1,0 +1,151 @@
+module frontend {
+    fn parser_type_parameters(parser: write Parser) -> Vec<Name> {
+        var output = Vec<Name>.new()
+        if parser_consumed(parser, TokenLess()) == false {
+            return move output
+        }
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenGreater()) == false && parser_at(parser, TokenEnd()) == false {
+            output.push(parser_identifier(parser))
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        parser_expect(parser, TokenGreater())
+        return move output
+    }
+
+    fn parser_type(parser: write Parser) -> TypeRef {
+        if parser_enter(parser) == false {
+            let token = parser_token_at(parser, parser.offset)
+            let name = parser_name_from_token(token)
+            return TypeRef {
+                kind: TypeNamed(move name, Vec<TypeRef>.new()), span: token.span
+            }
+        }
+        let value = parser_type_value(parser)
+        parser.depth = parser.depth - 1
+        return move value
+    }
+
+    fn parser_type_value(parser: write Parser) -> TypeRef {
+        if parser_at(parser, TokenDynamic()) {
+            return parser_dynamic_type(parser)
+        }
+        if parser_at(parser, TokenLeftBracket()) {
+            return parser_array_type(parser)
+        }
+        if parser_at(parser, TokenFn()) {
+            return parser_function_type(parser)
+        }
+        let name = parser_identifier(parser)
+        if parser_name_is(parser, name, "scoped") && parser_at(parser, TokenFn()) {
+            let value = parser_function_type(parser)
+            return TypeRef {
+                kind: TypeScoped(Box.new(move value)), span: span_through(name.span, parser_previous_span(parser))
+            }
+        }
+        return parser_finish_named_type(parser, move name)
+    }
+
+    fn parser_finish_named_type(parser: write Parser, name: take Name) -> TypeRef {
+        let start = name.span
+        var end = name.span
+        var arguments = Vec<TypeRef>.new()
+        if parser_consumed(parser, TokenLess()) {
+            parser_skip_breaks(parser)
+            while parser_at(parser, TokenGreater()) == false && parser_at(parser, TokenShiftRight()) == false && parser_at(parser, TokenEnd()) == false {
+                arguments.push(parser_type(parser))
+                parser_skip_breaks(parser)
+                if parser_consumed(parser, TokenComma()) == false {
+                    break
+                }
+                parser_skip_breaks(parser)
+            }
+            let close = parser_expect_type_close(parser)
+            end = close.span
+        }
+        return TypeRef {
+            kind: TypeNamed(move name, move arguments), span: span_through(start, end)
+        }
+    }
+
+    fn parser_dynamic_type(parser: write Parser) -> TypeRef {
+        let start = parser_expect(parser, TokenDynamic())
+        let name = parser_identifier(parser)
+        let span = span_through(start.span, name.span)
+        return TypeRef {
+            kind: TypeDynamic(move name), span: span
+        }
+    }
+
+    fn parser_array_type(parser: write Parser) -> TypeRef {
+        let start = parser_expect(parser, TokenLeftBracket())
+        let element = parser_type(parser)
+        parser_expect(parser, TokenSemicolon())
+        let length = parser_array_length(parser)
+        let end = parser_expect(parser, TokenRightBracket())
+        return TypeRef {
+            kind: TypeArray(Box.new(move element), move length)
+            span: span_through(start.span, end.span)
+        }
+    }
+
+    fn parser_optional_mode(parser: write Parser) -> Mode {
+        if parser_consumed(parser, TokenRead()) {
+            return ModeRead()
+        }
+        if parser_consumed(parser, TokenWrite()) {
+            return ModeWrite()
+        }
+        if parser_consumed(parser, TokenTake()) {
+            return ModeTake()
+        }
+        return ModeRead()
+    }
+
+    fn parser_function_type(parser: write Parser) -> TypeRef {
+        let start = parser_expect(parser, TokenFn())
+        parser_expect(parser, TokenLeftParen())
+        var parameters = Vec<FunctionTypeParameter>.new()
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightParen()) == false && parser_at(parser, TokenEnd()) == false {
+            let mode = parser_optional_mode(parser)
+            let value_type = parser_type(parser)
+            parameters.push(FunctionTypeParameter {
+                    mode: mode, value_type: move value_type
+                })
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        parser_expect(parser, TokenRightParen())
+        parser_expect(parser, TokenArrow())
+        let result = parser_type(parser)
+        let span = span_through(start.span, result.span)
+        return TypeRef {
+            kind: TypeFunction(move parameters, Box.new(move result)), span: span
+        }
+    }
+
+    fn parser_parameter(parser: write Parser) -> Parameter {
+        let name = parser_identifier(parser)
+        let start = name.span
+        parser_expect(parser, TokenColon())
+        let mode = parser_optional_mode(parser)
+        let value_type = parser_type(parser)
+        let span = span_through(start, value_type.span)
+        return Parameter {
+            name: move name, mode: mode, value_type: move value_type, span: span
+        }
+    }
+
+    fn parser_parameters(parser: write Parser) -> Vec<Parameter> {
+        var result = parser_parameter_list(parser, false)
+        return replace(result.values, Vec<Parameter>.new())
+    }
+}

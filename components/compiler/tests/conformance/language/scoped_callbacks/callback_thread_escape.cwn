@@ -1,0 +1,9 @@
+fn store(action: scoped fn() -> void) -> void {
+    let thread = spawn move {
+        action()
+    };
+    thread.join()
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,146 @@
+module std {
+    module text {
+        copy enum Utf8Error {
+            Prefix, Continuation, Truncated, Scalar
+        }
+
+        fn append(output: write Text, bytes: TextView) -> void {
+            loan read bytes[0..bytes.length()] as values {
+                append_bytes(output, values)
+            }
+        }
+
+        fn append_bytes(output: write Text, bytes: Slice<u8>) -> void {
+            var index: usize = 0
+            while index < bytes.length() {
+                output.push(decode_scalar(bytes, index))
+            }
+        }
+
+        fn decode_scalar(bytes: Slice<u8>, index: write usize) -> char {
+            match decode_scalar_checked(bytes, index) {
+                Ok(value) => value
+                Err(error) => {
+                    error;
+                    char.from(0xfffd)
+                }
+            }
+        }
+
+        fn decode_scalar_checked(bytes: Slice<u8>, index: write usize) -> Result<char, Utf8Error> {
+            let first = bytes[index]
+            index = index + 1
+            if first < 128 {
+                return Ok(char.from(u32.from(first)))
+            }
+            var count: usize = 0
+            var value: u32 = 0
+            var minimum: u32 = 0
+            if first >= 194 && first <= 223 {
+                count = 1;
+                value = u32.from(first & 31);
+                minimum = 128
+            }
+            if first >= 224 && first <= 239 {
+                count = 2;
+                value = u32.from(first & 15);
+                minimum = 2048
+            }
+            if first >= 240 && first <= 244 {
+                count = 3;
+                value = u32.from(first & 7);
+                minimum = 65536
+            }
+            if count == 0 {
+                return Err(Utf8Error::Prefix())
+            }
+            return decode_continuation(bytes, index, Utf8Prefix {
+                    remaining: count, value: value, minimum: minimum
+                })
+        }
+
+        copy struct Utf8Prefix {
+            remaining: usize, value: u32, minimum: u32
+        }
+
+        fn decode_continuation(bytes: Slice<u8>, index: write usize, prefix: Utf8Prefix) -> Result<char, Utf8Error> {
+            var value = prefix.value
+            for offset in 0..prefix.remaining {
+                if index >= bytes.length() {
+                    return Err(Utf8Error::Truncated())
+                }
+                let byte = bytes[index]
+                if byte < 128 || byte > 191 {
+                    return Err(Utf8Error::Continuation())
+                }
+                if offset == 0 && valid_second_byte(prefix, byte) == false {
+                    return Err(Utf8Error::Scalar())
+                }
+                value = value * 64 + u32.from(byte & 63)
+                index = index + 1
+            }
+            return decoded_character(value, prefix.minimum)
+        }
+
+        fn decoded_character(value: u32, minimum: u32) -> Result<char, Utf8Error> {
+            if value < minimum || value > 0x10ffff {
+                return Err(Utf8Error::Scalar())
+            }
+            if value >= 0xd800 && value <= 0xdfff {
+                return Err(Utf8Error::Scalar())
+            }
+            return Ok(char.from(value))
+        }
+
+        fn valid_second_byte(prefix: Utf8Prefix, byte: u8) -> bool {
+            if prefix.remaining == 2 {
+                if prefix.value == 0 {
+                    return byte >= 160
+                }
+                if prefix.value == 13 {
+                    return byte <= 159
+                }
+            }
+            if prefix.remaining == 3 {
+                if prefix.value == 0 {
+                    return byte >= 144
+                }
+                if prefix.value == 4 {
+                    return byte <= 143
+                }
+            }
+            return true
+        }
+
+        fn from_bytes_lossy(bytes: Vec<u8>) -> Text {
+            var output = ""
+            loan read bytes as values {
+                append_bytes(output, values)
+            }
+            return move output
+        }
+
+        fn validate_bytes(bytes: Slice<u8>) -> Result<void, Utf8Error> {
+            var index: usize = 0
+            while index < bytes.length() {
+                decode_scalar_checked(bytes, index)?
+            }
+            Ok(())
+        }
+
+        fn from_bytes(bytes: Vec<u8>) -> Result<Text, Text> {
+            loan read bytes as values {
+                match validate_bytes(values) {
+                    Err(error) => {
+                        error;
+                        return Err("invalid UTF-8 input")
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+            }
+            Ok(from_bytes_lossy(bytes))
+        }
+    }
+}

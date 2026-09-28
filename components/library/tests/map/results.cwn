@@ -1,0 +1,186 @@
+fn clone_map_text(value: Text) -> Text {
+    return value.clone()
+}
+fn clone_map_guard(value: MapGuard) -> MapGuard {
+    return MapGuard {
+        id: value.id, drops: value.drops.share()
+    }
+}
+fn map_rejected_value(value: u32) -> Result<u32, u32> {
+    return Err(value)
+}
+
+fn test_map_results() -> u32 {
+    let drops = Shared.new(Mutex.new(u32.from(0)))
+    let owned = map_guard_result_scope(drops)
+    if owned != 0 {
+        return owned
+    }
+    if map_drop_count(drops) != 2 {
+        return 4
+    }
+    var map: std::map::Map<u32, u32> = std::map::new(map_hash, map_equal)
+    std::map::insert(map, 1, 7)
+    match std::map::with_value(map, 1, map_rejected_value) {
+        None => {
+            return 5
+        }
+        Some(result) => {
+            match result {
+                Ok(value) => {
+                    value;
+                    return 6
+                }
+                Err(error) => {
+                    if error != 7 {
+                        return 7
+                    }
+                }
+            }
+        }
+    }
+    let updated = test_map_updated_result()
+    if updated != 0 {
+        return updated
+    }
+    return test_text_map()
+}
+
+fn test_text_map() -> u32 {
+    var map: std::map::TextMap<Text> = std::map::new_text()
+    let keys = ["", "a", "i", "é\0λ"]
+    for index in 0..4 {
+        std::map::text_insert(map, keys[index].clone(), keys[index].clone())
+    }
+    for index in 0..4 {
+        loan read keys[index] as key {
+            let status = text_map_entry(map, key, keys[index])
+            if status != 0 {
+                return status
+            }
+        }
+    }
+    if std::map::text_length(map) != 0 {
+        return 17
+    }
+    std::map::text_insert(map, "reused", "value")
+    std::map::text_clear(map)
+    if std::map::text_length(map) != 0 {
+        return 18
+    }
+    return 0
+}
+
+fn map_guard_result_scope(drops: Shared<Mutex<u32>>) -> u32 {
+    var map: std::map::Map<u32, MapGuard> = std::map::new(map_hash, map_equal)
+    std::map::insert(map, 1, map_guard(42, drops))
+    match std::map::with_value(map, 1, clone_map_guard) {
+        Some(value) => {
+            if value.id != 42 {
+                return 1
+            }
+        }
+        None => {
+            return 2
+        }
+    }
+    if map_drop_count(drops) != 1 {
+        return 3
+    }
+    return 0
+}
+
+fn update_map_number(value: write u32, total: write u32) -> Text {
+    total = total + value
+    value = value + 1
+    return "updated"
+}
+
+fn test_map_updated_result() -> u32 {
+    var map: std::map::Map<u32, u32> = std::map::new(map_hash, map_equal)
+    std::map::insert(map, 1, 7)
+    var total: u32 = 0
+    match std::map::with_value_mut(map, 1, fn[write total](value) {
+            return update_map_number(value, total)
+        }) {
+        None => {
+            return 20
+        }
+        Some(text) => {
+            if std::text::equal(text, "updated") == false {
+                return 21
+            }
+        }
+    }
+    if total != 7 {
+        return 22
+    }
+    match std::map::with_value_mut(map, 2, fn[write total](value) {
+            return update_map_number(value, total)
+        }) {
+        None => {
+        },
+        Some(text) => {
+            text;
+            return 23
+        }
+    }
+    if total != 7 {
+        return 24
+    }
+    match std::map::remove(map, 1) {
+        None => {
+            return 25
+        }
+        Some(value) => {
+            if value != 8 {
+                return 26
+            }
+        }
+    }
+    return 0
+}
+
+fn text_map_entry(map: write std::map::TextMap<Text>, key: TextView, expected: Text) -> u32 {
+    if std::map::text_contains(map, key) == false {
+        return 10
+    }
+    match std::map::with_text_value(map, key, clone_map_text) {
+        Some(value) => {
+            if std::text::equal(value, expected) == false {
+                return 11
+            }
+        }
+        None => {
+            return 12
+        }
+    }
+    match std::map::text_remove(map, key) {
+        Some(value) => {
+            value
+        }
+        None => {
+            return 13
+        }
+    }
+    if std::map::text_contains(map, key) {
+        return 14
+    }
+    match std::map::text_remove(map, key) {
+        Some(value) => {
+            value;
+            return 15
+        }
+        None => {
+        }
+    }
+    match std::map::with_text_value(map, key, clone_map_text) {
+        Some(value) => {
+            value;
+            return 16
+        }
+        None => {
+        }
+    }
+    return 0
+}

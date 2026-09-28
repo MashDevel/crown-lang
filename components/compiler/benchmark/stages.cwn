@@ -1,0 +1,65 @@
+module benchmark {
+    struct Inputs {
+        root: Text, compiler: Text, jobs: usize
+    }
+
+    fn run(benchmark: write Benchmark, input: Inputs) -> Result<void, Text> {
+        let sources = toolchain::compiler_sources(input.root)?
+        let provenance = toolchain::source_record(input.root, sources)?
+        prepare(benchmark.directory, input, provenance)?
+        for index in 0..4 {
+            build_stage(benchmark, sources, index)?
+        }
+        return finish(benchmark.directory, input.root, provenance)
+    }
+
+    fn finish(directory: Text, root: Text, provenance: Text) -> Result<void, Text> {
+        if std::text::equal(provenance, toolchain::source_record(root, toolchain::compiler_sources(root)?)?) == false {
+            return Err("compiler sources changed during benchmark")
+        }
+        let checksum = toolchain::digest(toolchain::path_join(directory, "stage3"))?
+        toolchain::write_text(toolchain::path_join(directory, "fixed-point.json"), std::text::joined(std::text::joined("{\"sha256\":", toolchain::json_quoted(checksum)), "}\n"))?
+        return Ok(())
+    }
+
+    fn prepare(directory: Text, input: Inputs, provenance: Text) -> Result<void, Text> {
+        toolchain::write_text(toolchain::path_join(directory, "source.json"), provenance)?
+        let environment = std::text::joined(std::text::joined("{\"jobs\":", std::text::decimal(u64.from(input.jobs))), std::text::joined(",\"seed_sha256\":", toolchain::json_quoted(toolchain::digest(input.compiler)?)))
+        toolchain::write_text(toolchain::path_join(directory, "environment.json"), std::text::joined(environment, "}\n"))?
+        let seed = toolchain::path_join(directory, "stage0")
+        toolchain::copy_file(input.compiler, seed)?;
+        toolchain::executable(seed)?
+        return Ok(())
+    }
+
+    fn build_stage(benchmark: write Benchmark, sources: Vec<Text>, index: usize) -> Result<void, Text> {
+        let compiler = toolchain::path_join(benchmark.directory, std::text::joined("stage", std::text::decimal(u64.from(index))))
+        let assembly = toolchain::path_join(benchmark.directory, std::text::joined(std::text::joined("stage", std::text::decimal(u64.from(index + 1))), ".s"))
+        var arguments = Vec<Text>.new()
+        arguments.push(compiler.clone());
+        arguments.push("compile");
+        arguments.push(assembly.clone())
+        for offset in 0..sources.length() {
+            arguments.push(sources[offset].clone())
+        }
+        measure(benchmark, std::text::joined("stage", std::text::decimal(u64.from(index))), move arguments)?
+        let binary = toolchain::path_join(benchmark.directory, "compiler")
+        let request = toolchain::CompileRequest {
+            compiler: compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(sources), max_instances: 128, coverage: "", optimization: toolchain::optimization_options(), target: toolchain::host_target()
+        }
+        measure(benchmark, std::text::joined("build", std::text::decimal(u64.from(index + 1))), toolchain::compiler_arguments(request, "_executable"))?
+        let output = toolchain::path_join(benchmark.directory, std::text::joined("stage", std::text::decimal(u64.from(index + 1))))
+        toolchain::copy_file(binary, output)?;
+        toolchain::executable(output)?
+        if index > 1 {
+            let previous = toolchain::Stage {
+                assembly: std::text::joined(compiler, ".s"), binary: compiler.clone()
+            }
+            let current = toolchain::Stage {
+                assembly: assembly.clone(), binary: output.clone()
+            }
+            toolchain::verify_stage(toolchain::stage_digest(previous)?, toolchain::stage_digest(current)?)?
+        }
+        return Ok(())
+    }
+}

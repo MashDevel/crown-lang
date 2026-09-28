@@ -1,0 +1,7 @@
+fn choose<T>(first: take T, second: take T) -> T {
+    second
+    return move first
+}
+fn main() -> u32 {
+    return choose(1, true)
+}

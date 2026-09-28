@@ -1,0 +1,143 @@
+module lowering {
+    struct ArenaStorage {
+        data: usize
+        generations: usize
+        live: usize
+        capacity: usize
+    }
+
+    struct ArenaDropFlow {
+        storage: ArenaStorage
+        index: usize
+        header: usize
+        inspect: usize
+        release: usize
+        advance: usize
+        ready: usize
+    }
+
+    fn drop_arena(compiler: write FunctionCompiler, symbols: sema::Symbols, owner: BufferOwner) -> Result<void, u32> {
+        let storage = load_arena_storage(compiler, symbols, owner.address)?
+        if sema::type_is_copy_with_symbols(symbols, owner.element) == false {
+            let setup = ArenaDropSetup {
+                owner: buffer_owner_copy(owner), storage: arena_storage_copy(storage)
+            }
+            drop_arena_items(compiler, symbols, setup)?
+        }
+        free_pointer(compiler, storage.data)?
+        free_pointer(compiler, storage.generations)?
+        return free_pointer(compiler, storage.live)
+    }
+
+    fn load_arena_storage(compiler: write FunctionCompiler, symbols: sema::Symbols, address: usize) -> Result<ArenaStorage, u32> {
+        let data = function_load_pointer(compiler, address)?
+        let generations_field = function_offset(compiler, address, 8)?
+        let generations = function_load_pointer(compiler, generations_field)?
+        let live_field = function_offset(compiler, address, 16)?
+        let live = function_load_pointer(compiler, live_field)?
+        let capacity_field = function_offset(compiler, address, 32)?
+        let load = Place {
+            address: capacity_field, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity = function_load(compiler, symbols, load)?
+        return Ok(ArenaStorage {
+                data: data, generations: generations, live: live, capacity: capacity
+            })
+    }
+
+    struct ArenaDropSetup {
+        owner: BufferOwner
+        storage: ArenaStorage
+    }
+
+    fn drop_arena_items(compiler: write FunctionCompiler, symbols: sema::Symbols, setup: ArenaDropSetup) -> Result<void, u32> {
+        let index_type = sema::builtin_leaf(sema::USize())
+        let index = function_stack(compiler, symbols, index_type)?
+        let integer_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, integer_type, 0)
+        let store = StoreRequest {
+            address: index, value: zero, value_type: move index_type
+        }
+        function_store(compiler, symbols, store)?
+        let flow = ArenaDropFlow {
+            storage: arena_storage_copy(setup.storage), index: index, header: function_new_block(compiler)?, inspect: function_new_block(compiler)?, release: function_new_block(compiler)?, advance: function_new_block(compiler)?, ready: function_new_block(compiler)?
+        }
+        function_finish(compiler, ir::TerminatorBranch(flow.header))?
+        let request = ArenaDropItem {
+            owner: buffer_owner_copy(setup.owner), flow: arena_drop_flow_copy(flow), current: 0
+        }
+        drop_arena_loop(compiler, symbols, request)?
+        return Ok(())
+    }
+
+    fn drop_arena_loop(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ArenaDropItem) -> Result<void, u32> {
+        function_select_block(compiler, request.flow.header)
+        let load = Place {
+            address: request.flow.index, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let current = function_load(compiler, symbols, load)?
+        let pending = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), current, request.flow.storage.capacity))?
+        function_finish(compiler, ir::TerminatorConditional(pending, request.flow.inspect, request.flow.ready))?
+        function_select_block(compiler, request.flow.inspect)
+        let live_item = function_append_value(compiler, ir::InstructionOffset(request.flow.storage.live, current))?
+        let live_load = Place {
+            address: live_item, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        let occupied = function_load(compiler, symbols, live_load)?
+        function_finish(compiler, ir::TerminatorConditional(occupied, request.flow.release, request.flow.advance))?
+        let item = ArenaDropItem {
+            owner: buffer_owner_copy(request.owner), flow: arena_drop_flow_copy(request.flow), current: current
+        }
+        drop_arena_item(compiler, symbols, item)?
+        return Ok(())
+    }
+
+    struct ArenaDropItem {
+        owner: BufferOwner
+        flow: ArenaDropFlow
+        current: usize
+    }
+
+    fn drop_arena_item(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ArenaDropItem) -> Result<void, u32> {
+        function_select_block(compiler, request.flow.release)
+        let layout = layout(symbols, request.owner.element)?
+        let integer_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, integer_type, layout.size)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), request.current, size))?
+        let item = function_append_value(compiler, ir::InstructionOffset(request.flow.storage.data, bytes))?
+        let value_drop = Place {
+            address: item, value_type: sema::type_copy(request.owner.element)
+        }
+        drop_value(compiler, value_drop)?
+        function_finish(compiler, ir::TerminatorBranch(request.flow.advance))?
+        function_select_block(compiler, request.flow.advance)
+        let one_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, one_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), request.current, one))?
+        let store = StoreRequest {
+            address: request.flow.index, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        function_finish(compiler, ir::TerminatorBranch(request.flow.header))?
+        function_select_block(compiler, request.flow.ready)
+        return Ok(())
+    }
+
+    fn arena_storage_copy(value: ArenaStorage) -> ArenaStorage {
+        return ArenaStorage {
+            data: value.data, generations: value.generations, live: value.live, capacity: value.capacity
+        }
+    }
+
+    fn arena_drop_flow_copy(value: ArenaDropFlow) -> ArenaDropFlow {
+        return ArenaDropFlow {
+            storage: arena_storage_copy(value.storage), index: value.index, header: value.header, inspect: value.inspect, release: value.release, advance: value.advance, ready: value.ready
+        }
+    }
+
+    fn buffer_owner_copy(value: BufferOwner) -> BufferOwner {
+        return BufferOwner {
+            address: value.address, element: sema::type_copy(value.element)
+        }
+    }
+}

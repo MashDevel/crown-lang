@@ -1,0 +1,6 @@
+module x86 {
+    fn normalize_instructions(instructions: take Vec<Instruction>) -> Vec<Instruction> {
+        let fallthrough = normalize_fallthrough(move instructions)
+        return normalize_identities(move fallthrough)
+    }
+}

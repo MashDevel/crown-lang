@@ -1,0 +1,121 @@
+module inspect {
+    fn expression_node(walk: write Walk, expression: frontend::Expression) -> void {
+        emit(walk, Kind::Expression(), expression.span, 0)
+        expression_kind(walk, expression.kind, expression.span)
+    }
+
+    fn expression_kind(walk: write Walk, kind: frontend::ExpressionKind, span: frontend::Span) -> void {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                name;
+                expressions(walk, arguments)
+            }
+            frontend::ExpressionStaticCall(value_type, name, arguments) => {
+                value_type;
+                name;
+                expressions(walk, arguments)
+            }
+            frontend::ExpressionMethodCall(receiver, name, arguments) => {
+                name;
+                boxed(walk, receiver);
+                expressions(walk, arguments)
+            }
+            frontend::ExpressionStruct(value_type, fields) => {
+                value_type;
+                for index in 0..fields.length() {
+                    expression_node(walk, fields[index].value)
+                }
+            }
+            frontend::ExpressionBinary(left, operator, right) => {
+                binary(walk, left, operator, right)
+            }
+            frontend::ExpressionArrayRepeat(value, length) => {
+                length;
+                boxed(walk, value)
+            }
+            frontend::ExpressionArray(values) => {
+                expressions(walk, values)
+            }
+            _ => indirect_expression(walk, kind, span)
+        }
+    }
+
+    fn indirect_expression(walk: write Walk, kind: frontend::ExpressionKind, span: frontend::Span) -> void {
+        match read kind {
+            frontend::ExpressionTry(value) => {
+                loan read value as expression {
+                    emit(walk, Kind::Decision(), expression.span, 0)
+                }
+                emit(walk, Kind::Control(), span, 1)
+                boxed(walk, value)
+            }
+            frontend::ExpressionNegate(value) | frontend::ExpressionBitwiseNot(value) => {
+                boxed(walk, value)
+            }
+            frontend::ExpressionIndex(target, index) => {
+                boxed(walk, target);
+                boxed(walk, index)
+            }
+            frontend::ExpressionSlice(target, start, end) => {
+                boxed(walk, target);
+                boxed(walk, start);
+                boxed(walk, end)
+            }
+            frontend::ExpressionField(target, name) => {
+                name;
+                boxed(walk, target)
+            }
+            frontend::ExpressionClosure(captures, parameters, body) => {
+                captures;
+                callable(walk, body, span, parameters.length())
+            }
+            frontend::ExpressionScopedSpawn(stack, captures, body) => {
+                expressions(walk, stack);
+                captures;
+                callable(walk, body, span, 0)
+            }
+            frontend::ExpressionSpawn(configuration, body) => {
+                expressions(walk, configuration)
+                callable(walk, body, span, 0)
+            }
+            _ => conditional(walk, kind)
+        }
+    }
+
+    fn conditional(walk: write Walk, kind: frontend::ExpressionKind) -> void {
+        match read kind {
+            frontend::ExpressionUnsafe(body) => {
+                nested(walk, body)
+            }
+            frontend::ExpressionConditional(value) => {
+                loan read value.condition as condition {
+                    control(walk, condition)
+                }
+                nested(walk, value.then_body)
+                nested(walk, value.else_body)
+            }
+            frontend::ExpressionMatch(value) => {
+                loan read value as matched {
+                    matched_expression(walk, matched)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn binary(walk: write Walk, left: Box<frontend::Expression>, operator: frontend::BinaryOperator, right: Box<frontend::Expression>) -> void {
+        loan read left as value {
+            match operator {
+                frontend::BinaryLogicalAnd | frontend::BinaryLogicalOr => {
+                    emit(walk, Kind::Control(), value.span, 1)
+                    emit(walk, Kind::Decision(), value.span, 0)
+                }
+                _ => {
+                }
+            }
+            expression_node(walk, value)
+        }
+        boxed(walk, right)
+    }
+}

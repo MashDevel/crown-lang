@@ -1,0 +1,36 @@
+module sizes {
+    const WIDTH: usize = HEIGHT + 1;
+    const HEIGHT: usize = 2
+}
+copy struct Cell {
+    value: u32
+}
+fn next(count: write u32) -> u32 {
+    count += 1;
+    return count
+}
+fn length(values: Slice<u32>) -> usize {
+    return values.length()
+}
+fn main() -> u32 {
+    var count: u32 = 0
+    let values: [u32; sizes::WIDTH] = [next(count); sizes::WIDTH]
+    if count != 1 || values !=[1, 1, 1] {
+        return 1
+    }
+    let empty: [u32; 0] = [next(count); 0]
+    if length(empty) != 0 || count != 2 {
+        return 2
+    }
+    let cells = [Cell {
+            value: 7
+        }; 4]
+    if cells[3].value != 7 {
+        return 3
+    }
+    let nested: [[u32; 2]; 3] = [[4, 5]; 3]
+    if nested[2][1] != 5 {
+        return 4
+    }
+    return 0
+}

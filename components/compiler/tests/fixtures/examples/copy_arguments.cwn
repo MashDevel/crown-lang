@@ -1,0 +1,15 @@
+copy struct Point { x: u32, y: u32 }
+fn inspect(before: read Point, after: write Point) -> u32 {
+    after.x = 0
+    return before.x + before.y
+}
+fn consume(before: take Point, after: write Point) -> u32 {
+    after.y = 0
+    return before.x + before.y
+}
+fn main() -> u32 {
+    var point = Point { x: 20, y: 22 }
+    if inspect(point, point) != 42 { return 1 }
+    point.x = 20
+    return consume(point, point)
+}

@@ -1,0 +1,164 @@
+module lowering {
+    struct LockedChannel {
+        state: usize
+        mutex: usize
+        element: sema::Type
+    }
+
+    struct ChannelValueState {
+        state: usize
+        value_type: sema::Type
+    }
+
+    struct ChannelReferenceState {
+        state: usize
+        mutex: usize
+    }
+
+    fn static_channel(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference
+                if arguments.length() != 0 || sema::name_is(analysis.checker.symbols.source, method, "new") == false {
+                    return Err(286)
+                }
+            }
+            _ => {
+                return Err(287)
+            }
+        }
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let state_size = function_integer(compiler, size_type, 48)
+        let state = function_allocate(compiler, state_size)?
+        let byte_type = sema::builtin_leaf(sema::U8())
+        let state_type = sema::ArrayType(Box.new(move byte_type), usize.from(48))
+        let zero = Place {
+            address: state, value_type: move state_type
+        }
+        function_zero(compiler, analysis.checker.symbols, zero)?
+        let one = function_integer(compiler, size_type, 1)
+        let references = StoreRequest {
+            address: state, value: one, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, analysis.checker.symbols, references)?
+        let mutex = allocate_lock(compiler, true)?
+        function_store_pointer_field(compiler, state, 8, mutex)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let result = ChannelValueState {
+            state: state, value_type: move value_type
+        }
+        return channel_value(compiler, analysis.checker.symbols, move result)
+    }
+
+    fn channel_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                arguments
+                if sema::name_is(analysis.checker.symbols.source, method, "share") {
+                    return channel_share(compiler, analysis, expression)
+                }
+                if sema::name_is(analysis.checker.symbols.source, method, "send") {
+                    return channel_send(compiler, analysis, expression)
+                }
+                if sema::name_is(analysis.checker.symbols.source, method, "try_receive") {
+                    return channel_receive(compiler, analysis, expression)
+                }
+                return Err(289)
+            }
+            _ => {
+                return Err(290)
+            }
+        }
+    }
+
+    fn channel_share(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var channel: usize = 0
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 0 || sema::name_is(analysis.checker.symbols.source, method, "share") == false {
+                    return Err(292)
+                }
+                loan read receiver as value {
+                    channel = expression_place(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(293)
+            }
+        }
+        let state = function_load_pointer(compiler, channel)?
+        let mutex = channel_mutex(compiler, state)?
+        let references = ChannelReferenceState {
+            state: state, mutex: mutex
+        }
+        channel_increment_references(compiler, analysis.checker.symbols, move references)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let result = ChannelValueState {
+            state: state, value_type: move value_type
+        }
+        return channel_value(compiler, analysis.checker.symbols, move result)
+    }
+
+    fn channel_value(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ChannelValueState) -> Result<Value, u32> {
+        let result = function_stack(compiler, symbols, state.value_type)?
+        function_store_pointer(compiler, result, state.state)?
+        return Ok(AddressValue(result, sema::type_copy(state.value_type)))
+    }
+
+    fn channel_increment_references(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ChannelReferenceState) -> Result<void, u32> {
+        call_lock(compiler, "pthread_mutex_lock", state.mutex)?
+        let load = Place {
+            address: state.state, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let references = function_load(compiler, symbols, load)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: references, right: one, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let next = integer_binary(compiler, symbols, operation)?
+        let store = StoreRequest {
+            address: state.state, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        return call_lock(compiler, "pthread_mutex_unlock", state.mutex)
+    }
+
+    fn lock_channel(compiler: write FunctionCompiler, analysis: sema::Analysis, receiver: frontend::Expression) -> Result<LockedChannel, u32> {
+        let channel = channel_state(compiler, analysis, receiver)?
+        call_lock(compiler, "pthread_mutex_lock", channel.mutex)?
+        return Ok(move channel)
+    }
+
+    fn channel_state(compiler: write FunctionCompiler, analysis: sema::Analysis, receiver: frontend::Expression) -> Result<LockedChannel, u32> {
+        let place = expression_place_info(compiler, analysis, receiver)?
+        let element = channel_element_type(place.value_type)?
+        let state = function_load_pointer(compiler, place.address)?
+        let mutex = channel_mutex(compiler, state)?
+        return Ok(LockedChannel {
+                state: state, mutex: mutex, element: move element
+            })
+    }
+
+    fn channel_mutex(compiler: write FunctionCompiler, state: usize) -> Result<usize, u32> {
+        let address = function_offset(compiler, state, 8)?
+        return function_load_pointer(compiler, address)
+    }
+
+    fn channel_element_type(value_type: sema::Type) -> Result<sema::Type, u32> {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                if builtin != sema::Channel() || arguments.length() != 1 {
+                    return Err(295)
+                }
+                loan read arguments[0] as value {
+                    return Ok(sema::type_copy(value))
+                }
+            }
+            _ => {
+                return Err(296)
+            }
+        }
+    }
+}

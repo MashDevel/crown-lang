@@ -1,0 +1,63 @@
+module x86 {
+    struct RegisterAllocation {
+        floats: Vec<Option<Register>>
+        values: Vec<Option<Register>>
+        saved: u16
+        interference: Vec<ir::BitSet>
+    }
+
+    struct ColorState {
+        values: Vec<Option<Register>>
+        saved: u16
+        graph: Vec<ir::BitSet>
+        forbidden: Vec<u16>
+        affinities: Vec<ir::BitSet>
+        preferred: Vec<Option<Register>>
+    }
+
+    struct OrderAnalysis {
+        degrees: Vec<usize>
+        costs: Vec<u64>
+    }
+
+    fn codegen_allocation_register(allocation: RegisterAllocation, value: usize) -> Option<Register> {
+        if value >= allocation.values.length() {
+            return None()
+        }
+        loan read allocation.values[value] as location {
+            return codegen_option_register_copy(location)
+        }
+    }
+
+    fn codegen_saved_registers(allocation: RegisterAllocation) -> Vec<Register> {
+        var output = Vec<Register>.new()
+        codegen_push_saved(allocation.saved, Rbx(), output)
+        codegen_push_saved(allocation.saved, R12(), output)
+        codegen_push_saved(allocation.saved, R13(), output)
+        codegen_push_saved(allocation.saved, R14(), output)
+        codegen_push_saved(allocation.saved, R15(), output)
+        return move output
+    }
+
+    fn codegen_push_saved(saved: u16, register: take Register, output: write Vec<Register>) -> void {
+        if saved & codegen_register_bit(register) != 0 {
+            output.push(register)
+            return
+        }
+        register
+    }
+
+    fn codegen_allocation_can_share(allocation: RegisterAllocation, value: usize, others: Vec<usize>) -> bool {
+        if value >= allocation.interference.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < others.length() {
+            if ir::bitset_contains(allocation.interference[value], others[index]) {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+}

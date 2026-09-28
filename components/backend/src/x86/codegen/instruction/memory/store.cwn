@@ -1,0 +1,94 @@
+module x86 {
+    fn codegen_compile_store(program: ir::Program, compiler: write FunctionCompiler, input: take StoreInput) -> Result<void, CodegenError> {
+        return codegen_compile_store_at(program, compiler, StoreAtInput {
+                address: input.address, offset: 0, value: input.value
+            })
+    }
+
+    fn codegen_compile_store_at(program: ir::Program, compiler: write FunctionCompiler, input: take StoreAtInput) -> Result<void, CodegenError> {
+        var base = R11()
+        match codegen_frame_register(compiler.frame, input.address) {
+            Some(register) => {
+                base = register
+            }
+            None => {
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: input.address, register: R11()
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+        }
+        var source = Rdx()
+        match codegen_frame_register(compiler.frame, input.value) {
+            Some(register) => {
+                source = register
+            }
+            None => {
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: Rdx()
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+        }
+        match codegen_value_type(program, compiler, input.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                match codegen_width(value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                                    base: base
+                                    offset: input.offset
+                                    source: source
+                                    width: width
+                                }))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_compile_store_indexed(program: ir::Program, compiler: write FunctionCompiler, input: take StoreIndexedInput) -> Result<void, CodegenError> {
+        let address = codegen_load_indexed_address(program, compiler, IndexedValues {
+                base: input.base, index: input.index
+            })?
+        var source = Rdx()
+        match codegen_frame_register(compiler.frame, input.value) {
+            Some(register) => {
+                source = register
+            }
+            None => {
+                codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: Rdx()
+                    })?
+            }
+        }
+        let value_type = codegen_value_type(program, compiler, input.value)?
+        let width = codegen_width(value_type)?
+        codegen_emit(compiler, StoreIndexed(StoreIndexedArgs {
+                    base: address.destination
+                    index: address.source
+                    scale: input.scale
+                    source: source
+                    width: width
+                }))
+        return Ok(())
+    }
+}

@@ -1,0 +1,35 @@
+copy struct Record {
+    value: u32
+}
+resource Envelope {
+    text: Text, record: Record, code: u32
+    drop {
+        record.value = 99
+        print(code)
+    }
+}
+fn envelope(code: u32) -> Envelope {
+    return Envelope {
+        text: "abc", record: Record {
+            value: 7
+        }, code: code
+    }
+}
+fn inspect(value: Text) -> u32 {
+    print(u32.from(value.length()))
+    return u32.from(value.length())
+}
+fn main() -> u32 {
+    if inspect(envelope(41).text) != 3 {
+        return 1
+    }
+    let copied = envelope(42).record
+    print(copied.value)
+    if copied.value != 7 {
+        return 2
+    }
+    if inspect(envelope(43).text) != 3 {
+        return 3
+    }
+    return 0
+}

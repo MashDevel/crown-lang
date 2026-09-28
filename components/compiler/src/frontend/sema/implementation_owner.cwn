@@ -1,0 +1,42 @@
+module sema {
+    fn implementation_owner(symbols: Symbols, target: Type) -> Option<usize> {
+        match read target {
+            NamedType(symbol, arguments) => {
+                arguments;
+                return Some(symbol)
+            }
+            BuiltinType(builtin, arguments) => {
+                arguments
+                if builtin_is_scalar(builtin) {
+                    return None()
+                }
+                return Some(builtin_implementation_owner(symbols, target))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn builtin_implementation_owner(symbols: Symbols, target: Type) -> usize {
+        var index: usize = 0
+        while index < symbols.implementations.length() {
+            if types_equal(symbols.implementations[index].target, target) {
+                return symbols.types.length() + index
+            }
+            index = index + 1
+        }
+        return symbols.types.length() + index
+    }
+
+    fn implementation_self_type(symbols: Symbols, owner: usize, arguments: take Vec<Type>) -> Type {
+        if owner < symbols.types.length() {
+            return NamedType(owner, move arguments)
+        }
+        let index = owner - symbols.types.length()
+        if index < symbols.implementations.length() {
+            return type_copy(symbols.implementations[index].target)
+        }
+        return Invalid()
+    }
+}

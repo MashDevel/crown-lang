@@ -1,0 +1,91 @@
+module campaign {
+    struct Release {
+        environment: harness::Environment, seed: u64
+    }
+
+    fn run(request: Release) -> Result<u32, Text> {
+        return run_named(request, std::text::split("integers floats state memory malformed depth", 32))
+    }
+
+    fn run_named(request: Release, names: Vec<Text>) -> Result<u32, Text> {
+        toolchain::make_directory(request.environment.output)?
+        let checksum = toolchain::digest(request.environment.compiler)?
+        var results = harness::report()
+        for index in 0..names.length() {
+            toolchain::say(std::text::joined("Running ", names[index]))
+            let environment = harness::Environment {
+                coverage: "",
+                compiler: request.environment.compiler.clone(), root: request.environment.root.clone(), output: toolchain::path_join(request.environment.output, names[index])
+            }
+            let result = run_campaign(Release {
+                    environment: move environment, seed: request.seed
+                }, names[index])
+            harness::record_result(results, harness::outcome(names[index], move result))
+        }
+        let changed = std::text::equal(checksum, toolchain::digest(request.environment.compiler)?) == false
+        let record = ReleaseRecord {
+            checksum: move checksum, changed: changed
+        }
+        let report = release_report(request, results, record)
+        toolchain::write_text(toolchain::path_join(request.environment.output, "results.json"), report)?
+        let passed = release_passed(results, changed)
+        toolchain::say(if passed {
+                "Compiler stress gate: PASS"
+            } else {
+                "Compiler stress gate: FAIL"
+            })
+        return Ok(if passed {
+                0
+            } else {
+                1
+            })
+    }
+
+    fn run_campaign(request: Release, name: Text) -> Result<void, Text> {
+        toolchain::make_directory(request.environment.output)?
+        if std::text::equal(name, "integers") || std::text::equal(name, "floats") {
+            return numeric(request.environment, name)
+        }
+        if std::text::equal(name, "state") {
+            return state(request.environment)
+        }
+        if std::text::equal(name, "memory") {
+            return memory(request.environment)
+        }
+        if std::text::equal(name, "malformed") {
+            return malformed(request.environment, request.seed)
+        }
+        if std::text::equal(name, "depth") {
+            return depth(request.environment)
+        }
+        return Err(std::text::joined("unknown campaign: ", name))
+    }
+
+    fn release_passed(results: harness::Report, changed: bool) -> bool {
+        return results.failed == 0 && changed == false
+    }
+
+    struct ReleaseRecord {
+        checksum: Text, changed: bool
+    }
+
+    fn release_report(request: Release, results: harness::Report, record: ReleaseRecord) -> Text {
+        var output = std::text::joined("{\"compiler_sha256\":", toolchain::json_quoted(record.checksum))
+        std::text::append(output, std::text::joined(",\"seed\":", std::text::decimal(request.seed)))
+        std::text::append(output, ",\"compiler_changed\":")
+        std::text::append(output, if record.changed {
+                "true"
+            } else {
+                "false"
+            })
+        std::text::append(output, ",\"passed\":")
+        std::text::append(output, if release_passed(results, record.changed) {
+                "true"
+            } else {
+                "false"
+            })
+        std::text::append(output, std::text::joined(",\"campaigns\":", harness::report_json(results)))
+        std::text::append(output, "}\n")
+        return move output
+    }
+}

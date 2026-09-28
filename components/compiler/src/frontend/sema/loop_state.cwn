@@ -1,0 +1,100 @@
+module sema {
+    copy struct LoopVariable {
+        key: VariableKey
+        state: VariableState
+    }
+
+    struct LoopState {
+        variables: Vec<LoopVariable>
+        breaks: bool
+    }
+
+    fn loop_state(scopes: Vec<Scope>) -> LoopState {
+        var variables = Vec<LoopVariable>.new()
+        var scope: usize = 0
+        while scope < scopes.length() {
+            loan read scopes[scope] as value {
+                loop_scope(variables, value, scope)
+            }
+            scope = scope + 1
+        }
+        return LoopState {
+            variables: move variables, breaks: false
+        }
+    }
+
+    fn checker_loop_exit(checker: write Checker) -> bool {
+        if checker.loop_states.length() == 0 {
+            checker_error(checker, "break and continue require an enclosing loop")
+            return false
+        }
+        var valid = false
+        loan read checker.loop_states[checker.loop_states.length() - 1] as state {
+            valid = loop_state_matches(state, checker.scopes)
+        }
+        if valid == false {
+            checker_error(checker, "loop exit leaves ownership in a different state")
+        }
+        return true
+    }
+
+    fn loop_state_matches(state: LoopState, scopes: Vec<Scope>) -> bool {
+        var index: usize = 0
+        while index < state.variables.length() {
+            loan read state.variables[index] as variable {
+                if loop_variable_matches(variable, scopes) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn loop_states_copy(states: Vec<LoopState>) -> Vec<LoopState> {
+        var output = Vec<LoopState>.with_capacity(states.length())
+        var index: usize = 0
+        while index < states.length() {
+            loan read states[index] as state {
+                output.push(loop_state_copy(state))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn loop_state_copy(state: LoopState) -> LoopState {
+        var variables = Vec<LoopVariable>.with_capacity(state.variables.length())
+        var index: usize = 0
+        while index < state.variables.length() {
+            loan read state.variables[index] as variable {
+                variables.push(variable)
+            }
+            index = index + 1
+        }
+        return LoopState {
+            variables: move variables, breaks: state.breaks
+        }
+    }
+
+    fn loop_scope(variables: write Vec<LoopVariable>, scope: Scope, scope_index: usize) -> void {
+        for index in 0..scope.variables.length() {
+            let key = VariableKey {
+                scope: scope_index, index: index
+            }
+            variables.push(LoopVariable {
+                    key: key, state: scope.variables[index].state
+                })
+        }
+    }
+
+    fn loop_variable_matches(variable: LoopVariable, scopes: Vec<Scope>) -> bool {
+        if variable.key.scope >= scopes.length() {
+            return false
+        }
+        if variable.key.index >= scopes[variable.key.scope].variables.length() {
+            return false
+        }
+        return variable_states_equal(variable.state, scopes[variable.key.scope].variables[variable.key.index].state)
+    }
+}

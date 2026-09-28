@@ -1,0 +1,147 @@
+module lowering {
+    struct IntegerFactor {
+        operand: usize
+        constant: u64
+    }
+
+    fn integer_multiply(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        match integer_constant_factor(compiler.ir, operation) {
+            Some(factor) => {
+                if integer_is_signed(operation.value_type) {
+                    integer_guard_signed_factor(compiler, symbols, operation.value_type, factor)?
+                }
+                else {
+                    integer_guard_unsigned_factor(compiler, symbols, operation.value_type, factor)?
+                }
+                return integer_native_binary(compiler, operation)
+            }
+            None => {
+            }
+        }
+        let signed = integer_is_signed(operation.value_type)
+        let left = integer_widen(compiler, operation.left, signed)?
+        let right = integer_widen(compiler, operation.right, signed)?
+        let result = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), left, right))?
+        let finish = WideFinish {
+            value: result, value_type: sema::type_copy(operation.value_type), conversion: false
+        }
+        return integer_finish_wide(compiler, symbols, finish)
+    }
+
+    fn integer_constant_factor(function: ir::Function, operation: ScalarOperation) -> Option<IntegerFactor> {
+        match integer_constant_at(function, operation.right) {
+            Some(value) => {
+                return Some(IntegerFactor {
+                        operand: operation.left, constant: value
+                    })
+            }
+            None => {
+            }
+        }
+        match integer_constant_at(function, operation.left) {
+            Some(value) => {
+                return Some(IntegerFactor {
+                        operand: operation.right, constant: value
+                    })
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn integer_constant_at(function: ir::Function, value: usize) -> Option<u64> {
+        var index: usize = 0
+        while index < function.constants.length() {
+            loan read function.constants[index] as entry {
+                if entry.id == value {
+                    match read entry.value {
+                        ir::ConstantInteger(integer) => {
+                            return Some(integer)
+                        }
+                        _ => {
+                            return None()
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn integer_guard_unsigned_factor(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type, factor: IntegerFactor) -> Result<void, u32> {
+        if factor.constant <= 1 {
+            return Ok(())
+        }
+        let mask = integer_mask(symbols, value_type)?
+        let boundary_type = ir_type(symbols, value_type)?
+        let boundary = function_integer(compiler, boundary_type, mask / factor.constant)
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), factor.operand, boundary))?
+        return function_guard_with(compiler, valid, "integer_overflow")
+    }
+
+    fn integer_guard_signed_factor(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type, factor: IntegerFactor) -> Result<void, u32> {
+        let bits = integer_bits(symbols, value_type)?
+        let signed_factor = integer_signed_factor(factor.constant, bits)
+        if signed_factor == 0 || signed_factor == 1 {
+            return Ok(())
+        }
+        let boundary_type = ir_type(symbols, value_type)?
+        if signed_factor == -1 {
+            let boundary = integer_minimum_value(compiler, symbols, value_type)?
+            let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), factor.operand, boundary))?
+            return function_guard_with(compiler, valid, "integer_overflow")
+        }
+        let bounds = integer_factor_bounds(bits, signed_factor)
+        return integer_guard_signed_bounds(compiler, factor.operand, boundary_type, bounds)
+    }
+
+    struct IntegerBounds {
+        low: u64
+        high: u64
+    }
+
+    fn integer_factor_bounds(bits: u64, factor: i64) -> IntegerBounds {
+        let magnitude = u64.from(1) <<(bits - 1)
+        let minimum = i64.from_bits(18446744073709551615 - magnitude + 1)
+        let maximum = i64.from_bits(magnitude - 1)
+        var low = minimum / factor
+        var high = maximum / factor
+        if factor < 0 {
+            low = maximum / factor;
+            high = minimum / factor
+        }
+        let mask = integer_width_mask(bits)
+        return IntegerBounds {
+            low: u64.from_bits(low) & mask, high: u64.from_bits(high) & mask
+        }
+    }
+
+    fn integer_signed_factor(value: u64, bits: u64) -> i64 {
+        let shift = u64.from(64) - bits
+        return i64.from_bits(value << shift) >> i64.from(shift)
+    }
+
+    fn integer_width_mask(bits: u64) -> u64 {
+        if bits == 64 {
+            return 18446744073709551615
+        }
+        return (u64.from(1) << bits) - 1
+    }
+
+    fn integer_native_binary(compiler: write FunctionCompiler, operation: ScalarOperation) -> Result<usize, u32> {
+        let operator = integer_binary_operator(operation.operator, integer_is_signed(operation.value_type))?
+        return function_append_value(compiler, ir::InstructionBinary(operator, operation.left, operation.right))
+    }
+    fn integer_guard_signed_bounds(compiler: write FunctionCompiler, operand: usize, boundary_type: ir::Type, bounds: IntegerBounds) -> Result<void, u32> {
+        let lower_type = boundary_type
+        let lower = function_integer(compiler, lower_type, bounds.low)
+        let upper = function_integer(compiler, boundary_type, bounds.high)
+        let above = function_append_value(compiler, ir::InstructionCompare(ir::CompareSignedGreaterEqual(), operand, lower))?
+        let below = function_append_value(compiler, ir::InstructionCompare(ir::CompareSignedLessEqual(), operand, upper))?
+        let valid = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), above, below))?
+        return function_guard_with(compiler, valid, "integer_overflow")
+    }
+
+}

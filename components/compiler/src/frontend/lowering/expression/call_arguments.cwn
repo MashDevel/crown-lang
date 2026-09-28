@@ -1,0 +1,19 @@
+module lowering {
+    fn prepare_call_result(compiler: write FunctionCompiler, symbols: sema::Symbols, result: sema::Type, values: write Vec<usize>) -> Result<Option<usize>, u32> {
+        if type_is_direct(symbols, result)? {
+            return Ok(None())
+        }
+        let address = function_stack(compiler, symbols, result)?
+        values.push(address)
+        return Ok(Some(address))
+    }
+
+    fn append_call_arguments(compiler: write FunctionCompiler, analysis: sema::Analysis, parameters: Vec<sema::ParameterType>, arguments: Vec<frontend::Expression>, values: write Vec<usize>) -> Result<void, u32> {
+        var index: usize = 0
+        while index < arguments.length() {
+            values.push(pass_argument(compiler, analysis, parameters[index].mode, parameters[index].value_type, arguments[index])?)
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

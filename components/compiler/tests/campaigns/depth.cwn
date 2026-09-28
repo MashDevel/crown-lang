@@ -1,0 +1,53 @@
+module campaign {
+    fn verify_depth(result: toolchain::ProcessResult, rejected: bool) -> Result<void, Text> {
+        if rejected == false {
+            return harness::verify_clean(result)
+        }
+        if result.status != 1 || result.stdout.length() != 0 {
+            return Err("depth rejection must exit normally with status 1")
+        }
+        if std::text::occurrences(result.stderr, ": error: ") != 1 {
+            return Err("depth rejection must report exactly one source error")
+        }
+        if std::text::contains(result.stderr, "syntax depth exceeds the limit of 128") == false {
+            return Err("missing syntax-depth diagnostic")
+        }
+        return Ok(())
+    }
+
+    fn depth(environment: harness::Environment) -> Result<void, Text> {
+        let cases = depth_corpus()?
+        let modes = std::text::split("parse check compile", 32)
+        var results = harness::report()
+        for index in 0..cases.length() {
+            let path = toolchain::path_join(environment.output, std::text::joined(cases[index].name, ".cwn"))
+            toolchain::write_text(path, cases[index].source)?
+            for mode in 0..modes.length() {
+                let result = depth_command(environment, path, modes[mode])
+                let verified = verify_depth_command(move result, cases[index].rejected)
+                let name = std::text::joined(std::text::joined(cases[index].name, ":"), modes[mode])
+                harness::record_result(results, harness::outcome(name, move verified))
+            }
+        }
+        if harness::finish_report(results, environment.output)? != 0 {
+            return Err("syntax-depth campaign failed")
+        }
+        return Ok(())
+    }
+
+    fn depth_command(environment: harness::Environment, path: Text, mode: Text) -> Result<toolchain::ProcessResult, Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(environment.compiler.clone());
+        arguments.push(mode.clone())
+        if std::text::equal(mode, "compile") {
+            arguments.push(std::text::joined(path, ".s"))
+        }
+        arguments.push(path.clone())
+        return harness::invoke(move arguments, environment.output)
+    }
+
+    fn verify_depth_command(result: take Result<toolchain::ProcessResult, Text>, rejected: bool) -> Result<void, Text> {
+        let value = move result?
+        return verify_depth(value, rejected)
+    }
+}

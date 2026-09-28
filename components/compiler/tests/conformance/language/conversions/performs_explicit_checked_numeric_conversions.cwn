@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let wide = u64.from(7)
+    let floating = f64.from(wide)
+    let signed = i32.from(floating)
+    return u32.from(signed)
+}

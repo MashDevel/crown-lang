@@ -1,0 +1,8 @@
+fn launch<T>(value: take T) -> void {
+    var worker = spawn move { value }
+    worker.join()
+}
+fn main() -> u32 {
+    unsafe { launch(RawPtr<u8>.from_address(1)) }
+    return 0
+}

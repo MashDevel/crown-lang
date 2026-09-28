@@ -1,0 +1,74 @@
+module x86 {
+    fn codegen_add_globals(program: ir::Program, machine: write Program) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < program.globals.length() {
+            loan read program.globals[index] as global {
+                match codegen_global_data(program, global) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(data) => {
+                        match program_add_data(machine, move data) {
+                            Err(error) => {
+                                error;
+                                return Err(codegen_error(CodegenEncodeError()))
+                            }
+                            Ok(value) => {
+                                value
+                            }
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_global_data(program: ir::Program, global: ir::Global) -> Result<Data, CodegenError> {
+        var data = codegen_data_without_references(global)
+        data_align(data, u64.from(global.alignment))
+        if global.exported {
+            data_export(data)
+        }
+        var index: usize = 0
+        while index < global.references.length() {
+            loan read global.references[index] as reference {
+                match codegen_global_reference(program, reference) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        data_add_reference(data, move value)
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(move data)
+    }
+
+    fn codegen_data_without_references(global: ir::Global) -> Data {
+        match read global.kind {
+            ir::GlobalReadOnly => {
+                return data_initialized(global.name.clone(), codegen_bytes_copy(global.bytes), DataReadOnly())
+            }
+            ir::GlobalWritable => {
+                return data_initialized(global.name.clone(), codegen_bytes_copy(global.bytes), DataWritable())
+            }
+            ir::GlobalZeroFill => {
+                return data_zero_fill(global.name.clone(), global.size)
+            }
+        }
+    }
+
+    fn codegen_bytes_copy(bytes: Vec<u8>) -> Vec<u8> {
+        var output = Vec<u8>.with_capacity(bytes.length())
+        var index: usize = 0
+        while index < bytes.length() {
+            output.push(bytes[index]);
+            index = index + 1
+        }
+        return move output
+    }
+}

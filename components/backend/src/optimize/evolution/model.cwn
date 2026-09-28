@@ -1,0 +1,87 @@
+module optimize {
+    struct LoopEvolution {
+        induction: Induction
+        bound: usize
+        operator: ir::CompareOperator
+        body: usize
+        exit: usize
+    }
+
+    copy struct EvolutionStep {
+        magnitude: u64
+        descending: bool
+    }
+
+    copy struct EvolutionDomain {
+        start: u64
+        bound: u64
+        maximum: u64
+        inclusive: bool
+    }
+
+    fn loop_evolution(function: ir::Function, natural_loop: NaturalLoop) -> Option<LoopEvolution> {
+        let inductions = induction_find(function, natural_loop)
+        let inside = licm_definitions(function, natural_loop.blocks)
+        for index in 0..inductions.length() {
+            match evolution_condition(function, natural_loop, inductions[index]) {
+                Some(evolution) => {
+                    if inside[evolution.bound] == false {
+                        return Some(move evolution)
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return None()
+    }
+
+    fn evolution_condition(function: ir::Function, natural_loop: NaturalLoop, induction: Induction) -> Option<LoopEvolution> {
+        match read function.blocks[induction.header].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorConditional(condition, body, exit) => {
+                        if natural_loop.blocks[body] == false || natural_loop.blocks[exit] {
+                            return None()
+                        }
+                        return evolution_comparison(function, induction, condition, body, exit)
+                    }
+                    _ => None()
+                }
+            }
+            None => None()
+        }
+    }
+
+    fn evolution_comparison(function: ir::Function, induction: Induction, condition: usize, body: usize, exit: usize) -> Option<LoopEvolution> {
+        for index in 0..function.blocks[induction.header].instructions.length() {
+            loan read function.blocks[induction.header].instructions[index] as instruction {
+                if instruction.result == Some(condition) {
+                    return evolution_from_compare(instruction.kind, induction, body, exit)
+                }
+            }
+        }
+        return None()
+    }
+
+    fn evolution_from_compare(kind: ir::InstructionKind, induction: Induction, body: usize, exit: usize) -> Option<LoopEvolution> {
+        match read kind {
+            ir::InstructionCompare(operator, left, right) => {
+                if left != induction.value {
+                    return None()
+                }
+                return Some(LoopEvolution {
+                        induction: induction_copy(induction), bound: right, operator: operator, body: body, exit: exit
+                    })
+            }
+            _ => None()
+        }
+    }
+
+    fn induction_copy(value: Induction) -> Induction {
+        return Induction {
+            header: value.header, preheader: value.preheader, latch: value.latch, value: value.value
+            start: value.start, step: value.step, next: value.next, operator: value.operator, value_type: value.value_type
+        }
+    }
+}

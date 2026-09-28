@@ -1,0 +1,107 @@
+module lowering {
+    struct SuppliedStackStart {
+        result: usize
+        status: usize
+        environment: SpawnEnvironment
+    }
+
+    fn spawn_is_configured(expression: frontend::Expression) -> bool {
+        match read expression.kind {
+            frontend::ExpressionSpawn(configuration, body) => {
+                body
+                return configuration.length() != 0
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn supplied_stack_spawn(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        lower_spawn_function(compiler, analysis, expression)?
+        var arguments = supplied_stack_arguments(compiler, analysis, expression)?
+        let environment = allocate_spawn_environment(compiler, analysis, expression)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let result = function_zeroed_stack(compiler, analysis.checker.symbols, value_type)?
+        let payload = function_offset(compiler, result, 8)?
+        let entry = spawn_entry_address(compiler, expression)?
+        var call_arguments = Vec<usize>.new()
+        call_arguments.push(payload)
+        call_arguments.push(entry)
+        call_arguments.push(environment.pointer)
+        call_arguments.push(arguments[0])
+        call_arguments.push(arguments[1])
+        let status = supplied_stack_call(compiler, "crown_thread_create_stack", move call_arguments)?
+        finish_supplied_stack(compiler, analysis.checker.symbols, SuppliedStackStart {
+                result: result, status: status, environment: move environment
+            })?
+        return Ok(AddressValue(result, move value_type))
+    }
+
+    fn supplied_stack_arguments(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Vec<usize>, u32> {
+        return supplied_stack_kind_arguments(compiler, analysis, expression.kind)
+    }
+
+    fn supplied_stack_kind_arguments(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<Vec<usize>, u32> {
+        match read kind {
+            frontend::ExpressionSpawn(configuration, body) => {
+                body
+                if configuration.length() != 2 {
+                    return Err(310)
+                }
+                var output = Vec<usize>.new()
+                for index in 0..configuration.length() {
+                    loan read configuration[index] as argument {
+                        output.push(scalar_expression(compiler, analysis, argument)?)
+                    }
+                }
+                return Ok(move output)
+            }
+            _ => {
+                return Err(310)
+            }
+        }
+    }
+
+    fn supplied_stack_call(compiler: write FunctionCompiler, name: take Text, arguments: take Vec<usize>) -> Result<usize, u32> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let call = ImportedCall {
+            name: move name
+            signature: ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+            arguments: move arguments
+        }
+        match function_imported_call(compiler, move call)? {
+            Some(value) => {
+                return Ok(value)
+            }
+            None => {
+                return Err(310)
+            }
+        }
+    }
+
+    fn finish_supplied_stack(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take SuppliedStackStart) -> Result<void, u32> {
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth32()), 0)
+        let created = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), state.status, zero))?
+        let success = function_new_block(compiler)?
+        let failure = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(created, success, failure))?
+        function_select_block(compiler, failure)
+        release_spawn_environment(compiler, symbols, state.environment)?
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, success)
+        let tag = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth32()), 1)
+        function_store(compiler, symbols, StoreRequest {
+                address: state.result, value: tag, value_type: sema::builtin_leaf(sema::U32())
+            })?
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, ready)
+        return Ok(())
+    }
+}

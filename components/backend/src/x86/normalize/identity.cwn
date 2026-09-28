@@ -1,0 +1,304 @@
+module x86 {
+    struct NormalizedRegister {
+        register: Register
+        width: Width
+    }
+
+    enum ExtensionReplacement {
+        ExtensionKeep
+        ExtensionRemove
+        ExtensionMove(Register, Register)
+    }
+
+    fn normalize_identities(instructions: take Vec<Instruction>) -> Vec<Instruction> {
+        let collapsed = normalize_collapse_extensions(move instructions)
+        var pending = normalize_reverse(move collapsed)
+        var output = Vec<Instruction>.new()
+        while pending.length() > 0 {
+            match pending.pop() {
+                None => {
+                }
+                Some(instruction) => {
+                    let keep = normalize_is_identity(instruction) == false
+                    match normalize_retain_instruction(move instruction, keep) {
+                        Some(value) => {
+                            output.push(move value)
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return move output
+    }
+
+    fn normalize_collapse_extensions(instructions: take Vec<Instruction>) -> Vec<Instruction> {
+        var pending = normalize_reverse(move instructions)
+        var output = Vec<Instruction>.new()
+        var normalized: Option<NormalizedRegister> = None()
+        while pending.length() > 0 {
+            match pending.pop() {
+                None => {
+                }
+                Some(instruction) => {
+                    match normalize_redundant_extension(instruction, normalized) {
+                        ExtensionKeep => {
+                            normalized = normalize_output(instruction, normalized)
+                            output.push(move instruction)
+                        }
+                        ExtensionRemove => {
+                            normalize_discard(move instruction)
+                        }
+                        ExtensionMove(destination, source) => {
+                            normalized = normalize_replaced(normalized, destination)
+                            normalize_discard(move instruction)
+                            output.push(Move(destination, source))
+                        }
+                    }
+                }
+            }
+        }
+        return move output
+    }
+
+    fn normalize_redundant_extension(instruction: Instruction, normalized: Option<NormalizedRegister>) -> ExtensionReplacement {
+        match read normalized {
+            None => {
+                return ExtensionKeep()
+            }
+            Some(known) => {
+                match read instruction {
+                    MoveSized(values) => {
+                        if extension_is_zero(values.extension) == false {
+                            return ExtensionKeep()
+                        }
+                        if register_equal(values.source, known.register) == false {
+                            return ExtensionKeep()
+                        }
+                        if width_code(values.width) < width_code(known.width) {
+                            return ExtensionKeep()
+                        }
+                        if register_equal(values.destination, values.source) {
+                            return ExtensionRemove()
+                        }
+                        return ExtensionMove(values.destination, values.source)
+                    }
+                    _ => {
+                        return ExtensionKeep()
+                    }
+                }
+            }
+        }
+    }
+
+    fn normalize_output(instruction: Instruction, previous: Option<NormalizedRegister>) -> Option<NormalizedRegister> {
+        match read instruction {
+            LoadSized(values) => {
+                if extension_is_zero(values.extension) {
+                    return normalize_known(values.destination, values.width)
+                }
+            }
+            LoadIndexed(values) => {
+                if extension_is_zero(values.extension) {
+                    return normalize_known(values.destination, values.width)
+                }
+            }
+            MoveSized(values) => {
+                if extension_is_zero(values.extension) {
+                    return normalize_known(values.destination, values.width)
+                }
+            }
+            Move(destination, source) => {
+                return normalize_moved(previous, destination, source)
+            }
+            MoveImmediate(destination, value) => {
+                let width = normalize_immediate_width(value)
+                return normalize_known(destination, width)
+            }
+            Immediate(values) => {
+                return normalize_immediate_output(values, previous)
+            }
+            _ => {
+                return normalize_binary_output(instruction, previous)
+            }
+        }
+        None()
+    }
+
+    fn normalize_binary_output(instruction: Instruction, previous: Option<NormalizedRegister>) -> Option<NormalizedRegister> {
+        match read instruction {
+            AddSized(destination, source, width) => {
+                source;
+                return normalize_dword_output(destination, width)
+            }
+            AndSized(destination, source, width) => {
+                source;
+                return normalize_preserving_dword(previous, destination, width)
+            }
+            MultiplySized(destination, source, width) => {
+                source;
+                return normalize_dword_output(destination, width)
+            }
+            MultiplyImmediateSized(destination, value, width) => {
+                value;
+                return normalize_dword_output(destination, width)
+            }
+            OrSized(destination, source, width) => {
+                source;
+                return normalize_dword_output(destination, width)
+            }
+            SubtractSized(destination, source, width) => {
+                source;
+                return normalize_dword_output(destination, width)
+            }
+            XorSized(destination, source, width) => {
+                source;
+                return normalize_dword_output(destination, width)
+            }
+            _ => {
+                return normalize_shift_output(instruction, previous)
+            }
+        }
+    }
+
+    fn normalize_shift_output(instruction: Instruction, previous: Option<NormalizedRegister>) -> Option<NormalizedRegister> {
+        match read instruction {
+            ShiftLeftImmediateSized(destination, value, width) => {
+                value;
+                return normalize_dword_output(destination, width)
+            }
+            ShiftLeftSized(destination, width) => {
+                return normalize_dword_output(destination, width)
+            }
+            ShiftRightArithmeticImmediateSized(destination, value, width) => {
+                value;
+                return normalize_dword_output(destination, width)
+            }
+            ShiftRightArithmeticSized(destination, width) => {
+                return normalize_dword_output(destination, width)
+            }
+            ShiftRightLogicalImmediateSized(destination, value, width) => {
+                value;
+                return normalize_preserving_dword(previous, destination, width)
+            }
+            ShiftRightLogicalSized(destination, width) => {
+                return normalize_preserving_dword(previous, destination, width)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn normalize_immediate_output(values: ImmediateArgs, previous: Option<NormalizedRegister>) -> Option<NormalizedRegister> {
+        match read values.operator {
+            ImmediateAnd => {
+                if values.value >= 0 {
+                    let width = normalize_immediate_width(i64.from(values.value))
+                    return normalize_known(values.destination, width)
+                }
+            }
+            _ => {
+            }
+        }
+        previous
+        return normalize_dword_output(values.destination, values.width)
+    }
+
+    fn normalize_moved(previous: Option<NormalizedRegister>, destination: Register, source: Register) -> Option<NormalizedRegister> {
+        match read previous {
+            Some(value) => {
+                if register_equal(value.register, source) {
+                    return normalize_known(destination, value.width)
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+
+    fn normalize_preserving_dword(previous: Option<NormalizedRegister>, destination: Register, width: Width) -> Option<NormalizedRegister> {
+        if width_code(width) != 2 {
+            return None()
+        }
+        match read previous {
+            Some(value) => {
+                if register_equal(value.register, destination) {
+                    return normalize_known(destination, value.width)
+                }
+            }
+            None => {
+            }
+        }
+        let dword = Dword()
+        return normalize_known(destination, dword)
+    }
+
+    fn normalize_dword_output(destination: Register, width: Width) -> Option<NormalizedRegister> {
+        if width_code(width) != 2 {
+            return None()
+        }
+        let dword = Dword()
+        return normalize_known(destination, dword)
+    }
+
+    fn normalize_replaced(previous: Option<NormalizedRegister>, destination: Register) -> Option<NormalizedRegister> {
+        match read previous {
+            Some(value) => {
+                return normalize_known(destination, value.width)
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn normalize_discard(instruction: take Instruction) -> void {
+        instruction
+    }
+
+    fn normalize_known(register: Register, width: Width) -> Option<NormalizedRegister> {
+        return Some(NormalizedRegister {
+                register: register, width: width
+            })
+    }
+
+    fn normalize_immediate_width(value: i64) -> Width {
+        if value >= 0 && value <= 255 {
+            return Byte()
+        }
+        if value >= 256 && value <= 65535 {
+            return Word()
+        }
+        if value >= 65536 && value <= 4294967295 {
+            return Dword()
+        }
+        return Qword()
+    }
+
+    fn normalize_is_identity(instruction: Instruction) -> bool {
+        match read instruction {
+            Move(destination, source) => {
+                return register_equal(destination, source)
+            }
+            MoveSized(arguments) => {
+                if width_is_qword(arguments.width) == false {
+                    return false
+                }
+                return register_equal(arguments.destination, arguments.source)
+            }
+            MoveFloat(width, destination, source) => {
+                width
+                return float_register_code(destination) == float_register_code(source)
+            }
+            LoadAddress(destination, base, offset) => {
+                return offset == 0 && register_equal(destination, base)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

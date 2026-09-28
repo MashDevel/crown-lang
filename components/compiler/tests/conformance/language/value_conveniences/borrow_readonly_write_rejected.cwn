@@ -1,0 +1,8 @@
+fn change(value: write Slice<u8>) -> void {
+    value[0] = 1
+}
+fn main() -> u32 {
+    let bytes: [u8; 1] = [0];
+    change(bytes);
+    return 0
+}

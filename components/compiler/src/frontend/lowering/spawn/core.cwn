@@ -1,0 +1,124 @@
+module lowering {
+    struct ThreadStart {
+        thread: usize
+        status: usize
+        environment: SpawnEnvironment
+    }
+
+    fn spawn_value(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        if spawn_is_configured(expression) {
+            return supplied_stack_spawn(compiler, analysis, expression)
+        }
+        lower_spawn_function(compiler, analysis, expression)?
+        let environment = allocate_spawn_environment(compiler, analysis, expression)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let thread = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let zero = Place {
+            address: thread, value_type: sema::type_copy(value_type)
+        }
+        function_zero(compiler, analysis.checker.symbols, zero)?
+        let start = spawn_entry_address(compiler, expression)?
+        let status = start_thread(compiler, thread, ThreadEntry {
+                start: start, environment: environment.pointer
+            })?
+        let state = ThreadStart {
+            thread: thread, status: status, environment: move environment
+        }
+        finish_thread_start(compiler, analysis.checker.symbols, move state)?
+        return Ok(AddressValue(thread, move value_type))
+    }
+
+    fn spawn_entry_address(compiler: write FunctionCompiler, expression: frontend::Expression) -> Result<usize, u32> {
+        let name = spawn_function_name(expression.span, compiler.substitutions)
+        var function: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(309)
+            }
+        }
+        let start = function_append_value(compiler, ir::InstructionFunctionAddress(function))?
+        return Ok(start)
+    }
+
+    struct ThreadEntry {
+        start: usize
+        environment: usize
+    }
+
+    fn start_thread(compiler: write FunctionCompiler, thread: usize, entry: take ThreadEntry) -> Result<usize, u32> {
+        let pointer_type = ir::TypePointer()
+        let null_value = ir::ConstantNull()
+        let null = ir::function_constant(compiler.ir, pointer_type, null_value)
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+        var arguments = Vec<usize>.new()
+        arguments.push(thread)
+        arguments.push(null)
+        arguments.push(entry.start)
+        arguments.push(entry.environment)
+        let call = ImportedCall {
+            name: "pthread_create", signature: move signature, arguments: move arguments
+        }
+        match function_imported_call(compiler, call) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                match result {
+                    Some(value) => {
+                        return Ok(value)
+                    }
+                    None => {
+                        return Err(310)
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish_thread_start(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ThreadStart) -> Result<void, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth32())
+        let zero = function_integer(compiler, value_type, 0)
+        let created = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), state.status, zero))?
+        let success = function_new_block(compiler)?
+        let failure = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(created, success, failure))?
+        function_select_block(compiler, failure)
+        release_spawn_environment(compiler, symbols, state.environment)?
+        function_panic_now(compiler, "thread_creation_failed")?
+        function_select_block(compiler, success)
+        let joinable_address = function_offset(compiler, state.thread, 8)?
+        let boolean_type = ir::TypeInteger(ir::IntegerWidth1())
+        let joinable = function_integer(compiler, boolean_type, 1)
+        let store = StoreRequest {
+            address: joinable_address, value: joinable, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn thread_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 0 || sema::name_is(analysis.checker.symbols.source, method, "join") == false {
+                    return Err(311)
+                }
+                var thread: usize = 0
+                loan read receiver as value {
+                    thread = expression_place(compiler, analysis, value)?
+                }
+                drop_thread(compiler, analysis.checker.symbols, thread)?
+                return Ok(VoidValue())
+            }
+            _ => {
+                return Err(312)
+            }
+        }
+    }
+}
