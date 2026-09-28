@@ -1,0 +1,199 @@
+fn assembly_matches(actual: read Text, expected: take Text) -> bool {
+    if actual.length() != expected.length() {
+        return false
+    }
+    loan read actual as left {
+        loan read expected as right {
+            var index: usize = 0
+            while index < left.length() {
+                if left[index] != right[index] {
+                    return false
+                }
+                index = index + 1
+            }
+        }
+    }
+    return true
+}
+
+struct AssemblyRelocations {
+    text: usize
+    imported: usize
+    table: usize
+}
+
+fn assembly_text_bytes(indirect: bool) -> Vec<u8> {
+    var bytes = Vec<u8>.new()
+    bytes.push(232)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(76)
+    bytes.push(if indirect {
+            139
+        } else {
+            141
+        })
+    bytes.push(29)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(0)
+    bytes.push(0)
+    return move bytes
+}
+
+fn assembly_add_text(object: write object::CompilerObject, indirect: bool) -> Result<usize, object::Error> {
+    let bytes = assembly_text_bytes(indirect)
+    return object::add_section(object, object::Section {
+            name: ".text"
+            kind: object::SectionText()
+            alignment: 16
+            data: move bytes
+            memory_size: 12
+        })
+}
+
+fn assembly_add_entry(object: write object::CompilerObject, text: read usize) -> Result<usize, object::Error> {
+    return object::add_symbol(object, object::Symbol {
+            name: "answer"
+            kind: object::SymbolFunction()
+            binding: object::SymbolGlobal()
+            section: Some(text)
+            offset: 0
+            size: 12
+        })
+}
+
+fn assembly_add_import(object: write object::CompilerObject) -> Result<usize, object::Error> {
+    return object::add_symbol(object, object::Symbol {
+            name: "puts"
+            kind: object::SymbolFunction()
+            binding: object::SymbolImport()
+            section: None()
+            offset: 0
+            size: 0
+        })
+}
+
+fn assembly_add_table(object: write object::CompilerObject) -> Result<usize, object::Error> {
+    var table_bytes = Vec<u8>.new()
+    var index: usize = 0
+    while index < 8 {
+        table_bytes.push(0);
+        index = index + 1
+    }
+    let table = object::add_section(object, object::Section {
+            name: ".rodata"
+            kind: object::SectionReadOnlyData()
+            alignment: 8
+            data: move table_bytes
+            memory_size: 8
+        })?
+    object::add_symbol(object, object::Symbol {
+            name: "table"
+            kind: object::SymbolData()
+            binding: object::SymbolLocal()
+            section: Some(table)
+            offset: 0
+            size: 8
+        })?
+    return Ok(table)
+}
+
+fn assembly_add_relocations(object: write object::CompilerObject, sites: read AssemblyRelocations, indirect: bool) -> void {
+    object::add_relocation(object, object::Relocation {
+            section: sites.text
+            offset: 1
+            kind: object::RelocationPcRelativeCall32()
+            symbol: sites.imported
+            subtract: None()
+            addend: -4
+        })
+    object::add_relocation(object, object::Relocation {
+            section: sites.table
+            offset: 0
+            kind: object::RelocationAbsolute64()
+            symbol: sites.imported
+            subtract: None()
+            addend: 0
+        })
+    object::add_relocation(object, object::Relocation {
+            section: sites.text
+            offset: 8
+            kind: if indirect {
+                object::RelocationGotLoadPcRelative32()
+            } else {
+                object::RelocationPcRelative32()
+            }
+            symbol: sites.imported
+            subtract: None()
+            addend: -4
+        })
+}
+
+fn assembly_object(indirect: bool) -> Result<object::CompilerObject, object::Error> {
+    var object = object::new()
+    let text = assembly_add_text(object, indirect)?
+    let entry = assembly_add_entry(object, text)?
+    let imported = assembly_add_import(object)?
+    let table = assembly_add_table(object)?
+    let sites = AssemblyRelocations {
+        text: text, imported: imported, table: table
+    }
+    assembly_add_relocations(object, sites, indirect)
+    object::set_entry(object, entry)
+    return Ok(move object)
+}
+
+fn verify_object(indirect: bool) -> u32 {
+    match assembly_object(indirect) {
+        Err(error) => {
+            error;
+            return 2
+        }
+        Ok(object) => {
+            match x86::assembly(object, x86::AssemblyFormat::MachO()) {
+                Err(error) => {
+                    return error
+                }
+                Ok(output) => {
+                    let expected = if indirect {
+                        ".subsections_via_symbols\n.globl _main\n.globl _answer\n.text\n.p2align 4\n_main:\n_answer:\ncallq _puts\nmovq _puts@GOTPCREL(%rip), %r11\n.section __DATA_CONST,__const\n.p2align 3\n_table:\n.quad _puts\n"
+                    } else {
+                        ".subsections_via_symbols\n.globl _main\n.globl _answer\n.text\n.p2align 4\n_main:\n_answer:\ncallq _puts\nleaq _puts(%rip), %r11\n.section __DATA_CONST,__const\n.p2align 3\n_table:\n.quad _puts\n"
+                    }
+                    if assembly_matches(output, move expected) {
+                        return elf_test(object, indirect)
+                    }
+                    return 1
+                }
+            }
+        }
+    }
+}
+
+fn elf_test(object: object::CompilerObject, indirect: bool) -> u32 {
+    match x86::assembly(object, x86::AssemblyFormat::Elf()) {
+        Err(error) => error
+        Ok(output) => {
+            let expected = if indirect {
+                ".globl main\n.globl answer\n.text\n.p2align 4\nmain:\nanswer:\ncallq puts\nmovq puts@GOTPCREL(%rip), %r11\n.section .data.rel.ro,\"aw\",@progbits\n.p2align 3\ntable:\n.quad puts\n.section .note.GNU-stack,\"\",@progbits\n"
+            } else {
+                ".globl main\n.globl answer\n.text\n.p2align 4\nmain:\nanswer:\ncallq puts\nleaq puts(%rip), %r11\n.section .data.rel.ro,\"aw\",@progbits\n.p2align 3\ntable:\n.quad puts\n.section .note.GNU-stack,\"\",@progbits\n"
+            }
+            if assembly_matches(output, move expected) {
+                return 42
+            }
+            return 3
+        }
+    }
+}
+
+fn main() -> u32 {
+    let direct = verify_object(false)
+    if direct != 42 {
+        return direct
+    }
+    return verify_object(true)
+}

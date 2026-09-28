@@ -1,0 +1,63 @@
+fn test_c_strings() -> u32 {
+    let valid = "crown\0"
+    loan read valid as view {
+        if std::cstr::is_terminated(view) == false {
+            return 1
+        }
+    }
+    let invalid = "bad\0tail\0"
+    loan read invalid as view {
+        if std::cstr::is_terminated(view) {
+            return 2
+        }
+        match std::cstr::new(view) {
+            Some(value) => {
+                value;
+                return 3
+            }
+            None => {
+            }
+        }
+    }
+    return test_empty_c_string() + test_utf8_c_string()
+}
+
+fn test_empty_c_string() -> u32 {
+    let empty = ""
+    loan read empty as view {
+        if std::cstr::is_terminated(view) {
+            return 4
+        }
+        match std::cstr::new(view) {
+            Some(value) => {
+                return u32.from(std::cstr::length(value))
+            }
+            None => {
+                return 6
+            }
+        }
+    }
+    return 0
+}
+
+fn test_utf8_c_string() -> u32 {
+    let unicode = "café"
+    loan read unicode as view {
+        match std::cstr::encode(view) {
+            Some(bytes) => {
+                return test_utf8_bytes(bytes)
+            }
+            None => {
+                return 8
+            }
+        }
+    }
+    return 0
+}
+
+fn test_utf8_bytes(bytes: read Vec<u8>) -> u32 {
+    if bytes.length() != 6 || bytes[3] != 195 || bytes[4] != 169 || bytes[5] != 0 {
+        return 7
+    }
+    return 0
+}

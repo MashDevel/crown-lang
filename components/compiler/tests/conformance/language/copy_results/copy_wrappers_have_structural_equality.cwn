@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let empty: Option<u32> = None()
+    let value: Option<u32> = Some(7)
+    if empty != empty || value != Some(7) || empty == value {
+        return 1
+    }
+    return 0
+}

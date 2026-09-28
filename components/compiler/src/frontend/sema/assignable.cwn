@@ -1,0 +1,85 @@
+module sema {
+    fn assignable(symbols: Symbols, expected: Type, actual: Type) -> bool {
+        if types_equal(expected, actual) {
+            return true
+        }
+        if type_is_scoped_function(expected) {
+            return types_equal(callable_type(expected), actual)
+        }
+        match read expected {
+            DynamicType(interface_symbol) => {
+                return implements(symbols, interface_symbol, actual)
+            }
+            BuiltinType(builtin, arguments) => {
+                arguments
+                match read actual {
+                    IntegerLiteral(value) => {
+                        return literal_fits(builtin, value)
+                    }
+                    FloatLiteral => {
+                        return builtin == F32() || builtin == F64()
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return false
+    }
+
+    fn implements(symbols: Symbols, interface_symbol: usize, concrete: Type) -> bool {
+        var index: usize = 0
+        while index < symbols.implementations.length() {
+            loan read symbols.implementations[index] as implementation {
+                if implementation.interface_symbol == interface_symbol && types_equal(implementation.target, concrete) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn literal_fits(builtin: Builtin, value: u64) -> bool {
+        let kind = builtin
+        if kind == I8() {
+            return value <= 127
+        }
+        if kind == I16() {
+            return value <= 32767
+        }
+        if kind == I32() {
+            return value <= 2147483647
+        }
+        if kind == I64() || kind == ISize() {
+            return value <= 9223372036854775807
+        }
+        if kind == U8() {
+            return value <= 255
+        }
+        if kind == U16() {
+            return value <= 65535
+        }
+        if kind == U32() {
+            return value <= 4294967295
+        }
+        return kind == U64() || kind == USize()
+    }
+
+    fn concrete(value_type: Type) -> Type {
+        match read value_type {
+            IntegerLiteral(value) => {
+                value;
+                return BuiltinType(U32(), Vec<Type>.new())
+            }
+            FloatLiteral => {
+                return BuiltinType(F64(), Vec<Type>.new())
+            }
+            _ => {
+                return type_copy(value_type)
+            }
+        }
+    }
+}

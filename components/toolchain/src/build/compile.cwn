@@ -1,0 +1,38 @@
+module toolchain {
+    struct CompileRequest {
+        compiler: Text, assembly: Text, sources: Vec<Text>, max_instances: u64, coverage: Text, optimization: OptimizationOptions, target: Target
+    }
+
+    fn compile(request: CompileRequest) -> Result<void, Text> {
+        return require_compiler(compiler_arguments(request, "compile"))
+    }
+
+    fn require_compiler(arguments: take Vec<Text>) -> Result<void, Text> {
+        var request = command(move arguments)
+        request.timeout = 0
+        return require_execution(request)
+    }
+
+    fn compiler_arguments(request: CompileRequest, command: Text) -> Vec<Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(request.compiler.clone())
+        arguments.push(command.clone())
+        if std::text::equal(command, "_executable") {
+            arguments.push("-o")
+        }
+        arguments.push(request.assembly.clone())
+        arguments.push("--target")
+        arguments.push(target_name(request.target))
+        if request.coverage.length() != 0 {
+            arguments.push("--coverage");
+            arguments.push(request.coverage.clone())
+        }
+        optimization_arguments(arguments, request.optimization)
+        arguments.push("--max-instances")
+        arguments.push(std::text::decimal(request.max_instances))
+        for index in 0..request.sources.length() {
+            arguments.push(request.sources[index].clone())
+        }
+        return move arguments
+    }
+}

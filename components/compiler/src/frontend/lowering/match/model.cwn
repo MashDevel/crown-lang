@@ -1,0 +1,75 @@
+module lowering {
+    struct MatchFlow {
+        address: usize
+        value_type: sema::Type
+        tag: usize
+        blocks: Vec<usize>
+        invalid: usize
+        merge: usize
+        access: Option<frontend::LoanMode>
+        result: Option<usize>
+    }
+
+    fn prepare_match(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression) -> Result<MatchFlow, u32> {
+        let source = match_source(compiler, analysis, expression)?
+        var tag: usize = 0
+        if sema::match_is_text(source.value_type) == false {
+            let tag_type = if sema::type_is_integer(source.value_type) {
+                sema::type_copy(source.value_type)
+            } else {
+                sema::builtin_leaf(sema::U32())
+            }
+            let load = Place {
+                address: source.address, value_type: move tag_type
+            }
+            tag = function_load(compiler, analysis.checker.symbols, load)?
+        }
+        var blocks = Vec<usize>.with_capacity(expression.arms.length())
+        var index: usize = 0
+        while index < expression.arms.length() {
+            blocks.push(function_new_block(compiler)?);
+            index = index + 1
+        }
+        return Ok(MatchFlow {
+                address: source.address
+                value_type: sema::type_copy(source.value_type)
+                tag: tag
+                blocks: move blocks
+                invalid: function_new_block(compiler)?
+                merge: function_new_block(compiler)?
+                access: expression.access
+                result: None()
+            })
+    }
+
+    fn match_source(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression) -> Result<Place, u32> {
+        match expression.access {
+            Some(mode) => {
+                mode;
+                return expression_place_info(compiler, analysis, expression.value)
+            }
+            None => {
+            }
+        }
+        let result = function_expression(compiler, analysis, expression.value)?
+        match move result {
+            AddressValue(address, value_type) => {
+                return Ok(Place {
+                        address: address, value_type: move value_type
+                    })
+            }
+            ScalarValue(value, value_type) => {
+                let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+                function_store(compiler, analysis.checker.symbols, StoreRequest {
+                        address: address, value: value, value_type: sema::type_copy(value_type)
+                    })?
+                return Ok(Place {
+                        address: address, value_type: move value_type
+                    })
+            }
+            VoidValue => {
+                return Err(209)
+            }
+        }
+    }
+}

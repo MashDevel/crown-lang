@@ -1,0 +1,15 @@
+fn choose(value: Option<u32>) -> u32 {
+    let answer = match value {
+        Some(number) => {
+            if number == 0 {
+                return 42
+            }
+            number
+        },
+        None => 42
+    }
+    answer
+}
+fn main() -> u32 {
+    choose(Some(0)) + choose(None()) - 42
+}

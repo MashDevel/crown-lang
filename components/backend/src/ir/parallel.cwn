@@ -1,0 +1,47 @@
+module ir {
+    extern "c" {
+        fn host_environment(name: RawPtr<u8>) -> RawPtr<u8> = "getenv"
+    }
+
+    fn parallel_workers(count: usize) -> usize {
+        if count == 0 {
+            return 1
+        }
+        var workers: usize = 4
+        unsafe {
+            let value = host_environment("CROWN_JOBS\0".as_raw())
+            if value != RawPtr<u8>.from_address(0) {
+                workers = parallel_parse_jobs(value)
+            }
+        }
+        if count < workers {
+            return count
+        }
+        return workers
+    }
+
+    unsafe fn parallel_parse_jobs(pointer: RawPtr<u8>) -> usize {
+        unsafe {
+            var index: usize = 0
+            var count: usize = 0
+            if pointer.read() == 43 {
+                index = 1
+            }
+            while pointer.offset(index).read() != 0 {
+                let byte = pointer.offset(index).read()
+                if byte < 48 || byte > 57 {
+                    return 4
+                }
+                count = count * 10 + usize.from(byte - 48)
+                if count > 4 {
+                    count = 4
+                }
+                index = index + 1
+            }
+            if count == 0 {
+                return 4
+            }
+            return count
+        }
+    }
+}

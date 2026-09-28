@@ -1,0 +1,116 @@
+module optimize {
+    fn gvn_binary_code(operator: ir::BinaryOperator) -> Option<u32> {
+        match read operator {
+            ir::BinaryAdd => Some(1)
+            ir::BinarySubtract => Some(2)
+            ir::BinaryMultiply => Some(3)
+            ir::BinarySignedDivide => Some(4)
+            ir::BinaryUnsignedDivide => Some(5)
+            ir::BinarySignedRemainder => Some(6)
+            ir::BinaryUnsignedRemainder => Some(7)
+            _ => gvn_binary_bitwise_code(operator)
+        }
+    }
+
+    fn gvn_binary_bitwise_code(operator: ir::BinaryOperator) -> Option<u32> {
+        match read operator {
+            ir::BinaryAnd => Some(8)
+            ir::BinaryOr => Some(9)
+            ir::BinaryXor => Some(10)
+            ir::BinaryShiftLeft => Some(11)
+            ir::BinaryShiftRightSigned => Some(12)
+            ir::BinaryShiftRightUnsigned => Some(13)
+            _ => gvn_binary_float_code(operator)
+        }
+    }
+
+    fn gvn_binary_float_code(operator: ir::BinaryOperator) -> Option<u32> {
+        match read operator {
+            ir::BinaryFloatAdd => Some(14)
+            ir::BinaryFloatSubtract => Some(15)
+            ir::BinaryFloatMultiply => Some(16)
+            ir::BinaryFloatDivide => Some(17)
+            ir::BinaryFloatRemainder => Some(18)
+            _ => None()
+        }
+    }
+
+    fn gvn_unary_code(operator: ir::UnaryOperator) -> u32 {
+        match read operator {
+            ir::UnaryNegate => {
+                return 1
+            }
+            ir::UnaryNot => {
+                return 2
+            }
+            ir::UnaryFloatNegate => {
+                return 3
+            }
+        }
+    }
+
+    fn gvn_compare_code(operator: ir::CompareOperator) -> Option<u32> {
+        match read operator {
+            ir::CompareEqual => Some(1)
+            ir::CompareNotEqual => Some(2)
+            _ => gvn_compare_signed_order_code(operator)
+        }
+    }
+
+    fn gvn_compare_signed_order_code(operator: ir::CompareOperator) -> Option<u32> {
+        match read operator {
+            ir::CompareSignedLess => Some(3)
+            ir::CompareSignedLessEqual => Some(4)
+            ir::CompareSignedGreater => Some(5)
+            ir::CompareSignedGreaterEqual => Some(6)
+            _ => gvn_compare_unsigned_order_code(operator)
+        }
+    }
+
+    fn gvn_compare_unsigned_order_code(operator: ir::CompareOperator) -> Option<u32> {
+        match read operator {
+            ir::CompareUnsignedLess => Some(7)
+            ir::CompareUnsignedLessEqual => Some(8)
+            ir::CompareUnsignedGreater => Some(9)
+            ir::CompareUnsignedGreaterEqual => Some(10)
+            _ => gvn_compare_float_order_code(operator)
+        }
+    }
+
+    fn gvn_compare_float_order_code(operator: ir::CompareOperator) -> Option<u32> {
+        match read operator {
+            ir::CompareFloatOrderedEqual => Some(11)
+            ir::CompareFloatOrderedNotEqual => Some(12)
+            ir::CompareFloatUnorderedNotEqual => Some(13)
+            ir::CompareFloatOrderedLess => Some(14)
+            ir::CompareFloatOrderedLessEqual => Some(15)
+            ir::CompareFloatOrderedGreater => Some(16)
+            ir::CompareFloatOrderedGreaterEqual => Some(17)
+            _ => None()
+        }
+    }
+
+    fn gvn_cast_code(operator: ir::CastOperator) -> Option<u32> {
+        match read operator {
+            ir::CastTruncate => Some(1)
+            ir::CastZeroExtend => Some(2)
+            ir::CastSignExtend => Some(3)
+            ir::CastPointerToInteger => Some(10)
+            ir::CastIntegerToPointer => Some(11)
+            ir::CastBitcast => Some(12)
+            _ => gvn_cast_float_code(operator)
+        }
+    }
+
+    fn gvn_cast_float_code(operator: ir::CastOperator) -> Option<u32> {
+        match read operator {
+            ir::CastSignedIntegerToFloat => Some(4)
+            ir::CastUnsignedIntegerToFloat => Some(5)
+            ir::CastFloatToSignedInteger => Some(6)
+            ir::CastFloatToUnsignedInteger => Some(7)
+            ir::CastFloatExtend => Some(8)
+            ir::CastFloatTruncate => Some(9)
+            _ => None()
+        }
+    }
+}

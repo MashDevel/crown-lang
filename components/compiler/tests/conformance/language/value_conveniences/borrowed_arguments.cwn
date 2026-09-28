@@ -1,0 +1,52 @@
+fn count(text: TextView) -> usize {
+    return text.length()
+}
+fn first(bytes: Slice<u8>) -> u8 {
+    return bytes[0]
+}
+fn change(bytes: write Slice<u8>) -> void {
+    bytes[0] = 9
+}
+fn make() -> Vec<u8> {
+    var bytes = Vec<u8>.new();
+    bytes.push(3);
+    return move bytes
+}
+fn generic_length<T>(values: Slice<T>) -> usize {
+    return values.length()
+}
+fn main() -> u32 {
+    let text = "hello"
+    if count(text) != 5 || count("λ\0x") != 4 || count("") != 0 || count(("grouped")) != 7 {
+        return 1
+    }
+    if count(if true {
+            "yes"
+        } else {
+            "no"
+        }) != 3 {
+        return 6
+    }
+    if first([4, 5]) != 4 || generic_length([1, 2]) != 2 {
+        return 7
+    }
+    var bytes = make()
+    if first(bytes) != 3 || first(make()) != 3 {
+        return 2
+    }
+    change(bytes)
+    if bytes[0] != 9 {
+        return 3
+    }
+    var array: [u8; 3] = [1, 2, 3]
+    change(array[1..3])
+    if array[1] != 9 || first(array[2..3]) != 3 {
+        return 4
+    }
+    loan read text as view {
+        if first(view[1..2]) != 101 {
+            return 5
+        }
+    }
+    return 0
+}

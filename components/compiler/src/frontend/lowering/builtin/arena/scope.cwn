@@ -1,0 +1,64 @@
+module lowering {
+    struct ArenaScopeState {
+        arena: usize
+        handle: usize
+        element: sema::Type
+    }
+
+    fn arena_scope(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        var state = ArenaScopeState {
+            arena: 0, handle: 0, element: sema::Invalid()
+        }
+        match read statement.kind {
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                alias;
+                body
+                loan read arena as arena_value {
+                    let place = expression_place_info(compiler, analysis, arena_value)?
+                    state.arena = place.address
+                    state.element = arena_element_type(place.value_type)?
+                }
+                loan read handle as handle_value {
+                    state.handle = arena_aggregate_expression(compiler, analysis, handle_value)?
+                }
+            }
+            _ => {
+                return Err(275)
+            }
+        }
+        let value = arena_scope_element(compiler, analysis.checker.symbols, state)?
+        function_push_scope(compiler)
+        match read statement.kind {
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                arena;
+                handle
+                function_add_binding(compiler, Binding {
+                        name: frontend::name_copy(alias), value_type: sema::type_copy(state.element), address: value, owned: false, available: true, depth: compiler.scope_depth
+                    })
+                function_statements(compiler, analysis, body)?
+            }
+            _ => {
+                return Err(276)
+            }
+        }
+        function_pop_scope(compiler)?
+        return Ok(())
+    }
+    fn arena_scope_element(compiler: write FunctionCompiler, symbols: sema::Symbols, state: ArenaScopeState) -> Result<usize, u32> {
+        let valid = arena_valid(compiler, symbols, ArenaPosition {
+                arena: state.arena, index: state.handle
+            })?
+        function_guard_with(compiler, valid, "invalid_arena_handle")?
+        let index_load = Place {
+            address: state.handle, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, index_load)?
+        let data = function_load_pointer(compiler, state.arena)?
+        return arena_element_address(compiler, symbols, ArenaItem {
+                data: data, index: index, element: sema::type_copy(state.element)
+            })
+    }
+
+}

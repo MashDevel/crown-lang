@@ -1,0 +1,48 @@
+module frontend {
+    fn text_literal_bytes(source: Shared<Vec<u8>>, span: Span) -> Vec<u8> {
+        var output = Vec<u8>.new()
+        var index = span.start + 1
+        let end = span.end - 1
+        while index < end {
+            let value = source_byte(source, index)
+            if value == 92 && index + 1 < end {
+                output.push(escaped_text_byte(source_byte(source, index + 1)))
+                index = index + 2
+            } else {
+                output.push(value)
+                index = index + 1
+            }
+        }
+        return move output
+    }
+
+    fn escaped_text_byte(value: u8) -> u8 {
+        if value == 110 {
+            return 10
+        }
+        if value == 114 {
+            return 13
+        }
+        if value == 116 {
+            return 9
+        }
+        if value == 48 {
+            return 0
+        }
+        return value
+    }
+
+    fn literal_bytes_equal(left: Vec<u8>, right: Vec<u8>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < left.length() {
+            if left[index] != right[index] {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+}

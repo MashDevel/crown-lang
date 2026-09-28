@@ -1,0 +1,107 @@
+fn example(mode: Text) -> Result<harness::Case, Text> {
+    let document = toolchain::json(std::text::joined(std::text::joined("{\"name\":\"example\",\"mode\":", toolchain::json_quoted(mode)), ",\"source\":\"example.cwn\",\"status\":42,\"diagnostics\":[\"invalid type\"]}"))?
+    return harness::case(document, document.root, "")
+}
+
+fn completed(status: i32, stderr: Text, stdout: Text) -> toolchain::ProcessResult {
+    return toolchain::ProcessResult {
+        status: status, stderr: stderr.clone(), stdout: stdout.clone()
+    }
+}
+
+fn rejection() -> Result<void, Text> {
+    let value = example("reject")?
+    let message = "source.cwn:1:1: error: invalid type\n"
+    harness::verify_check(value, completed(1, message, ""))?
+    let statuses: [i32; 5] = [0, 2, 64, -11, -6]
+    for index in 0..5 {
+        testing::error(harness::verify_check(value, completed(statuses[index], message, "")))?
+    }
+    testing::error(harness::verify_check(value, completed(1, "", "")))?
+    testing::error(harness::verify_check(value, completed(1, message, "trace")))?
+    return Ok(())
+}
+
+fn checking() -> Result<void, Text> {
+    checking_mode("check")?
+    return checking_mode("compile")
+}
+
+fn checking_mode(mode: Text) -> Result<void, Text> {
+    let checked = example(mode)?
+    testing::error(harness::verify_check(checked, completed(0, "invalid type", "")))?
+    var success = example(mode)?
+    success.diagnostics = Vec<Text>.new()
+    harness::verify_check(success, completed(0, "", ""))?
+    testing::error(harness::verify_check(success, completed(1, "", "")))?
+    testing::error(harness::verify_check(success, completed(0, "warning", "")))?
+    testing::error(harness::verify_check(success, completed(0, "", "trace")))?
+    return Ok(())
+}
+
+fn execution() -> Result<void, Text> {
+    var value = example("run")?
+    value.stdout = Some("answer\n")
+    harness::verify_execution(value, completed(42, "", "answer\n"))?
+    testing::error(harness::verify_execution(value, completed(0, "", "answer\n")))?
+    testing::error(harness::verify_execution(value, completed(42, "", "wrong\n")))?
+    value.stdout = None();
+    value.status = -6;
+    value.stderr = testing::list("integer overflow")
+    harness::verify_execution(value, completed(-6, "integer overflow\n", ""))?
+    let statuses: [i32; 4] = [0, 1, 42, -11]
+    for index in 0..4 {
+        testing::error(harness::verify_execution(value, completed(statuses[index], "integer overflow", "")))?
+    }
+    testing::error(harness::verify_execution(value, completed(-6, "", "")))?
+    return Ok(())
+}
+
+fn clean_execution() -> Result<void, Text> {
+    testing::error(harness::verify_clean(completed(0, "warning", "")))?
+    testing::error(harness::verify_clean(completed(0, "", "trace")))?
+    let row = harness::outcome("timeout", Err("process timed out"))
+    testing::expect(std::text::contains(row.error, "timed out"), "timeout failure is recorded")?
+    return Ok(())
+}
+
+fn assembly_output() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let compiled = example("compile")?
+    testing::error(harness::verify_assembly(compiled, root))?
+    testing::write_file(root, "program.s", "")?
+    testing::error(harness::verify_assembly(compiled, root))?
+    testing::write_file(root, "program.s", ".text\n")?
+    harness::verify_assembly(compiled, root)?
+    return harness::verify_assembly(example("check")?, "missing")
+}
+
+fn stale_assembly(compiler: Text) -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    var value = example("compile")?
+    value.diagnostics = Vec<Text>.new()
+    testing::write_file(root, "example.cwn", "fn main() -> u32 { 0 }\n")?
+    testing::write_file(root, "program.s", ".text\n")?
+    let environment = harness::Environment {
+        compiler: toolchain::absolute(compiler)?, root: root.clone(), output: root.clone(), coverage: ""
+    }
+    return testing::error(harness::check_case(value, environment))
+}
+
+fn run(compiler: Text) -> Result<void, Text> {
+    rejection()?;
+    checking()?;
+    execution()?;
+    clean_execution()?;
+    assembly_output()?
+    return stale_assembly(compiler)
+}
+fn main(arguments: Arguments) -> u32 {
+    let values = toolchain::arguments(arguments)
+    if values.length() > 1 && std::text::equal(values[1], "compile") {
+        return 0
+    }
+    return testing::done(run(values[0]))
+}

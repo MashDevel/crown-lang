@@ -1,0 +1,82 @@
+module x86 {
+    fn assembly_append_text(output: write AssemblyOutput, value: Text) -> void {
+        loan read value as bytes {
+            var index: usize = 0
+            while index < bytes.length() {
+                output.text.push(char.from(u32.from(bytes[index])))
+                index = index + 1
+            }
+        }
+    }
+
+    fn assembly_append(output: write AssemblyOutput, value: take Text) -> void {
+        assembly_append_text(output, value)
+    }
+
+    fn assembly_append_view(output: write AssemblyOutput, value: TextView) -> void {
+        loan read value as bytes {
+            var index: usize = 0
+            while index < bytes.length() {
+                output.text.push(char.from(u32.from(bytes[index])))
+                index = index + 1
+            }
+        }
+    }
+
+    fn assembly_append_u64(output: write AssemblyOutput, value: u64) -> void {
+        var remaining = value
+        var digits: [u8; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        var length: usize = 0
+        if remaining == 0 {
+            output.text.push('0');
+            return
+        }
+        while remaining != 0 {
+            digits[length] = u8.from(remaining % 10)
+            length = length + 1
+            remaining = remaining / 10
+        }
+        while length != 0 {
+            length = length - 1
+            output.text.push(char.from(u32.from(digits[length]) + 48))
+        }
+    }
+
+    fn assembly_append_byte(output: write AssemblyOutput, value: u8) -> void {
+        object::assembly_byte(output.text, value)
+    }
+
+    fn assembly_append_addend(output: write AssemblyOutput, value: i64) -> void {
+        if value == 0 {
+            return
+        }
+        if value > 0 {
+            assembly_append(output, " + ")
+            assembly_append_u64(output, u64.from(value))
+            return
+        }
+        assembly_append(output, " - ")
+        if value == -9223372036854775808 {
+            assembly_append_u64(output, 9223372036854775808)
+        } else {
+            assembly_append_u64(output, u64.from(-value))
+        }
+    }
+
+    fn assembly_append_symbol(output: write AssemblyOutput, name: Text) -> void {
+        if output.format == AssemblyFormat::MachO() {
+            output.text.push('_')
+        }
+        assembly_append_text(output, name)
+    }
+
+    fn assembly_alignment_power(alignment: u64) -> u64 {
+        var power: u64 = 0
+        var remaining = alignment
+        while remaining > 1 {
+            remaining = remaining / 2
+            power = power + 1
+        }
+        return power
+    }
+}

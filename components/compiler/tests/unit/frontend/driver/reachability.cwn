@@ -1,0 +1,70 @@
+fn lowered(source: Text) -> Result<ir::Program, u32> {
+    let input = frontend_test_source(source.clone())
+    let program = match frontend::parse(input.bytes.share(), input.length, 0) {
+        Ok(value) => move value
+        Err(errors) => {
+            errors;
+            return Err(1)
+        }
+    }
+    let analysis = sema::analyze(input.bytes.share(), program)
+    if analysis.errors != 0 {
+        return Err(2)
+    }
+    var compiler = lowering::compiler_new()
+    lowering::declare_program(compiler, analysis)?
+    frontend::lower_required_program(compiler, lowering::ProgramInput {
+            analysis: move analysis, program: move program
+        })?
+    return Ok(replace(compiler.output, ir::program_new()))
+}
+
+fn direct_calls() -> Result<void, Text> {
+    let source = "fn unused() -> u32 { return 9 } fn leaf() -> u32 { return 42 } fn forward() -> u32 { return leaf() } fn main() -> u32 { return forward() }"
+    let program = checked_lowering(source)?
+    return testing::expect(program.functions.length() == 3, "only reachable bodies are lowered before optimization")
+}
+
+fn indirect_calls() -> Result<void, Text> {
+    let source = "fn unused() -> u32 { return 9 } fn leaf() -> u32 { return 42 } fn apply(action: fn() -> u32) -> u32 { return action() } fn main() -> u32 { return apply(leaf) }"
+    let program = checked_lowering(source)?
+    return testing::expect(program.functions.length() == 3, "function addresses retain indirect callees")
+}
+
+fn arguments_entry() -> Result<void, Text> {
+    let program = checked_lowering("fn main(arguments: Arguments) -> u32 { arguments; return 0 }")?
+    testing::expect(program.functions.length() == 2, "argument entry retains the source main")?
+    return testing::error(lowered("fn unused() -> u32 { return 0 }"))
+}
+
+fn checked_lowering(source: Text) -> Result<ir::Program, Text> {
+    let program = match lowered(source) {
+        Ok(value) => move value
+        Err(code) => {
+            return Err(std::text::joined("lowering failed: ", std::text::decimal(u64.from(code))))
+        }
+    }
+    match ir::validate_program(program) {
+        Ok(done) => {
+            done;
+            return Ok(move program)
+        }
+        Err(error) => {
+            error;
+            return Err("reachable IR is invalid")
+        }
+    }
+}
+
+fn run() -> Result<void, Text> {
+    direct_calls()?
+    indirect_calls()?
+    arguments_entry()?
+    let recursive = checked_lowering("fn recurse(value: u32) -> u32 { if value == 0 { return 42 } return recurse(value - 1) } fn main() -> u32 { return recurse(2) }")?
+    recursive;
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

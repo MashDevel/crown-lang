@@ -1,0 +1,65 @@
+module sema {
+    fn builtin_constructor_signature(symbols: Symbols, name: frontend::Name) -> Option<CallSignature> {
+        if name_is(symbols.source, name, "Some") {
+            return Some(some_signature())
+        }
+        if name_is(symbols.source, name, "None") {
+            return Some(none_signature())
+        }
+        if name_is(symbols.source, name, "Ok") {
+            return Some(ok_signature())
+        }
+        if name_is(symbols.source, name, "Err") {
+            return Some(err_signature())
+        }
+        return None()
+    }
+
+    fn some_signature() -> CallSignature {
+        var parameters = Vec<ParameterType>.new()
+        parameters.push(ParameterType {
+                mode: frontend::ModeTake(), value_type: ParameterType(0)
+            })
+        var arguments = Vec<Type>.new()
+        arguments.push(ParameterType(0))
+        return constructor_call_signature(move parameters, BuiltinType(Option(), move arguments), 1)
+    }
+
+    fn none_signature() -> CallSignature {
+        var arguments = Vec<Type>.new()
+        arguments.push(ParameterType(0))
+        return constructor_call_signature(Vec<ParameterType>.new(), BuiltinType(Option(), move arguments), 1)
+    }
+
+    fn ok_signature() -> CallSignature {
+        var parameters = Vec<ParameterType>.new()
+        parameters.push(ParameterType {
+                mode: frontend::ModeTake(), value_type: ParameterType(0)
+            })
+        var arguments = Vec<Type>.new()
+        arguments.push(ParameterType(0))
+        arguments.push(ParameterType(1))
+        return constructor_call_signature(move parameters, BuiltinType(Result(), move arguments), 2)
+    }
+
+    fn err_signature() -> CallSignature {
+        var parameters = Vec<ParameterType>.new()
+        parameters.push(ParameterType {
+                mode: frontend::ModeTake(), value_type: ParameterType(1)
+            })
+        var arguments = Vec<Type>.new()
+        arguments.push(ParameterType(0))
+        arguments.push(ParameterType(1))
+        return constructor_call_signature(move parameters, BuiltinType(Result(), move arguments), 2)
+    }
+
+    fn constructor_call_signature(parameters: take Vec<ParameterType>, result: take Type, count: usize) -> CallSignature {
+        return CallSignature {
+            function: None()
+            parameters: move parameters
+            result: move result
+            type_parameter_count: count
+            unsafe_value: false
+        }
+    }
+}

@@ -1,0 +1,88 @@
+module arm64 {
+    fn wide_to_float(compiler: write Compiler, target: ir::Type, signed: bool) -> Result<void, Text> {
+        let double = ir::type_is_float64(target)
+        immediate(compiler, 0, 0)
+        if signed {
+            wide_float_magnitude(compiler)
+        }
+        runtime_move(compiler, 2, 9)
+        runtime_move(compiler, 3, 10)
+        wide_bit_length(compiler)
+        let keep: u64 = if double {
+            55
+        } else {
+            26
+        }
+        immediate(compiler, 15, keep)
+        emit_registers(compiler, 3942645760, 5, 4, 15)
+        let small = condition_later(compiler, 13)
+        wide_float_sticky(compiler)?
+        let done = branch_later(compiler)
+        branch_here(compiler, small)
+        immediate(compiler, 5, 0)
+        branch_here(compiler, done)
+        wide_float_scale(compiler, double)
+        return Ok(())
+    }
+    fn wide_float_magnitude(compiler: write Compiler) -> void {
+        immediate(compiler, 15, 63)
+        shift_registers(compiler, ShiftOperation::LogicalRight(), 0, 10, 15)
+        runtime_compare(compiler, 0, 0)
+        let positive = condition_later(compiler, 0)
+        wide_negate(compiler, 9, 10)
+        branch_here(compiler, positive)
+    }
+    fn wide_bit_length(compiler: write Compiler) -> void {
+        runtime_compare(compiler, 10, 0)
+        let low = condition_later(compiler, 0)
+        emit_encoding(compiler, immediate_word(3670020096, 4, 10, 0))
+        immediate(compiler, 15, 128)
+        emit_registers(compiler, 3405774848, 4, 15, 4)
+        let done = branch_later(compiler)
+        branch_here(compiler, low)
+        emit_encoding(compiler, immediate_word(3670020096, 4, 9, 0))
+        immediate(compiler, 15, 64)
+        emit_registers(compiler, 3405774848, 4, 15, 4)
+        branch_here(compiler, done)
+    }
+    fn wide_float_sticky(compiler: write Compiler) -> Result<void, Text> {
+        runtime_move(compiler, 11, 5)
+        wide_shift(compiler, ir::BinaryShiftRightUnsigned())?
+        runtime_move(compiler, 6, 9)
+        runtime_move(compiler, 11, 5)
+        wide_shift(compiler, ir::BinaryShiftLeft())?
+        emit_registers(compiler, 3388997632, 9, 9, 2)
+        emit_registers(compiler, 3388997632, 10, 10, 3)
+        emit_registers(compiler, 2852126720, 9, 9, 10)
+        runtime_compare(compiler, 9, 0)
+        immediate(compiler, 11, 1)
+        emit_encoding(compiler, select_word(Registers {
+                    destination: 11, left: 31, right: 11
+                }, 0))
+        emit_registers(compiler, 2852126720, 9, 6, 11)
+        return Ok(())
+    }
+    fn wide_float_scale(compiler: write Compiler, double: bool) -> void {
+        emit_encoding(compiler, float_integer_convert(0, 9, double, true, true))
+        emit_encoding(compiler, add_immediate(10, 5, if double {
+                    1023
+                } else {
+                    127
+                }, false))
+        immediate(compiler, 15, if double {
+                52
+            } else {
+                23
+            })
+        shift_registers(compiler, ShiftOperation::Left(), 10, 10, 15)
+        emit_encoding(compiler, float_move_bits(1, 10, true, double))
+        emit_encoding(compiler, float_word(FloatOperation::Multiply(), Registers {
+                    destination: 0, left: 0, right: 1
+                }, double))
+        runtime_compare(compiler, 0, 0)
+        let positive = condition_later(compiler, 0)
+        emit_encoding(compiler, float_negate(0, 0, double))
+        branch_here(compiler, positive)
+        emit_encoding(compiler, float_move_bits(9, 0, false, double))
+    }
+}

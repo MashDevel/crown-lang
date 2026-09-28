@@ -1,0 +1,8 @@
+fn consume(value: take Text) -> void {
+    value
+}
+fn main() -> u32 {
+    let text = "owned"
+    consume(text)
+    return 0
+}

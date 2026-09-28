@@ -1,0 +1,12 @@
+module frontend {
+    fn parser_thread_scope(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        let body = parser_block(parser)
+        return statement(StatementThreadScope(move body), span_through(start.span, parser_previous_span(parser)))
+    }
+    fn parser_scoped_spawn(parser: write Parser, start: Span, configuration: take Vec<Expression>) -> Expression {
+        let captures = parser_closure_captures(parser)
+        let body = parser_block(parser)
+        return expression(ExpressionScopedSpawn(move configuration, move captures, move body), span_through(start, parser_previous_span(parser)))
+    }
+}

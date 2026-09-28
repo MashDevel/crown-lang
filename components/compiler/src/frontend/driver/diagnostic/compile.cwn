@@ -1,0 +1,237 @@
+module frontend {
+    fn ir_validation_error(error: ir::ValidationError, program: ir::Program) -> u32 {
+        match read error.function {
+            Some(value) => {
+                print(u32.from(value))
+            }
+            None => {
+            }
+        }
+        match read error.block {
+            Some(value) => {
+                print(u32.from(value))
+            }
+            None => {
+            }
+        }
+        match read error.value {
+            Some(value) => {
+                print(u32.from(value))
+            }
+            None => {
+            }
+        }
+        print(error.kind.code)
+        print(ir_validation_instruction(program, error))
+        return 240
+    }
+
+    fn ir_validation_instruction(program: ir::Program, error: ir::ValidationError) -> u32 {
+        var function: usize = 0
+        var block: usize = 0
+        var result: usize = 0
+        match read error.function {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return 0
+            }
+        }
+        match read error.block {
+            Some(value) => {
+                block = value
+            }
+            None => {
+                return 0
+            }
+        }
+        match read error.value {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return 0
+            }
+        }
+        if function >= program.functions.length() || block >= program.functions[function].blocks.length() {
+            return 0
+        }
+        var index: usize = 0
+        while index < program.functions[function].blocks[block].instructions.length() {
+            match read program.functions[function].blocks[block].instructions[index].result {
+                Some(value) => {
+                    if value == result {
+                        loan read program.functions[function] as current {
+                            ir_instruction_details(current, program.functions[function].blocks[block].instructions[index])
+                        }
+                        return ir_instruction_kind(program.functions[function].blocks[block].instructions[index].kind)
+                    }
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return 0
+    }
+
+    fn ir_instruction_details(function: ir::Function, instruction: ir::Instruction) -> void {
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                print(ir_type_code(value_type))
+                print(u32.from(incoming.length()))
+                var index: usize = 0
+                while index < incoming.length() {
+                    print(u32.from(incoming[index].block))
+                    print(u32.from(incoming[index].value))
+                    match ir::function_value_type(function, incoming[index].value) {
+                        Some(incoming_type) => {
+                            print(ir_type_code(incoming_type))
+                        }
+                        None => {
+                            print(0)
+                        }
+                    }
+                    index = index + 1
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn ir_instruction_kind(kind: ir::InstructionKind) -> u32 {
+        match read kind {
+            ir::InstructionVectorSplat(value, target) => {
+                value;
+                target;
+                return 19
+            }
+            ir::InstructionBinary(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return 1
+            }
+            ir::InstructionUnary(operator, value) => {
+                operator;
+                value;
+                return 2
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return 3
+            }
+            ir::InstructionCast(operator, value, target) => {
+                operator;
+                value;
+                target;
+                return 4
+            }
+            ir::InstructionMemory(memory) => ir_memory_kind(memory)
+
+            ir::InstructionCall(function, arguments, result) => {
+                function;
+                arguments;
+                result;
+                return 15
+            }
+            ir::InstructionCallIndirect(function, signature, arguments) => {
+                function;
+                signature;
+                arguments;
+                return 16
+            }
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                return 17
+            }
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                condition;
+                then_value;
+                else_value;
+                return 18
+            }
+        }
+    }
+
+    fn codegen_error(error: x86::CodegenError) -> u32 {
+        match read error.function {
+            Some(value) => {
+                print(u32.from(value))
+            }
+            None => {
+            }
+        }
+        match read error.block {
+            Some(value) => {
+                print(u32.from(value))
+            }
+            None => {
+            }
+        }
+        match read error.kind {
+            x86::CodegenInvalidIr => {
+                return 240
+            }
+            x86::CodegenUnsupportedType(value_type) => {
+                print(ir_type_code(value_type));
+                return 241
+            }
+            x86::CodegenUnsupportedInstruction => {
+                return 242
+            }
+            x86::CodegenUnsupportedCast => {
+                return 243
+            }
+            x86::CodegenTooManyArguments => {
+                return 244
+            }
+            x86::CodegenNumericOverflow => {
+                return 245
+            }
+            x86::CodegenMissingSymbol => {
+                return 246
+            }
+            x86::CodegenEncodeError => {
+                return 247
+            }
+        }
+    }
+
+    fn ir_type_code(value_type: ir::Type) -> u32 {
+        match read value_type {
+            ir::TypeVector(lane) => {
+                lane;
+                return 512
+            }
+            ir::TypeVoid => {
+                return 0
+            }
+            ir::TypeInteger(width) => {
+                return ir::integer_width_bits(width)
+            }
+            ir::TypeFloat(width) => {
+                match read width {
+                    ir::FloatWidth32 => {
+                        return 132
+                    }
+                    ir::FloatWidth64 => {
+                        return 164
+                    }
+                }
+            }
+            ir::TypePointer => {
+                return 200
+            }
+            ir::TypeAggregate(size, alignment) => {
+                print(u32.from(alignment));
+                return 300 + u32.from(size)
+            }
+        }
+    }
+}

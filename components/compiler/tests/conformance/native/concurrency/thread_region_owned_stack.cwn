@@ -1,0 +1,22 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    for index in 0..131087 {
+        index;
+        bytes.push(0)
+    }
+    var result: u32 = 0
+    thread_scope {
+        let child = spawn(move bytes)[write result] {
+            result = 17
+        }
+        if child.started() == false {
+            return 1
+        }
+        child.join()
+    }
+    return if result == 17 {
+        0
+    } else {
+        2
+    }
+}

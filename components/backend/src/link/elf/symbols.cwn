@@ -1,0 +1,50 @@
+module elf {
+    fn dynamic_symbols(image: write Image, object: object::CompilerObject, strings: write Vec<u8>) -> Result<Vec<u8>, Text> {
+        var output = std::bytes::filled(24, 0)
+        for index in 0..object.symbols.length() {
+            loan read object.symbols[index] as symbol {
+                match read symbol.binding {
+                    object::SymbolLocal => {
+                    }
+                    _ => {
+                        image.dynamic_indices[index] = u64.from(output.length() / 24)
+                        let name = string(strings, symbol.name)?
+                        dynamic_symbol(output, symbol, name, image.symbols[index])
+                    }
+                }
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn dynamic_symbol(output: write Vec<u8>, symbol: object::Symbol, name: u64, address: u64) -> void {
+        let offset = output.length()
+        link_binary::pad(output, offset + 24)
+        link_binary::put(output, offset, name, 4)
+        output[offset + 4] = if object::symbol_is_function(symbol.kind) {
+            18
+        } else {
+            17
+        }
+        if object::symbol_is_import(symbol.binding) == false {
+            link_binary::put(output, offset + 6, 65521, 2)
+            link_binary::put(output, offset + 8, address, 8)
+            link_binary::put(output, offset + 16, symbol.size, 8)
+        }
+    }
+
+    fn symbol_hash(count: usize) -> Vec<u8> {
+        var output = std::bytes::filled(12 + count * 4, 0)
+        link_binary::put(output, 0, 1, 4)
+        link_binary::put(output, 4, u64.from(count), 4)
+        if count > 1 {
+            link_binary::put(output, 8, 1, 4)
+        }
+        for index in 1..count {
+            if index + 1 < count {
+                link_binary::put(output, 12 + index * 4, u64.from(index + 1), 4)
+            }
+        }
+        return move output
+    }
+}

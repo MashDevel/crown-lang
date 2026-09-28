@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    var owner = operand_owner()
+    owner.values.push(u32.from(consume_owner(move owner)))
+    return 0
+}

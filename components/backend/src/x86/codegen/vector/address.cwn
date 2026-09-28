@@ -1,0 +1,71 @@
+module x86 {
+    fn packed_lanes_adjacent(function: ir::Function, block: ir::BasicBlock, left: PackedLane, right: PackedLane) -> bool {
+        if left.operator != right.operator {
+            return false
+        }
+        if packed_addresses_adjacent(function, block, left.left, right.left) == false {
+            return false
+        }
+        if packed_addresses_adjacent(function, block, left.right, right.right) == false {
+            return false
+        }
+        return packed_addresses_adjacent(function, block, left.destination, right.destination)
+    }
+
+    fn packed_addresses_adjacent(function: ir::Function, block: ir::BasicBlock, left: usize, right: usize) -> bool {
+        let first = match packed_address(function, block, left) {
+            Some(value) => value,
+            None => {
+                return false
+            }
+        }
+        let second = match packed_address(function, block, right) {
+            Some(value) => value,
+            None => {
+                return false
+            }
+        }
+        return first.root == second.root && i64.from(first.offset) + 8 == i64.from(second.offset)
+    }
+
+    fn packed_address(function: ir::Function, block: ir::BasicBlock, address: usize) -> Option<PackedAddress> {
+        var output = PackedAddress {
+            root: address, offset: 0
+        }
+        var cursor = block.instructions.length()
+        while cursor > 0 {
+            cursor = cursor - 1
+            if packed_address_step(function, block.instructions[cursor], output) == false {
+                return None()
+            }
+        }
+        return Some(output)
+    }
+
+    fn packed_address_step(function: ir::Function, instruction: ir::Instruction, output: write PackedAddress) -> bool {
+        let result = match instruction.result {
+            Some(value) => value,
+            None => {
+                return true
+            }
+        }
+        if result != output.root {
+            return true
+        }
+        let offset = match ir::instruction_offset(instruction.kind) {
+            Some(value) => value,
+            None => {
+                return true
+            }
+        }
+        let sum = match codegen_constant_offset_value(function, output.offset, offset.offset) {
+            Some(value) => value,
+            None => {
+                return false
+            }
+        }
+        output.offset = sum
+        output.root = offset.base
+        return true
+    }
+}

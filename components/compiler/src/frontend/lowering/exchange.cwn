@@ -1,0 +1,73 @@
+module lowering {
+    fn exchange_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                if sema::name_is(analysis.checker.symbols.source, name, "replace") {
+                    return replace_expression(compiler, analysis, arguments)
+                }
+                return swap_expression(compiler, analysis, arguments)
+            }
+            _ => {
+                return Err(85)
+            }
+        }
+    }
+
+    fn replace_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, arguments: Vec<frontend::Expression>) -> Result<Value, u32> {
+        var replacement = Place {
+            address: 0, value_type: sema::Invalid()
+        }
+        loan read arguments[1] as expression {
+            let value = function_expression(compiler, analysis, expression)?
+            let value_type = function_expression_type(compiler, analysis, expression)?
+            let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+            let request = CopyRequest {
+                destination: address, value: move value
+            }
+            function_copy(compiler, analysis.checker.symbols, request)?
+            replacement = Place {
+                address: address, value_type: move value_type
+            }
+        }
+        loan read arguments[0] as expression {
+            let target = expression_place_info(compiler, analysis, expression)?
+            let previous = snapshot_place(compiler, analysis.checker.symbols, target)?
+            let request = CopyRequest {
+                destination: target.address, value: AddressValue(replacement.address, sema::type_copy(replacement.value_type))
+            }
+            function_copy(compiler, analysis.checker.symbols, request)?
+            return Ok(AddressValue(previous, sema::type_copy(target.value_type)))
+        }
+    }
+
+    fn swap_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, arguments: Vec<frontend::Expression>) -> Result<Value, u32> {
+        var left = Place {
+            address: 0, value_type: sema::Invalid()
+        }
+        loan read arguments[0] as expression {
+            left = expression_place_info(compiler, analysis, expression)?
+        }
+        loan read arguments[1] as expression {
+            let right = expression_place_info(compiler, analysis, expression)?
+            let temporary = snapshot_place(compiler, analysis.checker.symbols, left)?
+            let first = CopyRequest {
+                destination: left.address, value: AddressValue(right.address, sema::type_copy(left.value_type))
+            }
+            function_copy(compiler, analysis.checker.symbols, first)?
+            let second = CopyRequest {
+                destination: right.address, value: AddressValue(temporary, sema::type_copy(left.value_type))
+            }
+            function_copy(compiler, analysis.checker.symbols, second)?
+        }
+        return Ok(VoidValue())
+    }
+
+    fn snapshot_place(compiler: write FunctionCompiler, symbols: sema::Symbols, place: Place) -> Result<usize, u32> {
+        let address = function_stack(compiler, symbols, place.value_type)?
+        let request = CopyRequest {
+            destination: address, value: AddressValue(place.address, sema::type_copy(place.value_type))
+        }
+        function_copy(compiler, symbols, request)?
+        return Ok(address)
+    }
+}

@@ -1,0 +1,27 @@
+module frontend {
+    fn parser_closure_captures(parser: write Parser) -> Vec<ClosureCapture> {
+        var output = Vec<ClosureCapture>.new()
+        if parser_consumed(parser, TokenLeftBracket()) == false {
+            return move output
+        }
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightBracket()) == false && parser_at(parser, TokenEnd()) == false {
+            var mode = ModeRead()
+            if parser_consumed(parser, TokenWrite()) {
+                mode = ModeWrite()
+            } else {
+                parser_expect(parser, TokenRead())
+            }
+            output.push(ClosureCapture {
+                    mode: mode, name: parser_identifier(parser)
+                })
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        parser_expect(parser, TokenRightBracket())
+        return move output
+    }
+}

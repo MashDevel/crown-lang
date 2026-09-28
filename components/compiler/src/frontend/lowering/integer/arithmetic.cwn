@@ -1,0 +1,172 @@
+module lowering {
+    struct IntegerValue {
+        value: usize
+        value_type: sema::Type
+    }
+
+    struct IntegerResult {
+        left: usize
+        right: usize
+        result: usize
+        value_type: sema::Type
+    }
+
+    struct WideFinish {
+        value: usize
+        value_type: sema::Type
+        conversion: bool
+    }
+
+    fn integer_binary(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        let signed = integer_is_signed(operation.value_type)
+        if binary_is_comparison(operation.operator) {
+            let compare = integer_comparison_operator(operation.operator, signed)?
+            return function_append_value(compiler, ir::InstructionCompare(compare, operation.left, operation.right))
+        }
+        if integer_is_bitwise(operation.operator) {
+            if integer_is_shift(operation.operator) {
+                integer_guard_shift(compiler, symbols, operation)?
+            }
+            let bitwise = integer_binary_operator(operation.operator, signed)?
+            return function_append_value(compiler, ir::InstructionBinary(bitwise, operation.left, operation.right))
+        }
+        return integer_arithmetic(compiler, symbols, operation)
+    }
+
+    fn integer_arithmetic(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        integer_guard_arithmetic(compiler, symbols, operation)?
+        match read operation.operator {
+            frontend::BinaryAdd => {
+                return integer_add(compiler, symbols, operation)
+            }
+            frontend::BinarySubtract => {
+                return integer_subtract(compiler, symbols, operation)
+            }
+            frontend::BinaryMultiply => {
+                return integer_multiply(compiler, symbols, operation)
+            }
+            frontend::BinaryDivide => {
+                return integer_divide(compiler, symbols, operation)
+            }
+            frontend::BinaryRemainder => {
+                return integer_remainder(compiler, symbols, operation)
+            }
+            _ => {
+                return Err(111)
+            }
+        }
+    }
+
+    fn integer_guard_arithmetic(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<void, u32> {
+        integer_guard_divisor(compiler, symbols, operation)?
+        match read operation.operator {
+            frontend::BinarySubtract => {
+                if integer_is_signed(operation.value_type) == false {
+                    let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedGreaterEqual(), operation.left, operation.right))?
+                    function_guard_with(compiler, valid, "integer_overflow")?
+                }
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn integer_guard_divisor(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<void, u32> {
+        if integer_is_division(operation.operator) == false {
+            return Ok(())
+        }
+        let value_type = ir_type(symbols, operation.value_type)?
+        let zero = function_integer(compiler, value_type, 0)
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), operation.right, zero))?
+        return function_guard_with(compiler, valid, "integer_overflow")
+    }
+
+    fn integer_guard_shift(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<void, u32> {
+        let layout = layout(symbols, operation.value_type)?
+        let value_type = ir_type(symbols, operation.value_type)?
+        let width = function_integer(compiler, value_type, layout.size * 8)
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), operation.right, width))?
+        return function_guard_with(compiler, valid, "invalid_shift")
+    }
+
+    fn integer_negate(compiler: write FunctionCompiler, symbols: sema::Symbols, request: IntegerValue) -> Result<usize, u32> {
+        let value_type = ir_type(symbols, request.value_type)?
+        var boundary = function_integer(compiler, value_type, 0)
+        var operator = ir::CompareEqual()
+        if integer_is_signed(request.value_type) {
+            boundary = integer_minimum_value(compiler, symbols, request.value_type)?
+            operator = ir::CompareNotEqual()
+        }
+        let valid = function_append_value(compiler, ir::InstructionCompare(operator, request.value, boundary))?
+        function_guard_with(compiler, valid, "integer_overflow")?
+        return function_append_value(compiler, ir::InstructionUnary(ir::UnaryNegate(), request.value))
+    }
+
+    fn integer_widen(compiler: write FunctionCompiler, value: usize, signed: bool) -> Result<usize, u32> {
+        var operator = ir::CastZeroExtend()
+        if signed {
+            operator = ir::CastSignExtend()
+        }
+        return function_append_value(compiler, ir::InstructionCast(operator, value, ir::TypeInteger(ir::IntegerWidth128())))
+    }
+
+    fn integer_finish_wide(compiler: write FunctionCompiler, symbols: sema::Symbols, input: WideFinish) -> Result<usize, u32> {
+        integer_guard_wide_range(compiler, symbols, input)?
+        let target = ir_type(symbols, input.value_type)?
+        return function_append_value(compiler, ir::InstructionCast(ir::CastTruncate(), input.value, target))
+    }
+
+    fn integer_guard_wide_range(compiler: write FunctionCompiler, symbols: sema::Symbols, input: WideFinish) -> Result<void, u32> {
+        let bits = integer_bits(symbols, input.value_type)?
+        let signed = integer_is_signed(input.value_type)
+        let maximum = integer_wide_maximum(compiler, bits, signed)
+        var upper_operator = ir::CompareUnsignedLessEqual()
+        if signed {
+            upper_operator = ir::CompareSignedLessEqual()
+        }
+        let upper = function_append_value(compiler, ir::InstructionCompare(upper_operator, input.value, maximum))?
+        var message = "integer_overflow"
+        if input.conversion {
+            message = "numeric_conversion"
+        }
+        function_guard_with(compiler, upper, message.clone())?
+        if signed {
+            let minimum = integer_wide_minimum(compiler, bits)
+            let lower = function_append_value(compiler, ir::InstructionCompare(ir::CompareSignedGreaterEqual(), input.value, minimum))?
+            function_guard_with(compiler, lower, message.clone())?
+        }
+        return Ok(())
+    }
+
+    fn integer_bits(symbols: sema::Symbols, value_type: sema::Type) -> Result<u64, u32> {
+        let layout = layout(symbols, value_type)?
+        return Ok(layout.size * 8)
+    }
+
+    fn integer_wide_maximum(compiler: write FunctionCompiler, bits: u64, signed: bool) -> usize {
+        var width = bits
+        if signed {
+            width = width - 1
+        }
+        var low: u64 = 18446744073709551615
+        if width < 64 {
+            low = (u64.from(1) << width) - 1
+        }
+        return function_wide_integer(compiler, low, 0)
+    }
+
+    fn integer_wide_minimum(compiler: write FunctionCompiler, bits: u64) -> usize {
+        let magnitude = u64.from(1) <<(bits - 1)
+        let low = u64.from_bits(-1) - magnitude + 1
+        return function_wide_integer(compiler, low, u64.from_bits(-1))
+    }
+
+    fn function_wide_integer(compiler: write FunctionCompiler, low: u64, high: u64) -> usize {
+        let value_type = ir::TypeInteger(ir::IntegerWidth128())
+        let constant = ir::ConstantWideInteger(ir::WideInteger {
+                low: low, high: high
+            })
+        return ir::function_constant(compiler.ir, value_type, constant)
+    }
+}

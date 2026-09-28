@@ -1,0 +1,104 @@
+module x86 {
+    fn codegen_binary_is_division(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinarySignedDivide => {
+                return true
+            }
+            ir::BinaryUnsignedDivide => {
+                return true
+            }
+            ir::BinarySignedRemainder => {
+                return true
+            }
+            ir::BinaryUnsignedRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_binary_is_signed(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinarySignedDivide => {
+                return true
+            }
+            ir::BinarySignedRemainder => {
+                return true
+            }
+            ir::BinaryShiftRightSigned => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_zeroing_width(operator: ir::BinaryOperator, width: Width) -> Width {
+        if width_is_byte(width) || width_is_word(width) {
+            match read operator {
+                ir::BinaryAnd => {
+                    return Dword()
+                }
+                ir::BinaryOr => {
+                    return Dword()
+                }
+                ir::BinaryXor => {
+                    return Dword()
+                }
+                ir::BinaryShiftRightUnsigned => {
+                    return Dword()
+                }
+                _ => {
+                }
+            }
+        }
+        return width
+    }
+
+    fn codegen_condition(operator: ir::CompareOperator) -> Option<Condition> {
+        match read operator {
+            ir::CompareEqual => {
+                return Some(Equal())
+            }
+            ir::CompareNotEqual => {
+                return Some(NotEqual())
+            }
+            ir::CompareSignedLess => {
+                return Some(Less())
+            }
+            ir::CompareSignedLessEqual => {
+                return Some(LessOrEqual())
+            }
+            ir::CompareSignedGreater => {
+                return Some(Greater())
+            }
+            ir::CompareSignedGreaterEqual => {
+                return Some(GreaterOrEqual())
+            }
+            _ => codegen_unsigned_condition(operator)
+        }
+    }
+
+    fn codegen_unsigned_condition(operator: ir::CompareOperator) -> Option<Condition> {
+        match read operator {
+            ir::CompareUnsignedLess => {
+                return Some(Below())
+            }
+            ir::CompareUnsignedLessEqual => {
+                return Some(BelowOrEqual())
+            }
+            ir::CompareUnsignedGreater => {
+                return Some(Above())
+            }
+            ir::CompareUnsignedGreaterEqual => {
+                return Some(AboveOrEqual())
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

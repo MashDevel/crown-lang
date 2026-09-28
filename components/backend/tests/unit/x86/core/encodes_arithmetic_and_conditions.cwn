@@ -1,0 +1,19 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    if test_encode(x86::AddSized(x86::R8(), x86::R9(), x86::Word()), bytes) == false {
+        return 1
+    }
+    if test_encode(x86::MultiplyImmediateSized(x86::R10(), -7, x86::Word()), bytes) == false {
+        return 2
+    }
+    if test_encode(x86::Set(x86::Overflow(), x86::Rax()), bytes) == false {
+        return 3
+    }
+    let expected: [u8; 13] = [102, 69, 1, 200, 102, 69, 105, 210, 249, 255, 15, 144, 192]
+    loan read expected as values {
+        if test_bytes_equal(bytes, values) == false {
+            return 4
+        }
+    }
+    return 42
+}

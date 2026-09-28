@@ -1,0 +1,53 @@
+fn unswitch_case(taken: bool) -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    fixture.function.name = "unswitched"
+    let value_type = ir::TypeInteger(ir::IntegerWidth1())
+    let condition = ir::function_new_value(fixture.function, value_type)
+    fixture.function.signature.parameters.push(value_type)
+    fixture.function.signature.parameter_abi.push(ir::ParameterDirect())
+    fixture.function.parameters.push(condition)
+    fixture.function.blocks[fixture.body].terminator = Some(ir::TerminatorConditional(condition, fixture.header, fixture.exit))
+    let early = ir::PhiIncoming {
+        block: fixture.body, value: fixture.total
+    }
+    match write fixture.function.blocks[fixture.exit].instructions[0].kind {
+        ir::InstructionPhi(phi_type, incoming) => {
+            phi_type;
+            incoming.push(early)
+        }
+        _ => {
+            return Err(1)
+        }
+    }
+    if taken == false {
+        let zero = safety_integer(fixture.function, ir::IntegerWidth64(), 0)
+        ir::function_replace_uses(fixture.function, fixture.expected, zero)
+    }
+    safety_require(optimize::unswitch(fixture.function) == 1, 2)?
+    var program = ir::program_new()
+    ir::program_add_function(program, ir::function_take(fixture.function))
+    var caller = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    safety_block(caller)?
+    let flag = safety_integer(caller, ir::IntegerWidth1(), if taken {
+            1
+        } else {
+            0
+        })
+    var arguments = Vec<usize>.new()
+    arguments.push(flag)
+    let result = safety_append(caller, 0, ir::InstructionCall(0, move arguments, ir::TypeInteger(ir::IntegerWidth32())))?
+    safety_terminate(caller, 0, ir::TerminatorReturn(Some(result)))?
+    ir::program_add_function(program, move caller)
+    program.entry = Some(1)
+    return safety_execute(move program)
+}
+
+fn unswitch_cases() -> Result<void, u32> {
+    unswitch_case(false)?
+    unswitch_case(true)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(unswitch_cases())
+}

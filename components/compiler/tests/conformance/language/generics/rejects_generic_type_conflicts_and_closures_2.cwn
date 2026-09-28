@@ -1,0 +1,9 @@
+fn bad<T>(value: take T) -> T {
+    let action = fn(item) {
+        return item
+    }
+    return move value
+}
+fn main() -> u32 {
+    return bad(1)
+}

@@ -1,0 +1,42 @@
+module x86 {
+    fn instruction_size(instruction: Instruction) -> u64 {
+        match read instruction {
+            Call(name) => {
+                name.length();
+                return 5
+            }
+            Jump(name) => {
+                name;
+                return 5
+            }
+            JumpTableEntry(name) => {
+                name;
+                return 5
+            }
+            JumpIf(condition, name) => {
+                condition_code(condition);
+                name;
+                return 6
+            }
+            LoadLabelAddress(register, name) => {
+                register_code(register);
+                name;
+                return 7
+            }
+            LoadSymbolAddress(register, name) => {
+                register_code(register);
+                name.length();
+                return 7
+            }
+            Label(name) => {
+                name;
+                return 0
+            }
+            _ => {
+                var bytes = Vec<u8>.new()
+                encode_fixed(instruction, bytes)
+                return u64.from(bytes.length())
+            }
+        }
+    }
+}

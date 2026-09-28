@@ -1,0 +1,134 @@
+module lowering {
+    fn scoped_adapter_name(value_type: sema::Type) -> Text {
+        var name = "crown_scoped_adapter_"
+        text_push_type(name, value_type)
+        return move name
+    }
+
+    fn signature_with_environment(signature: ir::Signature, slot: usize) -> ir::Signature {
+        var parameters = Vec<ir::Type>.new()
+        var abi = Vec<ir::ParameterAbi>.new()
+        for index in 0..signature.parameters.length() + 1 {
+            if index == slot {
+                parameters.push(ir::TypePointer());
+                abi.push(ir::ParameterDirect())
+            }
+            if index < signature.parameters.length() {
+                parameters.push(signature.parameters[index])
+                abi.push(ir::parameter_abi_copy(signature.parameter_abi[index]))
+            }
+        }
+        var result = ir::signature_copy(signature)
+        result.parameters = move parameters
+        result.parameter_abi = move abi
+        for index in 0..result.signed_parameters.length() {
+            if result.signed_parameters[index] >= slot {
+                result.signed_parameters[index] = result.signed_parameters[index] + 1
+            }
+        }
+        result.variadic_start = ir::shift_variadic_start(result.variadic_start, slot)
+        return move result
+    }
+
+    fn declare_scoped_adapters(compiler: write Compiler, analysis: sema::Analysis) -> Result<void, u32> {
+        for index in 0..compiler.tables.functions.length() {
+            let binding = function_binding_copy(compiler.tables.functions[index])
+            loan read analysis.checker.symbols.functions[binding.semantic_function] as function {
+                for parameter in 0..function.parameters.length() {
+                    let value_type = sema::substitute(function.parameters[parameter].value_type, binding.arguments)
+                    declare_scoped_type(compiler, analysis.checker.symbols, value_type)?
+                }
+                declare_scoped_type(compiler, analysis.checker.symbols, sema::substitute(function.result, binding.arguments))?
+            }
+        }
+        return Ok(())
+    }
+
+    fn declare_scoped_type(compiler: write Compiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<void, u32> {
+        let callable = sema::callable_type(value_type)
+        match read callable {
+            sema::FunctionType(parameters, result) => {
+                if sema::type_is_scoped_function(value_type) {
+                    declare_scoped_adapter(compiler, symbols, callable)?
+                }
+                for index in 0..parameters.length() {
+                    declare_scoped_type(compiler, symbols, parameters[index].value_type)?
+                }
+                loan read result as value {
+                    declare_scoped_type(compiler, symbols, value)?
+                }
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn declare_scoped_adapter(compiler: write Compiler, symbols: sema::Symbols, callable: sema::Type) -> Result<void, u32> {
+        let name = scoped_adapter_name(callable)
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                value;
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        match sema::closure_signature(callable) {
+            None => {
+                return Err(333)
+            }
+            Some(closure) => {
+                let signature = callable_signature(closure.parameters, closure.result, symbols)?
+                let slot = closure_environment_slot(symbols, closure.result)?
+                let function = scoped_adapter_function(name.clone(), signature, slot)?
+                let id = ir::program_add_function(compiler.output, move function)
+                compiler.tables.generated_functions.push(NamedFunction {
+                        name: move name, function: id
+                    })
+            }
+        }
+        return Ok(())
+    }
+
+    fn scoped_adapter_function(name: take Text, signature: ir::Signature, slot: usize) -> Result<ir::Function, u32> {
+        var function = ir::function_new(move name, signature_with_environment(signature, slot), ir::LinkageLocal())
+        var block: usize = 0
+        match ir::function_add_block(function) {
+            Ok(value) => {
+                block = value
+            }
+            Err(error) => {
+                error;
+                return Err(334)
+            }
+        }
+        var arguments = Vec<usize>.new()
+        for index in 0..function.parameters.length() {
+            if index != slot {
+                arguments.push(function.parameters[index])
+            }
+        }
+        let target = function.parameters[slot]
+        var result: Option<usize> = None()
+        match ir::function_append(function, block, ir::InstructionCallIndirect(target, ir::signature_copy(signature), move arguments)) {
+            Ok(value) => {
+                result = value
+            }
+            Err(error) => {
+                error;
+                return Err(335)
+            }
+        }
+        match ir::function_terminate(function, block, ir::TerminatorReturn(result)) {
+            Ok(value) => {
+                value
+            }
+            Err(error) => {
+                error;
+                return Err(336)
+            }
+        }
+        return Ok(move function)
+    }
+}

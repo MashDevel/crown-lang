@@ -1,0 +1,73 @@
+module x86 {
+    fn codegen_allocate_spill(value: usize, requirements: AllocationRequirements, builder: write FrameBuilder) -> Result<i32, CodegenError> {
+        var index: usize = 0
+        while index < builder.spill_slots.length() {
+            var reusable = false
+            var offset: i32 = 0
+            loan read builder.spill_slots[index] as slot {
+                if slot.size >= requirements.size && slot.alignment >= requirements.alignment {
+                    if codegen_allocation_can_share(builder.allocation, value, slot.values) {
+                        offset = slot.offset
+                        reusable = true
+                    }
+                }
+            }
+            if reusable {
+                builder.spill_slots[index].values.push(value)
+                return Ok(offset)
+            }
+            index = index + 1
+        }
+        match codegen_allocate_bytes(requirements, builder) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(offset) => {
+                var values = Vec<usize>.new()
+                values.push(value)
+                builder.spill_slots.push(SpillSlot {
+                        offset: offset
+                        size: requirements.size
+                        alignment: requirements.alignment
+                        values: move values
+                    })
+                return Ok(offset)
+            }
+        }
+    }
+
+    fn codegen_allocate_bytes(requirements: AllocationRequirements, builder: write FrameBuilder) -> Result<i32, CodegenError> {
+        if requirements.size > 2147483647 || requirements.alignment > 2147483647 {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        codegen_require_stack_alignment(requirements.alignment)?
+        let size = i32.from(requirements.size)
+        if builder.cursor > 2147483647 - size {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        let end = codegen_align_i32(builder.cursor + size, i32.from(requirements.alignment))?
+        builder.cursor = end
+        return Ok(-end)
+    }
+
+    fn codegen_require_stack_alignment(alignment: u32) -> Result<void, CodegenError> {
+        if alignment == 0 ||(alignment &(alignment - 1)) != 0 {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        if alignment > 16 {
+            return Err(codegen_error(CodegenUnsupportedInstruction()))
+        }
+        return Ok(())
+    }
+
+    fn codegen_align_i32(value: i32, alignment: i32) -> Result<i32, CodegenError> {
+        if alignment <= 0 ||(alignment &(alignment - 1)) != 0 {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        let mask = alignment - 1
+        if value > 2147483647 - mask {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        return Ok((value + mask) & ~mask)
+    }
+}

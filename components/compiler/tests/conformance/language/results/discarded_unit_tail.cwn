@@ -1,0 +1,10 @@
+fn fail() -> Result<void, u32> {
+    return Err(7)
+}
+fn ignore() -> void {
+    fail()
+}
+fn main() -> u32 {
+    ignore();
+    return 0
+}

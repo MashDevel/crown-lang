@@ -1,0 +1,192 @@
+module sema {
+    fn expression_root(expression: frontend::Expression) -> Option<frontend::Name> {
+        match read expression.kind {
+            frontend::ExpressionPath(path) => {
+                if path.segments.length() > 0 {
+                    loan read path.segments[0] as name {
+                        return Some(frontend::name_copy(name))
+                    }
+                }
+            }
+            frontend::ExpressionIndex(target, index) => {
+                index;
+                loan read target as value {
+                    return expression_root(value)
+                }
+            }
+            frontend::ExpressionSlice(target, start, end) => {
+                start;
+                end;
+                loan read target as value {
+                    return expression_root(value)
+                }
+            }
+            frontend::ExpressionField(target, name) => {
+                name;
+                loan read target as value {
+                    return expression_root(value)
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn can_reborrow(access: VariableAccess, mode: frontend::LoanMode) -> bool {
+        match read access {
+            OwnedAccess => {
+                return true
+            }
+            WriteAccess => {
+                return true
+            }
+            ReadAccess => {
+                return loan_is_read(mode)
+            }
+        }
+    }
+
+    fn loan_usage(mode: frontend::LoanMode) -> PathUse {
+        match read mode {
+            frontend::LoanRead => {
+                return ReadPath()
+            }
+            frontend::LoanWrite => {
+                return WritePath()
+            }
+        }
+    }
+
+    fn loan_access(mode: frontend::LoanMode) -> VariableAccess {
+        match read mode {
+            frontend::LoanRead => {
+                return ReadAccess()
+            }
+            frontend::LoanWrite => {
+                return WriteAccess()
+            }
+        }
+    }
+
+    fn loan_is_read(mode: frontend::LoanMode) -> bool {
+        match read mode {
+            frontend::LoanRead => {
+                return true
+            }
+            frontend::LoanWrite => {
+                return false
+            }
+        }
+    }
+
+    fn loan_is_write(mode: frontend::LoanMode) -> bool {
+        return loan_is_read(mode) == false
+    }
+
+    fn type_builtin(value_type: Type) -> Builtin {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                arguments;
+                return builtin
+            }
+            _ => {
+                return NotBuiltin()
+            }
+        }
+    }
+
+    fn loan_view(value_type: Type) -> Type {
+        match read value_type {
+            ArrayType(element, length) => {
+                length
+                var types = Vec<Type>.new()
+                loan read element as value {
+                    types.push(type_copy(value))
+                }
+                return BuiltinType(Slice(), move types)
+            }
+            BuiltinType(builtin, arguments) => {
+                return builtin_loan_view(builtin, arguments, value_type)
+            }
+            _ => {
+                return type_copy(value_type)
+            }
+        }
+    }
+
+    fn builtin_loan_view(builtin: Builtin, arguments: Vec<Type>, value_type: Type) -> Type {
+        let kind = builtin
+        if kind == Vec() {
+            return BuiltinType(Slice(), types_copy(arguments))
+        }
+        if (kind == Box() || kind == Shared() || kind == RootLease()) && arguments.length() == 1 {
+            loan read arguments[0] as value {
+                return type_copy(value)
+            }
+        }
+        if kind == Text() {
+            return builtin_leaf(TextView())
+        }
+        return type_copy(value_type)
+    }
+
+    fn checker_begin_loan(checker: write Checker, key: VariableKey, mode: frontend::LoanMode) -> void {
+        let variable = checker_variable_copy(checker, key)
+        var state = variable.state
+        match read mode {
+            frontend::LoanRead => {
+                match read variable.state {
+                    Available => {
+                        state = ReadLoaned(1)
+                    }
+                    ReadLoaned(count) => {
+                        state = ReadLoaned(count + 1)
+                    }
+                    _ => {
+                    }
+                }
+            }
+            frontend::LoanWrite => {
+                match read variable.state {
+                    Available => {
+                        state = WriteLoaned()
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        checker_set_state(checker, key, state)
+    }
+
+    fn checker_end_loan(checker: write Checker, key: VariableKey, mode: frontend::LoanMode) -> void {
+        let variable = checker_variable_copy(checker, key)
+        var state = variable.state
+        match read mode {
+            frontend::LoanRead => {
+                match read variable.state {
+                    ReadLoaned(count) => {
+                        if count == 1 {
+                            state = Available()
+                        } else {
+                            state = ReadLoaned(count - 1)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            frontend::LoanWrite => {
+                match read variable.state {
+                    WriteLoaned => {
+                        state = Available()
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        checker_set_state(checker, key, state)
+    }
+}

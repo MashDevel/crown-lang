@@ -1,0 +1,190 @@
+module lowering {
+    struct VectorState {
+        address: usize
+        element: sema::Type
+        length_address: usize
+        capacity_address: usize
+        length: usize
+        capacity: usize
+    }
+
+    fn static_vector(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference
+                if sema::name_is(analysis.checker.symbols.source, method, "new") {
+                    return empty_aggregate(compiler, analysis, expression)
+                }
+                if sema::name_is(analysis.checker.symbols.source, method, "with_capacity") == false || arguments.length() != 1 {
+                    return Err(143)
+                }
+                arguments
+                return vector_with_capacity(compiler, analysis, expression)
+            }
+            _ => {
+                return Err(144)
+            }
+        }
+    }
+
+    fn vector_with_capacity(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var capacity_value: usize = 0
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method
+                if arguments.length() != 1 {
+                    return Err(201)
+                }
+                loan read arguments[0] as capacity {
+                    capacity_value = function_scalar_expression(compiler, analysis, capacity)?
+                }
+            }
+            _ => {
+                return Err(202)
+            }
+        }
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        return new_vector_value(compiler, analysis.checker.symbols, move value_type, capacity_value)
+    }
+
+    fn new_vector_value(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: take sema::Type, capacity_value: usize) -> Result<Value, u32> {
+        let element = vector_element(value_type)?
+        let bytes = buffer_byte_size(compiler, symbols, element, capacity_value)?
+        let pointer = function_allocate(compiler, bytes)?
+        let address = function_zeroed_stack(compiler, symbols, value_type)?
+        function_store_pointer(compiler, address, pointer)?
+        let capacity_address = function_offset(compiler, address, 16)?
+        let store = StoreRequest {
+            address: capacity_address, value: capacity_value, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        return Ok(AddressValue(address, move value_type))
+    }
+
+    fn vector_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver
+                let name = sema::name_text(analysis.checker.symbols.source, method)
+                match read name {
+                    "push" => {
+                        if arguments.length() != 1 {
+                            return Err(146)
+                        }
+                        return vector_push(compiler, analysis, expression)
+                    }
+                    "pop" => {
+                        return vector_pop(compiler, analysis, expression)
+                    }
+                    "length" => {
+                        return vector_count(compiler, analysis, expression)
+                    }
+                    "capacity" => {
+                        return vector_count(compiler, analysis, expression)
+                    }
+                    "as_raw" => {
+                        return vector_as_raw(compiler, analysis, expression)
+                    }
+                    _ => {
+                        return Err(146)
+                    }
+                }
+            }
+            _ => {
+                return Err(147)
+            }
+        }
+    }
+
+    fn vector_state(compiler: write FunctionCompiler, analysis: sema::Analysis, receiver: frontend::Expression) -> Result<VectorState, u32> {
+        let address = expression_place(compiler, analysis, receiver)?
+        let value_type = function_expression_type(compiler, analysis, receiver)?
+        let element = vector_element(value_type)?
+        let length_address = function_offset(compiler, address, 8)?
+        let capacity_address = function_offset(compiler, address, 16)?
+        let length_request = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, analysis.checker.symbols, length_request)?
+        let capacity_request = Place {
+            address: capacity_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity = function_load(compiler, analysis.checker.symbols, capacity_request)?
+        return Ok(VectorState {
+                address: address, element: move element, length_address: length_address, capacity_address: capacity_address, length: length, capacity: capacity
+            })
+    }
+
+    fn vector_count(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var address: usize = 0
+        var offset: u64 = 8
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments;
+                if sema::name_is(analysis.checker.symbols.source, method, "capacity") {
+                    offset = 16
+                };
+                loan read receiver as value {
+                    address = expression_place(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(152)
+            }
+        }
+        let field = function_offset(compiler, address, offset)?
+        let value_type = sema::builtin_leaf(sema::USize())
+        let request = Place {
+            address: field, value_type: sema::type_copy(value_type)
+        }
+        let value = function_load(compiler, analysis.checker.symbols, request)?
+        return Ok(ScalarValue(value, move value_type))
+    }
+
+    fn vector_as_raw(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var address: usize = 0
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method;
+                arguments;
+                loan read receiver as value {
+                    address = expression_place(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(154)
+            }
+        }
+        let pointer = function_load_pointer(compiler, address)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        return Ok(ScalarValue(pointer, move value_type))
+    }
+
+    fn vector_state_copy(state: VectorState) -> VectorState {
+        return VectorState {
+            address: state.address
+            element: sema::type_copy(state.element)
+            length_address: state.length_address
+            capacity_address: state.capacity_address
+            length: state.length
+            capacity: state.capacity
+        }
+    }
+
+    fn vector_element(value_type: sema::Type) -> Result<sema::Type, u32> {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                if builtin != sema::Vec() || arguments.length() != 1 {
+                    return Err(156)
+                }
+                loan read arguments[0] as element {
+                    return Ok(sema::type_copy(element))
+                }
+            }
+            _ => {
+                return Err(157)
+            }
+        }
+    }
+}

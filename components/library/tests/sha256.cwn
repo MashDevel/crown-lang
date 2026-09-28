@@ -1,0 +1,89 @@
+fn hash_hex(bytes: Vec<u8>) -> Text {
+    var output = ""
+    for index in 0..bytes.length() {
+        std::text::hex_byte(output, bytes[index])
+    }
+    return move output
+}
+
+fn hash_chunks(length: usize, chunk: usize) -> bool {
+    let data = std::bytes::filled(length, 97)
+    var state = std::sha256::new()
+    var offset: usize = 0
+    while offset < length {
+        let remaining = length - offset
+        let count = if remaining < chunk {
+            remaining
+        } else {
+            chunk
+        }
+        std::sha256::update(state, std::bytes::filled(count, 97))
+        offset = offset + count
+    }
+    return std::text::equal(hash_hex(std::sha256::finish(state)), hash_hex(std::sha256::digest(data)))
+}
+
+fn test_sha256() -> u32 {
+    let empty = Vec<u8>.new()
+    if std::text::equal(hash_hex(std::sha256::digest(empty)), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") == false {
+        return 251
+    }
+    let lengths: [usize; 8] = [0, 1, 55, 56, 63, 64, 65, 4097]
+    loan read lengths as values {
+        for index in 0..values.length() {
+            if hash_chunks(values[index], 1) == false {
+                return 252
+            }
+            if hash_chunks(values[index], 63) == false {
+                return 253
+            }
+            if hash_chunks(values[index], 64) == false {
+                return 254
+            }
+        }
+    }
+    return test_binary_hash_chunks()
+}
+
+fn binary_hash_data(length: usize) -> Vec<u8> {
+    var bytes = Vec<u8>.with_capacity(length)
+    for index in 0..length {
+        bytes.push(u8.from((index * 37 + 11) % 256))
+    }
+    return move bytes
+}
+
+fn binary_hash_chunks(length: usize, chunk: usize, expected: Text) -> bool {
+    let bytes = binary_hash_data(length)
+    var hash = std::sha256::new()
+    var offset: usize = 0
+    while offset < length {
+        let remaining = length - offset
+        let count = if chunk < remaining {
+            chunk
+        } else {
+            remaining
+        }
+        var part = Vec<u8>.with_capacity(count)
+        for index in 0..count {
+            part.push(bytes[offset + index])
+        }
+        std::sha256::update(hash, part)
+        std::sha256::update(hash, Vec<u8>.new())
+        offset = offset + count
+    }
+    return std::text::equal(hash_hex(std::sha256::finish(hash)), expected)
+}
+
+fn test_binary_hash_chunks() -> u32 {
+    let chunks: [usize; 7] = [1, 55, 63, 64, 65, 128, 4097]
+    for index in 0..7 {
+        if binary_hash_chunks(65, chunks[index], "fc518669b6eb4b4dd91827ecacef86689c725bd5bab888fd3b26dbb196eec954") == false {
+            return 249
+        }
+        if binary_hash_chunks(4097, chunks[index], "042a02b55ba342cdd30322331816b6e4bca073f33bdb80149dc74a6f949802f4") == false {
+            return 250
+        }
+    }
+    return 0
+}

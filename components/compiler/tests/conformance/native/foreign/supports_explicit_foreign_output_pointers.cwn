@@ -1,0 +1,17 @@
+extern "c" {
+    fn aligned(output: write RawPtr<u8>, alignment: read usize, size: read usize) -> i32 = "posix_memalign"
+    fn release(pointer: read RawPtr<u8>) -> void = "free"
+}
+fn main() -> u32 {
+    unsafe {
+        var pointer = RawPtr<u8>.from_address(0)
+        let result = aligned(pointer, 16, 16)
+        if result != 0 {
+            return 1
+        }
+        pointer.write_volatile(11)
+        let value = pointer.read_volatile()
+        release(pointer)
+        return u32.from(value)
+    }
+}

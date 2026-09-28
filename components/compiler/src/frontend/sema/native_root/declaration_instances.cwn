@@ -1,0 +1,31 @@
+module sema {
+    fn check_declared_root_instances(checker: write Checker, function: Option<usize>, resource_owner: Option<usize>, arguments: Vec<Type>) -> void {
+        for index in 0..checker.root_declarations.length() {
+            if declaration_owner_matches(checker.root_declarations[index], function, resource_owner) {
+                let value = substitute(checker.root_declarations[index].value_type, arguments)
+                var visiting = Vec<usize>.new()
+                if type_transferable(checker.symbols, value, visiting) == false {
+                    checker.current_span = checker.root_declarations[index].span
+                    checker_error(checker, "root declarations require transferable owned payloads")
+                }
+            }
+        }
+    }
+    fn declaration_owner_matches(record: ExpressionRecord, function: Option<usize>, resource_owner: Option<usize>) -> bool {
+        match function {
+            Some(value) => {
+                return resource_owner_matches(record.function, value)
+            },
+            None => {
+            }
+        }
+        match resource_owner {
+            Some(value) => {
+                return resource_owner_matches(record.resource_owner, value)
+            },
+            None => {
+            }
+        }
+        return false
+    }
+}

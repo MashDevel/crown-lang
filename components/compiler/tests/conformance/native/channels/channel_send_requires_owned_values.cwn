@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let channel = Channel<Text>.new()
+    let text = "value"
+    channel.send(text)
+    return 0
+}

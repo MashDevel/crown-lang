@@ -1,0 +1,81 @@
+module arm64 {
+    fn instrumentation_object(bytes: u64, path: Text, profiling: bool) -> Result<object::CompilerObject, Text> {
+        var output = object::new()
+        output.architecture = object::ArchitectureArm64()
+        runtime_zero(output, "crown_cov_data", 8)
+        var size = Vec<u8>.new()
+        for byte in 0..8 {
+            size.push(u8.from((bytes >> u64.from(byte * 8)) & 255))
+        }
+        runtime_data(output, "crown_cov_size", move size, object::SectionReadOnlyData())
+        runtime_string(output, "crown_cov_path", path)
+        runtime_string(output, "crown_cov_error", if profiling {
+                "cannot initialize Crown profiling"
+            } else {
+                "cannot initialize Crown coverage"
+            })
+        instrumentation_initialize(output)?
+        instrumentation_hit(output, profiling)?
+        return Ok(move output)
+    }
+    fn runtime_data(output: write object::CompilerObject, name: Text, bytes: take Vec<u8>, kind: take object::SectionKind) -> void {
+        let symbol = symbol_index(output, name, object::SymbolData())
+        output.symbols[symbol].binding = object::SymbolLocal()
+        output.symbols[symbol].section = Some(output.sections.length())
+        let size = u64.from(bytes.length())
+        output.symbols[symbol].size = size
+        output.sections.push(object::Section {
+                name: name.clone(), kind: move kind, alignment: 8, data: move bytes, memory_size: size
+            })
+    }
+    fn runtime_string(output: write object::CompilerObject, name: Text, text: Text) -> void {
+        var bytes = toolchain::text_bytes(text)
+        bytes.push(0)
+        runtime_data(output, name, move bytes, object::SectionData())
+    }
+    fn instrumentation_initialize(output: write object::CompilerObject) -> Result<void, Text> {
+        var compiler = runtime_compiler(16)
+        prologue(compiler)
+        symbol_address(compiler, "crown_cov_path", 0)
+        call_symbol(compiler, "mkstemp")
+        emit_encoding(compiler, extend_word(0, 0, 32, true))
+        frame_access(compiler, 0, 0, 8, false)
+        runtime_compare(compiler, 0, 18446744073709551615)
+        runtime_condition(compiler, 0, 0)
+        instrumentation_size(compiler)
+        call_symbol(compiler, "ftruncate")
+        instrumentation_status(compiler)
+        immediate(compiler, 0, 0)
+        instrumentation_size(compiler)
+        immediate(compiler, 2, 3)
+        immediate(compiler, 3, 1)
+        frame_access(compiler, 4, 0, 8, true)
+        immediate(compiler, 5, 0)
+        call_symbol(compiler, "mmap")
+        runtime_compare(compiler, 0, 18446744073709551615)
+        runtime_condition(compiler, 0, 0)
+        symbol_address(compiler, "crown_cov_data", 9)
+        runtime_memory(compiler, 0, 9, 0, false)
+        frame_access(compiler, 0, 0, 8, true)
+        call_symbol(compiler, "close")
+        instrumentation_status(compiler)
+        epilogue(compiler)
+        runtime_label(compiler, 0)
+        symbol_address(compiler, "crown_cov_error", 0)
+        call_symbol(compiler, "perror")
+        immediate(compiler, 0, 125)
+        call_symbol(compiler, "exit")
+        emit(compiler, 3558866944)
+        return runtime_export(output, compiler, "crown_cov_init")
+    }
+    fn instrumentation_size(compiler: write Compiler) -> void {
+        symbol_address(compiler, "crown_cov_size", 1)
+        return runtime_memory(compiler, 1, 1, 0, true)
+    }
+    fn instrumentation_status(compiler: write Compiler) -> void {
+        emit_encoding(compiler, extend_word(0, 0, 32, false))
+        runtime_compare(compiler, 0, 0)
+        return runtime_condition(compiler, 1, 0)
+    }
+
+}

@@ -1,0 +1,11 @@
+fn add(left: read u32, right: read u32) -> u32 {
+    return left + right
+}
+
+fn main(arguments: read Arguments) -> u32 {
+    let value: u32 = add(19, 23);
+    if arguments.length() == 0 {
+        return 1
+    }
+    return value
+}

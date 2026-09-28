@@ -1,0 +1,93 @@
+fn type_codes() -> Result<void, Text> {
+    testing::expect(frontend::ir_type_code(ir::TypeVoid()) == 0, "void diagnostic code")?
+    testing::expect(frontend::ir_type_code(ir::TypeInteger(ir::IntegerWidth64())) == 64, "integer diagnostic code")?
+    testing::expect(frontend::ir_type_code(ir::TypeFloat(ir::FloatWidth32())) == 132, "float32 diagnostic code")?
+    testing::expect(frontend::ir_type_code(ir::TypeFloat(ir::FloatWidth64())) == 164, "float64 diagnostic code")?
+    testing::expect(frontend::ir_type_code(ir::TypePointer()) == 200, "pointer diagnostic code")?
+    return testing::expect(frontend::ir_type_code(ir::TypeVector(ir::VectorInteger(ir::IntegerWidth32()))) == 512, "vector diagnostic code")
+}
+
+fn instruction_code(kind: take ir::InstructionKind, expected: u32) -> Result<void, Text> {
+    return testing::expect(frontend::ir_instruction_kind(move kind) == expected, "instruction diagnostic code")
+}
+
+fn instruction_codes() -> Result<void, Text> {
+    instruction_code(ir::InstructionVectorSplat(0, ir::TypeVector(ir::VectorInteger(ir::IntegerWidth32()))), 19)?
+    instruction_code(ir::InstructionBinary(ir::BinaryAdd(), 0, 0), 1)?
+    instruction_code(ir::InstructionUnary(ir::UnaryNegate(), 0), 2)?
+    instruction_code(ir::InstructionCompare(ir::CompareEqual(), 0, 0), 3)?
+    instruction_code(ir::InstructionCast(ir::CastBitcast(), 0, ir::TypePointer()), 4)?
+    instruction_code(ir::InstructionCall(0, Vec<usize>.new(), ir::TypeVoid()), 15)?
+    instruction_code(ir::InstructionCallIndirect(0, ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), Vec<usize>.new()), 16)?
+    instruction_code(ir::InstructionPhi(ir::TypeInteger(ir::IntegerWidth64()), Vec<ir::PhiIncoming>.new()), 17)?
+    return instruction_code(ir::InstructionSelect(0, 0, 0), 18)
+}
+
+fn codegen_code(kind: take x86::CodegenErrorKind, expected: u32) -> Result<void, Text> {
+    return testing::expect(frontend::codegen_error(x86::codegen_error(move kind)) == expected, "codegen diagnostic code")
+}
+
+fn codegen_codes() -> Result<void, Text> {
+    codegen_code(x86::CodegenInvalidIr(), 240)?
+    codegen_code(x86::CodegenUnsupportedInstruction(), 242)?
+    codegen_code(x86::CodegenUnsupportedCast(), 243)?
+    codegen_code(x86::CodegenTooManyArguments(), 244)?
+    codegen_code(x86::CodegenNumericOverflow(), 245)?
+    codegen_code(x86::CodegenMissingSymbol(), 246)?
+    return codegen_code(x86::CodegenEncodeError(), 247)
+}
+
+fn validation_location() -> Result<void, Text> {
+    var program = ir::program_new()
+    let empty = ir::validation_program_error(ir::ValidationUnknownEntry())
+    testing::expect(frontend::ir_validation_instruction(program, empty) == 0, "program diagnostic location")?
+    let function = ir::validation_function_error(ir::ValidationInvalidFunction(), 0)
+    testing::expect(frontend::ir_validation_instruction(program, function) == 0, "function diagnostic location")?
+    let block = ir::validation_block_error(ir::ValidationInvalidBlock(), 0, 0)
+    testing::expect(frontend::ir_validation_instruction(program, block) == 0, "block diagnostic location")?
+    let location = ir::ValidationLocation {
+        function: 0, block: 0
+    }
+    let value = ir::validation_location_error(ir::ValidationInvalidValue(), move location, Some(0))
+    testing::expect(frontend::ir_validation_instruction(program, value) == 0, "invalid function location")?
+    var body = ir::function_new("main", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    match ir::function_add_block(body) {
+        Ok(index) => {
+            index
+        }
+        Err(error) => {
+            error
+            return Err("could not create diagnostic block")
+        }
+    }
+    program.functions.push(move body)
+    let out_of_range = ir::ValidationLocation {
+        function: 0, block: 1
+    }
+    let invalid_block = ir::validation_location_error(ir::ValidationInvalidValue(), move out_of_range, Some(0))
+    testing::expect(frontend::ir_validation_instruction(program, invalid_block) == 0, "invalid block location")?
+    program.functions[0].blocks[0].instructions.push(ir::Instruction {
+            result: Some(0), kind: ir::InstructionBinary(ir::BinaryAdd(), 0, 0)
+        })
+    let matching = ir::ValidationLocation {
+        function: 0, block: 0
+    }
+    let found = ir::validation_location_error(ir::ValidationInvalidValue(), move matching, Some(0))
+    testing::expect(frontend::ir_validation_instruction(program, found) == 1, "matching instruction location")?
+    let missing = ir::ValidationLocation {
+        function: 0, block: 0
+    }
+    let absent = ir::validation_location_error(ir::ValidationInvalidValue(), move missing, Some(1))
+    return testing::expect(frontend::ir_validation_instruction(program, absent) == 0, "missing instruction location")
+}
+
+fn run() -> Result<void, Text> {
+    type_codes()?
+    instruction_codes()?
+    codegen_codes()?
+    return validation_location()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

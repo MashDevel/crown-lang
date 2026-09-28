@@ -1,0 +1,96 @@
+module unicode_tables {
+    copy struct Run {
+        index: usize, prefix: u32
+    }
+
+    fn runs(source: Text) -> Result<Vec<Run>, Text> {
+        let marker = "ShortOffsetRunHeader::new("
+        var position: usize = 0
+        var output = Vec<Run>.new()
+        while position < source.length() {
+            match find(source, marker, position) {
+                Err(error) => {
+                    error;
+                    break
+                }
+                Ok(start) => {
+                    let end = find(source, ")", start)?
+                    let pair = integers(std::text::slice(source, start + marker.length(), end))?
+                    if pair.length() != 2 {
+                        return Err("invalid Unicode offset header")
+                    }
+                    output.push(Run {
+                            index: usize.from(pair[0]), prefix: pair[1]
+                        })
+                    position = end + 1
+                }
+            }
+        }
+        validate_runs(output)?
+        return Ok(move output)
+    }
+
+    fn validate_runs(output: Vec<Run>) -> Result<void, Text> {
+        if output.length() < 2 {
+            return Err("missing Unicode offset headers")
+        }
+        for index in 1..output.length() {
+            if output[index].prefix < output[index - 1].prefix || output[index].index < output[index - 1].index {
+                return Err("unsorted Unicode offset headers")
+            }
+        }
+        return Ok(())
+    }
+
+    fn grapheme_value(point: u32, headers: Vec<Run>, offsets: Vec<u32>) -> Result<u8, Text> {
+        var run: usize = 0
+        while run < headers.length() && headers[run].prefix <= point {
+            run = run + 1
+        }
+        if run >= headers.length() {
+            return Err("missing Unicode offset sentinel")
+        }
+        var index = headers[run].index
+        let end = if run + 1 < headers.length() {
+            headers[run + 1].index
+        } else {
+            offsets.length()
+        }
+        if end > offsets.length() || index >= end {
+            return Err("invalid Unicode offset span")
+        }
+        let before = if run == 0 {
+            0
+        } else {
+            headers[run - 1].prefix
+        }
+        let total = point - before
+        var prefix: u64 = 0
+        while index + 1 < end {
+            prefix = prefix + u64.from(offsets[index])
+            if prefix > u64.from(total) {
+                break
+            }
+            index = index + 1
+        }
+        return Ok(u8.from(index % 2))
+    }
+
+    fn grapheme(source: Text) -> Result<Vec<u8>, Text> {
+        let start = find(source, "pub mod grapheme_extend {", 0)?
+        let end = find(source, "pub mod lowercase", start)?
+        let section = std::text::slice(source, start, end)
+        let headers = runs(section)?
+        let offsets = array(section, "OFFSETS")?
+        var values = Vec<u8>.new()
+        for index in 0..0x110000 {
+            let value = if index < 0x300 {
+                u8.from(0)
+            } else {
+                grapheme_value(u32.from(index), headers, offsets)?
+            }
+            values.push(value)
+        }
+        return Ok(move values)
+    }
+}

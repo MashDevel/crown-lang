@@ -1,0 +1,25 @@
+module sema {
+    struct MethodSignature {
+        write_receiver: bool
+        parameters: Vec<Type>
+        result: Type
+    }
+
+    fn method_signature(write_receiver: bool, parameters: take Vec<Type>, result: take Type) -> MethodSignature {
+        return MethodSignature {
+            write_receiver: write_receiver
+            parameters: move parameters
+            result: move result
+        }
+    }
+
+    fn empty_method(write_receiver: bool, result: take Type) -> MethodSignature {
+        return method_signature(write_receiver, Vec<Type>.new(), move result)
+    }
+
+    fn unary_method(write_receiver: bool, parameter: take Type, result: take Type) -> MethodSignature {
+        var parameters = Vec<Type>.new()
+        parameters.push(move parameter)
+        return method_signature(write_receiver, move parameters, move result)
+    }
+}

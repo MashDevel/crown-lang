@@ -1,0 +1,149 @@
+module optimize {
+    struct RangePropagation {
+        order: Vec<usize>
+        entries: Vec<RangeConstraints>
+        current: RangeConstraints
+    }
+
+    fn range_control(function: ir::Function, ranges: Vec<Option<Range>>, comparisons: Vec<RangeComparison>) -> Vec<RangeConstraints> {
+        var entries = empty_constraints(function.blocks.length())
+        if entries.length() != 0 {
+            entries[0].reached = true
+        }
+        var state = RangePropagation {
+            order: ir::reverse_postorder(function), entries: move entries, current: RangeConstraints {
+                reached: false, values: Vec<RangeConstraint>.new()
+            }
+        }
+        var changed = true
+        while changed {
+            changed = propagate_constraints(function, ranges, comparisons, state)
+        }
+        return replace(state.entries, Vec<RangeConstraints>.new())
+    }
+
+    fn empty_constraints(length: usize) -> Vec<RangeConstraints> {
+        var output = Vec<RangeConstraints>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(RangeConstraints {
+                    reached: false, values: Vec<RangeConstraint>.new()
+                });
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn propagate_constraints(function: ir::Function, ranges: Vec<Option<Range>>, comparisons: Vec<RangeComparison>, state: write RangePropagation) -> bool {
+        var changed = false
+        var cursor: usize = 0
+        while cursor < state.order.length() {
+            let block = state.order[cursor]
+            if state.entries[block].reached {
+                state.current = range_constraints_copy(state.entries[block])
+                if propagate_range_block(function, ranges, comparisons, block, state) {
+                    changed = true
+                }
+            }
+            cursor = cursor + 1
+        }
+        return changed
+    }
+
+    fn propagate_range_block(function: ir::Function, ranges: Vec<Option<Range>>, comparisons: Vec<RangeComparison>, block: usize, state: write RangePropagation) -> bool {
+        match read function.blocks[block].terminator {
+            Some(terminator) => propagate_terminator(function, ranges, comparisons, terminator, state)
+            None => false
+        }
+    }
+
+    fn propagate_terminator(function: ir::Function, ranges: Vec<Option<Range>>, comparisons: Vec<RangeComparison>, terminator: ir::Terminator, state: write RangePropagation) -> bool {
+        var changed = false
+        match read terminator {
+            ir::TerminatorBranch(target) => {
+                return merge_constraint_at(state.entries, target, state.current)
+            }
+            ir::TerminatorConditional(condition, then_block, else_block) => {
+                var then_values = range_constraints_copy(state.current)
+                var else_values = range_constraints_copy(state.current)
+                if condition < comparisons.length() && comparisons[condition].present {
+                    loan read comparisons[condition] as comparison {
+                        refine_constraints(function, ranges, comparison, true, then_values)
+                        refine_constraints(function, ranges, comparison, false, else_values)
+                    }
+                }
+                let then_changed = merge_constraint_at(state.entries, then_block, then_values)
+                let else_changed = merge_constraint_at(state.entries, else_block, else_values)
+                return then_changed || else_changed
+            }
+            ir::TerminatorSwitch(value, cases, default) => {
+                var index: usize = 0
+                while index < cases.length() {
+                    var values = range_constraints_copy(state.current)
+                    let exact = Range {
+                        minimum: cases[index].value, maximum: cases[index].value
+                    }
+                    constrain_value(function, values, value, exact)
+                    if merge_constraint_at(state.entries, cases[index].block, values) {
+                        changed = true
+                    }
+                    index = index + 1
+                }
+                if merge_constraint_at(state.entries, default, state.current) {
+                    changed = true
+                }
+                return changed
+            }
+            _ => false
+        }
+    }
+
+    fn refine_constraints(function: ir::Function, ranges: Vec<Option<Range>>, comparison: RangeComparison, truth: bool, constraints: write RangeConstraints) -> void {
+        var operator = comparison.operator
+        if truth == false {
+            match invert_compare(operator) {
+                Some(value) => {
+                    operator = value
+                }
+                None => {
+                    return
+                }
+            }
+        }
+        let left = control_value_range(function, ranges, constraints, comparison.left)
+        let right = control_value_range(function, ranges, constraints, comparison.right)
+        match read left {
+            None => {
+            }
+            Some(left_range) => {
+                match read right {
+                    None => {
+                    }
+                    Some(right_range) => {
+                        match relational_ranges(operator, left_range, right_range) {
+                            None => {
+                            }
+                            Some(refined) => {
+                                constrain_value(function, constraints, comparison.left, refined.left)
+                                constrain_value(function, constraints, comparison.right, refined.right)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn merge_constraint_at(output: write Vec<RangeConstraints>, target: usize, incoming: RangeConstraints) -> bool {
+        var changed = false
+        loan write output[target] as value {
+            changed = merge_constraints(value, incoming)
+        }
+        return changed
+    }
+
+    struct RangePair {
+        left: Range
+        right: Range
+    }
+}

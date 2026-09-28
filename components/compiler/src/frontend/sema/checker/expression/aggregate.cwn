@@ -1,0 +1,167 @@
+module sema {
+    fn checker_array(checker: write Checker, values: Vec<frontend::Expression>, expected: Type) -> Option<ExpressionInfo> {
+        match read expected {
+            ArrayType(element, length) => {
+                loan read element as element_type {
+                    if checker_require_storable(checker, element_type) == false {
+                        return None()
+                    }
+                    if length != values.length() {
+                        checker_error(checker, "invalid array element, index, or field access")
+                    }
+                    checker_array_values(checker, values, element_type)
+                }
+                return Some(checker_type_info(checker, type_copy(expected)))
+            }
+            _ => {
+            }
+        }
+        if values.length() == 0 {
+            checker_error(checker, "invalid array element, index, or field access");
+            return None()
+        }
+        return checker_inferred_array(checker, values)
+    }
+
+    fn checker_array_values(checker: write Checker, values: Vec<frontend::Expression>, expected: Type) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                checker_value(checker, value, expected)
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_inferred_array(checker: write Checker, values: Vec<frontend::Expression>) -> Option<ExpressionInfo> {
+        var element = Invalid()
+        loan read values[0] as value {
+            match checker_expression(checker, value) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    element = concrete(info.value_type)
+                    if type_is_copy_with_symbols(checker.symbols, element) == false && value_is_owned(info.value) == false {
+                        checker_error(checker, "invalid array element, index, or field access")
+                    }
+                }
+            }
+        }
+        if checker_require_storable(checker, element) == false {
+            return None()
+        }
+        var index: usize = 1
+        while index < values.length() {
+            loan read values[index] as value {
+                checker_value(checker, value, element)
+            }
+            index = index + 1
+        }
+        let array_type = ArrayType(Box.new(move element), values.length())
+        return Some(checker_type_info(checker, move array_type))
+    }
+
+    fn checker_type_info(checker: Checker, value_type: take Type) -> ExpressionInfo {
+        if type_is_copy_with_symbols(checker.symbols, value_type) {
+            return copy_info(move value_type)
+        }
+        return owned_info(move value_type)
+    }
+
+    fn checker_index(checker: write Checker, target: Box<frontend::Expression>, index: Box<frontend::Expression>) -> Option<ExpressionInfo> {
+        var target_type = Invalid()
+        loan read target as target_value {
+            match checker_expression(checker, target_value) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    target_type = type_copy(info.value_type)
+                }
+            }
+        }
+        loan read index as index_value {
+            loan read target as target_value {
+                check_index_value(checker, target_value, index_value)
+            }
+        }
+        match indexed_element(target_type) {
+            None => {
+                checker_error(checker, "invalid array element, index, or field access");
+                return None()
+            }
+            Some(element) => {
+                if type_is_copy_with_symbols(checker.symbols, element) {
+                    return Some(copy_info(move element))
+                }
+                return Some(ExpressionInfo {
+                        value_type: move element, value: BorrowedValue()
+                    })
+            }
+        }
+    }
+
+    fn indexed_element(value_type: Type) -> Option<Type> {
+        match read value_type {
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return Some(type_copy(value))
+                }
+            }
+            BuiltinType(builtin, arguments) => {
+                return builtin_indexed_element(builtin, arguments)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn builtin_indexed_element(builtin: Builtin, arguments: Vec<Type>) -> Option<Type> {
+        let kind = builtin
+        if (kind == Vec() || kind == Slice()) && arguments.length() == 1 {
+            loan read arguments[0] as value {
+                return Some(type_copy(value))
+            }
+        }
+        if kind == TextView() {
+            return Some(builtin_leaf(U8()))
+        }
+        if kind == Arguments() {
+            return Some(builtin_leaf(TextView()))
+        }
+        return None()
+    }
+
+    fn checker_field(checker: write Checker, target: Box<frontend::Expression>, name: frontend::Name) -> Option<ExpressionInfo> {
+        var target_type = Invalid()
+        loan read target as value {
+            match checker_expression(checker, value) {
+                None => {
+                    return None()
+                }
+                Some(info) => {
+                    target_type = type_copy(info.value_type)
+                }
+            }
+        }
+        if checker_require_field_access(checker, target_type) == false {
+            return None()
+        }
+        match checker_field_type(checker, target_type, name) {
+            None => {
+                return None()
+            }
+            Some(value_type) => {
+                if type_is_copy_with_symbols(checker.symbols, value_type) {
+                    return Some(copy_info(move value_type))
+                }
+                return Some(ExpressionInfo {
+                        value_type: move value_type, value: BorrowedValue()
+                    })
+            }
+        }
+    }
+}

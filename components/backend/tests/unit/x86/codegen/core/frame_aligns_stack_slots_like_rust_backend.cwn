@@ -1,0 +1,38 @@
+fn run() -> Result<u32, u32> {
+    let signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+    var function = ir::function_new("frame", move signature, ir::LinkageLocal())
+    let block = backend_test::checked(ir::function_add_block(function), 1)?
+    let slot = backend_test::value(ir::function_append(function, block, ir::InstructionStackSlot(24, 8)), 3, 2)?
+    backend_test::checked(ir::function_terminate(function, block, ir::TerminatorReturn(None())), 4)?
+    let frame = match x86::codegen_build_frame(function) {
+        Err(error) => {
+            error;
+            return Ok(5)
+        }
+        Ok(value) => move value
+    }
+    if frame.size != 32 {
+        return Ok(6)
+    }
+    let location = match x86::codegen_frame_location(frame, slot) {
+        Some(value) => move value
+        None => {
+            return Ok(9)
+        }
+    }
+    match move location {
+        x86::ValueStackAddress(offset) => {
+            if offset != -24 {
+                return Ok(7)
+            }
+        }
+        _ => {
+            return Ok(8)
+        }
+    }
+    return Ok(42)
+}
+
+fn main() -> u32 {
+    backend_test::finished(run())
+}

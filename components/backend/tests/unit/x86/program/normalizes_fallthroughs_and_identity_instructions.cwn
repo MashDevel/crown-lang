@@ -1,0 +1,44 @@
+fn main() -> u32 {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::Jump(x86::BlockLabel(usize.from(1))))
+    instructions.push(x86::Label(x86::BlockLabel(usize.from(0))))
+    instructions.push(x86::Label(x86::BlockLabel(usize.from(1))))
+    instructions.push(x86::Move(x86::Rax(), x86::Rax()))
+    instructions.push(x86::MoveFloat(x86::Float64(), x86::Xmm2(), x86::Xmm2()))
+    instructions.push(x86::LoadAddress(x86::R12(), x86::R12(), 0))
+    instructions.push(x86::Return())
+    let function = x86::function_new("main", move instructions)
+    if function.instructions.length() != 3 {
+        return 1
+    }
+    let first_label = x86::BlockLabel(usize.from(0))
+    match read function.instructions[0] {
+        x86::Label(label) => {
+            if x86::local_label_equal(label, first_label) == false {
+                return 2
+            }
+        }
+        _ => {
+            return 3
+        }
+    }
+    let second_label = x86::BlockLabel(usize.from(1))
+    match read function.instructions[1] {
+        x86::Label(label) => {
+            if x86::local_label_equal(label, second_label) == false {
+                return 4
+            }
+        }
+        _ => {
+            return 5
+        }
+    }
+    match read function.instructions[2] {
+        x86::Return => {
+            return 42
+        }
+        _ => {
+            return 6
+        }
+    }
+}

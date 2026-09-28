@@ -1,0 +1,161 @@
+fn source_entry(path: Text, checksum: Text) -> Text {
+    return std::text::joined(std::text::joined(std::text::joined("{\"path\":", toolchain::json_quoted(path)), std::text::joined(",\"checksum\":", toolchain::json_quoted(checksum))), "}")
+}
+
+fn point_entry(path: Text, kind: usize) -> Text {
+    return std::text::joined(std::text::joined(std::text::joined("{\"file\":", toolchain::json_quoted(path)), ",\"line\":1,\"column\":1,\"kind\":"), std::text::joined(std::text::decimal(u64.from(kind)), "}"))
+}
+
+fn map_document(files: Text, points: Text) -> Text {
+    return std::text::joined(std::text::joined(std::text::joined("{\"version\":2,\"bytes\":8,\"files\":[", files), "],\"points\":["), std::text::joined(points, "]}"))
+}
+
+fn profile(root: Text, name: Text, document: Text, hits: u8) -> Result<Text, Text> {
+    let directory = toolchain::path_join(root, name)
+    testing::write_file(directory, "map.json", document)?
+    var bytes = std::bytes::filled(8, 0)
+    bytes[0] = hits
+    toolchain::write_bytes(toolchain::path_join(directory, "run.test"), bytes)?
+    return Ok(move directory)
+}
+
+fn report(root: Text, directories: Vec<Text>, status: i32) -> Result<toolchain::Json, Text> {
+    var arguments = testing::list("coverage")
+    for index in 0..directories.length() {
+        arguments.push(directories[index].clone())
+    }
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(result.status == status, std::text::joined("merged coverage status: ", result.stderr))?
+    return toolchain::json(result.stdout.clone())
+}
+
+fn report_count(document: toolchain::Json, field: Text) -> Result<u64, Text> {
+    let totals = toolchain::json_required(document, document.root, "totals")?
+    return toolchain::json_integer(document, toolchain::json_required(document, totals, field)?)
+}
+
+fn merging(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "components/compiler/src/source.cwn")
+    var points = point_entry(path, 0)
+    for kind in 1..3 {
+        std::text::append(points, std::text::joined(",", point_entry(path, kind)))
+    }
+    std::text::append(points, std::text::joined(",", point_entry(path, 1)))
+    let document = map_document(source_entry(path, "same"), points)
+    let first = profile(root, "first", document, 3)?
+    let second = profile(root, "first/nested", document, 12)?
+    report(root, testing::list(second), 1)?
+    let combined = report(root, testing::list(std::text::joined(std::text::joined(first, "|"), second)), 0)?
+    verify_combined(combined)?
+    duplicate_directories(root, first, second)?
+    let recursive = report(root, testing::list(root), 0)?
+    return verify_combined(recursive)
+}
+
+fn verify_combined(document: toolchain::Json) -> Result<void, Text> {
+    testing::expect(report_count(document, "lines")? == 1, "shared source line is counted once")?
+    testing::expect(report_count(document, "branches")? == 3, "distinct decisions at identical coordinates are retained")?
+    testing::expect(report_count(document, "covered_branches")? == 3, "complementary executions are merged")?
+    testing::expect(toolchain::json_integer(document, toolchain::json_required(document, document.root, "runs")?)? == 2, "merged execution count")?
+    return Ok(())
+}
+
+fn duplicate_directories(root: Text, first: Text, second: Text) -> Result<void, Text> {
+    var directories = testing::list(first)
+    directories.push(second.clone())
+    directories.push(toolchain::path_join(first, "."))
+    let combined = report(root, directories, 0)?
+    return verify_combined(combined)
+}
+
+fn incompatible_profiles(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "components/toolchain/src/source.cwn")
+    let point = point_entry(path, 0)
+    let first = profile(root, "original", map_document(source_entry(path, "original"), point), 1)?
+    let changed = profile(root, "changed", map_document(source_entry(path, "changed"), point), 1)?
+    rejected_merge(root, first, changed, "coverage sources differ")?
+    let layout = profile(root, "layout", map_document(source_entry(path, "original"), point_entry(path, 1)), 1)?
+    rejected_merge(root, first, layout, "coverage point layouts differ")?
+    let count = profile(root, "count", map_document(source_entry(path, "original"), std::text::joined(point, std::text::joined(",", point))), 3)?
+    return rejected_merge(root, first, count, "coverage point layouts differ")
+}
+
+fn rejected_merge(root: Text, first: Text, second: Text, message: Text) -> Result<void, Text> {
+    let arguments = testing::list(std::text::joined("coverage|", std::text::joined(first, std::text::joined("|", second))))
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(result.status == 1, "incompatible profiles fail")?
+    return testing::expect(std::text::contains(result.stderr, message), "incompatible profile diagnostic")
+}
+
+fn invalid_maps(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "source.cwn")
+    let source = source_entry(path, "hash")
+    let point = point_entry(path, 0)
+    let maps = [map_document("", point), map_document(source_entry(path, ""), point), map_document(source_entry("", "hash"), point), map_document(std::text::joined(source, std::text::joined(",", source)), point)]
+    for index in 0..4 {
+        reject_map(root, maps[index])?
+    }
+    invalid_coordinates(root, source, path)?
+    return invalid_map_headers(root)
+}
+
+fn reject_map(root: Text, document: Text) -> Result<void, Text> {
+    let directory = profile(root, "invalid", document, 255)?
+    testing::failed_call(root, std::text::joined("coverage|", directory))?
+    return Ok(())
+}
+
+fn invalid_coordinates(root: Text, source: Text, path: Text) -> Result<void, Text> {
+    let fields = testing::list("\"line\":0,\"column\":1,\"kind\":0|\"line\":10000001,\"column\":1,\"kind\":0|\"line\":1,\"column\":0,\"kind\":0|\"line\":1,\"column\":1,\"kind\":4")
+    for index in 0..fields.length() {
+        let point = std::text::joined(std::text::joined("{\"file\":", toolchain::json_quoted(path)), std::text::joined(std::text::joined(",", fields[index]), "}"))
+        reject_map(root, map_document(source, point))?
+    }
+    return Ok(())
+}
+
+fn package_thresholds(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "good/src/source.cwn")
+    let other = toolchain::path_join(root, "bad/src/source.cwn")
+    let first = profile(root, "good", map_document(source_entry(path, "hash"), point_entry(path, 0)), 1)?
+    let second = profile(root, "bad", map_document(source_entry(other, "hash"), point_entry(other, 0)), 0)?
+    let document = report(root, testing::list(std::text::joined(first, std::text::joined("|", second))), 1)?
+    let packages = toolchain::json_array_values(document, toolchain::json_required(document, document.root, "packages")?)?
+    testing::expect(packages.length() == 2, "packages are gated independently")?
+    return Ok(())
+}
+
+fn test_only_profile(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "only/tests/source.cwn")
+    let document = map_document(source_entry(path, "hash"), point_entry(path, 0))
+    let directory = profile(root, "only", document, 0)?
+    let result = report(root, testing::list(directory), 1)?
+    let packages = toolchain::json_array_values(result, toolchain::json_required(result, result.root, "packages")?)?
+    return testing::expect(packages.length() == 0, "test-only coverage has no source packages")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    merging(root)?
+    incompatible_profiles(root)?
+    invalid_maps(root)?
+    package_thresholds(root)?
+    test_only_profile(root)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn invalid_map_headers(root: Text) -> Result<void, Text> {
+    let maps = testing::list("{\"version\":1,\"bytes\":8,\"files\":[],\"points\":[]}|{\"version\":2,\"bytes\":0,\"files\":[],\"points\":[]}|{\"version\":2,\"bytes\":16,\"files\":[],\"points\":[]}")
+    for index in 0..maps.length() {
+        reject_map(root, maps[index])?
+    }
+    let directory = toolchain::path_join(root, "empty")
+    toolchain::make_directory(directory)?
+    testing::failed_call(root, std::text::joined("coverage|", directory))?
+    return Ok(())
+}

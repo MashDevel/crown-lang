@@ -1,0 +1,88 @@
+module sema {
+    copy struct ConstantScalar {
+        builtin: Builtin
+        bits: u64
+    }
+
+    copy enum ConstantState {
+        ConstantPending
+        ConstantEvaluating
+        ConstantResolved(ConstantScalar)
+        ConstantArrayResolved
+        ConstantFailed
+    }
+
+    view struct ConstantContext {
+        declarations: Slice<frontend::ConstDecl>
+        expressions: Slice<ExpressionRecord>
+    }
+
+    copy struct ConstantBinary {
+        operator: frontend::BinaryOperator
+        left: ConstantScalar
+        right: ConstantScalar
+    }
+
+    copy struct ConstantMagnitude {
+        negative: bool
+        value: u64
+    }
+
+    fn constant_mask(builtin: Builtin) -> u64 {
+        let width = builtin_width(builtin)
+        if width == 64 {
+            return 0xffff_ffff_ffff_ffff
+        }
+        return (u64.from(1) << u64.from(width)) - 1
+    }
+
+    fn constant_signed(builtin: Builtin) -> bool {
+        builtin_is_signed(builtin)
+    }
+
+    fn constant_boolean(value: bool) -> ConstantScalar {
+        return ConstantScalar {
+            builtin: Bool(), bits: if value {
+                1
+            } else {
+                0
+            }
+        }
+    }
+
+    fn constant_magnitude(value: ConstantScalar) -> ConstantMagnitude {
+        let zero: u64 = 0
+        let mask = constant_mask(value.builtin)
+        let negative = constant_signed(value.builtin) && value.bits &(u64.from(1) << u64.from(builtin_width(value.builtin) - 1)) != 0
+        let magnitude = if negative {
+            zero.wrapping_sub(value.bits) & mask
+        } else {
+            value.bits
+        }
+        return ConstantMagnitude {
+            negative: negative, value: magnitude
+        }
+    }
+
+    fn constant_encode(value: ConstantMagnitude, builtin: Builtin) -> Result<ConstantScalar, Text> {
+        let zero: u64 = 0
+        var maximum = constant_mask(builtin)
+        if constant_signed(builtin) {
+            maximum = maximum >> 1;
+            if value.negative {
+                maximum = maximum + 1
+            }
+        }
+        if value.value > maximum ||(value.negative && constant_signed(builtin) == false && value.value != 0) {
+            return Err("constant arithmetic overflow")
+        }
+        let bits = if value.negative {
+            zero.wrapping_sub(value.value) & constant_mask(builtin)
+        } else {
+            value.value
+        }
+        return Ok(ConstantScalar {
+                builtin: builtin, bits: bits
+            })
+    }
+}

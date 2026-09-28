@@ -1,0 +1,147 @@
+fn map_hash(value: u32) -> usize {
+    return usize.from(value)
+}
+fn map_collide(value: u32) -> usize {
+    value;
+    return 0
+}
+fn map_equal(left: u32, right: u32) -> bool {
+    return left == right
+}
+fn map_copy_value(value: u32) -> u32 {
+    return value
+}
+
+fn test_map() -> u32 {
+    let ordinary = test_map_hash(map_hash)
+    if ordinary != 0 {
+        return ordinary
+    }
+    return test_map_hash(map_collide)
+}
+
+fn test_map_hash(hash: fn(read u32) -> usize) -> u32 {
+    var map: std::map::Map<u32, u32> = std::map::new(hash, map_equal)
+    let filled = test_map_fill(map)
+    if filled != 0 {
+        return filled
+    }
+    let updated = test_map_update(map)
+    if updated != 0 {
+        return updated
+    }
+    return test_map_drain(map)
+}
+
+fn test_map_fill(map: write std::map::Map<u32, u32>) -> u32 {
+    if std::map::length(map) != 0 || std::map::contains(map, 0) {
+        return 1
+    }
+    match std::map::with_value(map, 0, map_copy_value) {
+        Some(value) => {
+            value;
+            return 2
+        }
+        None => {
+        }
+    }
+    for index in 0..80 {
+        std::map::insert(map, u32.from(index), u32.from(index))
+    }
+    if std::map::length(map) != 80 {
+        return 3
+    }
+    for index in 0..80 {
+        match std::map::with_value(map, u32.from(index), map_copy_value) {
+            None => {
+                return 4
+            }
+            Some(value) => {
+                if value != u32.from(index) {
+                    return 5
+                }
+            }
+        }
+    }
+    return 0
+}
+
+fn test_map_update(map: write std::map::Map<u32, u32>) -> u32 {
+    match std::map::insert(map, 40, 400) {
+        Some(old) => {
+            if old != 40 {
+                return 6
+            }
+        }
+        None => {
+            return 7
+        }
+    }
+    var amount: u32 = 2
+    match std::map::with_value_mut(map, 40, fn[read amount](value) {
+            value = value + amount
+        }) {
+        Some(value) => {
+            value
+        }
+        None => {
+            return 8
+        }
+    }
+    match std::map::remove(map, 40) {
+        Some(old) => {
+            if old != 402 {
+                return 9
+            }
+        }
+        None => {
+            return 10
+        }
+    }
+    match std::map::remove(map, 40) {
+        Some(old) => {
+            old;
+            return 11
+        }
+        None => {
+        }
+    }
+    if std::map::length(map) != 79 {
+        return 12
+    }
+    return 0
+}
+
+fn test_map_drain(map: write std::map::Map<u32, u32>) -> u32 {
+    var total: u32 = 0
+    std::map::for_each(map, fn[write total](key, value) {
+            key;
+            total = total + value
+        })
+    if total != 3120 {
+        return 13
+    }
+    for index in 0..80 {
+        if index != 40 {
+            match std::map::remove(map, u32.from(index)) {
+                Some(old) => {
+                    if old != u32.from(index) {
+                        return 14
+                    }
+                }
+                None => {
+                    return 15
+                }
+            }
+        }
+    }
+    if std::map::length(map) != 0 {
+        return 16
+    }
+    std::map::insert(map, 1, 42)
+    std::map::clear(map)
+    if std::map::contains(map, 1) {
+        return 17
+    }
+    return 0
+}

@@ -1,0 +1,107 @@
+module guest {
+    fn base64(data: Slice<u8>) -> Text {
+        let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        var output = ""
+        loan read alphabet as letters {
+            for group in 0..(data.length() + 2) / 3 {
+                encode_group(data, group * 3, letters, output)
+            }
+        }
+        return move output
+    }
+
+    fn encode_group(data: Slice<u8>, offset: usize, letters: TextView, output: write Text) -> void {
+        let first = u32.from(data[offset])
+        let second = if offset + 1 < data.length() {
+            u32.from(data[offset + 1])
+        } else {
+            0
+        }
+        let third = if offset + 2 < data.length() {
+            u32.from(data[offset + 2])
+        } else {
+            0
+        }
+        let word = (first << 16) |(second << 8) | third
+        for index in 0..4 {
+            let value = (word >> u32.from((usize.from(3) - index) * 6)) & 63
+            let letter = if index > 1 && offset + index - 1 >= data.length() {
+                u8.from(61)
+            } else {
+                letters[usize.from(value)]
+            }
+            output.push(char.from(u32.from(letter)))
+        }
+    }
+
+    fn base64_digit(byte: u8) -> Result<u32, Text> {
+        if byte >= 65 && byte <= 90 {
+            return Ok(u32.from(byte - 65))
+        }
+        if byte >= 97 && byte <= 122 {
+            return Ok(u32.from(byte - 97 + 26))
+        }
+        if byte >= 48 && byte <= 57 {
+            return Ok(u32.from(byte - 48 + 52))
+        }
+        if byte == 43 {
+            return Ok(62)
+        }
+        if byte == 47 {
+            return Ok(63)
+        }
+        return Err("invalid base64 character")
+    }
+
+    fn decode_group(bytes: TextView, offset: usize, output: write Vec<u8>) -> Result<void, Text> {
+        let third = bytes[offset + 2]
+        let fourth = bytes[offset + 3]
+        let first = base64_digit(bytes[offset])?
+        let second = base64_digit(bytes[offset + 1])?
+        let a = if third == 61 {
+            u32.from(0)
+        } else {
+            base64_digit(third)?
+        }
+        let b = if fourth == 61 {
+            u32.from(0)
+        } else {
+            base64_digit(fourth)?
+        }
+        padding(bytes, offset)?
+        let word = (first << 18) |(second << 12) |(a << 6) | b
+        output.push(u8.from(word >> 16))
+        if third != 61 {
+            output.push(u8.from((word >> 8) & 255))
+        }
+        if fourth != 61 {
+            output.push(u8.from(word & 255))
+        }
+        return Ok(())
+    }
+
+    fn padding(bytes: TextView, offset: usize) -> Result<void, Text> {
+        let third = bytes[offset + 2]
+        let fourth = bytes[offset + 3]
+        if third == 61 && fourth != 61 {
+            return Err("invalid base64 padding")
+        }
+        if (third == 61 || fourth == 61) && offset + 4 != bytes.length() {
+            return Err("base64 padding before end")
+        }
+        return Ok(())
+    }
+
+    fn unbase64(value: Text) -> Result<Vec<u8>, Text> {
+        if value.length() % 4 != 0 {
+            return Err("invalid base64 length")
+        }
+        var output = Vec<u8>.new()
+        loan read value as bytes {
+            for group in 0..bytes.length() / 4 {
+                decode_group(bytes, group * 4, output)?
+            }
+        }
+        return Ok(move output)
+    }
+}

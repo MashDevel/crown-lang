@@ -1,0 +1,138 @@
+module optimize {
+    fn resolve_indirect(program: write ir::Program) -> usize {
+        var count: usize = 0
+        var signatures = Vec<ir::Signature>.new()
+        for index in 0..program.functions.length() {
+            signatures.push(ir::signature_copy(program.functions[index].signature))
+        }
+        for index in 0..program.functions.length() {
+            let addresses = function_addresses(program.functions[index])
+            loan write program.functions[index] as function {
+                count = count + resolve_function_calls(function, addresses, signatures)
+            }
+        }
+        return count
+    }
+
+    fn function_addresses(function: ir::Function) -> Vec<Option<usize>> {
+        var addresses = none_usize(function.values.length())
+        var changed = true
+        while changed {
+            changed = false
+            for block in 0..function.blocks.length() {
+                changed = address_block(function.blocks[block], addresses) || changed
+            }
+        }
+        return move addresses
+    }
+
+    fn address_block(block: ir::BasicBlock, addresses: write Vec<Option<usize>>) -> bool {
+        var changed = false
+        for index in 0..block.instructions.length() {
+            let result = match block.instructions[index].result {
+                Some(value) => value
+                None => {
+                    continue
+                }
+            }
+            if ir::value_present(addresses[result]) == false {
+                let address = instruction_function_address(block.instructions[index].kind, addresses)
+                changed = ir::value_present(address) || changed
+                addresses[result] = address
+            }
+        }
+        return changed
+    }
+
+    fn instruction_function_address(kind: ir::InstructionKind, addresses: Vec<Option<usize>>) -> Option<usize> {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryFunctionAddress(target) => Some(target)
+                    _ => None()
+                }
+            }
+            ir::InstructionSelect(condition, left, right) => {
+                condition;
+                if addresses[left] == addresses[right] {
+                    return addresses[left]
+                }
+                return None()
+            }
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                return phi_function_address(incoming, addresses)
+            }
+            _ => None()
+        }
+    }
+
+    fn phi_function_address(incoming: Vec<ir::PhiIncoming>, addresses: Vec<Option<usize>>) -> Option<usize> {
+        if incoming.length() == 0 {
+            return None()
+        }
+        let target = addresses[incoming[0].value]
+        for index in 1..incoming.length() {
+            if addresses[incoming[index].value] != target {
+                return None()
+            }
+        }
+        return target
+    }
+
+    fn resolve_function_calls(function: write ir::Function, addresses: Vec<Option<usize>>, signatures: Vec<ir::Signature>) -> usize {
+        var count: usize = 0
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                count = count + resolve_call(function.blocks[block].instructions[index].kind, addresses, signatures)
+            }
+        }
+        return count
+    }
+
+    fn call_signatures_equal(left: ir::Signature, right: ir::Signature) -> bool {
+        if ir::type_equal(left.result, right.result) == false || left.parameters.length() != right.parameters.length() {
+            return false
+        }
+        for index in 0..left.parameters.length() {
+            if ir::type_equal(left.parameters[index], right.parameters[index]) == false {
+                return false
+            }
+            if direct_parameter_abi(left.parameter_abi[index]) == false || direct_parameter_abi(right.parameter_abi[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn direct_parameter_abi(abi: ir::ParameterAbi) -> bool {
+        match read abi {
+            ir::ParameterDirect => true
+            _ => false
+        }
+    }
+
+    fn resolve_call(kind: write ir::InstructionKind, addresses: Vec<Option<usize>>, signatures: Vec<ir::Signature>) -> usize {
+        let replacement = match read kind {
+            ir::InstructionCallIndirect(value, signature, arguments) => {
+                match addresses[value] {
+                    Some(target) => {
+                        if target >= signatures.length() || call_signatures_equal(signature, signatures[target]) == false {
+                            return 0
+                        }
+                        Some(ir::InstructionCall(target, ir::usize_values_copy(arguments), signature.result))
+                    }
+                    None => None()
+                }
+            }
+            _ => None()
+        }
+        match move replacement {
+            Some(value) => {
+                kind = move value;
+                return 1
+            }
+            None => 0
+        }
+    }
+}

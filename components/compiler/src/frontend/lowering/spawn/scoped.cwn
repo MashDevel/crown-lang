@@ -1,0 +1,60 @@
+module lowering {
+    struct ScopedThreadStart {
+        head: usize
+        node: usize
+        status: usize
+        environment: SpawnEnvironment
+        result: usize
+    }
+    fn scoped_spawn_value(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let head = match thread_region_head(compiler) {
+            Some(value) => value,
+            None => {
+                return Err(310)
+            }
+        }
+        lower_spawn_function(compiler, analysis, expression)?
+        let stack = scoped_stack_configuration(compiler, analysis, expression)?
+        let environment = allocate_spawn_environment(compiler, analysis, expression)?
+        let size = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 32)
+        let node = function_allocate(compiler, size)?
+        let entry = spawn_entry_address(compiler, expression)?
+        let status = start_scoped_thread(compiler, ScopedEntry {
+                node: node, entry: entry, environment: environment.pointer
+            }, stack)?
+        let value_type = sema::builtin_leaf(sema::ScopedThread())
+        let result = empty_scoped_thread(compiler, analysis.checker.symbols, value_type)?
+        finish_scoped_start(compiler, analysis.checker.symbols, ScopedThreadStart {
+                head: head, node: node, status: status, environment: move environment, result: result
+            })?
+        return Ok(AddressValue(result, move value_type))
+    }
+    fn finish_scoped_start(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ScopedThreadStart) -> Result<void, u32> {
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth32()), 0)
+        let created = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), state.status, zero))?
+        let blocks = conditional_blocks(compiler, created)?
+        function_select_block(compiler, blocks.else_block)
+        release_spawn_environment(compiler, symbols, state.environment)?
+        release_scoped_node(compiler, state.node)?
+        function_finish(compiler, ir::TerminatorBranch(blocks.merge))?
+        function_select_block(compiler, blocks.then_block)
+        publish_scoped_thread(compiler, state)?
+        function_finish(compiler, ir::TerminatorBranch(blocks.merge))?
+        function_select_block(compiler, blocks.merge)
+        return Ok(())
+    }
+    fn publish_scoped_thread(compiler: write FunctionCompiler, state: ScopedThreadStart) -> Result<void, u32> {
+        let previous = function_load_pointer(compiler, state.head)?
+        function_store_pointer_field(compiler, state.node, 16, previous)?
+        function_store_pointer(compiler, state.head, state.node)?
+        function_store_pointer(compiler, state.result, state.node)?
+        return Ok(())
+    }
+    fn empty_scoped_thread(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<usize, u32> {
+        let result = function_stack(compiler, symbols, value_type)?
+        let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+        function_store_pointer(compiler, result, null)?
+        return Ok(result)
+    }
+
+}

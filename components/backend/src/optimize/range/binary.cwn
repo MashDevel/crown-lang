@@ -1,0 +1,172 @@
+module optimize {
+    fn binary_ranges(operator: ir::BinaryOperator, left: take Option<Range>, right: take Option<Range>, full: take Option<Range>) -> Option<Range> {
+        match move left {
+            None => {
+                return None()
+            }
+            Some(left_range) => {
+                match move right {
+                    None => {
+                        return None()
+                    }
+                    Some(right_range) => {
+                        match move full {
+                            None => {
+                                return None()
+                            }
+                            Some(full_range) => {
+                                let input = RangeBinary {
+                                    left: move left_range, right: move right_range, full: move full_range
+                                }
+                                return Some(binary_range(operator, input))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn binary_range(operator: ir::BinaryOperator, input: RangeBinary) -> Range {
+        match read operator {
+            ir::BinaryAnd => {
+                return Range {
+                    minimum: 0, maximum: range_min(input.left.maximum, input.right.maximum)
+                }
+            }
+            ir::BinaryOr => {
+                return range_masked(input)
+            }
+            ir::BinaryXor => {
+                return range_masked(input)
+            }
+            ir::BinaryShiftRightUnsigned => {
+                return range_shift(input)
+            }
+            ir::BinaryAdd => {
+                return range_add(input)
+            }
+            ir::BinarySubtract => {
+                return range_subtract(input)
+            }
+            ir::BinaryMultiply => {
+                return range_multiply(input)
+            }
+            ir::BinaryUnsignedDivide => {
+                return range_divide(input)
+            }
+            ir::BinaryUnsignedRemainder => {
+                return range_remainder(input)
+            }
+            _ => {
+                return range_copy(input.full)
+            }
+        }
+    }
+
+    fn range_masked(input: RangeBinary) -> Range {
+        let maximum = covering_mask(input.left.maximum) | covering_mask(input.right.maximum)
+        if maximum > input.full.maximum {
+            return range_copy(input.full)
+        }
+        return Range {
+            minimum: 0, maximum: maximum
+        }
+    }
+
+    fn range_shift(input: RangeBinary) -> Range {
+        if input.right.minimum != input.right.maximum {
+            return range_copy(input.full)
+        }
+        let shift = input.right.minimum
+        if shift >= 64 {
+            return Range {
+                minimum: 0, maximum: 0
+            }
+        }
+        return Range {
+            minimum: input.left.minimum >> shift, maximum: input.left.maximum >> shift
+        }
+    }
+
+    fn range_add(input: RangeBinary) -> Range {
+        if input.left.minimum > 18446744073709551615 - input.right.minimum {
+            return range_copy(input.full)
+        }
+        if input.left.maximum > 18446744073709551615 - input.right.maximum {
+            return range_copy(input.full)
+        }
+        let output = Range {
+            minimum: input.left.minimum + input.right.minimum, maximum: input.left.maximum + input.right.maximum
+        }
+        return range_fit(move output, input.full)
+    }
+
+    fn range_subtract(input: RangeBinary) -> Range {
+        if input.left.minimum < input.right.maximum {
+            return range_copy(input.full)
+        }
+        return Range {
+            minimum: input.left.minimum - input.right.maximum, maximum: input.left.maximum - input.right.minimum
+        }
+    }
+
+    fn range_multiply(input: RangeBinary) -> Range {
+        if input.right.minimum != 0 && input.left.minimum > 18446744073709551615 / input.right.minimum {
+            return range_copy(input.full)
+        }
+        if input.right.maximum != 0 && input.left.maximum > 18446744073709551615 / input.right.maximum {
+            return range_copy(input.full)
+        }
+        let output = Range {
+            minimum: input.left.minimum * input.right.minimum, maximum: input.left.maximum * input.right.maximum
+        }
+        return range_fit(move output, input.full)
+    }
+
+    fn range_divide(input: RangeBinary) -> Range {
+        if input.right.minimum == 0 {
+            return range_copy(input.full)
+        }
+        return Range {
+            minimum: 0, maximum: input.left.maximum / input.right.minimum
+        }
+    }
+
+    fn range_remainder(input: RangeBinary) -> Range {
+        if input.right.minimum == 0 {
+            return range_copy(input.full)
+        }
+        var maximum = input.right.maximum - 1
+        if input.left.maximum < maximum {
+            maximum = input.left.maximum
+        }
+        return Range {
+            minimum: 0, maximum: maximum
+        }
+    }
+
+    fn range_fit(value: take Range, full: Range) -> Range {
+        if value.maximum > full.maximum {
+            return range_copy(full)
+        }
+        return move value
+    }
+
+    fn covering_mask(maximum: u64) -> u64 {
+        var value = maximum
+        var output: u64 = 0
+        while value != 0 {
+            output = (output << 1) | 1;
+            value = value >> 1
+        }
+        return output
+    }
+
+    fn range_min(left: u64, right: u64) -> u64 {
+        if left < right {
+            return left
+        }
+        return right
+    }
+}

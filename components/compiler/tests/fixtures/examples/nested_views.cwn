@@ -1,0 +1,10 @@
+view struct Window<T> { data: Slice<T>, cursor: usize }
+view struct Parser { window: Window<u32> }
+fn main() -> u32 {
+    let source = [42]
+    loan read source[0..1] as values {
+        var parser = Parser { window: Window<u32> { data: values, cursor: 0 } }
+        parser.window.cursor = 0
+        return parser.window.data[parser.window.cursor]
+    }
+}

@@ -1,0 +1,12 @@
+interface Read {
+    fn get(self: read Self) -> u32
+}
+struct Value {
+    item: u32
+}
+fn main() -> u32 {
+    let value: dynamic Read = Value {
+        item: 1
+    }
+    return 0
+}

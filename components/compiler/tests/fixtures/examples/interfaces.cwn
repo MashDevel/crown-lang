@@ -1,0 +1,29 @@
+interface Counter {
+    fn value(self: read Self) -> u32
+    fn add(self: write Self, amount: read u32) -> void
+}
+
+struct Count {
+    value: u32
+}
+
+impl Counter for Count {
+    fn value(self: read Count) -> u32 {
+        return self.value
+    }
+
+    fn add(self: write Count, amount: read u32) -> void {
+        self.value = self.value + amount
+        return
+    }
+}
+
+fn update(counter: write dynamic Counter) -> u32 {
+    counter.add(2)
+    return counter.value()
+}
+
+fn main() -> u32 {
+    var counter: dynamic Counter = Count { value: 40 }
+    return update(counter)
+}

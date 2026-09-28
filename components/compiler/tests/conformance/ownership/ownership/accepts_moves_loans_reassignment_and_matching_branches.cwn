@@ -1,0 +1,26 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    var item = Item {
+        value: 1
+    }
+    loan read item as view {
+        print(view.value)
+    }
+    loan write item as target {
+        target.value = 2
+    }
+    let consumed = move item
+    item = Item {
+        value: consumed.value
+    }
+    if true {
+        let left = move item
+    } else {
+        let right = move item
+    }
+    return 0
+
+}

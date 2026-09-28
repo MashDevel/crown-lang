@@ -1,0 +1,111 @@
+module x86 {
+    fn codegen_build_frame(function: ir::Function) -> Result<Frame, CodegenError> {
+        var builder = FrameBuilder {
+            allocation: codegen_allocate_registers(function)
+            locations: codegen_empty_locations(function.values.length())
+            spill_slots: Vec<SpillSlot>.new()
+            cursor: 0
+        }
+        match codegen_allocate_parameters(function, builder) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match codegen_allocate_instructions(function, builder) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match codegen_align_i32(builder.cursor, 16) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(size) => {
+                let saved = codegen_saved_registers(builder.allocation)
+                match codegen_shift_locations(builder.locations, saved.length()) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+                return Ok(Frame {
+                        locations: codegen_locations_copy(builder.locations)
+                        size: size
+                        saved_registers: move saved
+                    })
+            }
+        }
+    }
+
+    fn codegen_allocate_parameters(function: ir::Function, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < function.parameters.length() {
+            let value = function.parameters[index]
+            var value_type = ir::TypeVoid()
+            loan read function.values[value] as source {
+                value_type = source
+            }
+            let input = ParameterAllocation {
+                value: value, value_type: value_type
+            }
+            loan read function.signature.parameter_abi[index] as abi {
+                match codegen_allocate_parameter(move input, abi, builder) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_allocate_instructions(function: ir::Function, builder: write FrameBuilder) -> Result<void, CodegenError> {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    match codegen_allocate_instruction(function, instruction, builder) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_locations_copy(locations: Vec<Option<ValueLocation>>) -> Vec<Option<ValueLocation>> {
+        var output = codegen_empty_locations(locations.length())
+        var index: usize = 0
+        while index < locations.length() {
+            match read locations[index] {
+                Some(location) => {
+                    output[index] = Some(codegen_location_copy(location))
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

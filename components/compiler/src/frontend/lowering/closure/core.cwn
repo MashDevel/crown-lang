@@ -1,0 +1,49 @@
+module lowering {
+    fn closure_value(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        lower_closure_function(compiler, analysis, expression)?
+        let name = closure_function_name(expression.span, compiler.substitutions)
+        var function: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(322)
+            }
+        }
+        let address = function_append_value(compiler, ir::InstructionFunctionAddress(function))?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        if sema::type_is_scoped_function(value_type) {
+            let environment = closure_environment(compiler, analysis, expression)?
+            let descriptor = scoped_descriptor(compiler, address, environment)?
+            return Ok(AddressValue(descriptor, move value_type))
+        }
+        return Ok(ScalarValue(address, move value_type))
+    }
+
+    struct ClosureCompilerInput {
+        name: Text
+        signature: ir::Signature
+        result: sema::Type
+    }
+
+    fn closure_function_compiler(parent: write FunctionCompiler, input: take ClosureCompilerInput) -> FunctionCompiler {
+        return FunctionCompiler {
+            semantic_function: parent.semantic_function
+            substitutions: sema::types_copy(parent.substitutions)
+            indirect_receiver: false
+            tables: replace(parent.tables, tables_new())
+            ir: ir::function_new(input.name.clone(), ir::signature_copy(input.signature), ir::LinkageLocal())
+            block: None()
+            bindings: Vec<Binding>.new()
+            exits: Vec<ScopeExit>.new()
+            temporaries: Vec<Temporary>.new()
+            scope_depth: 0
+            loops: Vec<LoopTarget>.new()
+            matches: Vec<MatchFlow>.new()
+            result: sema::type_copy(input.result)
+            result_address: None()
+            lowered_generated: Vec<LoweredFunction>.new()
+        }
+    }
+}

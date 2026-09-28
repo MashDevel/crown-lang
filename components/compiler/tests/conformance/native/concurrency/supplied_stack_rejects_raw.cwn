@@ -1,0 +1,9 @@
+fn launch<T>(value: take T) -> Option<usize> {
+    unsafe {
+        return spawn(0, 0) move { value }
+    }
+}
+fn main() -> u32 {
+    unsafe { launch(RawPtr<u8>.from_address(1)) }
+    return 0
+}

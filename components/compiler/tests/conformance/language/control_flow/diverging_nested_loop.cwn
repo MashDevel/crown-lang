@@ -1,0 +1,6 @@
+fn selected(flag: bool) -> u32 {
+    return if flag {
+        while true { while true { break } }
+    } else { 9 }
+}
+fn main() -> u32 { return if selected(false) == 9 { 0 } else { 1 } }

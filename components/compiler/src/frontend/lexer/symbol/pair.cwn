@@ -1,0 +1,44 @@
+module frontend {
+    fn lexer_equal(lexer: write Lexer, mark: LexerMark) -> void {
+        let next = lexer_peek_or_zero(lexer)
+        if next == 61 {
+            lexer_advance(lexer)
+            lexer_symbol_push(lexer, TokenEqualEqual(), mark)
+            return
+        }
+        if next == 62 {
+            lexer_advance(lexer)
+            lexer_symbol_push(lexer, TokenFatArrow(), mark)
+            return
+        }
+        lexer_symbol_push(lexer, TokenEqual(), mark)
+    }
+
+    fn lexer_order(lexer: write Lexer, mark: LexerMark, less: bool) -> void {
+        let value = lexer_peek_or_zero(lexer)
+        if value == 61 {
+            lexer_advance(lexer)
+            if less {
+                lexer_symbol_push(lexer, TokenLessEqual(), mark)
+            } else {
+                lexer_symbol_push(lexer, TokenGreaterEqual(), mark)
+            }
+            return
+        }
+        if value == 60 && less {
+            lexer_advance(lexer)
+            lexer_symbol_push(lexer, TokenShiftLeft(), mark)
+            return
+        }
+        if value == 62 && less == false {
+            lexer_advance(lexer)
+            lexer_symbol_push(lexer, TokenShiftRight(), mark)
+            return
+        }
+        if less {
+            lexer_symbol_push(lexer, TokenLess(), mark)
+        } else {
+            lexer_symbol_push(lexer, TokenGreater(), mark)
+        }
+    }
+}

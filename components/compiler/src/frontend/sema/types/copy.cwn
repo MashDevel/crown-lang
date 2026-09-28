@@ -1,0 +1,72 @@
+module sema {
+    fn type_copy(value_type: Type) -> Type {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                return BuiltinType(builtin, types_copy(arguments))
+            }
+            NamedType(symbol, arguments) => {
+                return NamedType(symbol, types_copy(arguments))
+            }
+            ArrayType(element, length) => {
+                loan read element as value {
+                    return ArrayType(Box.new(type_copy(value)), length)
+                }
+            }
+            FunctionType(parameters, result) => {
+                let copied = parameter_types_copy(parameters)
+                loan read result as value {
+                    return FunctionType(move copied, Box.new(type_copy(value)))
+                }
+            }
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return ScopedFunction(Box.new(type_copy(value)))
+                }
+            }
+            DynamicType(interface_symbol) => {
+                return DynamicType(interface_symbol)
+            }
+            ParameterType(parameter) => {
+                return ParameterType(parameter)
+            }
+            IntegerLiteral(value) => {
+                return IntegerLiteral(value)
+            }
+            FloatLiteral | Infer | Invalid => {
+                return type_copy_unresolved(value_type)
+            }
+        }
+    }
+
+    fn type_copy_unresolved(value_type: Type) -> Type {
+        if type_is_float_literal(value_type) {
+            return FloatLiteral()
+        }
+        if type_is_infer(value_type) {
+            return Infer()
+        }
+        return Invalid()
+    }
+
+    fn parameter_types_copy(parameters: Vec<ParameterType>) -> Vec<ParameterType> {
+        var copied = Vec<ParameterType>.with_capacity(parameters.length())
+        var index: usize = 0
+        while index < parameters.length() {
+            copied.push(parameter_type_copy(parameters[index]))
+            index = index + 1
+        }
+        move copied
+    }
+
+    fn types_copy(values: Vec<Type>) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(type_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

@@ -1,0 +1,112 @@
+module lowering {
+    fn collect_drop_types(compiler: write Compiler, analysis: sema::Analysis) -> void {
+        var index: usize = 0
+        while index < analysis.checker.expressions.length() {
+            loan read analysis.checker.expressions[index] as expression {
+                include_expression_drop_types(compiler, analysis, expression)
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < analysis.checker.symbols.functions.length() {
+            loan read analysis.checker.symbols.functions[index] as function {
+                include_drop_type(compiler.drop_types, analysis.checker.symbols, function.result)
+                var parameter: usize = 0
+                while parameter < function.parameters.length() {
+                    loan read function.parameters[parameter] as value {
+                        include_drop_type(compiler.drop_types, analysis.checker.symbols, value.value_type)
+                    }
+                    parameter = parameter + 1
+                }
+            }
+            index = index + 1
+        }
+        include_instance_drop_types(compiler, analysis)
+        sort_drop_types(compiler.drop_types, analysis.checker.symbols)
+    }
+
+    fn include_drop_type(output: write Vec<sema::Type>, symbols: sema::Symbols, value_type: sema::Type) -> void {
+        include_root_drop_type(output, symbols, value_type)
+        if sema::type_is_scoped_function(value_type) {
+            return
+        }
+        if sema::type_is_concrete(value_type) == false || sema::type_is_copy_with_symbols(symbols, value_type) {
+            return
+        }
+        var index: usize = 0
+        while index < output.length() {
+            loan read output[index] as existing {
+                if sema::types_equal(existing, value_type) {
+                    return
+                }
+            }
+            index = index + 1
+        }
+        output.push(sema::type_copy(value_type))
+        match read value_type {
+            sema::ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    include_drop_type(output, symbols, value)
+                }
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                builtin;
+                include_drop_types(output, symbols, arguments)
+            }
+            sema::NamedType(symbol, arguments) => {
+                include_drop_types(output, symbols, arguments)
+                let request = NamedDropTypes {
+                    symbol: symbol, arguments: sema::types_copy(arguments)
+                }
+                include_named_drop_types(output, symbols, request)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn include_drop_types(output: write Vec<sema::Type>, symbols: sema::Symbols, values: Vec<sema::Type>) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                include_drop_type(output, symbols, value)
+            }
+            index = index + 1
+        }
+    }
+
+    struct NamedDropTypes {
+        symbol: usize
+        arguments: Vec<sema::Type>
+    }
+
+    fn include_named_drop_types(output: write Vec<sema::Type>, symbols: sema::Symbols, request: NamedDropTypes) -> void {
+        if request.symbol >= symbols.types.length() {
+            return
+        }
+        loan read symbols.types[request.symbol] as declaration {
+            let values = sema::parameter_values(declaration.type_parameters, request.arguments)
+            var field: usize = 0
+            while field < declaration.fields.length() {
+                loan read declaration.fields[field] as value {
+                    let concrete = sema::substitute(value.value_type, values)
+                    include_drop_type(output, symbols, concrete)
+                }
+                field = field + 1
+            }
+            var variant: usize = 0
+            while variant < declaration.variants.length() {
+                loan read declaration.variants[variant] as value {
+                    var item: usize = 0
+                    while item < value.fields.length() {
+                        let concrete = sema::substitute(value.fields[item], values)
+                        include_drop_type(output, symbols, concrete)
+                        item = item + 1
+                    }
+                }
+                variant = variant + 1
+            }
+        }
+    }
+}

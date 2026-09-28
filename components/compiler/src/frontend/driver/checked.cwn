@@ -1,0 +1,46 @@
+module frontend {
+    enum ParsedSource {
+        Source(SourceBundle, Program)
+    }
+
+    enum CheckedSource {
+        Source(SourceBundle, Program, sema::Analysis)
+    }
+
+    fn parsed_sources(sources: Vec<Text>) -> Result<ParsedSource, Text> {
+        let bundle = source_bundle_from_paths(sources)
+        if bundle.errors != 0 || bundle.files.length() == 0 {
+            return Err("no readable source files")
+        }
+        let program = match parse(bundle.source.share(), bundle.length, 0) {
+            Err(errors) => {
+                print_parse_errors(bundle, errors)
+                return Err("parse failed")
+            }
+            Ok(value) => move value
+        }
+        return Ok(ParsedSource::Source(move bundle, move program))
+    }
+
+    fn check_parsed(source: take ParsedSource, max_instances: usize) -> Result<CheckedSource, Text> {
+        match move source {
+            ParsedSource::Source(original_bundle, original_program) => {
+                var bundle = move original_bundle
+                var program = move original_program
+                if source_capture_expand(bundle, program) == false {
+                    return Err("source capture expansion failed")
+                }
+                let analysis = sema::analyze_with_limit(bundle.source.share(), program, max_instances)
+                if analysis.errors != 0 {
+                    print_semantic_errors(bundle, analysis)
+                    return Err("type check failed")
+                }
+                return Ok(CheckedSource::Source(move bundle, move program, move analysis))
+            }
+        }
+    }
+
+    fn checked_sources(sources: Vec<Text>, max_instances: usize) -> Result<CheckedSource, Text> {
+        return check_parsed(parsed_sources(sources)?, max_instances)
+    }
+}

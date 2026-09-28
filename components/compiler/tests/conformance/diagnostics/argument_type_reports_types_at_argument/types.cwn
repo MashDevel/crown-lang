@@ -1,0 +1,7 @@
+fn consume(value: bool) -> void {
+    value
+}
+fn main() -> u32 {
+    consume(1)
+    return 0
+}

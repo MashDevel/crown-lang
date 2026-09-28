@@ -1,0 +1,10 @@
+fn consume(value: take Text) -> bool {
+    value
+    return false
+}
+fn main() -> u32 {
+    let value = "owned"
+    while consume(move value) {
+    }
+    return 0
+}

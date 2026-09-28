@@ -1,0 +1,178 @@
+module x86 {
+    fn codegen_prologue(program: ir::Program, compiler: write FunctionCompiler) -> Result<void, CodegenError> {
+        codegen_emit(compiler, Push(Rbp()))
+        codegen_emit(compiler, Move(Rbp(), Rsp()))
+        var index: usize = 0
+        while index < compiler.frame.saved_registers.length() {
+            var register = Rax()
+            loan read compiler.frame.saved_registers[index] as source {
+                register = source
+            }
+            codegen_emit(compiler, Push(register))
+            index = index + 1
+        }
+        if codegen_frame_saved_padding(compiler.frame) {
+            codegen_emit(compiler, SubtractImmediate(Rsp(), 8))
+        }
+        if compiler.frame.size != 0 {
+            codegen_emit(compiler, SubtractImmediate(Rsp(), compiler.frame.size))
+        }
+        return codegen_capture_parameters(program, compiler)
+    }
+
+    fn codegen_capture_parameters(program: ir::Program, compiler: write FunctionCompiler) -> Result<void, CodegenError> {
+        loan read program.functions[compiler.id] as function {
+            match abi_locations(function.signature) {
+                Err(error) => {
+                    return Err(move error)
+                }
+                Ok(locations) => {
+                    var index: usize = 0
+                    while index < function.parameters.length() {
+                        var location = ArgumentOmitted()
+                        loan read locations[index] as source {
+                            location = codegen_argument_location_copy(source)
+                        }
+                        let request = ParameterCapture {
+                            value: function.parameters[index]
+                            location: move location
+                        }
+                        match codegen_capture_parameter(program, compiler, move request) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(done) => {
+                                done
+                            }
+                        }
+                        index = index + 1
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_capture_parameter(program: ir::Program, compiler: write FunctionCompiler, request: take ParameterCapture) -> Result<void, CodegenError> {
+        match read request.location {
+            ArgumentInteger(register) => {
+                match codegen_frame_register(compiler.frame, request.value) {
+                    Some(destination) => {
+                        if register_equal(destination, register) {
+                            return Ok(())
+                        }
+                    }
+                    None => {
+                    }
+                }
+                return codegen_store_value(program, compiler, ValueAccess {
+                        value: request.value, register: register
+                    })
+            }
+            ArgumentFloat(register) => {
+                match codegen_value_type(program, compiler, request.value) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value_type) => {
+                        match codegen_float_width(value_type) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(width) => {
+                                codegen_emit(compiler, MoveFromFloat(width, Rax(), register))
+                                return codegen_store_value(program, compiler, ValueAccess {
+                                        value: request.value, register: Rax()
+                                    })
+                            }
+                        }
+                    }
+                }
+            }
+            ArgumentStack(slot) => {
+                let input = StackParameter {
+                    value: request.value, slot: slot
+                }
+                return codegen_capture_stack_parameter(program, compiler, input)
+            }
+            ArgumentRegisters(components) => {
+                return codegen_capture_aggregate_registers(compiler, request.value, components)
+            }
+            ArgumentMemory(slot, slots, size) => {
+                slots
+                let input = AggregateCapture {
+                    value: request.value, slot: slot, size: size
+                }
+                return codegen_capture_aggregate_memory(compiler, move input)
+            }
+            ArgumentOmitted => {
+                return Ok(())
+            }
+        }
+    }
+
+    fn codegen_capture_aggregate_registers(compiler: write FunctionCompiler, value: usize, components: Vec<AbiComponentLocation>) -> Result<void, CodegenError> {
+        match codegen_parameter_offset(compiler, value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(base) => {
+                var index: usize = 0
+                while index < components.length() {
+                    loan read components[index] as component {
+                        match codegen_capture_aggregate_component(compiler, base, component) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(done) => {
+                                done
+                            }
+                        }
+                    }
+                    index = index + 1
+                }
+                return Ok(())
+            }
+        }
+    }
+
+    fn codegen_capture_aggregate_component(compiler: write FunctionCompiler, base: i32, component: AbiComponentLocation) -> Result<void, CodegenError> {
+        var source = Rax()
+        match read component.location {
+            ScalarInteger(register) => {
+                source = register
+            }
+            ScalarFloat(register) => {
+                match codegen_float_width(component.component.value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, MoveFromFloat(width, Rax(), register))
+                    }
+                }
+            }
+        }
+        match codegen_component_offset(base, component.component.offset) {
+            None => {
+                return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+            }
+            Some(offset) => {
+                match codegen_width(component.component.value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                                    base: Rbp()
+                                    offset: offset
+                                    source: source
+                                    width: width
+                                }))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+}

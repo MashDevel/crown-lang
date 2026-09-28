@@ -1,0 +1,79 @@
+module optimize {
+    copy struct SymbolicOffset {
+        term: Option<usize>
+        offset: i64
+    }
+
+    fn load_symbolic(function: ir::Function, scan: LoadScan, value: usize, depth: usize) -> Option<SymbolicOffset> {
+        let id = load_resolve(value, scan.replacements)
+        match scalar_integer(function, id) {
+            Some(constant) => {
+                return Some(SymbolicOffset {
+                        term: None(), offset: i64.from_bits(constant)
+                    })
+            }
+            None => {
+            }
+        }
+        if depth > 16 {
+            return None()
+        }
+        let block = scan.definitions[id].block
+        if block < function.blocks.length() && ir::type_size(function.values[id]) == Some(8) {
+            let index = scan.definitions[id].instruction
+            match load_symbolic_binary(function, scan, function.blocks[block].instructions[index].kind, depth + 1) {
+                Some(result) => {
+                    return Some(result)
+                }
+                None => {
+                }
+            }
+        }
+        return Some(SymbolicOffset {
+                term: Some(id), offset: 0
+            })
+    }
+
+    fn load_symbolic_binary(function: ir::Function, scan: LoadScan, kind: ir::InstructionKind, depth: usize) -> Option<SymbolicOffset> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                if operator != ir::BinaryAdd() {
+                    return None()
+                }
+                let first = match load_symbolic(function, scan, left, depth) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                let second = match load_symbolic(function, scan, right, depth) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                return load_symbolic_sum(first, second)
+            }
+            _ => None()
+        }
+    }
+
+    fn load_symbolic_sum(left: SymbolicOffset, right: SymbolicOffset) -> Option<SymbolicOffset> {
+        if left.term != None() && right.term != None() {
+            return None()
+        }
+        let offset = match load_checked_add(left.offset, right.offset) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        return Some(SymbolicOffset {
+                term: if left.term != None() {
+                    left.term
+                } else {
+                    right.term
+                }, offset: offset
+            })
+    }
+}

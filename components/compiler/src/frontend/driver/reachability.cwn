@@ -1,0 +1,51 @@
+module frontend {
+    fn lower_required_program(compiler: write lowering::Compiler, input: lowering::ProgramInput) -> Result<void, u32> {
+        lowering::lower_generated_program(compiler, input)?
+        lowering::set_main_entry(compiler, input.analysis.checker.symbols)?
+        var state = optimize::reachability_new(compiler.output)
+        let bindings = required_bindings(compiler)
+        optimize::reach_roots(compiler.output, state)
+        var index: usize = 0
+        while index < state.pending.length() {
+            match state.pending[index] {
+                optimize::ReachableFunction(function) => {
+                    lower_required_function(compiler, input, bindings[function], function)?
+                    optimize::reach_body(compiler.output, state, compiler.output.functions[function])
+                }
+                optimize::ReachableGlobal(global) => {
+                    optimize::reach_data(state, compiler.output.globals[global])
+                }
+            }
+            index = index + 1
+        }
+        optimize::retain_reachable(compiler.output, state)
+        return Ok(())
+    }
+
+    fn required_bindings(compiler: lowering::Compiler) -> Vec<Option<usize>> {
+        var output = Vec<Option<usize>>.with_capacity(compiler.output.functions.length())
+        for index in 0..compiler.output.functions.length() {
+            index;
+            output.push(None())
+        }
+        for index in 0..compiler.tables.functions.length() {
+            output[compiler.tables.functions[index].function] = Some(index)
+        }
+        return move output
+    }
+
+    fn lower_required_function(compiler: write lowering::Compiler, input: lowering::ProgramInput, binding: Option<usize>, function: usize) -> Result<void, u32> {
+        if compiler.output.functions[function].blocks.length() != 0 || ir::function_is_import(compiler.output.functions[function]) {
+            return Ok(())
+        }
+        match binding {
+            Some(index) => {
+                let selected = lowering::function_binding_copy(compiler.tables.functions[index])
+                return lowering::lower_bound_ast_function(compiler, input, selected)
+            }
+            None => {
+                return Err(79)
+            }
+        }
+    }
+}

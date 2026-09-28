@@ -1,0 +1,20 @@
+module lowering {
+    fn signature_signed_parameters(signature: write ir::Signature, request: SignatureRequest, direct: bool) -> void {
+        signature.result_signed = direct && sema::type_is_signed(request.result)
+        let offset: usize = if direct {
+            0
+        } else {
+            1
+        }
+        for index in 0..request.parameters.length() {
+            if request.indirect_receiver && index == 0 {
+                continue
+            }
+            loan read request.parameters[index] as parameter {
+                if sema::mode_is_read(parameter.mode) && sema::type_is_signed(parameter.value_type) {
+                    signature.signed_parameters.push(index + offset)
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,45 @@
+module sema {
+    fn float_bits_type(builtin: Builtin) -> Type {
+        return builtin_leaf(if builtin == F32() {
+                U32()
+            } else {
+                U64()
+            })
+    }
+    fn checker_float_from_bits(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method
+                if arguments.length() != 1 {
+                    checker_error(checker, "float from_bits requires one matching unsigned integer")
+                    return None()
+                }
+                let expected = float_bits_type(builtin)
+                loan read arguments[0] as value {
+                    checker_value(checker, value, expected)
+                }
+                return Some(copy_info(builtin_leaf(builtin)))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+    fn checker_float_bits_method(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method
+                if arguments.length() != 0 {
+                    checker_error(checker, "float to_bits takes no arguments")
+                    return None()
+                }
+                return Some(copy_info(float_bits_type(builtin)))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

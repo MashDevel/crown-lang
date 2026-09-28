@@ -1,0 +1,37 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var function = ir::function_new("local", move signature, ir::LinkageLocal())
+    var block: usize = 0
+    match ir::function_add_block(function) { Ok(value) => { block = value } Err(error) => { error; return 1 } }
+    let slot = test_append(function, block, ir::InstructionStackSlot(4, 4))
+    let answer_constant = ir::ConstantInteger(u64.from(42))
+    let answer = ir::function_constant(function, value_type, answer_constant)
+    test_append(function, block, ir::InstructionStore(slot, answer, 4, false))
+    let loaded = test_append(function, block, ir::InstructionLoad(slot, value_type, 4, false))
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(loaded))) {
+        Ok(value) => { value }
+        Err(error) => { error; return 2 }
+    }
+    optimize::function(function)
+    if function.blocks[0].instructions.length() != 0 { return 4 }
+    match read function.blocks[0].terminator {
+        Some(terminator) => {
+            match read terminator {
+                ir::TerminatorReturn(value) => { match read value { Some(result) => { if result == answer { return 42 } } None => {} } }
+                _ => {}
+            }
+        }
+        None => {}
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    match ir::validate_program(program) { Ok(value) => { value; return 42 } Err(error) => { error; return 5 } }
+}

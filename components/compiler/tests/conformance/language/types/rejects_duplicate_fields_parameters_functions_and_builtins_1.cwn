@@ -1,0 +1,7 @@
+struct Item {
+    value: u32
+    value: bool
+}
+fn main() -> u32 {
+    return 0
+}

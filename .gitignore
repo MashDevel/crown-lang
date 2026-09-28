@@ -1,0 +1,10 @@
+.DS_Store
+target/
+*.bmp
+*.sav
+*.profraw
+*.profdata
+/bootstrap/x86_64-macos/
+/bootstrap/arm64-macos/
+/bootstrap/x86_64-linux/
+/bootstrap/arm64-linux/

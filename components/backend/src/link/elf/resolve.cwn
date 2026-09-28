@@ -1,0 +1,78 @@
+module elf {
+    fn library_path(name: Text, interpreter: Text, architecture: object::Architecture) -> Result<Text, Text> {
+        let configured = toolchain::environment("CROWN_LINUX_LIBRARY_PATH")
+        var paths = std::text::split(configured, 58)
+        paths.push(toolchain::parent_path(interpreter))
+        paths.push("/lib")
+        paths.push("/usr/lib")
+        paths.push("/lib64")
+        paths.push("/usr/lib64")
+        let triple = if architecture == object::ArchitectureArm64() {
+            "aarch64-linux-gnu"
+        } else {
+            "x86_64-linux-gnu"
+        }
+        paths.push(toolchain::path_join("/lib", triple))
+        paths.push(toolchain::path_join("/usr/lib", triple))
+        for index in 0..paths.length() {
+            if paths[index].length() != 0 {
+                let path = toolchain::path_join(paths[index], name)
+                if toolchain::exists(path) {
+                    return Ok(move path)
+                }
+            }
+        }
+        return Err(std::text::joined("cannot find target ELF shared library: ", name))
+    }
+
+    fn resolve_versions(object: object::CompilerObject, options: Options) -> Result<Vec<SymbolVersion>, Text> {
+        let exports = resolve_exports(object.architecture, options)?
+        var output = Vec<SymbolVersion>.new()
+        for index in 0..object.symbols.length() {
+            loan read object.symbols[index] as symbol {
+                if object::symbol_is_import(symbol.binding) {
+                    output.push(resolve_version(exports, symbol.name)?)
+                }
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn resolve_exports(architecture: object::Architecture, options: Options) -> Result<Vec<SymbolVersion>, Text> {
+        var exports = Vec<SymbolVersion>.new()
+        let paths = library_paths(options.libraries, options.interpreter, architecture)?
+        for index in 0..options.libraries.length() {
+            let reader = library_reader(toolchain::read_bytes(paths[index])?, architecture)?
+            let symbols = library_exports(reader, options.libraries[index])?
+            for symbol in 0..symbols.length() {
+                loan read symbols[symbol] as value {
+                    exports.push(SymbolVersion {
+                            symbol: value.symbol.clone(), library: value.library.clone(), version: value.version.clone()
+                        })
+                }
+            }
+        }
+        return Ok(move exports)
+    }
+
+    fn library_paths(libraries: Vec<Text>, interpreter: Text, architecture: object::Architecture) -> Result<Vec<Text>, Text> {
+        var paths = Vec<Text>.new()
+        for index in 0..libraries.length() {
+            paths.push(library_path(libraries[index], interpreter, architecture)?)
+        }
+        return Ok(move paths)
+    }
+
+    fn resolve_version(exports: Vec<SymbolVersion>, name: Text) -> Result<SymbolVersion, Text> {
+        for index in 0..exports.length() {
+            loan read exports[index] as symbol {
+                if std::text::equal(symbol.symbol, name) {
+                    return Ok(SymbolVersion {
+                            symbol: name.clone(), library: symbol.library.clone(), version: symbol.version.clone()
+                        })
+                }
+            }
+        }
+        return Err(std::text::joined("undefined symbol: ", name))
+    }
+}

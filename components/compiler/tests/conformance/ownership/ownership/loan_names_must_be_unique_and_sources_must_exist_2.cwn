@@ -1,0 +1,11 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    loan read missing as view {
+        print(view.value)
+    }
+    return 0
+
+}

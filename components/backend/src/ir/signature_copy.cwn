@@ -1,0 +1,71 @@
+module ir {
+    fn signature_copy(signature: Signature) -> Signature {
+        var parameters = Vec<Type>.with_capacity(signature.parameters.length())
+        var abi = Vec<ParameterAbi>.with_capacity(signature.parameter_abi.length())
+        var index: usize = 0
+        while index < signature.parameters.length() {
+            loan read signature.parameters[index] as value_type {
+                parameters.push(value_type)
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < signature.parameter_abi.length() {
+            loan read signature.parameter_abi[index] as value {
+                abi.push(parameter_abi_copy(value))
+            }
+            index = index + 1
+        }
+        var signed = Vec<usize>.new()
+        for position in 0..signature.signed_parameters.length() {
+            signed.push(signature.signed_parameters[position])
+        }
+        return Signature {
+            parameters: move parameters
+            result: signature.result
+            parameter_abi: move abi
+            signed_parameters: move signed
+            result_signed: signature.result_signed
+            variadic_start: signature.variadic_start
+        }
+    }
+
+    fn parameter_abi_copy(abi: ParameterAbi) -> ParameterAbi {
+        match read abi {
+            ParameterDirect => {
+                return ParameterDirect()
+            }
+            ParameterAggregate(aggregate) => {
+                return ParameterAggregate(aggregate_abi_copy(aggregate))
+            }
+            ParameterReturn(aggregate) => {
+                return ParameterReturn(aggregate_abi_copy(aggregate))
+            }
+        }
+    }
+
+    fn aggregate_abi_copy(abi: AggregateAbi) -> AggregateAbi {
+        match read abi {
+            AggregateMemory(size, alignment) => {
+                return AggregateMemory(size, alignment)
+            }
+            AggregateRegisters(size, alignment, components) => {
+                var output = Vec<AbiComponent>.with_capacity(components.length())
+                var index: usize = 0
+                while index < components.length() {
+                    loan read components[index] as component {
+                        output.push(abi_component_copy(component))
+                    }
+                    index = index + 1
+                }
+                return AggregateRegisters(size, alignment, move output)
+            }
+        }
+    }
+
+    fn abi_component_copy(component: AbiComponent) -> AbiComponent {
+        return AbiComponent {
+            offset: component.offset, value_type: component.value_type
+        }
+    }
+}

@@ -1,0 +1,9 @@
+view struct Parser {
+    data: TextView
+}
+struct Owner {
+    callback: fn(read Parser) -> Parser
+}
+fn main() -> u32 {
+    return 0
+}

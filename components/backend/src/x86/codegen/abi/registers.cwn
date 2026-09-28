@@ -1,0 +1,77 @@
+module x86 {
+    fn abi_integer_register(index: usize) -> Option<Register> {
+        if index == 0 {
+            return Some(Rdi())
+        }
+        if index == 1 {
+            return Some(Rsi())
+        }
+        if index == 2 {
+            return Some(Rdx())
+        }
+        if index == 3 {
+            return Some(Rcx())
+        }
+        if index == 4 {
+            return Some(R8())
+        }
+        if index == 5 {
+            return Some(R9())
+        }
+        return None()
+    }
+
+    fn abi_float_register(index: usize) -> Option<FloatRegister> {
+        if index == 0 {
+            return Some(Xmm0())
+        }
+        if index == 1 {
+            return Some(Xmm1())
+        }
+        if index == 2 {
+            return Some(Xmm2())
+        }
+        if index == 3 {
+            return Some(Xmm3())
+        }
+        if index == 4 {
+            return Some(Xmm4())
+        }
+        if index == 5 {
+            return Some(Xmm5())
+        }
+        if index == 6 {
+            return Some(Xmm6())
+        }
+        if index == 7 {
+            return Some(Xmm7())
+        }
+        return None()
+    }
+
+    fn abi_take_integer(assignment: write AbiAssignment) -> Option<Register> {
+        let register = abi_integer_register(assignment.integer)
+        match read register {
+            Some(value) => {
+                value;
+                assignment.integer = assignment.integer + 1
+            }
+            None => {
+            }
+        }
+        return register
+    }
+
+    fn abi_take_float(assignment: write AbiAssignment) -> Option<FloatRegister> {
+        let register = abi_float_register(assignment.float)
+        match read register {
+            Some(value) => {
+                value;
+                assignment.float = assignment.float + 1
+            }
+            None => {
+            }
+        }
+        return register
+    }
+}

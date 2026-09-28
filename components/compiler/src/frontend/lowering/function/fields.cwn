@@ -1,0 +1,19 @@
+module lowering {
+    fn function_load_pointer_field(compiler: write FunctionCompiler, base: usize, offset: u64) -> Result<usize, u32> {
+        let address = function_offset(compiler, base, offset)?
+        return function_load_pointer(compiler, address)
+    }
+
+    fn function_store_pointer_field(compiler: write FunctionCompiler, base: usize, offset: u64, value: usize) -> Result<void, u32> {
+        let address = function_offset(compiler, base, offset)?
+        return function_store_pointer(compiler, address, value)
+    }
+
+    fn function_zeroed_stack(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<usize, u32> {
+        let address = function_stack(compiler, symbols, value_type)?
+        function_zero(compiler, symbols, Place {
+                address: address, value_type: sema::type_copy(value_type)
+            })?
+        return Ok(address)
+    }
+}

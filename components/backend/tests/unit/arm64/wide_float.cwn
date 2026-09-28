@@ -1,0 +1,87 @@
+copy struct Conversion {
+    value: ir::WideInteger, signed: bool, single: u64, double: u64
+}
+
+fn conversion(low: u64, high: u64, signed: bool, single: u64, double: u64) -> Conversion {
+    return Conversion {
+        value: ir::WideInteger {
+            low: low, high: high
+        }, signed: signed, single: single, double: double
+    }
+}
+
+fn conversion_cases() -> Vec<Conversion> {
+    var cases = Vec<Conversion>.new()
+    cases.push(conversion(0, 0, false, 0, 0))
+    cases.push(conversion(1, 0, false, 1065353216, 4607182418800017408))
+    cases.push(conversion(16777217, 0, false, 1266679808, 4715268810125344768))
+    cases.push(conversion(16777219, 0, false, 1266679810, 4715268810662215680))
+    cases.push(conversion(9007199254740993, 0, false, 1509949440, 4845873199050653696))
+    cases.push(conversion(9007199254740995, 0, false, 1509949440, 4845873199050653698))
+    cases.push(conversion(18446744073709551615, 0, false, 1602224128, 4895412794951729152))
+    cases.push(conversion(1, 1, false, 1602224128, 4895412794951729152))
+    cases.push(conversion(134217729, 65536, false, 1736441856, 4967470388989657089))
+    cases.push(conversion(140737488355329, 68719480832, false, 1904214017, 5057542381805502465))
+    cases.push(conversion(18446744073709551615, 18446744073709551615, false, 2139095040, 5183643171103440896))
+    cases.push(conversion(18446744073709551615, 18446744073709551615, true, 3212836864, 13830554455654793216))
+    cases.push(conversion(18446744073709551615, 18446744004990070783, true, 4051697665, 14280914418660278272))
+    cases.push(conversion(18446744073709551615, 9223372036854775807, false, 2130706432, 5179139571476070400))
+    cases.push(conversion(0, 9223372036854775808, true, 4278190080, 14402511608330846208))
+    cases.push(conversion(1, 18446744073709551104, false, 2139095040, 5183643171103440896))
+    return move cases
+}
+
+fn conversion_case(function: write ir::Function, block: usize, input: Conversion, double: bool) -> Result<usize, u32> {
+    let integer = ir::function_constant(function, ir::TypeInteger(ir::IntegerWidth128()), ir::ConstantWideInteger(input.value))
+    let target = if double {
+        ir::TypeFloat(ir::FloatWidth64())
+    } else {
+        ir::TypeFloat(ir::FloatWidth32())
+    }
+    let operator = if input.signed {
+        ir::CastSignedIntegerToFloat()
+    } else {
+        ir::CastUnsignedIntegerToFloat()
+    }
+    let converted = safety_append(function, block, ir::InstructionCast(operator, integer, target))?
+    let width = if double {
+        ir::IntegerWidth64()
+    } else {
+        ir::IntegerWidth32()
+    }
+    let bits = safety_append(function, block, ir::InstructionCast(ir::CastBitcast(), converted, ir::TypeInteger(width)))?
+    let expected = safety_integer(function, width, if double {
+            input.double
+        } else {
+            input.single
+        })
+    return safety_append(function, block, ir::InstructionCompare(ir::CompareEqual(), bits, expected))
+}
+
+fn conversion_program() -> Result<ir::Program, u32> {
+    var function = ir::function_new("conversions", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    var valid = safety_integer(function, ir::IntegerWidth1(), 1)
+    let cases = conversion_cases()
+    for index in 0..cases.length() {
+        let single = conversion_case(function, block, cases[index], false)?
+        let double = conversion_case(function, block, cases[index], true)?
+        valid = safety_append(function, block, ir::InstructionBinary(ir::BinaryAnd(), valid, single))?
+        valid = safety_append(function, block, ir::InstructionBinary(ir::BinaryAnd(), valid, double))?
+    }
+    let zero = safety_integer(function, ir::IntegerWidth32(), 0)
+    let one = safety_integer(function, ir::IntegerWidth32(), 1)
+    let result = safety_append(function, block, ir::InstructionSelect(valid, zero, one))?
+    safety_terminate(function, block, ir::TerminatorReturn(Some(result)))?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn run() -> Result<void, u32> {
+    return arm_execute(conversion_program()?)
+}
+
+fn main() -> u32 {
+    return safety_status(run())
+}

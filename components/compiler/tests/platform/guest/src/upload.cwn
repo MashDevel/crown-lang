@@ -1,0 +1,70 @@
+module guest {
+    fn handle_argument(handle: u64) -> Text {
+        return std::text::joined("{\"handle\":", std::text::decimal(handle))
+    }
+
+    fn write_chunk(handle: u64, data: Slice<u8>, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<void, Text> {
+        let arguments = std::text::joined(handle_argument(handle), std::text::joined(",\"buf-b64\":", std::text::joined(toolchain::json_quoted(base64(data)), "}")))
+        let response = request("guest-file-write", arguments, exchange)?
+        if number(response, "count")? != u64.from(data.length()) {
+            return Err("incomplete guest file write")
+        }
+        return Ok(())
+    }
+
+    fn upload_chunks(source: Text, handle: u64, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<void, Text> {
+        loan read source as path {
+            match std::io::open(path, std::io::Mode::Read()) {
+                Err(error) => {
+                    return Err(std::io::error_message(error))
+                }
+                Ok(file) => {
+                    var input = move file
+                    return upload_file(input, handle, exchange)
+                }
+            }
+        }
+    }
+
+    fn upload_file(file: write std::io::File, handle: u64, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<void, Text> {
+        var remaining: usize = 0
+        match std::io::size(file) {
+            Ok(size) => {
+                remaining = size
+            }
+            Err(error) => {
+                return Err(std::io::error_message(error))
+            }
+        }
+        while remaining != 0 {
+            let count = if remaining < 65536 {
+                remaining
+            } else {
+                usize.from(65536)
+            }
+            var bytes = std::bytes::filled(count, 0)
+            match std::io::read_exact(file, bytes) {
+                Ok(done) => {
+                    done
+                }
+                Err(error) => {
+                    return Err(std::io::error_message(error))
+                }
+            }
+            write_chunk(handle, bytes, exchange)?
+            remaining = remaining - count
+        }
+        return Ok(())
+    }
+
+    fn upload(source: Text, destination: Text, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<void, Text> {
+        let arguments = std::text::joined("{\"path\":", std::text::joined(toolchain::json_quoted(destination), ",\"mode\":\"w\"}"))
+        let opened = request("guest-file-open", arguments, exchange)?
+        let handle = toolchain::json_integer(opened, opened.root)?
+        let written = upload_chunks(source, handle, exchange)
+        let closed = request("guest-file-close", std::text::joined(handle_argument(handle), "}"), exchange)
+        move written?
+        move closed?
+        return Ok(())
+    }
+}

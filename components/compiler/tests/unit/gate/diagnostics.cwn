@@ -1,0 +1,33 @@
+fn diagnostics(root: Text) -> Result<void, Text> {
+    let first = testing::write_file(root, "first.cwn", "fn identity(value: read u32) -> u32 { return value }\n")?
+    let second = testing::write_file(root, "second source.cwn", "fn main() -> u32 {\n    return true\n}\n")?
+    var arguments = testing::list("check")
+    arguments.push(first.clone())
+    arguments.push(second.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(result.status != 0, "invalid return type rejected")?
+    testing::expect(result.stdout.length() == 0, "diagnostic stdout is empty")?
+    testing::expect(std::text::contains(result.stderr, "second source.cwn:2:12: error: expected type 'u32' but found 'bool'"), "diagnostic file, position and types")?
+    testing::expect(std::text::contains(result.stderr, "    return true"), "diagnostic source line")?
+    return testing::expect(std::text::contains(result.stderr, "           ^^^^"), "diagnostic underline")
+}
+
+fn missing_source(root: Text) -> Result<void, Text> {
+    let missing = toolchain::path_join(root, "missing.cwn")
+    var absent = testing::list("check")
+    absent.push(missing.clone())
+    let failure = testing::invoke(move absent, root)?
+    testing::expect(failure.status != 0, "missing source rejected")?
+    return testing::expect(std::text::contains(failure.stderr, "could not read source file:"), "missing source diagnostic")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    diagnostics(root)?
+    return missing_source(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,152 @@
+module lowering {
+    fn lower_spawn_function(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let name = spawn_function_name(expression.span, compiler.substitutions)
+        var function: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(305)
+            }
+        }
+        if generated_is_lowered(compiler.lowered_generated, function) {
+            return Ok(())
+        }
+        var spawned = spawn_function_compiler(compiler, name)?
+        let status = lower_spawn_body(spawned, analysis, expression)
+        swap(compiler.tables, spawned.tables)
+        match status {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        append_lowered_functions(compiler.lowered_generated, spawned.lowered_generated)
+        compiler.lowered_generated.push(LoweredFunction {
+                function: function, lowered: take_function_ir(spawned)
+            })
+        return Ok(())
+    }
+
+    fn spawn_function_compiler(parent: write FunctionCompiler, name: Text) -> Result<FunctionCompiler, u32> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypePointer())
+        return Ok(FunctionCompiler {
+                semantic_function: 0
+                substitutions: sema::types_copy(parent.substitutions)
+                indirect_receiver: false
+                tables: replace(parent.tables, tables_new())
+                ir: ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+                block: None()
+                bindings: Vec<Binding>.new()
+                exits: Vec<ScopeExit>.new()
+                temporaries: Vec<Temporary>.new()
+                scope_depth: 0
+                loops: Vec<LoopTarget>.new()
+                matches: Vec<MatchFlow>.new()
+                result: sema::builtin_leaf(sema::Unit())
+                result_address: None()
+                lowered_generated: Vec<LoweredFunction>.new()
+            })
+    }
+
+    struct SpawnCaptureLoad {
+        record: sema::SpawnRecord
+        environment: usize
+    }
+
+    fn load_spawn_captures(compiler: write FunctionCompiler, symbols: sema::Symbols, request: take SpawnCaptureLoad) -> Result<void, u32> {
+        let layout = spawn_capture_layout(symbols, request.record.captures)?
+        var index: usize = 0
+        while index < request.record.captures.length() {
+            loan read request.record.captures[index] as capture {
+                let source = function_offset(compiler, request.environment, layout.offsets[index])?
+                load_spawn_capture(compiler, symbols, SpawnCaptureSource {
+                        capture: semantic_spawn_capture_copy(capture), source: source
+                    })?
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn generated_is_lowered(values: Vec<LoweredFunction>, function: usize) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index].function == function {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn append_lowered_functions(target: write Vec<LoweredFunction>, values: Vec<LoweredFunction>) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                target.push(LoweredFunction {
+                        function: value.function, lowered: ir::function_copy(value.lowered)
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn lower_spawn_body(spawned: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        function_source_start(spawned, expression.span)?
+        if spawned.ir.parameters.length() != 1 {
+            return Err(306)
+        }
+        let environment = spawned.ir.parameters[0]
+        let record = concrete_spawn_record(spawned, analysis, expression)?
+        let capture_load = SpawnCaptureLoad {
+            record: move record, environment: environment
+        }
+        load_spawn_captures(spawned, analysis.checker.symbols, move capture_load)?
+        free_pointer(spawned, environment)?
+        lower_spawn_statements(spawned, analysis, expression.kind)?
+        return finish_spawn_body(spawned)
+    }
+
+    fn finish_spawn_body(spawned: write FunctionCompiler) -> Result<void, u32> {
+        var active = false
+        match read spawned.block {
+            Some(value) => {
+                value;
+                active = true
+            }
+            None => {
+            }
+        }
+        if active {
+            function_cleanup_all(spawned)?
+            let pointer_type = ir::TypePointer()
+            let null_value = ir::ConstantNull()
+            let null = ir::function_constant(spawned.ir, pointer_type, null_value)
+            function_finish(spawned, ir::TerminatorReturn(Some(null)))?
+        }
+        return Ok(())
+    }
+
+    fn lower_spawn_statements(spawned: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<void, u32> {
+        match read kind {
+            frontend::ExpressionScopedSpawn(stack, captures, body) => {
+                stack;
+                captures;
+                return function_statements(spawned, analysis, body)
+            }
+            frontend::ExpressionSpawn(configuration, body) => {
+                configuration;
+                return function_statements(spawned, analysis, body)
+            }
+            _ => {
+                return Err(307)
+            }
+        }
+    }
+}

@@ -1,0 +1,228 @@
+module x86 {
+    fn encode_basic_arithmetic(instruction: Instruction, output: write Vec<u8>) -> bool {
+        if encode_logical_arithmetic(instruction, output) {
+            return true
+        }
+        if encode_immediate_arithmetic(instruction, output) {
+            return true
+        }
+        match read instruction {
+            Add(destination, source) => {
+                emit_binary(output, 1, pack_registers(destination, source));
+                return true
+            }
+            AddSized(destination, source, width) => {
+                emit_binary_sized(output, 0, pack_sized_registers(destination, source, width));
+                return true
+            }
+            AddCarry(destination, source) => {
+                emit_binary(output, 17, pack_registers(destination, source));
+                return true
+            }
+            Subtract(destination, source) => {
+                emit_binary(output, 41, pack_registers(destination, source));
+                return true
+            }
+            SubtractSized(destination, source, width) => {
+                emit_binary_sized(output, 40, pack_sized_registers(destination, source, width));
+                return true
+            }
+            SubtractBorrow(destination, source) => {
+                emit_binary(output, 25, pack_registers(destination, source));
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn encode_logical_arithmetic(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            And(destination, source) => {
+                emit_binary(output, 33, pack_registers(destination, source));
+                return true
+            }
+            AndSized(destination, source, width) => {
+                emit_binary_sized(output, 32, pack_sized_registers(destination, source, width));
+                return true
+            }
+            Or(destination, source) => {
+                emit_binary(output, 9, pack_registers(destination, source));
+                return true
+            }
+            OrSized(destination, source, width) => {
+                emit_binary_sized(output, 8, pack_sized_registers(destination, source, width));
+                return true
+            }
+            Xor(destination, source) => {
+                emit_binary(output, 49, pack_registers(destination, source));
+                return true
+            }
+            XorSized(destination, source, width) => {
+                emit_binary_sized(output, 48, pack_sized_registers(destination, source, width));
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_immediate_arithmetic(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            AddImmediate(destination, value) => {
+                emit_immediate(output, ImmediateEncoding {
+                        group: 0, register: register_code(destination), value: value
+                    });
+                return true
+            }
+            SubtractImmediate(destination, value) => {
+                emit_immediate(output, ImmediateEncoding {
+                        group: 5, register: register_code(destination), value: value
+                    });
+                return true
+            }
+            Immediate(values) => {
+                encode_sized_immediate(values, output);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_division(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            DivideSigned(source) => {
+                emit_group(output, 247, u16.from(register_code(source)) |(7 << 8));
+                return true
+            }
+            DivideUnsigned(source) => {
+                emit_group(output, 247, u16.from(register_code(source)) |(6 << 8));
+                return true
+            }
+            Multiply(destination, source) => {
+                emit_multiply(output, pack_registers(destination, source));
+                return true
+            }
+            MultiplySized(destination, source, width) => {
+                emit_multiply_sized(output, pack_sized_registers(destination, source, width));
+                return true
+            }
+            MultiplyImmediate(destination, value) => {
+                emit_multiply_immediate(output, register_code(destination), value);
+                return true
+            }
+            MultiplyImmediateSized(destination, value, width) => {
+                emit_multiply_immediate_sized(output, SizedImmediateEncoding {
+                        group: 0, register: register_code(destination), value: value, width: width_code(width)
+                    });
+                return true
+            }
+            MultiplyWideUnsigned(source) => {
+                emit_group(output, 247, u16.from(register_code(source)) |(4 << 8));
+                return true
+            }
+            SignExtendRax => {
+                output.push(72);
+                output.push(153);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn encode_bit_arithmetic(instruction: Instruction, output: write Vec<u8>) -> bool {
+        if encode_logical_shift(instruction, output) {
+            return true
+        }
+        if encode_arithmetic_shift(instruction, output) {
+            return true
+        }
+        match read instruction {
+            Negate(destination) => {
+                emit_group(output, 247, u16.from(register_code(destination)) |(3 << 8));
+                return true
+            }
+            Not(destination) => {
+                emit_group(output, 247, u16.from(register_code(destination)) |(2 << 8));
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn encode_logical_shift(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ShiftLeft(destination) => {
+                emit_group(output, 211, u16.from(register_code(destination)) |(4 << 8));
+                return true
+            }
+            ShiftLeftSized(destination, width) => {
+                emit_group_sized(output, 211, u32.from(register_code(destination)) |(4 << 8) |(u32.from(width_code(width)) << 16));
+                return true
+            }
+            ShiftLeftImmediate(destination, value) => {
+                emit_shift(output, ShiftEncoding {
+                        group: 4, register: register_code(destination), value: value, width: 3
+                    });
+                return true
+            }
+            ShiftLeftImmediateSized(destination, value, width) => {
+                emit_shift(output, ShiftEncoding {
+                        group: 4, register: register_code(destination), value: value, width: width_code(width)
+                    });
+                return true
+            }
+            ShiftRightLogical(destination) => {
+                emit_group(output, 211, u16.from(register_code(destination)) |(5 << 8));
+                return true
+            }
+            ShiftRightLogicalSized(destination, width) => {
+                emit_group_sized(output, 211, u32.from(register_code(destination)) |(5 << 8) |(u32.from(width_code(width)) << 16));
+                return true
+            }
+            ShiftRightLogicalImmediate(destination, value) => {
+                emit_shift(output, ShiftEncoding {
+                        group: 5, register: register_code(destination), value: value, width: 3
+                    });
+                return true
+            }
+            ShiftRightLogicalImmediateSized(destination, value, width) => {
+                emit_shift(output, ShiftEncoding {
+                        group: 5, register: register_code(destination), value: value, width: width_code(width)
+                    });
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_arithmetic_shift(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ShiftRightArithmetic(destination) => {
+                emit_group(output, 211, u16.from(register_code(destination)) |(7 << 8));
+                return true
+            }
+            ShiftRightArithmeticSized(destination, width) => {
+                emit_group_sized(output, 211, u32.from(register_code(destination)) |(7 << 8) |(u32.from(width_code(width)) << 16));
+                return true
+            }
+            ShiftRightArithmeticImmediate(destination, value) => {
+                emit_shift(output, ShiftEncoding {
+                        group: 7, register: register_code(destination), value: value, width: 3
+                    });
+                return true
+            }
+            ShiftRightArithmeticImmediateSized(destination, value, width) => {
+                emit_shift(output, ShiftEncoding {
+                        group: 7, register: register_code(destination), value: value, width: width_code(width)
+                    });
+                return true
+            }
+            _ => false
+        }
+    }
+}

@@ -1,0 +1,40 @@
+fn main() -> u32 {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::Return())
+    let function = x86::function_new("main", move instructions)
+    var program = x86::program_new("main")
+    match x86::program_add_function(program, move function) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    match x86::encode_program(program) {
+        Err(error) => {
+            error;
+            return 2
+        }
+        Ok(object) => {
+            if object.sections.length() != 1 || object.symbols.length() != 1 {
+                return 3
+            }
+            if object.sections[0].data.length() != 1 || object.sections[0].data[0] != 195 {
+                return 4
+            }
+            match read object.entry {
+                Some(entry) => {
+                    if entry != 0 {
+                        return 5
+                    }
+                }
+                None => {
+                    return 6
+                }
+            }
+            return 42
+        }
+    }
+}

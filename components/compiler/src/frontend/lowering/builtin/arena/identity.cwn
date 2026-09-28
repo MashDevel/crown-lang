@@ -1,0 +1,25 @@
+module lowering {
+    fn arena_new_identity(compiler: write FunctionCompiler) -> Result<usize, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let request = ImportedCall {
+            name: "crown_arena_identity", signature: ir::signature_new(Vec<ir::Type>.new(), value_type), arguments: Vec<usize>.new()
+        }
+        let identity = match function_imported_call(compiler, request)? {
+            Some(value) => value
+            None => {
+                return Err(93)
+            }
+        }
+        let zero = function_integer(compiler, value_type, 0)
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), identity, zero))?
+        function_guard_with(compiler, valid, "integer_overflow")?
+        return Ok(identity)
+    }
+
+    fn arena_load_identity(compiler: write FunctionCompiler, symbols: sema::Symbols, base: usize, offset: u64) -> Result<usize, u32> {
+        let address = function_offset(compiler, base, offset)?
+        return function_load(compiler, symbols, Place {
+                address: address, value_type: sema::builtin_leaf(sema::USize())
+            })
+    }
+}

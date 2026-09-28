@@ -1,0 +1,41 @@
+module arm64 {
+    fn abi_validate(value: AbiValue) -> Result<void, Text> {
+        if value.alignment == 0 ||(value.alignment &(value.alignment - 1)) != 0 {
+            return Err("ARM64 ABI alignment must be a power of two")
+        }
+        match value.kind {
+            AbiKind::Integer => abi_scalar_size(value.size)
+            AbiKind::Float => abi_pair_size(value.size, 4)
+            AbiKind::Vector => abi_pair_size(value.size, 8)
+            AbiKind::Aggregate => Ok(())
+            AbiKind::Homogeneous(count, size) => abi_homogeneous(value, count, size)
+        }
+    }
+
+    fn abi_pair_size(size: u64, minimum: u64) -> Result<void, Text> {
+        if size != minimum && size != minimum * 2 {
+            return Err("ARM64 floating or vector argument size is unsupported")
+        }
+        return Ok(())
+    }
+
+    fn abi_scalar_size(size: u64) -> Result<void, Text> {
+        match size {
+            1 | 2 | 4 | 8 | 16 => Ok(())
+            _ => Err("ARM64 integer argument size is unsupported")
+        }
+    }
+
+    fn abi_homogeneous(value: AbiValue, count: u32, size: u32) -> Result<void, Text> {
+        if count == 0 || count > 4 {
+            return Err("ARM64 homogeneous aggregate must contain one to four elements")
+        }
+        if size != 4 && size != 8 && size != 16 {
+            return Err("ARM64 homogeneous aggregate element size is unsupported")
+        }
+        if value.size != u64.from(count) * u64.from(size) {
+            return Err("ARM64 homogeneous aggregate size does not match its elements")
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,6 @@
+fn read_one(value: read u32) -> u32 {
+    return value
+}
+fn main() -> u32 {
+    return read_one()
+}

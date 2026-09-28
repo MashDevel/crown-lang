@@ -1,0 +1,23 @@
+module lowering {
+    fn buffer_byte_size(compiler: write FunctionCompiler, symbols: sema::Symbols, element: sema::Type, count: usize) -> Result<usize, u32> {
+        let layout = layout(symbols, element)?
+        let size = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), layout.size)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryMultiply(), left: count, right: size, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return integer_binary(compiler, symbols, operation)
+    }
+
+    fn next_buffer_capacity(compiler: write FunctionCompiler, symbols: sema::Symbols, capacity: usize) -> Result<usize, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, value_type, 0)
+        let empty = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), capacity, zero))?
+        let two = function_integer(compiler, value_type, 2)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryMultiply(), left: capacity, right: two, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let doubled = integer_binary(compiler, symbols, operation)?
+        let four = function_integer(compiler, value_type, 4)
+        return function_append_value(compiler, ir::InstructionSelect(empty, four, doubled))
+    }
+}

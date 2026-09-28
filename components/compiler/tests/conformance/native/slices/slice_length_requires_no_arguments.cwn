@@ -1,0 +1,6 @@
+fn length(values: read Slice<u32>) -> usize {
+    return values.length(1)
+}
+fn main() -> u32 {
+    return 0
+}

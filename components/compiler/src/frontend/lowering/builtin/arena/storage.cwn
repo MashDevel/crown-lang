@@ -1,0 +1,282 @@
+module lowering {
+    struct ArenaRange {
+        first: usize
+        second: usize
+    }
+
+    struct ArenaSlotBlocks {
+        header: usize
+        inspect: usize
+        advance: usize
+        ready: usize
+    }
+
+    struct ArenaGenerationBlocks {
+        header: usize
+        body: usize
+        ready: usize
+    }
+
+    fn arena_slot(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ArenaState) -> Result<usize, u32> {
+        let index = arena_find_slot(compiler, symbols, state.address)?
+        arena_grow_if_full(compiler, symbols, ArenaGrowth {
+                state: arena_state_copy(state), index: index
+            })?
+        return Ok(index)
+    }
+
+    fn arena_find_slot(compiler: write FunctionCompiler, symbols: sema::Symbols, arena: usize) -> Result<usize, u32> {
+        let index_type = sema::builtin_leaf(sema::USize())
+        let index_address = function_stack(compiler, symbols, index_type)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, value_type, 0)
+        let initial = StoreRequest {
+            address: index_address, value: zero, value_type: move index_type
+        }
+        function_store(compiler, symbols, initial)?
+        let blocks = arena_slot_blocks(compiler)?
+        function_finish(compiler, ir::TerminatorBranch(blocks.header))?
+        function_select_block(compiler, blocks.header)
+        arena_inspect_slots(compiler, symbols, ArenaSlotSearch {
+                arena: arena, index_address: index_address, blocks: arena_slot_blocks_copy(blocks)
+            })?
+        function_select_block(compiler, blocks.advance)
+        arena_advance_slot(compiler, symbols, ArenaAdvance {
+                address: index_address, header: blocks.header
+            })?
+        function_select_block(compiler, blocks.ready)
+        let load = Place {
+            address: index_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, load)?
+        return Ok(index)
+    }
+
+    struct ArenaSlotSearch {
+        arena: usize
+        index_address: usize
+        blocks: ArenaSlotBlocks
+    }
+
+    fn arena_inspect_slots(compiler: write FunctionCompiler, symbols: sema::Symbols, search: take ArenaSlotSearch) -> Result<void, u32> {
+        let load = Place {
+            address: search.index_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, load)?
+        let capacity_field = function_offset(compiler, search.arena, 32)?
+        let capacity_load = Place {
+            address: capacity_field, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity = function_load(compiler, symbols, capacity_load)?
+        let inside = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), index, capacity))?
+        function_finish(compiler, ir::TerminatorConditional(inside, search.blocks.inspect, search.blocks.ready))?
+        function_select_block(compiler, search.blocks.inspect)
+        let usable = arena_slot_usable(compiler, symbols, ArenaPosition {
+                arena: search.arena, index: index
+            })?
+        return function_finish(compiler, ir::TerminatorConditional(usable, search.blocks.ready, search.blocks.advance))
+    }
+
+    struct ArenaAdvance {
+        address: usize
+        header: usize
+    }
+
+    fn arena_advance_slot(compiler: write FunctionCompiler, symbols: sema::Symbols, advance: take ArenaAdvance) -> Result<void, u32> {
+        let load = Place {
+            address: advance.address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, load)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), index, one))?
+        let store = StoreRequest {
+            address: advance.address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        return function_finish(compiler, ir::TerminatorBranch(advance.header))
+    }
+
+    fn arena_slot_usable(compiler: write FunctionCompiler, symbols: sema::Symbols, position: take ArenaPosition) -> Result<usize, u32> {
+        let occupied = arena_slot_occupied(compiler, symbols, position)?
+        let generations = function_load_pointer_field(compiler, position.arena, 8)?
+        let generation = arena_generation(compiler, symbols, ArenaPosition {
+                arena: generations, index: position.index
+            })?
+        let maximum_type = ir::TypeInteger(ir::IntegerWidth32())
+        let maximum = function_integer(compiler, maximum_type, 4294967295)
+        let reusable = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), generation, maximum))?
+        let free = function_append_value(compiler, ir::InstructionUnary(ir::UnaryNot(), occupied))?
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), free, reusable))
+    }
+
+    struct ArenaGrowth {
+        state: ArenaState
+        index: usize
+    }
+
+    fn arena_grow_if_full(compiler: write FunctionCompiler, symbols: sema::Symbols, growth: take ArenaGrowth) -> Result<void, u32> {
+        let capacity_field = function_offset(compiler, growth.state.address, 32)?
+        let load = Place {
+            address: capacity_field, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity = function_load(compiler, symbols, load)?
+        let full = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), growth.index, capacity))?
+        let ready = function_begin_guarded_block(compiler, full)?
+        arena_grow(compiler, symbols, ArenaResize {
+                state: arena_state_copy(growth.state), old: capacity, next: 0
+            })?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+    struct ArenaResize {
+        state: ArenaState
+        old: usize
+        next: usize
+    }
+
+    fn arena_grow(compiler: write FunctionCompiler, symbols: sema::Symbols, resize: take ArenaResize) -> Result<void, u32> {
+        let next = next_buffer_capacity(compiler, symbols, resize.old)?
+        let buffers = ArenaResize {
+            state: arena_state_copy(resize.state), old: resize.old, next: next
+        }
+        arena_resize_buffers(compiler, symbols, buffers)?
+        let field = function_offset(compiler, resize.state.address, 32)?
+        let store = StoreRequest {
+            address: field, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn arena_resize_buffers(compiler: write FunctionCompiler, symbols: sema::Symbols, resize: ArenaResize) -> Result<void, u32> {
+        arena_resize_data(compiler, symbols, resize)?
+        let generations = function_offset(compiler, resize.state.address, 8)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let four = function_integer(compiler, value_type, 4)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryMultiply(), left: resize.next, right: four, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let bytes = integer_binary(compiler, symbols, operation)?
+        arena_resize_pointer(compiler, generations, bytes)?
+        arena_resize_live(compiler, symbols, resize)?
+        let range = ArenaRange {
+            first: resize.old, second: resize.next
+        }
+        return arena_initialize_generations(compiler, symbols, ArenaGenerationRange {
+                field: generations, range: move range
+            })
+    }
+
+    fn arena_resize_data(compiler: write FunctionCompiler, symbols: sema::Symbols, resize: ArenaResize) -> Result<void, u32> {
+        let bytes = buffer_byte_size(compiler, symbols, resize.state.element, resize.next)?
+        arena_resize_pointer(compiler, resize.state.address, bytes)?
+        return Ok(())
+    }
+
+    fn arena_resize_pointer(compiler: write FunctionCompiler, field: usize, bytes: usize) -> Result<usize, u32> {
+        let pointer = function_load_pointer(compiler, field)?
+        let resized = function_resize(compiler, pointer, bytes)?
+        function_store_pointer(compiler, field, resized)?
+        return Ok(resized)
+    }
+
+    fn arena_resize_live(compiler: write FunctionCompiler, symbols: sema::Symbols, resize: ArenaResize) -> Result<void, u32> {
+        let field = function_offset(compiler, resize.state.address, 16)?
+        let live = arena_resize_pointer(compiler, field, resize.next)?
+        let start = function_append_value(compiler, ir::InstructionOffset(live, resize.old))?
+        let count = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), resize.next, resize.old))?
+        let byte_type = ir::TypeInteger(ir::IntegerWidth8())
+        let zero = function_integer(compiler, byte_type, 0)
+        match function_append(compiler, ir::InstructionMemorySet(start, zero, count)) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                result;
+                symbols;
+                return Ok(())
+            }
+        }
+    }
+
+    struct ArenaGenerationRange {
+        field: usize
+        range: ArenaRange
+    }
+
+    fn arena_initialize_generations(compiler: write FunctionCompiler, symbols: sema::Symbols, request: take ArenaGenerationRange) -> Result<void, u32> {
+        let index_type = sema::builtin_leaf(sema::USize())
+        let index = function_stack(compiler, symbols, index_type)?
+        let initial = StoreRequest {
+            address: index, value: request.range.first, value_type: move index_type
+        }
+        function_store(compiler, symbols, initial)?
+        let blocks = arena_generation_blocks(compiler)?
+        function_finish(compiler, ir::TerminatorBranch(blocks.header))?
+        function_select_block(compiler, blocks.header)
+        let load = Place {
+            address: index, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let current = function_load(compiler, symbols, load)?
+        let pending = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), current, request.range.second))?
+        function_finish(compiler, ir::TerminatorConditional(pending, blocks.body, blocks.ready))?
+        function_select_block(compiler, blocks.body)
+        let initialize = ArenaGenerationStep {
+            field: request.field, index_address: index, current: current, header: blocks.header
+        }
+        arena_initialize_generation(compiler, symbols, move initialize)?
+        function_select_block(compiler, blocks.ready)
+        return Ok(())
+    }
+
+    struct ArenaGenerationStep {
+        field: usize
+        index_address: usize
+        current: usize
+        header: usize
+    }
+
+    fn arena_initialize_generation(compiler: write FunctionCompiler, symbols: sema::Symbols, step: take ArenaGenerationStep) -> Result<void, u32> {
+        let generations = function_load_pointer(compiler, step.field)?
+        let item = arena_generation_address(compiler, generations, step.current)?
+        let generation_type = ir::TypeInteger(ir::IntegerWidth32())
+        let one32 = function_integer(compiler, generation_type, 1)
+        let generation_store = StoreRequest {
+            address: item, value: one32, value_type: sema::builtin_leaf(sema::U32())
+        }
+        function_store(compiler, symbols, generation_store)?
+        let index_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, index_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), step.current, one))?
+        let index_store = StoreRequest {
+            address: step.index_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, index_store)?
+        return function_finish(compiler, ir::TerminatorBranch(step.header))
+    }
+
+    fn arena_state_copy(state: ArenaState) -> ArenaState {
+        return ArenaState {
+            address: state.address, element: sema::type_copy(state.element)
+        }
+    }
+
+    fn arena_slot_blocks_copy(blocks: ArenaSlotBlocks) -> ArenaSlotBlocks {
+        return ArenaSlotBlocks {
+            header: blocks.header, inspect: blocks.inspect, advance: blocks.advance, ready: blocks.ready
+        }
+    }
+    fn arena_slot_blocks(compiler: write FunctionCompiler) -> Result<ArenaSlotBlocks, u32> {
+        return Ok(ArenaSlotBlocks {
+                header: function_new_block(compiler)?, inspect: function_new_block(compiler)?, advance: function_new_block(compiler)?, ready: function_new_block(compiler)?
+            })
+    }
+
+    fn arena_generation_blocks(compiler: write FunctionCompiler) -> Result<ArenaGenerationBlocks, u32> {
+        return Ok(ArenaGenerationBlocks {
+                header: function_new_block(compiler)?, body: function_new_block(compiler)?, ready: function_new_block(compiler)?
+            })
+    }
+
+}

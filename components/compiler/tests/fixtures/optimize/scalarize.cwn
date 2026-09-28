@@ -1,0 +1,53 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var function = ir::function_new("scalarize", move signature, ir::LinkageLocal())
+    var block: usize = 0
+    match ir::function_add_block(function) { Ok(value) => { block = value } Err(error) => { error; return 1 } }
+    let source = test_append(function, block, ir::InstructionStackSlot(8, 4))
+    let destination = test_append(function, block, ir::InstructionStackSlot(8, 4))
+    let zero_constant = ir::ConstantInteger(u64.from(0))
+    let four_constant = ir::ConstantInteger(u64.from(4))
+    let eight_constant = ir::ConstantInteger(u64.from(8))
+    let twenty_constant = ir::ConstantInteger(u64.from(20))
+    let twenty_two_constant = ir::ConstantInteger(u64.from(22))
+    let zero = ir::function_constant(function, value_type, zero_constant)
+    let four = ir::function_constant(function, value_type, four_constant)
+    let eight = ir::function_constant(function, value_type, eight_constant)
+    let twenty = ir::function_constant(function, value_type, twenty_constant)
+    let twenty_two = ir::function_constant(function, value_type, twenty_two_constant)
+    let source_first = test_append(function, block, ir::InstructionOffset(source, zero))
+    let source_second = test_append(function, block, ir::InstructionOffset(source, four))
+    let destination_first = test_append(function, block, ir::InstructionOffset(destination, zero))
+    let destination_second = test_append(function, block, ir::InstructionOffset(destination, four))
+    test_append(function, block, ir::InstructionStore(source_first, twenty, 4, false))
+    test_append(function, block, ir::InstructionStore(source_second, twenty_two, 4, false))
+    test_append(function, block, ir::InstructionMemoryCopy(destination, source, eight))
+    let first = test_append(function, block, ir::InstructionLoad(destination_first, value_type, 4, false))
+    let second = test_append(function, block, ir::InstructionLoad(destination_second, value_type, 4, false))
+    let result = test_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), first, second))
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    optimize::function(function)
+    match read function.blocks[0].terminator {
+        Some(terminator) => {
+            match read terminator {
+                ir::TerminatorReturn(value) => {
+                    match read value {
+                        Some(returned) => { match optimize::scalar_integer(function, returned) { Some(answer) => { if answer == 42 { return 42 } } None => {} } }
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        None => {}
+    }
+    return 3
+}

@@ -1,0 +1,51 @@
+resource Probe {
+    pointer: RawPtr<u32>, id: u32
+    drop { unsafe { pointer.write(pointer.read() * 10 + id) } }
+}
+struct Record { first: Probe, second: u32 }
+enum Pair { Both(Probe, u32) }
+fn consume(first: take Probe, second: u32) -> u32 { first; return second }
+fn borrow(first: Probe, second: take Probe, result: u32) -> u32 { first; second; return result }
+fn direct(pointer: RawPtr<u32>) -> u32 {
+    return consume(Probe { pointer, id: 1 }, unsafe { return 7 })
+}
+fn indirect(pointer: RawPtr<u32>) -> u32 {
+    let callback: fn(take Probe, u32) -> u32 = consume
+    return callback(Probe { pointer, id: 2 }, unsafe { return 8 })
+}
+fn aggregate(pointer: RawPtr<u32>) -> u32 {
+    let record = Record { first: Probe { pointer, id: 3 }, second: unsafe { return 9 } }
+    record
+    return 0
+}
+fn array(pointer: RawPtr<u32>) -> u32 {
+    let items: [Probe; 2] = [Probe { pointer, id: 4 }, unsafe { return 10 }]
+    items
+    return 0
+}
+fn variant(pointer: RawPtr<u32>) -> u32 {
+    let pair = Both(Probe { pointer, id: 5 }, unsafe { return 11 })
+    pair
+    return 0
+}
+fn ordered(pointer: RawPtr<u32>) -> u32 {
+    return borrow(Probe { pointer, id: 1 }, Probe { pointer, id: 2 }, unsafe {
+        let guard = Probe { pointer, id: 3 }
+        return 12
+    })
+}
+fn main() -> u32 {
+    var counts = Vec<u32>.new()
+    counts.push(0)
+    let pointer = unsafe { counts.as_raw() }
+    if direct(pointer) != 7 || counts[0] != 1 { return 1 }
+    if indirect(pointer) != 8 || counts[0] != 12 { return 2 }
+    if aggregate(pointer) != 9 || counts[0] != 123 { return 3 }
+    if array(pointer) != 10 || counts[0] != 1234 { return 4 }
+    if variant(pointer) != 11 || counts[0] != 12345 { return 5 }
+    counts[0] = 0
+    if ordered(pointer) != 12 || counts[0] != 321 { return 6 }
+    counts[0] = 0
+    if consume(Probe { pointer, id: 6 }, 13) != 13 || counts[0] != 6 { return 7 }
+    return 0
+}

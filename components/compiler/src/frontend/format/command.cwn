@@ -1,0 +1,64 @@
+module formatting {
+    fn command(paths: Vec<Text>, check_only: bool) -> Result<u32, Text> {
+        var changed: u32 = 0
+        for index in 0..paths.length() {
+            if format_file(paths[index], check_only)? {
+                changed = changed + 1
+            }
+        }
+        if check_only && changed != 0 {
+            return Ok(1)
+        }
+        return Ok(0)
+    }
+
+    fn format_file(path: Text, check_only: bool) -> Result<bool, Text> {
+        let original = toolchain::read_text(path)?
+        let rules = toolchain::quality_rules(path)?
+        let formatted = source(original, rules.format)?
+        verify_tokens(original, formatted)?
+        if std::text::equal(original, formatted) {
+            return Ok(false)
+        }
+        toolchain::say(path)
+        if check_only == false {
+            toolchain::write_text(path, formatted)?
+        }
+        return Ok(true)
+    }
+
+    fn verify_tokens(original: Text, formatted: Text) -> Result<void, Text> {
+        let before = tokens(original)?
+        let after = tokens(formatted)?
+        if before.length() != after.length() {
+            return Err("formatting would change source tokens")
+        }
+        for index in 0..before.length() {
+            if std::text::equal(before[index], after[index]) == false {
+                return Err("formatting would change source tokens")
+            }
+        }
+        return Ok(())
+    }
+
+    fn tokens(source: Text) -> Result<Vec<Text>, Text> {
+        let bytes = toolchain::text_bytes(source)
+        let length = bytes.length()
+        let items = match frontend::lex(Shared.new(move bytes), length, 0) {
+            Ok(values) => move values
+            Err(errors) => {
+                errors;
+                return Err("cannot tokenize source")
+            }
+        }
+        var output = Vec<Text>.new()
+        for index in 0..items.length() {
+            let kind = items[index].kind
+            if kind == frontend::TokenKind::TokenNewline() || kind == frontend::TokenKind::TokenEnd() {
+                continue
+            }
+            output.push(std::text::slice(source, items[index].span.start, items[index].span.end))
+        }
+        return Ok(move output)
+    }
+}

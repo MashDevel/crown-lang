@@ -1,0 +1,85 @@
+fn test_dynamic_calls() -> u32 {
+    let names = std::text::split("strlen", 124)
+    let opened = unsafe {
+        std::dylib::open(native_library_name(), names)
+    }
+    match move opened {
+        Err(error) => {
+            error;
+            return 1
+        }
+        Ok(library) => {
+            unsafe {
+                let action = RawPtr<fn(read RawPtr<u8>) -> usize>.cast(std::dylib::slot(library, 0)).read()
+                if action("hello\0".as_raw()) != 5 {
+                    return 2
+                }
+                if action("\0".as_raw()) != 0 {
+                    return 3
+                }
+                if std::dylib::slot(library, 1) != RawPtr<RawPtr<u8>>.from_address(0) {
+                    return 4
+                }
+            }
+        }
+    }
+    return 0
+}
+
+fn test_dynamic_failures() -> u32 {
+    let names = std::text::split("missing_crown_test_symbol", 124)
+    match unsafe {
+        std::dylib::open(native_library_name(), names)
+    } {
+        Ok(value) => {
+            value;
+            return 5
+        }
+        Err(error) => {
+            if error != std::dylib::Error::MissingSymbol() {
+                return 6
+            }
+        }
+    }
+    match unsafe {
+        std::dylib::open("/crown-library-does-not-exist", names)
+    } {
+        Ok(value) => {
+            value;
+            return 7
+        }
+        Err(error) => {
+            if error != std::dylib::Error::Open() {
+                return 8
+            }
+        }
+    }
+    match unsafe {
+        std::dylib::open("bad\0name", names)
+    } {
+        Ok(value) => {
+            value;
+            return 9
+        }
+        Err(error) => {
+            if error != std::dylib::Error::InvalidName() {
+                return 10
+            }
+        }
+    }
+    let invalid_symbol = std::text::split("invalid\0symbol", 124)
+    match unsafe {
+        std::dylib::open(native_library_name(), invalid_symbol)
+    } {
+        Ok(value) => {
+            value;
+            return 11
+        }
+        Err(error) => {
+            if error != std::dylib::Error::InvalidName() {
+                return 12
+            }
+        }
+    }
+    return test_dynamic_calls()
+}

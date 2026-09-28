@@ -1,0 +1,48 @@
+module arm64 {
+    copy enum PairIndex {
+        Offset, Pre, Post
+    }
+
+    fn page_address(destination: u32, displacement: i64) -> Result<u32, Text> {
+        if displacement % 4096 != 0 {
+            return Err("ARM64 page displacement must be aligned to 4096 bytes")
+        }
+        return pc_address(destination, displacement / 4096, true)
+    }
+
+    fn pc_address(destination: u32, displacement: i64, page: bool) -> Result<u32, Text> {
+        if destination > 30 {
+            return Err("ARM64 address destination must be a general register")
+        }
+        if displacement < -1048576 || displacement > 1048575 {
+            return Err("ARM64 address displacement exceeds 21 bits")
+        }
+        let immediate = u32.from(displacement & 2097151)
+        let opcode: u32 = if page {
+            2415919104
+        } else {
+            268435456
+        }
+        return Ok(opcode |((immediate & 3) << 29) |((immediate >> 2) << 5) | destination)
+    }
+
+    fn pair_word(registers: Registers, displacement: i64, mode: PairIndex, load: bool) -> Result<u32, Text> {
+        if displacement % 8 != 0 || displacement < -512 || displacement > 504 {
+            return Err("ARM64 pair displacement must fit an aligned signed seven-bit immediate")
+        }
+        let opcode: u32 = match mode {
+            PairIndex::Offset => 2835349504
+            PairIndex::Pre => 2843738112
+            PairIndex::Post => 2826960896
+        }
+        let direction: u32 = if load {
+            4194304
+        } else {
+            0
+        }
+        if registers.right > 31 {
+            return Err("ARM64 register index exceeds 31")
+        }
+        return immediate_word(opcode | direction |(u32.from((displacement / 8) & 127) << 15), registers.destination, registers.left, registers.right)
+    }
+}

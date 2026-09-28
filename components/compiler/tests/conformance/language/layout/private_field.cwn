@@ -1,0 +1,8 @@
+module hidden {
+    struct Record {
+        private value: u32
+    }
+}
+fn main() -> usize {
+    return hidden::Record.offset_of("value")
+}

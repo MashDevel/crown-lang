@@ -1,0 +1,199 @@
+module x86 {
+    fn codegen_fused_memory(program: ir::Program, compiler: FunctionCompiler, position: SequencePosition) -> Option<MemoryFusion> {
+        match codegen_fused_scaled_memory(program, compiler, position) {
+            Some(value) => {
+                return Some(move value)
+            }
+            None => {
+            }
+        }
+        match codegen_fused_constant_memory(program, compiler, position) {
+            Some(value) => {
+                return Some(move value)
+            }
+            None => {
+            }
+        }
+        return codegen_fused_single_memory(program, compiler, position)
+    }
+
+    fn codegen_fused_scaled_memory(program: ir::Program, compiler: FunctionCompiler, position: SequencePosition) -> Option<MemoryFusion> {
+        if position.index + 3 > position.limit {
+            return None()
+        }
+        loan read program.functions[compiler.id] as function {
+            return codegen_scaled_memory(function, compiler.uses, function.blocks[codegen_current_block(compiler)], position.index)
+        }
+    }
+
+    fn codegen_scaled_memory(function: ir::Function, uses: Vec<usize>, block: ir::BasicBlock, position: usize) -> Option<MemoryFusion> {
+        let index = match codegen_scaled_index(function, block.instructions[position]) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        let scaled_address = match codegen_unique_result(block.instructions[position], uses) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let base = match read block.instructions[position + 1].kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryOffset(base, used) => {
+                        if used != scaled_address {
+                            return None()
+                        };
+                        base
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+        let address = match codegen_unique_result(block.instructions[position + 1], uses) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let pattern = MemoryPattern {
+            address: address, base: base, offset: MemoryDynamic(index.value, index.scale)
+        }
+        codegen_fuse_memory_pattern(function, block.instructions[position + 2], move pattern, 3)
+    }
+
+    fn codegen_fused_single_memory(program: ir::Program, compiler: FunctionCompiler, position: SequencePosition) -> Option<MemoryFusion> {
+        if position.index + 2 > position.limit {
+            return None()
+        }
+        loan read program.functions[compiler.id] as function {
+            return codegen_single_memory(function, compiler.uses, function.blocks[codegen_current_block(compiler)], position.index)
+        }
+    }
+
+    fn codegen_single_memory(function: ir::Function, uses: Vec<usize>, block: ir::BasicBlock, index: usize) -> Option<MemoryFusion> {
+        match read block.instructions[index].kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryOffset(base, offset_value) => {
+                        let address = match codegen_unique_result(block.instructions[index], uses) {
+                            Some(value) => value
+                            None => {
+                                return None()
+                            }
+                        }
+                        let offset = match codegen_memory_offset(function, offset_value) {
+                            Some(value) => move value
+                            None => {
+                                return None()
+                            }
+                        }
+                        let pattern = MemoryPattern {
+                            address: address, base: base, offset: move offset
+                        }
+                        codegen_fuse_memory_pattern(function, block.instructions[index + 1], move pattern, 2)
+                    }
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn codegen_unique_result(instruction: ir::Instruction, uses: Vec<usize>) -> Option<usize> {
+        match instruction.result {
+            Some(value) => {
+                if uses[value] == 1 {
+                    return Some(value)
+                };
+                None()
+            }
+            None => None()
+        }
+    }
+
+    fn codegen_fuse_memory_pattern(function: ir::Function, instruction: ir::Instruction, pattern: take MemoryPattern, consumed: usize) -> Option<MemoryFusion> {
+        match codegen_memory_pattern(function, instruction, move pattern) {
+            Some(value) => Some(MemoryFusion {
+                    memory: move value, consumed: consumed
+                })
+            None => None()
+        }
+    }
+
+    fn codegen_scaled_index(function: ir::Function, instruction: ir::Instruction) -> Option<ScaledIndex> {
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                if ir::type_equal(function.values[left], ir::TypeInteger(ir::IntegerWidth64())) == false {
+                    return None()
+                }
+                match read operator {
+                    ir::BinaryMultiply => {
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+                match codegen_scale_operand(function, left, right) {
+                    Some(value) => {
+                        return Some(move value)
+                    }
+                    None => {
+                        return codegen_scale_operand(function, right, left)
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_scale_operand(function: ir::Function, constant: usize, value: usize) -> Option<ScaledIndex> {
+        match codegen_integer_constant(function, constant) {
+            Some(scale) => {
+                if scale == 2 || scale == 4 || scale == 8 {
+                    return Some(ScaledIndex {
+                            value: value, scale: u8.from(scale)
+                        })
+                }
+                return None()
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_memory_offset(function: ir::Function, value: usize) -> Option<MemoryOffset> {
+        match codegen_offset_constant(function, value) {
+            Some(signed) => {
+                if signed < -2147483648 || signed > 2147483647 {
+                    return None()
+                }
+                return Some(MemoryImmediate(i32.from(signed)))
+            }
+            None => {
+                return Some(MemoryDynamic(value, 1))
+            }
+        }
+    }
+
+    fn codegen_current_block(compiler: FunctionCompiler) -> usize {
+        match read compiler.block {
+            Some(value) => {
+                return value
+            }
+            None => {
+                return 0
+            }
+        }
+    }
+}

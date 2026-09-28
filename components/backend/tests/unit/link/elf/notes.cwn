@@ -1,0 +1,118 @@
+fn note_object() -> Vec<u8> {
+    var bytes = fixture()
+    for index in 0..48 {
+        index;
+        bytes.push(0)
+    }
+    fixture_section(bytes, 3, [7, 2, 720, 48, 0, 0, 8, 0])
+    link_binary::put(bytes, 720, 4, 4)
+    link_binary::put(bytes, 724, 32, 4)
+    link_binary::put(bytes, 728, 5, 4)
+    link_binary::put(bytes, 732, 5590599, 4)
+    note_property(bytes, 736, 3221291010)
+    note_property(bytes, 752, 3221291009)
+    return move bytes
+}
+
+fn note_property(bytes: write Vec<u8>, offset: usize, kind: u64) -> void {
+    link_binary::put(bytes, offset, kind, 4)
+    link_binary::put(bytes, offset + 4, 4, 4)
+    link_binary::put(bytes, offset + 8, 1, 4)
+}
+
+fn accepted_notes() -> Result<void, Text> {
+    let object = elf::read_object(note_object())?
+    testing::expect(object.sections.length() == 2, "GNU used properties are absent when Crown inputs omit them")?
+    testing::expect(object.relocations.length() == 1 && object.symbols.length() == 2, "notes preserve executable object contents")?
+    var bytes = note_object()
+    note_property(bytes, 736, 3221225474)
+    let merged = elf::read_object(move bytes)?
+    testing::expect(merged.sections.length() == 2, "AND properties are absent when Crown inputs omit them")?
+    return Ok(())
+}
+
+fn arm_notes() -> Result<void, Text> {
+    var bytes = note_object()
+    link_binary::put(bytes, 18, 183, 2)
+    link_binary::put(bytes, 664, 4294967553, 8)
+    note_property(bytes, 736, 3221225472)
+    note_property(bytes, 752, 3221225472)
+    var copied = Vec<u8>.new()
+    for index in 0..bytes.length() {
+        copied.push(bytes[index])
+    }
+    let object = elf::read_object(move copied)?
+    testing::expect(object.architecture == object::ArchitectureArm64() && object.sections.length() == 2, "optional ARM features require every input to opt in")?
+    note_property(bytes, 736, 3221225473)
+    return testing::error(elf::read_object(move bytes))
+}
+
+fn rejected_note(offset: usize, value: u64, width: usize) -> Result<void, Text> {
+    var bytes = note_object()
+    link_binary::put(bytes, offset, value, width)
+    return testing::error(elf::read_object(move bytes))
+}
+
+fn malformed_notes() -> Result<void, Text> {
+    rejected_note(720, 3, 4)?
+    rejected_note(724, 33, 4)?
+    rejected_note(724, 31, 4)?
+    rejected_note(728, 1, 4)?
+    rejected_note(732, 0, 4)?
+    rejected_note(740, 8, 4)?
+    rejected_note(756, 4294967295, 4)?
+    rejected_note(280, 18446744073709551615, 8)?
+    return rejected_note(288, 15, 8)
+}
+
+fn unsupported_notes() -> Result<void, Text> {
+    rejected_note(736, 3221258242, 4)?
+    rejected_note(736, 1, 4)?
+    rejected_note(736, 4294967295, 4)?
+    rejected_note(264, 6, 8)?
+    rejected_note(304, 4, 8)?
+    return rejected_note(18, 183, 2)
+}
+
+fn empty_note() -> Result<void, Text> {
+    var bytes = note_object()
+    link_binary::put(bytes, 288, 16, 8)
+    link_binary::put(bytes, 724, 0, 4)
+    let object = elf::read_object(move bytes)?
+    return testing::expect(object.sections.length() == 2, "empty property note is valid")
+}
+
+fn multiple_notes() -> Result<void, Text> {
+    var bytes = note_object()
+    for index in 0..16 {
+        index;
+        bytes.push(0)
+    }
+    link_binary::put(bytes, 288, 64, 8)
+    link_binary::put(bytes, 768, 4, 4)
+    link_binary::put(bytes, 776, 5, 4)
+    link_binary::put(bytes, 780, 5590599, 4)
+    let object = elf::read_object(move bytes)?
+    return testing::expect(object.sections.length() == 2, "all notes in the section are checked")
+}
+
+fn truncated_property() -> Result<void, Text> {
+    var bytes = note_object()
+    link_binary::put(bytes, 288, 24, 8)
+    link_binary::put(bytes, 724, 8, 4)
+    return testing::error(elf::read_object(move bytes))
+}
+
+fn run() -> Result<void, Text> {
+    accepted_notes()?
+    arm_notes()?
+    empty_note()?
+    multiple_notes()?
+    truncated_property()?
+    malformed_notes()?
+    return unsupported_notes()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

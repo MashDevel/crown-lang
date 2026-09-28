@@ -1,0 +1,18 @@
+module lowering {
+    fn array_as_raw(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method;
+                arguments
+                loan read receiver as value {
+                    let address = expression_place(compiler, analysis, value)?
+                    let target = function_expression_type(compiler, analysis, expression)?
+                    return Ok(ScalarValue(address, move target))
+                }
+            }
+            _ => {
+                return Err(154)
+            }
+        }
+    }
+}

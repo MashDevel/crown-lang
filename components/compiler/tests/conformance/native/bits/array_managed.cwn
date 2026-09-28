@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let a: [Text; 1] = ["owned"];
+    unsafe {
+        let p = a.as_raw();
+        p;
+    }
+    return 0
+}

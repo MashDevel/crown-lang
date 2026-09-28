@@ -1,0 +1,52 @@
+module geometry {
+    const CELLS: usize = WIDTH * HEIGHT
+    const HEIGHT: usize = 20
+    const WIDTH: usize = 40
+    const LAST: usize = CELLS - 1
+}
+const FULL: u64 = 0xffff_ffff_ffff_ffff
+const HIGH: u64 = 1 << 63
+const SIGNED_MIN: i64 = -9223372036854775808
+const MASK: u16 = ~(1 << 4)
+const FRACTION: f64 = (1.5 + 2.5) / 2.0
+const FRACTION32: f32 = (1.25 * 4.0) - 2.0
+const LETTER: char = 'λ'
+const SAME_LETTER: char = LETTER
+const SHORT: bool = false &&(1 / 0 == 0)
+const VALID: bool = geometry::CELLS == 800 && FRACTION == 2.0
+const NEGATIVE: i8 = -7
+const QUOTIENT: i8 = NEGATIVE / 3
+const REMAINDER: i8 = NEGATIVE % 3
+const SHIFTED: i8 = NEGATIVE >> 2
+const NEGATED: i64 = -(SIGNED_MIN + 1)
+fn derived_values() -> u32 {
+    if geometry::LAST != 799 || VALID == false || SHORT {
+        return 1
+    }
+    if FULL >> 63 != 1 || HIGH != 9223372036854775808 {
+        return 2
+    }
+    if MASK != 0xffef || FRACTION32 != 3.0 {
+        return 3
+    }
+    if SAME_LETTER != 'λ' {
+        return 4
+    }
+    return 0
+}
+fn signed_arithmetic() -> u32 {
+    if QUOTIENT != -2 || REMAINDER != -1 || SHIFTED != -2 {
+        return 5
+    }
+    if NEGATED != 9223372036854775807 {
+        return 6
+    }
+    return 0
+}
+fn main() -> u32 {
+    let derived = derived_values()
+    if derived != 0 {
+        return derived
+    }
+    return signed_arithmetic()
+}

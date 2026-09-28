@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value: u16 = 1
+    return u32.from_bits(value)
+}

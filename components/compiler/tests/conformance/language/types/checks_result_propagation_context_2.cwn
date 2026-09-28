@@ -1,0 +1,6 @@
+fn value() -> Option<u32> {
+    return Some(1)
+}
+fn main() -> u32 {
+    return value()?
+}

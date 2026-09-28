@@ -1,0 +1,19 @@
+fn main() -> u32 {
+    let a: [u32; 2] = [1, 2]
+    let b: [u32; 2] = [1, 2]
+    let c: [u32; 2] = [1, 3]
+    if a != b { return 1 }
+    if a == c { return 2 }
+    let nested: [[u32; 2]; 2] = [a, c]
+    let same: [[u32; 2]; 2] = [b, c]
+    if nested != same { return 3 }
+    let zero: [u32; 0] = []
+    if zero != zero { return 4 }
+    let negative: [f64; 2] = [-0.0, 2.0]
+    let positive: [f64; 2] = [0.0, 2.0]
+    if negative != positive { return 5 }
+    let nan = 0.0 / 0.0
+    let invalid: [f64; 1] = [nan]
+    if invalid == invalid { return 6 }
+    return 42
+}

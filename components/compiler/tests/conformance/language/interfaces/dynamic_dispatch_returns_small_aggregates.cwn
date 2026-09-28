@@ -1,0 +1,23 @@
+struct Pair {
+    first: u32, second: u32
+}
+interface PairSource {
+    fn pair(self: read Self) -> Pair
+}
+struct Values {
+    first: u32, second: u32
+}
+impl PairSource for Values {
+    fn pair(self: read Values) -> Pair {
+        return Pair {
+            first: self.first, second: self.second
+        }
+    }
+}
+fn main() -> u32 {
+    let source: dynamic PairSource = Values {
+        first: 19, second: 23
+    }
+    let pair = source.pair()
+    return pair.first + pair.second
+}

@@ -1,0 +1,108 @@
+module x86 {
+    fn codegen_compile_call(program: ir::Program, compiler: write FunctionCompiler, input: take CallInput) -> Result<void, CodegenError> {
+        if input.function >= program.functions.length() {
+            return Err(codegen_error_here(compiler, CodegenMissingSymbol()))
+        }
+        var signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        loan read program.functions[input.function].signature as source {
+            signature = ir::signature_copy(source)
+        }
+        let arguments = ArgumentsInput {
+            values: codegen_values_copy(input.arguments)
+            signature: ir::signature_copy(signature)
+        }
+        var cleanup: i32 = 0
+        match codegen_load_arguments(program, compiler, move arguments) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                cleanup = value
+            }
+        }
+        let symbol = program.functions[input.function].name.clone()
+        codegen_clear_cache(compiler)
+        codegen_emit(compiler, Call(move symbol))
+        codegen_finish_call(compiler, cleanup)
+        let result = CallResult {
+            result: input.result
+            arguments: codegen_values_copy(input.arguments)
+            signature: move signature
+        }
+        return codegen_store_call_result(program, compiler, move result)
+    }
+
+    fn codegen_compile_indirect_call(program: ir::Program, compiler: write FunctionCompiler, input: take IndirectCallInput) -> Result<void, CodegenError> {
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.function, register: R11()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        let arguments = ArgumentsInput {
+            values: codegen_values_copy(input.arguments)
+            signature: ir::signature_copy(input.signature)
+        }
+        var cleanup: i32 = 0
+        match codegen_load_arguments(program, compiler, move arguments) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                cleanup = value
+            }
+        }
+        codegen_clear_cache(compiler)
+        codegen_emit(compiler, CallRegister(R11()))
+        codegen_finish_call(compiler, cleanup)
+        let result = CallResult {
+            result: input.result
+            arguments: codegen_values_copy(input.arguments)
+            signature: ir::signature_copy(input.signature)
+        }
+        return codegen_store_call_result(program, compiler, move result)
+    }
+
+    fn codegen_finish_call(compiler: write FunctionCompiler, cleanup: i32) -> void {
+        if cleanup != 0 {
+            codegen_emit(compiler, AddImmediate(Rsp(), cleanup))
+        }
+    }
+
+    fn codegen_store_optional_call_result(program: ir::Program, compiler: write FunctionCompiler, result: Option<usize>) -> Result<void, CodegenError> {
+        match read result {
+            Some(value) => {
+                match codegen_value_type(program, compiler, value) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value_type) => {
+                        if codegen_type_is_wide(value_type) {
+                            return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                        }
+                        if ir::type_is_float(value_type) {
+                            match codegen_float_width(value_type) {
+                                Err(error) => {
+                                    return Err(move error)
+                                }
+                                Ok(width) => {
+                                    codegen_emit(compiler, MoveFromFloat(width, Rax(), Xmm0()))
+                                }
+                            }
+                        }
+                        return codegen_store_result(program, compiler, ResultStore {
+                                result: Some(value), source: Rax()
+                            })
+                    }
+                }
+            }
+            None => {
+                return Ok(())
+            }
+        }
+    }
+}

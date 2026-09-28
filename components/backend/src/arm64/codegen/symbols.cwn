@@ -1,0 +1,28 @@
+module arm64 {
+    fn symbol_map(object: object::CompilerObject) -> std::map::TextMap<usize> {
+        var symbols: std::map::TextMap<usize> = std::map::new_text()
+        for index in 0..object.symbols.length() {
+            std::map::text_insert(symbols, object.symbols[index].name.clone(), index);
+        }
+        return move symbols
+    }
+    fn indexed_symbol(output: write object::CompilerObject, symbols: write std::map::TextMap<usize>, fixup: SymbolFixup) -> usize {
+        match std::map::with_text_value(symbols, fixup.name, fn(index) {
+                return index
+            }) {
+            Some(index) => {
+                return index
+            }
+            None => {
+            }
+        }
+        let kind = if fixup.kind == object::RelocationArmBranch26() {
+            object::SymbolFunction()
+        } else {
+            object::SymbolData()
+        }
+        let index = symbol_index(output, fixup.name, kind)
+        std::map::text_insert(symbols, fixup.name.clone(), index);
+        return index
+    }
+}

@@ -1,0 +1,12 @@
+struct Owner {
+    value: Text
+}
+fn main() -> u32 {
+    let a = Owner {
+        value: "x"
+    };
+    if a == a {
+        return 1
+    };
+    return 0
+}

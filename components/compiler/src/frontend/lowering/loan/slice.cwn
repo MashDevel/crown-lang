@@ -1,0 +1,118 @@
+module lowering {
+    struct LoanSequence {
+        data: usize
+        length: usize
+        element: sema::Type
+    }
+
+    struct SliceRange {
+        start: usize
+        end: usize
+        length: usize
+    }
+
+    struct SliceState {
+        data: usize
+        start: usize
+        end: usize
+        element: sema::Type
+    }
+
+    fn slice_loan(compiler: write FunctionCompiler, analysis: sema::Analysis, source: frontend::Expression) -> Result<LoanValue, u32> {
+        var place = Place {
+            address: 0, value_type: sema::Invalid()
+        }
+        var start_value: usize = 0
+        var end_value: usize = 0
+        match read source.kind {
+            frontend::ExpressionSlice(target, start, end) => {
+                loan read target as value {
+                    place = expression_place_info(compiler, analysis, value)?
+                }
+                loan read start as value {
+                    start_value = function_scalar_expression(compiler, analysis, value)?
+                }
+                loan read end as value {
+                    end_value = function_scalar_expression(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(281)
+            }
+        }
+        let sequence = loan_sequence(compiler, analysis.checker.symbols, move place)?
+        let range = SliceRange {
+            start: start_value, end: end_value, length: sequence.length
+        }
+        validate_slice(compiler, range)?
+        let state = SliceState {
+            data: sequence.data, start: start_value, end: end_value, element: sema::type_copy(sequence.element)
+        }
+        return slice_view(compiler, analysis.checker.symbols, move state)
+    }
+
+    fn loan_sequence(compiler: write FunctionCompiler, symbols: sema::Symbols, place: take Place) -> Result<LoanSequence, u32> {
+        match read place.value_type {
+            sema::ArrayType(element, length) => {
+                let value_type = ir::TypeInteger(ir::IntegerWidth64())
+                let count = function_integer(compiler, value_type, u64.from(length))
+                loan read element as value {
+                    return Ok(LoanSequence {
+                            data: place.address, length: count, element: sema::type_copy(value)
+                        })
+                }
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                let element = loan_sequence_element(builtin, arguments)?
+                let data = function_load_pointer(compiler, place.address)?
+                let length_address = function_offset(compiler, place.address, 8)?
+                let load = Place {
+                    address: length_address, value_type: sema::builtin_leaf(sema::USize())
+                }
+                let length = function_load(compiler, symbols, load)?
+                return Ok(LoanSequence {
+                        data: data, length: length, element: move element
+                    })
+            }
+            _ => {
+                return Err(284)
+            }
+        }
+    }
+
+    fn loan_sequence_element(builtin: sema::Builtin, arguments: Vec<sema::Type>) -> Result<sema::Type, u32> {
+        let kind = builtin
+        if kind == sema::TextView() {
+            return Ok(sema::builtin_leaf(sema::U8()))
+        }
+        if (kind == sema::Vec() || kind == sema::Slice()) && arguments.length() == 1 {
+            loan read arguments[0] as element {
+                return Ok(sema::type_copy(element))
+            }
+        }
+        return Err(283)
+    }
+
+    fn validate_slice(compiler: write FunctionCompiler, range: SliceRange) -> Result<void, u32> {
+        let ordered = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), range.start, range.end))?
+        function_guard_with(compiler, ordered, "index_out_of_bounds")?
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), range.end, range.length))?
+        return function_guard_with(compiler, valid, "index_out_of_bounds")
+    }
+
+    fn slice_view(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take SliceState) -> Result<LoanValue, u32> {
+        let layout = layout(symbols, state.element)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, value_type, layout.size)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), state.start, size))?
+        let data = function_append_value(compiler, ir::InstructionOffset(state.data, bytes))?
+        let count = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), state.end, state.start))?
+        var arguments = Vec<sema::Type>.new()
+        arguments.push(sema::type_copy(state.element))
+        let view_type = sema::BuiltinType(sema::Slice(), move arguments)
+        let view = View {
+            data: data, length: count, value_type: move view_type
+        }
+        return make_view(compiler, symbols, view)
+    }
+}

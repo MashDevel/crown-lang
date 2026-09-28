@@ -1,0 +1,115 @@
+module ir {
+    fn validate_signature(function: Function, id: usize) -> Result<void, ValidationError> {
+        if signature_shape_valid(function) == false || exclusive_parameters_valid(function) == false {
+            return Err(validation_function_error(ValidationInvalidSignature(), id))
+        }
+        var index: usize = 0
+        while index < function.parameters.length() {
+            let value = function.parameters[index]
+            loan read function.signature.parameters[index] as expected {
+                if value_type_equal(function, value, expected) == false {
+                    return Err(validation_value_error(ValidationTypeMismatch(), id, value))
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn signature_shape_valid(function: Function) -> bool {
+        if type_valid(function.signature.result) == false || type_is_vector(function.signature.result) || signature_attributes_valid(function.signature) == false {
+            return false
+        }
+        if function.parameters.length() != function.signature.parameters.length() {
+            return false
+        }
+        if function.signature.parameter_abi.length() != function.signature.parameters.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < function.signature.parameters.length() {
+            loan read function.signature.parameters[index] as value_type {
+                if signature_parameter_type(value_type) == false {
+                    return false
+                }
+                loan read function.signature.parameter_abi[index] as abi {
+                    if parameter_abi_valid(value_type, abi) == false {
+                        return false
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn signature_parameter_type(value_type: Type) -> bool {
+        return type_has_value(value_type) && type_valid(value_type) && type_is_vector(value_type) == false
+    }
+
+    fn parameter_abi_valid(value_type: Type, abi: ParameterAbi) -> bool {
+        match read abi {
+            ParameterDirect => {
+                return true
+            }
+            ParameterAggregate(value) => {
+                return type_is_pointer(value_type) && aggregate_abi_valid(value)
+            }
+            ParameterReturn(value) => {
+                return type_is_pointer(value_type) && aggregate_abi_valid(value)
+            }
+        }
+    }
+
+    fn aggregate_abi_valid(abi: AggregateAbi) -> bool {
+        match read abi {
+            AggregateMemory(size, alignment) => {
+                return size != 0 && valid_alignment(alignment)
+            }
+            AggregateRegisters(size, alignment, components) => {
+                if size == 0 || valid_alignment(alignment) == false {
+                    return false
+                }
+                if components.length() == 0 {
+                    return false
+                }
+                var index: usize = 0
+                while index < components.length() {
+                    loan read components[index] as component {
+                        if abi_component_valid(component, size) == false {
+                            return false
+                        }
+                    }
+                    index = index + 1
+                }
+                return true
+            }
+        }
+    }
+
+    fn abi_component_valid(component: AbiComponent, size: u64) -> bool {
+        if type_has_value(component.value_type) == false {
+            return false
+        }
+        if type_is_void(component.value_type) {
+            return false
+        }
+        if type_is_aggregate(component.value_type) {
+            return false
+        }
+        return component.offset < size
+    }
+
+    fn type_is_aggregate(value_type: Type) -> bool {
+        match read value_type {
+            TypeAggregate(size, alignment) => {
+                size;
+                alignment;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

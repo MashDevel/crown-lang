@@ -1,0 +1,98 @@
+module frontend {
+    fn parser_primary(parser: write Parser, structs: bool) -> Expression {
+        let token = parser_advance(parser)
+        match read token.kind {
+            TokenInteger => {
+                return expression(ExpressionInteger(token.integer), token.span)
+            }
+            TokenFloat => {
+                return expression(ExpressionFloat(token.span), token.span)
+            }
+            TokenCharacter => {
+                return expression(ExpressionCharacter(token.span), token.span)
+            }
+            TokenText => {
+                return expression(ExpressionText(token.span), token.span)
+            }
+            TokenTrue => {
+                return expression(ExpressionBoolean(true), token.span)
+            }
+            TokenFalse => {
+                return expression(ExpressionBoolean(false), token.span)
+            }
+            TokenIdentifier => {
+                let name = parser_name_from_token(token)
+                return parser_named_expression(parser, move name, structs)
+            }
+            _ => {
+                return parser_compound(parser, token, structs)
+            }
+        }
+    }
+
+    fn parser_compound(parser: write Parser, token: Token, structs: bool) -> Expression {
+        match read token.kind {
+
+            TokenIf => {
+                return parser_conditional(parser, token.span)
+            }
+            TokenMatch => {
+                return parser_match_expression(parser, token.span)
+            }
+            TokenLeftParen => {
+                return parser_group(parser, token.span)
+            }
+            TokenLeftBracket => {
+                return parser_array(parser, token.span)
+            }
+            TokenMove => {
+                return parser_move(parser, token.span)
+            }
+            TokenFn => {
+                return parser_closure(parser, token.span)
+            }
+            TokenSpawn => {
+                return parser_spawn(parser, token.span)
+            }
+
+            _ => {
+                return parser_prefix_primary(parser, token, structs)
+            }
+        }
+    }
+
+    fn parser_group(parser: write Parser, start: Span) -> Expression {
+        match parser_take(parser, TokenRightParen()) {
+            Some(end) => {
+                return expression(ExpressionUnit(), span_through(start, end.span))
+            }
+            None => {
+            }
+        }
+        var value = parser_expression(parser)
+        let end = parser_expect(parser, TokenRightParen())
+        value.span = span_through(start, end.span)
+        return move value
+    }
+
+    fn parser_array(parser: write Parser, start: Span) -> Expression {
+        var values = Vec<Expression>.new()
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightBracket()) == false && parser_at(parser, TokenEnd()) == false {
+            let value = parser_expression(parser)
+            if values.length() == 0 && parser_consumed(parser, TokenSemicolon()) {
+                let count = parser_array_length(parser)
+                let end = parser_expect(parser, TokenRightBracket())
+                return expression(ExpressionArrayRepeat(Box.new(move value), move count), span_through(start, end.span))
+            }
+            values.push(move value)
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        let end = parser_expect(parser, TokenRightBracket())
+        return expression(ExpressionArray(move values), span_through(start, end.span))
+    }
+}

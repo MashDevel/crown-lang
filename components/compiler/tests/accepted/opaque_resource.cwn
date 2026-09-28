@@ -1,0 +1,25 @@
+opaque resource Secret {
+    code: u32
+
+    drop {
+    }
+}
+
+fn secret_new(code: read u32) -> Secret {
+    unsafe {
+        return Secret {
+            code: code
+        }
+    }
+}
+
+fn secret_code(secret: read Secret) -> u32 {
+    unsafe {
+        return secret.code
+    }
+}
+
+fn main() -> u32 {
+    let secret = secret_new(42)
+    return secret_code(secret)
+}

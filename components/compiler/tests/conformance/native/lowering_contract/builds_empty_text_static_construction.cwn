@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value = Text.new()
+    return u32.from(value.length())
+}

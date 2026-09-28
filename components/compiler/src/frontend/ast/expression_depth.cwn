@@ -1,0 +1,125 @@
+module frontend {
+    fn depth_max(left: u32, right: u32) -> u32 {
+        if left > right {
+            return left
+        }
+        return right
+    }
+
+    fn expression_depth(kind: ExpressionKind) -> u32 {
+        match read kind {
+            ExpressionBinary(left, operation, right) => {
+                operation;
+                return depth_max(box_depth(left), box_depth(right))
+            }
+            ExpressionIndex(target, index) => {
+                return depth_max(box_depth(target), box_depth(index))
+            }
+            ExpressionSlice(target, start, end) => {
+                return depth_max(box_depth(target), depth_max(box_depth(start), box_depth(end)))
+            }
+            ExpressionTry(value) => {
+                return box_depth(value)
+            }
+            ExpressionNegate(value) => {
+                return box_depth(value)
+            }
+            ExpressionBitwiseNot(value) => {
+                return box_depth(value)
+            }
+            ExpressionField(target, name) => {
+                name;
+                return box_depth(target)
+            }
+            _ => {
+                return collection_expression_depth(kind)
+            }
+        }
+    }
+
+    fn collection_expression_depth(kind: ExpressionKind) -> u32 {
+        match read kind {
+            ExpressionCall(name, arguments) => {
+                name;
+                return arguments_depth(arguments)
+            }
+            ExpressionStaticCall(value_type, name, arguments) => {
+                value_type;
+                name;
+                return arguments_depth(arguments)
+            }
+            ExpressionMethodCall(target, name, arguments) => {
+                name;
+                return depth_max(box_depth(target), arguments_depth(arguments))
+            }
+            ExpressionArrayRepeat(value, length) => {
+                length;
+                return box_depth(value)
+            }
+            ExpressionArray(values) => {
+                return arguments_depth(values)
+            }
+            ExpressionStruct(value_type, fields) => {
+                value_type;
+                return fields_depth(fields)
+            }
+            _ => {
+                return control_expression_depth(kind)
+            }
+        }
+    }
+
+    fn control_expression_depth(kind: ExpressionKind) -> u32 {
+        match read kind {
+            ExpressionClosure(captures, parameters, body) => {
+                captures;
+                parameters;
+                return body_depth(body)
+            }
+            ExpressionScopedSpawn(stack, captures, body) => {
+                captures;
+                return depth_max(arguments_depth(stack), body_depth(body))
+            }
+            ExpressionSpawn(configuration, body) => {
+                return depth_max(arguments_depth(configuration), body_depth(body))
+            }
+            ExpressionUnsafe(body) => {
+                return body_depth(body)
+            }
+            ExpressionConditional(value) => {
+                let branches = depth_max(body_depth(value.then_body), body_depth(value.else_body))
+                return depth_max(box_depth(value.condition), branches)
+            }
+            ExpressionMatch(value) => {
+                loan read value as expression {
+                    return match_depth(expression)
+                }
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+
+    fn arguments_depth(values: Vec<Expression>) -> u32 {
+        var depth: u32 = 0
+        for index in 0..values.length() {
+            depth = depth_max(depth, values[index].depth)
+        }
+        return depth
+    }
+
+    fn fields_depth(fields: Vec<FieldValue>) -> u32 {
+        var depth: u32 = 0
+        for index in 0..fields.length() {
+            depth = depth_max(depth, fields[index].value.depth)
+        }
+        return depth
+    }
+
+    fn box_depth(value: Box<Expression>) -> u32 {
+        loan read value as expression {
+            return expression.depth
+        }
+    }
+}

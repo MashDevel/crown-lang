@@ -1,0 +1,53 @@
+module optimize {
+    fn inline_eligible(callee: InlineCandidate, input: InlineEligibility) -> bool {
+        if input.caller == input.callee || ir_linkage_is_import(callee.linkage) {
+            return false
+        }
+        if callee.returns == false {
+            return false
+        }
+        if inline_cost_eligible(callee, input) == false {
+            return false
+        }
+        loan read callee.calls as calls {
+            if usize_contains(calls, input.caller) {
+                return false
+            }
+            return usize_contains(calls, input.callee) == false
+        }
+    }
+
+    fn ir_linkage_is_import(linkage: ir::Linkage) -> bool {
+        match read linkage {
+            ir::LinkageImport => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn any_constant_argument(function: ir::Function, arguments: Vec<usize>) -> bool {
+        var index: usize = 0
+        while index < arguments.length() {
+            match ir::function_constant_value(function, arguments[index]) {
+                Some(value) => {
+                    value;
+                    return true
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn inline_cost_eligible(callee: InlineCandidate, input: InlineEligibility) -> bool {
+        let ordinary = callee.blocks <= 12 && callee.cost <= 40
+        let loop_call = input.inside_loop && callee.blocks <= 96 && callee.cost <= 480
+        let specialized = callee.blocks <= 32 && callee.cost <= 480 && input.constant_argument
+        ordinary || loop_call || specialized
+    }
+}

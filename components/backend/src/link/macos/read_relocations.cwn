@@ -1,0 +1,160 @@
+module macho {
+    fn read_relocations(reader: write ObjectReader) -> Result<void, Text> {
+        for section in 0..reader.relocation_counts.length() {
+            read_section_relocations_table(reader, section)?
+        }
+        return Ok(())
+    }
+
+    fn read_section_relocations_table(reader: write ObjectReader, section: usize) -> Result<void, Text> {
+        if reader.output.architecture == object::ArchitectureArm64() {
+            return read_arm_relocations(reader, section)
+        }
+        var index: usize = 0
+        while index < reader.relocation_counts[section] {
+            let offset = reader.relocation_offsets[section] + index * 8
+            let raw = link_binary::number(reader.bytes, offset + 4, 4)?
+            if (raw >> 28) == 5 {
+                if index + 1 >= reader.relocation_counts[section] {
+                    return Err("missing Mach-O subtractor pair")
+                }
+                read_difference(reader, section, offset)?
+                index = index + 2
+            } else {
+                read_relocation(reader, section, offset)?
+                index = index + 1
+            }
+        }
+        return Ok(())
+    }
+
+    fn relocation_symbol(reader: write ObjectReader, raw: u64) -> Result<usize, Text> {
+        let index = usize.from(raw & 16777215)
+        if (raw & 134217728) != 0 {
+            if index >= reader.symbol_count {
+                return Err("invalid Mach-O relocation symbol")
+            }
+            return Ok(index)
+        }
+        if index == 0 || index > reader.addresses.length() {
+            return Err("invalid Mach-O relocation section")
+        }
+        let symbol = reader.output.symbols.length()
+        reader.output.symbols.push(object::Symbol {
+                name: std::text::joined("section:", std::text::decimal(u64.from(symbol))),
+                kind: object::SymbolData(), binding: object::SymbolLocal(), section: Some(index - 1), offset: 0, size: 0
+            })
+        return Ok(symbol)
+    }
+
+    fn relocation_addend(reader: ObjectReader, section: usize, address: u64, raw: u64) -> Result<i64, Text> {
+        let width = usize.from(u64.from(1) <<((raw >> 25) & 3))
+        let bits = link_binary::number(reader.output.sections[section].data, usize.from(address), width)?
+        var value = if width == 8 {
+            i64.from_bits(bits)
+        } else {
+            i64.from(i32.from_bits(u32.from(bits)))
+        }
+        if (raw & 134217728) == 0 {
+            let target = usize.from(raw & 16777215)
+            if target == 0 || target > reader.addresses.length() {
+                return Err("invalid local relocation")
+            }
+            value = value - i64.from(reader.addresses[target - 1])
+            if (raw & 16777216) != 0 {
+                value = value + i64.from(reader.addresses[section] + address + 4)
+            }
+        }
+        if (raw & 16777216) != 0 {
+            value = value - 4
+        }
+        let kind = raw >> 28
+        if kind >= 6 && kind <= 8 {
+            value = value - i64.from(u64.from(1) <<(kind - 6))
+        }
+        return Ok(value)
+    }
+
+    fn read_relocation(reader: write ObjectReader, section: usize, offset: usize) -> Result<void, Text> {
+        let address = link_binary::number(reader.bytes, offset, 4)?
+        let raw = link_binary::number(reader.bytes, offset + 4, 4)?
+        if (address & 2147483648) != 0 {
+            return Err("unsupported scattered Mach-O relocation")
+        }
+        let kind = relocation_kind(raw)?
+        let symbol = relocation_symbol(reader, raw)?
+        let addend = relocation_addend(reader, section, address, raw)?
+        reader.output.relocations.push(object::Relocation {
+                section: section, offset: address, kind: kind, symbol: symbol, subtract: None(), addend: addend
+            })
+        return Ok(())
+    }
+
+    fn relocation_kind(raw: u64) -> Result<object::RelocationKind, Text> {
+        let width = (raw >> 25) & 3
+        let relative = (raw & 16777216) != 0
+        let kind = raw >> 28
+        if kind == 0 && relative == false {
+            return absolute_relocation_kind(width)
+        }
+        if width != 2 || relative == false {
+            return Err("invalid Mach-O relocation width or relativity")
+        }
+        return match kind {
+            1 | 6 | 7 | 8 => Ok(object::RelocationPcRelative32())
+            2 => Ok(object::RelocationPcRelativeCall32())
+            3 => Ok(object::RelocationGotLoadPcRelative32())
+            4 => Ok(object::RelocationGotPcRelative32())
+            _ => Err("unsupported Mach-O relocation type")
+        }
+    }
+
+    fn absolute_relocation_kind(width: u64) -> Result<object::RelocationKind, Text> {
+        if width == 3 {
+            return Ok(object::RelocationAbsolute64())
+        }
+        if width == 2 {
+            return Ok(object::RelocationAbsolute32())
+        }
+        return Err("invalid absolute relocation width")
+    }
+
+    fn validate_difference_pair(bytes: Vec<u8>, offset: usize) -> Result<void, Text> {
+        let address = link_binary::number(bytes, offset, 4)?
+        let first = link_binary::number(bytes, offset + 4, 4)?
+        let next = link_binary::number(bytes, offset + 8, 4)?
+        let second = link_binary::number(bytes, offset + 12, 4)?
+        if address != next ||(second >> 28) != 0 ||(second & 117440512) !=(first & 117440512) {
+            return Err("invalid Mach-O subtractor pair")
+        }
+        return Ok(())
+    }
+
+    fn difference_width(raw: u64) -> Result<usize, Text> {
+        let width = usize.from(u64.from(1) <<((raw >> 25) & 3))
+        if width != 4 && width != 8 {
+            return Err("invalid Mach-O difference width")
+        }
+        return Ok(width)
+    }
+
+    fn read_difference(reader: write ObjectReader, section: usize, offset: usize) -> Result<void, Text> {
+        let address = link_binary::number(reader.bytes, offset, 4)?
+        let subtract_raw = link_binary::number(reader.bytes, offset + 4, 4)?
+        let raw = link_binary::number(reader.bytes, offset + 12, 4)?
+        validate_difference_pair(reader.bytes, offset)?
+        let width = difference_width(raw)?
+        let subtract = relocation_symbol(reader, subtract_raw)?
+        let symbol = relocation_symbol(reader, raw)?
+        let addend = relocation_addend(reader, section, address, raw)?
+        let kind = if width == 8 {
+            object::RelocationDifference64()
+        } else {
+            object::RelocationDifference32()
+        }
+        reader.output.relocations.push(object::Relocation {
+                section: section, offset: address, kind: kind, symbol: symbol, subtract: Some(subtract), addend: addend
+            })
+        return Ok(())
+    }
+}

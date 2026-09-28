@@ -1,0 +1,119 @@
+module x86 {
+    struct CodegenWork {
+        pending: Vec<usize>
+        completed: Vec<Option<Result<Function, CodegenError>>>
+    }
+
+    fn codegen_add_functions(program: take ir::Program, machine: write Program) -> Result<void, CodegenError> {
+        var prepared = move program
+        codegen_prepare_functions(prepared)
+        return codegen_add_prepared_functions(move prepared, machine)
+    }
+
+    fn codegen_add_prepared_functions(program: take ir::Program, machine: write Program) -> Result<void, CodegenError> {
+        let state = codegen_pending_functions(program)
+        let workers = ir::parallel_workers(state.pending.length())
+        if workers == 1 {
+            return codegen_add_sequential_functions(program, machine)
+        }
+        let source = Shared.new(move program)
+        let work = Shared.new(Mutex.new(move state))
+        var threads = Vec<Thread>.new()
+        var index: usize = 1
+        while index < workers {
+            let input = source.share()
+            let queue = work.share()
+            threads.push(spawn move {
+                    codegen_worker(input, queue)
+                })
+            index = index + 1
+        }
+        codegen_worker(source, work)
+        index = 0
+        while index < threads.length() {
+            loan write threads[index] as thread {
+                thread.join()
+            }
+            index = index + 1
+        }
+        loan read source as input {
+            work.lock write as results {
+                return codegen_collect_functions(input, machine, results)
+            }
+        }
+    }
+
+    fn codegen_pending_functions(program: ir::Program) -> CodegenWork {
+        var pending = Vec<usize>.new()
+        var completed = Vec<Option<Result<Function, CodegenError>>>.with_capacity(program.functions.length())
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                if ir::function_is_import(function) == false {
+                    pending.push(index)
+                }
+            }
+            completed.push(None())
+            index = index + 1
+        }
+        return CodegenWork {
+            pending: move pending, completed: move completed
+        }
+    }
+
+    fn codegen_worker(source: Shared<ir::Program>, work: Shared<Mutex<CodegenWork>>) -> void {
+        while true {
+            var next: Option<usize> = None()
+            work.lock write as state {
+                next = state.pending.pop()
+            }
+            match next {
+                Some(id) => {
+                    codegen_complete_function(source, work, id)
+                }
+                None => {
+                    return
+                }
+            }
+        }
+    }
+
+    fn codegen_complete_function(source: Shared<ir::Program>, work: Shared<Mutex<CodegenWork>>, id: usize) -> void {
+        loan read source as program {
+            let result = codegen_function(program, id)
+            work.lock write as state {
+                state.completed[id] = Some(move result)
+            }
+        }
+    }
+
+    fn codegen_collect_functions(program: ir::Program, machine: write Program, work: write CodegenWork) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < program.functions.length() {
+            let completed = replace(work.completed[index], None())
+            match move completed {
+                Some(result) => {
+                    codegen_insert_function(machine, (move result)?)?
+                }
+                None => {
+                    codegen_insert_import(machine, program.functions[index].name.clone())?
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_insert_import(machine: write Program, name: take Text) -> Result<void, CodegenError> {
+        match program_add_import(machine, move name) {
+            Err(error) => {
+                error;
+                return Err(codegen_error(CodegenEncodeError()))
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+}

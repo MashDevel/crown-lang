@@ -1,0 +1,9 @@
+fn call(action: scoped fn() -> u32) -> u32 {
+    return action()
+}
+fn main() -> u32 {
+    let value = 1;
+    return call(fn() {
+            return value
+        })
+}

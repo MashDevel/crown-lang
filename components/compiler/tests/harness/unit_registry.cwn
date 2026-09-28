@@ -1,0 +1,50 @@
+module harness {
+    fn case_unit(document: toolchain::Json, index: usize) -> Result<bool, Text> {
+        match toolchain::json_field(document, index, "unit") {
+            None => {
+                return Ok(false)
+            }
+            Some(field) => {
+                match read document.values[field] {
+                    toolchain::JsonBool(value) => {
+                        return Ok(value)
+                    }
+                    _ => {
+                        return Err("unit must be a boolean")
+                    }
+                }
+            }
+        }
+    }
+
+    fn validate_unit(value: Case) -> Result<void, Text> {
+        if value.unit == false {
+            return Ok(())
+        }
+        if std::text::equal(value.mode, "run") == false || value.arguments.length() != 0 || std::text::ends(value.source, ".cwn") == false {
+            return Err("unit tests require a source file, run mode, and no arguments")
+        }
+        return Ok(())
+    }
+
+    fn unit_roots(value: Case) -> Text {
+        var output = std::text::decimal(value.max_instances)
+        var roots = std::text::clone_list(value.roots)
+        std::text::sort_list(roots)
+        for index in 0..roots.length() {
+            toolchain::fingerprint_part(output, roots[index])
+        }
+        return move output
+    }
+
+    fn unit_members(cases: Vec<Case>, selected: usize) -> Vec<usize> {
+        var output = Vec<usize>.new()
+        let roots = unit_roots(cases[selected])
+        for index in 0..cases.length() {
+            if cases[index].unit && case_applies(cases[index], toolchain::host_target()) && std::text::equal(roots, unit_roots(cases[index])) {
+                output.push(index)
+            }
+        }
+        return move output
+    }
+}

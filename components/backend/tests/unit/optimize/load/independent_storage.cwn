@@ -1,0 +1,79 @@
+fn independent_storage_case(shared: bool, volatile: bool) -> Result<void, u32> {
+    var function = ir::function_new("loads", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let first = safety_append(function, block, ir::InstructionStackSlot(8, 8))?
+    var second = first
+    if shared == false {
+        second = safety_append(function, block, ir::InstructionStackSlot(8, 8))?
+    }
+    let value = safety_integer(function, ir::IntegerWidth64(), 7)
+    safety_append(function, block, ir::InstructionStore(first, value, 8, false))?
+    safety_load_store_load(function, first, second, volatile)?
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    let expected: usize = if shared || volatile {
+        0
+    } else {
+        1
+    }
+    return safety_require(optimize::load(function) == expected, 1)
+}
+
+fn independent_storage() -> Result<void, u32> {
+    independent_storage_case(false, false)?
+    independent_storage_case(true, false)?
+    independent_storage_case(false, true)?
+    indexed_storage(false)?
+    indexed_storage(true)?
+    affine_storage(8)?
+    affine_storage(4)?
+    affine_storage(0)?
+    return Ok(())
+}
+
+fn indexed_storage(shared: bool) -> Result<void, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    var function = ir::function_new("indexed", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let first = safety_append(function, block, ir::InstructionStackSlot(64, 8))?
+    let second = if shared {
+        first
+    } else {
+        safety_append(function, block, ir::InstructionStackSlot(64, 8))?
+    }
+    let mask = safety_integer(function, ir::IntegerWidth64(), 7)
+    let index = safety_append(function, block, ir::InstructionBinary(ir::BinaryAnd(), 0, mask))?
+    let address = safety_append(function, block, ir::InstructionOffset(second, index))?
+    safety_load_store_load(function, first, address, false)?
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    return safety_require(optimize::load(function) == if shared {
+            0
+        } else {
+            1
+        }, 5)
+}
+
+fn affine_storage(distance: u64) -> Result<void, u32> {
+    var parameters = Vec<ir::Type>.new();
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    var function = ir::function_new("affine", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    safety_block(function)?
+    let storage = safety_append(function, 0, ir::InstructionStackSlot(64, 8))?
+    let mask = safety_integer(function, ir::IntegerWidth64(), 7)
+    let index = safety_append(function, 0, ir::InstructionBinary(ir::BinaryAnd(), 0, mask))?
+    let first = safety_append(function, 0, ir::InstructionOffset(storage, index))?
+    let delta = safety_integer(function, ir::IntegerWidth64(), distance)
+    let adjusted = safety_append(function, 0, ir::InstructionBinary(ir::BinaryAdd(), index, delta))?
+    let second = safety_append(function, 0, ir::InstructionOffset(storage, adjusted))?
+    safety_load_store_load(function, first, second, false)?
+    safety_terminate(function, 0, ir::TerminatorReturn(None()))?
+    return safety_require(optimize::load(function) == if distance >= 8 {
+            1
+        } else {
+            0
+        }, 6)
+}
+
+fn main() -> u32 {
+    return safety_status(independent_storage())
+}

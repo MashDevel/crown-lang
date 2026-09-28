@@ -1,0 +1,18 @@
+module optimize {
+    fn blocks_in_loops(function: ir::Function) -> Vec<bool> {
+        let loops = find_loops(function)
+        var output = false_values(function.blocks.length())
+        var loop_index: usize = 0
+        while loop_index < loops.length() {
+            var block: usize = 0
+            while block < loops[loop_index].blocks.length() {
+                if loops[loop_index].blocks[block] {
+                    output[block] = true
+                }
+                block = block + 1
+            }
+            loop_index = loop_index + 1
+        }
+        return move output
+    }
+}

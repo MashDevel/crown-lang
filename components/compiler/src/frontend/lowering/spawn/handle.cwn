@@ -1,0 +1,37 @@
+module lowering {
+    fn scoped_thread_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        return scoped_thread_method_kind(compiler, analysis, expression.kind)
+    }
+    fn scoped_thread_method_kind(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments
+                var source: usize = 0
+                loan read receiver as value {
+                    source = expression_place(compiler, analysis, value)?
+                }
+                let node = function_load_pointer(compiler, source)?
+                let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+                let present = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), node, null))?
+                if sema::name_is(analysis.checker.symbols.source, method, "started") {
+                    return Ok(ScalarValue(present, sema::builtin_leaf(sema::Bool())))
+                }
+                join_scoped_handle(compiler, node, present)?
+                return Ok(VoidValue())
+            }
+            _ => {
+                return Err(310)
+            }
+        }
+    }
+    fn join_scoped_handle(compiler: write FunctionCompiler, node: usize, present: usize) -> Result<void, u32> {
+        let join = function_new_block(compiler)?
+        let done = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(present, join, done))?
+        function_select_block(compiler, join)
+        drop_scoped_thread(compiler, node)?
+        function_finish(compiler, ir::TerminatorBranch(done))?
+        function_select_block(compiler, done)
+        return Ok(())
+    }
+}

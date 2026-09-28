@@ -1,0 +1,27 @@
+fn bound(trace: write u32, value: read u32) -> u32 {
+    trace = trace * 10 + value
+    return value
+}
+
+fn main() -> u32 {
+    var total: u32 = 0
+    for index in 0..7 { total = total + u32.from(index) }
+    var trace: u32 = 0
+    for index in bound(trace, 1)..bound(trace, 4) { total = total + index }
+    if trace != 14 { return 1 }
+    for index in 4..4 { return u32.from(index) }
+    for index in 5..2 { return u32.from(index) }
+    var signed: i32 = 0
+    for index in -2..3 { signed = signed + index }
+    if signed != 0 { return 2 }
+    let maximum: u8 = 255
+    for index in 254..maximum { if index != 254 { return 3 } }
+    for outer in 0..3 {
+        for inner in 0..4 {
+            if inner == 0 { continue }
+            if inner == 3 { break }
+            total = total + u32.from(outer + inner)
+        }
+    }
+    return total
+}

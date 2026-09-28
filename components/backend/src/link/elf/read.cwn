@@ -1,0 +1,86 @@
+module elf {
+    struct ObjectSection {
+        kind: u64, flags: u64, offset: usize, size: usize,
+        link: usize, info: usize, alignment: u64, entry_size: usize
+    }
+
+    struct ObjectReader {
+        bytes: Vec<u8>, headers: Vec<ObjectSection>, sections: Vec<Option<usize>>,
+        symbols: Vec<Option<usize>>, required_symbols: Vec<bool>, output: object::CompilerObject, symbol_table: usize
+    }
+
+    fn read_object(bytes: take Vec<u8>) -> Result<object::CompilerObject, Text> {
+        let headers = object_headers(bytes)?
+        var reader = ObjectReader {
+            bytes: move bytes, headers: move headers, sections: Vec<Option<usize>>.new(),
+            symbols: Vec<Option<usize>>.new(), required_symbols: Vec<bool>.new(), output: object::new(), symbol_table: 0
+        }
+        reader.output.architecture = elf_architecture(reader.bytes)?
+        read_object_sections(reader)?
+        read_object_symbols(reader)?
+        read_object_relocations(reader)?
+        match object::validate_relocatable(reader.output) {
+            Err(error) => {
+                error;
+                return Err("invalid ELF object contents")
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return Ok(replace(reader.output, object::new()))
+    }
+
+    fn object_headers(bytes: Vec<u8>) -> Result<Vec<ObjectSection>, Text> {
+        validate_object_header(bytes)?
+        return section_headers(bytes)
+    }
+
+    fn section_headers(bytes: Vec<u8>) -> Result<Vec<ObjectSection>, Text> {
+        let offset = usize.from(link_binary::number(bytes, 40, 8)?)
+        let count = usize.from(link_binary::number(bytes, 60, 2)?)
+        if count == 0 || offset > bytes.length() || count >(bytes.length() - offset) / 64 {
+            return Err("invalid ELF section table bounds")
+        }
+        var headers = Vec<ObjectSection>.new()
+        for index in 0..count {
+            headers.push(object_section(bytes, offset + index * 64)?)
+        }
+        return Ok(move headers)
+    }
+
+    fn validate_object_header(bytes: Vec<u8>) -> Result<void, Text> {
+        if link_binary::number(bytes, 0, 4)? != 1179403647 || link_binary::number(bytes, 4, 3)? != 65794 {
+            return Err("external object must be a little-endian ELF64 object")
+        }
+        if link_binary::number(bytes, 16, 2)? != 1 {
+            return Err("external object must be an ELF relocatable object")
+        }
+        elf_architecture(bytes)?;
+        return validate_object_dimensions(bytes)
+    }
+
+    fn elf_architecture(bytes: Vec<u8>) -> Result<object::Architecture, Text> {
+        match link_binary::number(bytes, 18, 2)? {
+            62 => Ok(object::ArchitectureX86_64())
+            183 => Ok(object::ArchitectureArm64())
+            _ => Err("unsupported ELF architecture")
+        }
+    }
+
+    fn validate_object_dimensions(bytes: Vec<u8>) -> Result<void, Text> {
+        if link_binary::number(bytes, 20, 4)? != 1 || link_binary::number(bytes, 52, 2)? != 64 || link_binary::number(bytes, 58, 2)? != 64 {
+            return Err("unsupported ELF object header")
+        }
+        return Ok(())
+    }
+
+    fn object_section(bytes: Vec<u8>, offset: usize) -> Result<ObjectSection, Text> {
+        return Ok(ObjectSection {
+                kind: link_binary::number(bytes, offset + 4, 4)?, flags: link_binary::number(bytes, offset + 8, 8)?,
+                offset: usize.from(link_binary::number(bytes, offset + 24, 8)?), size: usize.from(link_binary::number(bytes, offset + 32, 8)?),
+                link: usize.from(link_binary::number(bytes, offset + 40, 4)?), info: usize.from(link_binary::number(bytes, offset + 44, 4)?),
+                alignment: link_binary::number(bytes, offset + 48, 8)?, entry_size: usize.from(link_binary::number(bytes, offset + 56, 8)?)
+            })
+    }
+}

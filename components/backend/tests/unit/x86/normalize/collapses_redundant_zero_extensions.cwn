@@ -1,0 +1,38 @@
+fn main() -> u32 {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::MoveImmediate(x86::Rax(), 255))
+    instructions.push(x86::MoveSized(x86::MoveSizedArgs {
+                destination: x86::Rax(), source: x86::Rax(), width: x86::Word(), extension: x86::ZeroExtend()
+            }))
+    instructions.push(x86::MoveSized(x86::MoveSizedArgs {
+                destination: x86::Rcx(), source: x86::Rax(), width: x86::Dword(), extension: x86::ZeroExtend()
+            }))
+    instructions.push(x86::MoveSized(x86::MoveSizedArgs {
+                destination: x86::Rdx(), source: x86::Rcx(), width: x86::Qword(), extension: x86::ZeroExtend()
+            }))
+    let function = x86::function_new("normalized", move instructions)
+    if function.instructions.length() != 3 {
+        return 1
+    }
+    match read function.instructions[1] {
+        x86::Move(destination, source) => {
+            if x86::register_code(destination) != 1 || x86::register_code(source) != 0 {
+                return 2
+            }
+        }
+        _ => {
+            return 3
+        }
+    }
+    match read function.instructions[2] {
+        x86::Move(destination, source) => {
+            if x86::register_code(destination) != 2 || x86::register_code(source) != 1 {
+                return 4
+            }
+        }
+        _ => {
+            return 5
+        }
+    }
+    return 42
+}

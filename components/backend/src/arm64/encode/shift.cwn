@@ -1,0 +1,32 @@
+module arm64 {
+    fn shift_immediate(operation: ShiftOperation, registers: Registers, amount: u32, width: u32) -> Result<u32, Text> {
+        if width != 32 && width != 64 {
+            return Err("ARM64 immediate shift requires a 32-bit or 64-bit register")
+        }
+        if amount >= width {
+            return Err("ARM64 immediate shift exceeds its register width")
+        }
+        let base: u32 = if operation == ShiftOperation::ArithmeticRight() {
+            318767104
+        } else {
+            1392508928
+        }
+        let opcode = base | if width == 64 {
+            2151677952
+        } else {
+            0
+        }
+        var rotate = amount
+        var mask = width - 1
+        if operation == ShiftOperation::Left() {
+            rotate = (width - amount) &(width - 1)
+            mask = width - 1 - amount
+        }
+        if operation == ShiftOperation::RotateRight() {
+            return Err("ARM64 immediate rotate requires an extract instruction")
+        }
+        return register_word(opcode |(rotate << 16) |(mask << 10), Registers {
+                destination: registers.destination, left: registers.left, right: 0
+            })
+    }
+}

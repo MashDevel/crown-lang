@@ -1,0 +1,32 @@
+module x86 {
+    enum ScalarLocation {
+        ScalarInteger(Register)
+        ScalarFloat(FloatRegister)
+    }
+
+    struct AbiComponentLocation {
+        component: ir::AbiComponent
+        location: ScalarLocation
+    }
+
+    enum ArgumentLocation {
+        ArgumentInteger(Register)
+        ArgumentFloat(FloatRegister)
+        ArgumentStack(usize)
+        ArgumentMemory(usize, usize, u64)
+        ArgumentRegisters(Vec<AbiComponentLocation>)
+        ArgumentOmitted
+    }
+
+    struct AbiAssignment {
+        integer: usize
+        float: usize
+        stack: usize
+    }
+
+    fn abi_assignment_new() -> AbiAssignment {
+        return AbiAssignment {
+            integer: 0, float: 0, stack: 0
+        }
+    }
+}

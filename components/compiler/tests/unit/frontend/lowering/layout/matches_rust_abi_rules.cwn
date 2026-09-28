@@ -1,0 +1,175 @@
+fn analyze_layout_source() -> Option<sema::Analysis> {
+    let source = frontend_test_source("struct Pixel { visible: bool, color: u32, priority: u8, order: u8, layer: u8, semi: bool }\nstruct Pair { first: u64, second: u32 }\nstruct Big { first: u64, second: u64, third: u64 }\nfn make() -> Pixel { return Pixel { visible: true, color: 1, priority: 2, order: 3, layer: 4, semi: false } }\nfn sum(value: read Pair) -> u64 { return value.first + u64.from(value.second) }\nfn consume(value: read Big) -> void { value }\nfn modify(value: write Pair) -> void { value }\nfn main() -> u32 { return 0 }\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return None()
+        }
+        Ok(program) => {
+            let analysis = sema::analyze(source.bytes.share(), program)
+            if analysis.errors != 0 {
+                return None()
+            }
+            return Some(move analysis)
+        }
+    }
+}
+
+fn test_register_aggregate(abi: read ir::AggregateAbi, size: read u64, components: read usize) -> bool {
+    match read abi {
+        ir::AggregateRegisters(actual, alignment, values) => {
+            if actual != size || alignment != 8 && actual == 16 {
+                return false
+            }
+            if values.length() != components {
+                return false
+            }
+            return true
+        }
+        ir::AggregateMemory(actual, alignment) => {
+            actual;
+            alignment;
+            return false
+        }
+    }
+}
+
+fn test_small_result(signature: read ir::Signature) -> bool {
+    if signature.parameters.length() != 1 || signature.parameter_abi.length() != 1 {
+        return false
+    }
+    loan read signature.parameters[0] as parameter {
+        if ir::type_is_pointer(parameter) == false || ir::type_is_void(signature.result) == false {
+            return false
+        }
+    }
+    match read signature.parameter_abi[0] {
+        ir::ParameterReturn(aggregate) => {
+            return test_register_aggregate(aggregate, 12, 2)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn test_small_parameter(signature: read ir::Signature) -> bool {
+    if signature.parameters.length() != 1 || signature.parameter_abi.length() != 1 {
+        return false
+    }
+    loan read signature.parameters[0] as parameter {
+        if ir::type_is_pointer(parameter) == false {
+            return false
+        }
+    }
+    match read signature.parameter_abi[0] {
+        ir::ParameterAggregate(aggregate) => {
+            return test_register_aggregate(aggregate, 16, 2)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn test_indirect_parameter(signature: read ir::Signature) -> bool {
+    if signature.parameters.length() != 1 || signature.parameter_abi.length() != 1 {
+        return false
+    }
+    loan read signature.parameters[0] as parameter {
+        if ir::type_is_pointer(parameter) == false {
+            return false
+        }
+    }
+    match read signature.parameter_abi[0] {
+        ir::ParameterDirect => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn test_signatures(analysis: read sema::Analysis) -> bool {
+    let substitutions = Vec<sema::Type>.new()
+    loan read analysis.checker.symbols.functions[0] as function {
+        match lowering::internal_signature(function, analysis.checker.symbols, substitutions) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(signature) => {
+                if test_small_result(signature) == false {
+                    return false
+                }
+            }
+        }
+    }
+    loan read analysis.checker.symbols.functions[1] as function {
+        match lowering::internal_signature(function, analysis.checker.symbols, substitutions) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(signature) => {
+                if test_small_parameter(signature) == false {
+                    return false
+                }
+            }
+        }
+    }
+    return test_indirect_signatures(analysis, substitutions)
+}
+
+fn test_indirect_signatures(analysis: read sema::Analysis, substitutions: read Vec<sema::Type>) -> bool {
+    var index: usize = 2
+    while index < 4 {
+        loan read analysis.checker.symbols.functions[index] as function {
+            match lowering::internal_signature(function, analysis.checker.symbols, substitutions) {
+                Err(error) => {
+                    error;
+                    return false
+                }
+                Ok(signature) => {
+                    if test_indirect_parameter(signature) == false {
+                        return false
+                    }
+                }
+            }
+        }
+        index = index + 1
+    }
+    return true
+}
+
+fn test_unresolved_type(analysis: read sema::Analysis) -> bool {
+    let parameter: usize = 0
+    let unresolved = sema::ParameterType(parameter)
+    match lowering::ir_type(analysis.checker.symbols, unresolved) {
+        Err(error) => {
+            return error == 1
+        }
+        Ok(value_type) => {
+            value_type;
+            return false
+        }
+    }
+}
+
+fn main() -> u32 {
+    match analyze_layout_source() {
+        None => {
+            return 1
+        }
+        Some(analysis) => {
+            if test_signatures(analysis) == false {
+                return 2
+            }
+            if test_unresolved_type(analysis) == false {
+                return 3
+            }
+        }
+    }
+    return 42
+}

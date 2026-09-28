@@ -1,0 +1,20 @@
+fn apply(
+    action: read fn(u32, u32) -> u32,
+    left: read u32,
+    right: read u32
+) -> u32 {
+    return action(left, right)
+}
+
+fn add(left: read u32, right: read u32) -> u32 {
+    return left + right
+}
+
+fn main() -> u32 {
+    let multiplied = apply(fn(left, right) { return left * right }, 6, 7)
+    let added = apply(add, 40, 2)
+    if multiplied == added {
+        return multiplied
+    }
+    return 0
+}

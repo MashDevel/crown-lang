@@ -1,0 +1,6 @@
+struct Item {
+    value: void
+}
+fn main() -> u32 {
+    return 0
+}

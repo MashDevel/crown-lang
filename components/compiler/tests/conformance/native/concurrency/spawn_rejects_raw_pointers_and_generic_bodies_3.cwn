@@ -1,0 +1,9 @@
+fn work<T>(value: take T) -> T {
+    let thread = spawn move {
+        value
+    }
+    return move value
+}
+fn main() -> u32 {
+    return work(1)
+}

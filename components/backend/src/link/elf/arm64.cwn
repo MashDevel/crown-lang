@@ -1,0 +1,35 @@
+module elf {
+    fn write_arm_startup(image: write Image, entry: usize, startup: usize) -> Result<void, Text> {
+        let words: [u32; 8] = [3531603997, 3531603998, 2852127717, 4181722081, 2432705506, 3531603971, 3531603972, 2432697318]
+        let offset = image.entry_offset
+        for index in 0..8 {
+            link_binary::put(image.bytes, offset + index * 4, u64.from(words[index]), 4)
+        }
+        arm_address_pair(image, offset + 32, 0, image.symbols[entry], false)?
+        arm_address_pair(image, offset + 40, 16, image.slots[startup], true)?
+        link_binary::put(image.bytes, offset + 48, u64.from(arm64::indirect_branch(16, true)?), 4)
+        link_binary::put(image.bytes, offset + 52, 3558866944, 4)
+        return Ok(())
+    }
+
+    fn write_arm_stub(image: write Image, symbol: usize) -> Result<void, Text> {
+        let offset = usize.from(image.symbols[symbol] - IMAGE_BASE)
+        arm_address_pair(image, offset, 16, image.slots[symbol], true)?
+        link_binary::put(image.bytes, offset + 8, u64.from(arm64::indirect_branch(16, false)?), 4)
+        return Ok(())
+    }
+
+    fn arm_address_pair(image: write Image, offset: usize, register: u32, target: u64, load: bool) -> Result<void, Text> {
+        let address = IMAGE_BASE + u64.from(offset)
+        let pages = i64.from(target - target % 4096) - i64.from(address - address % 4096)
+        let first = arm64::page_address(register, pages)?
+        let second = if load {
+            arm64::memory_word(register, register, u32.from(target % 4096), 8, true)?
+        } else {
+            arm64::add_immediate(register, register, u32.from(target % 4096), false)?
+        }
+        link_binary::put(image.bytes, offset, u64.from(first), 4)
+        link_binary::put(image.bytes, offset + 4, u64.from(second), 4)
+        return Ok(())
+    }
+}

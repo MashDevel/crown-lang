@@ -1,0 +1,48 @@
+fn evolution_case(start: u64, bound: u64, step: u64, operator: ir::CompareOperator, expected: Option<u64>) -> Result<void, u32> {
+    var fixture = counted_loop(4)?
+    let initial = safety_integer(fixture.function, ir::IntegerWidth64(), start)
+    let limit = safety_integer(fixture.function, ir::IntegerWidth64(), bound)
+    let increment = safety_integer(fixture.function, ir::IntegerWidth64(), step)
+    let loops = optimize::find_loops(fixture.function)
+    var evolution = match optimize::loop_evolution(fixture.function, loops[0]) {
+        Some(value) => move value
+        None => {
+            return Err(1)
+        }
+    }
+    evolution.induction.start = initial
+    evolution.induction.step = increment
+    evolution.bound = limit
+    evolution.operator = operator
+    safety_require(optimize::evolution_trip_count(fixture.function, evolution) == expected, 2)?
+    if step > 9223372036854775807 {
+        evolution.induction.operator = ir::BinarySubtract()
+        evolution.induction.step = safety_integer(fixture.function, ir::IntegerWidth64(), (~step) + 1)
+        safety_require(optimize::evolution_trip_count(fixture.function, evolution) == expected, 3)?
+    }
+    return Ok(())
+}
+
+fn evolution_cases() -> Result<void, u32> {
+    evolution_case(0, 10, 3, ir::CompareUnsignedLess(), Some(4))?
+    evolution_case(0, 9, 3, ir::CompareUnsignedLessEqual(), Some(4))?
+    evolution_case(10, 0, 18446744073709551613, ir::CompareUnsignedGreater(), None())?
+    evolution_case(10, 1, 18446744073709551613, ir::CompareUnsignedGreater(), Some(3))?
+    evolution_case(10, 1, 18446744073709551613, ir::CompareUnsignedGreaterEqual(), None())?
+    evolution_case(18446744073709551612, 4, 2, ir::CompareSignedLess(), Some(4))?
+    evolution_case(4, 18446744073709551612, 18446744073709551614, ir::CompareSignedGreater(), Some(4))?
+    return evolution_boundary_cases()
+}
+
+fn evolution_boundary_cases() -> Result<void, u32> {
+    evolution_case(0, 0, 1, ir::CompareUnsignedLess(), Some(0))?
+    evolution_case(0, 0, 1, ir::CompareUnsignedLessEqual(), Some(1))?
+    evolution_case(0, 10, 0, ir::CompareUnsignedLess(), None())?
+    evolution_case(0, 18446744073709551615, 1, ir::CompareUnsignedLessEqual(), None())?
+    evolution_case(9223372036854775806, 9223372036854775807, 2, ir::CompareSignedLess(), None())?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(evolution_cases())
+}

@@ -1,0 +1,138 @@
+module optimize {
+    fn scalar_inspect(function: ir::Function, analysis: write ScalarAnalysis) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    scalar_inspect_instruction(function, analysis, instruction)
+                }
+                index = index + 1
+            }
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    scalar_invalidate_values(analysis, ir::terminator_operands(terminator))
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+    }
+
+    fn scalar_inspect_instruction(function: ir::Function, analysis: write ScalarAnalysis, instruction: ir::Instruction) -> void {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryOffset(base, offset) => {
+                        offset;
+                        scalar_inspect_offset(analysis, instruction, base)
+                    }
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        scalar_inspect_access(analysis, ScalarAccess {
+                                address: address
+                                value_type: value_type
+                                alignment: alignment
+                                volatile: volatile
+                            })
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        match ir::function_value_type(function, value) {
+                            Some(value_type) => {
+                                scalar_inspect_access(analysis, ScalarAccess {
+                                        address: address
+                                        value_type: value_type
+                                        alignment: alignment
+                                        volatile: volatile
+                                    })
+                            }
+                            None => {
+                                scalar_invalidate_address(analysis, address)
+                            }
+                        }
+                        scalar_invalidate_address(analysis, value)
+                    }
+                    ir::MemorySet(destination, value, size) => {
+                        scalar_inspect_set(function, analysis, ScalarMemory {
+                                destination: destination, source: value, size: size
+                            })
+                    }
+                    ir::MemoryCopy(destination, source, size) => {
+                        scalar_inspect_copy(function, analysis, ScalarMemory {
+                                destination: destination, source: source, size: size
+                            })
+                    }
+                    _ => {
+                        scalar_invalidate_values(analysis, ir::instruction_operands(instruction.kind))
+                    }
+                }
+            }
+
+            _ => {
+                scalar_invalidate_values(analysis, ir::instruction_operands(instruction.kind))
+            }
+        }
+    }
+
+    fn scalar_inspect_offset(analysis: write ScalarAnalysis, instruction: ir::Instruction, base: usize) -> void {
+        match scalar_address(analysis, base) {
+            None => {
+            }
+            Some(address) => {
+                var resolved = false
+                match read instruction.result {
+                    Some(result) => {
+                        match scalar_address(analysis, result) {
+                            Some(value) => {
+                                value.root;
+                                resolved = true
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                if resolved == false {
+                    analysis.roots[address.root].valid = false
+                }
+            }
+        }
+    }
+
+    fn scalar_inspect_access(analysis: write ScalarAnalysis, access: take ScalarAccess) -> void {
+        match scalar_address(analysis, access.address) {
+            None => {
+            }
+            Some(address) => {
+                match ir::type_size(access.value_type) {
+                    None => {
+                        analysis.roots[address.root].valid = false
+                    }
+                    Some(size) => {
+                        if access.volatile || size == 0 || size > 8 || scalar_field_fits(analysis, address, size) == false {
+                            analysis.roots[address.root].valid = false
+                        }
+                        else {
+                            scalar_insert_field(analysis, address.root, ScalarField {
+                                    offset: address.offset
+                                    value_type: access.value_type
+                                    alignment: access.alignment
+                                    slot: None()
+                                })
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_invalidate_values(analysis: write ScalarAnalysis, values: take Vec<usize>) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            scalar_invalidate_address(analysis, values[index])
+            index = index + 1
+        }
+    }
+}

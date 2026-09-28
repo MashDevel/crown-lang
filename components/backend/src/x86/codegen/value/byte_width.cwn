@@ -1,0 +1,28 @@
+module x86 {
+    fn codegen_byte_width(bytes: u64) -> Option<Width> {
+        if bytes == 1 {
+            return Some(Byte())
+        }
+        if bytes == 2 {
+            return Some(Word())
+        }
+        if bytes >= 3 && bytes <= 4 {
+            return Some(Dword())
+        }
+        if bytes >= 5 && bytes <= 8 {
+            return Some(Qword())
+        }
+        return None()
+    }
+
+    fn codegen_component_offset(base: i32, offset: u64) -> Option<i32> {
+        if offset > 2147483647 {
+            return None()
+        }
+        let value = i64.from(base) + i64.from(offset)
+        if value < -2147483648 || value > 2147483647 {
+            return None()
+        }
+        return Some(i32.from(value))
+    }
+}

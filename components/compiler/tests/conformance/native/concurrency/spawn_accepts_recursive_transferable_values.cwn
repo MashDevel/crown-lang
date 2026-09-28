@@ -1,0 +1,17 @@
+enum List {
+    End,
+    Link(Box<List>)
+}
+fn main() -> u32 {
+    let list = Link(Box.new(End()))
+    var thread = spawn move {
+        match move list {
+            End => {
+            }
+            Link(tail) => {
+            }
+        }
+    }
+    thread.join()
+    return 0
+}

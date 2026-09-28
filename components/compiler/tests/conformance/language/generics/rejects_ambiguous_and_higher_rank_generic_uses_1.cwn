@@ -1,0 +1,7 @@
+fn empty<T>() -> Option<T> {
+    return None()
+}
+fn main() -> u32 {
+    empty()
+    return 0
+}

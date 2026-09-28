@@ -1,0 +1,18 @@
+fn finish(output: write u32) -> void {
+    thread_scope {
+        let started = spawn[write output] {
+            output = 42
+        }
+        started
+        return
+    }
+}
+fn main() -> u32 {
+    var result: u32 = 0
+    finish(result)
+    return if result == 42 {
+        0
+    } else {
+        1
+    }
+}

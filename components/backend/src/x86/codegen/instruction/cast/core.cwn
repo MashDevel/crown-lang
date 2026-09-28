@@ -1,0 +1,83 @@
+module x86 {
+    fn codegen_compile_cast(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        if codegen_float_cast(input.operator) {
+            return codegen_compile_float_cast(program, compiler, move input)
+        }
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        var loaded: Result<void, CodegenError> = Ok(())
+        match read input.operator {
+            ir::CastTruncate => {
+                loaded = codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: destination
+                    })
+            }
+            ir::CastZeroExtend => {
+                loaded = codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: destination
+                    })
+            }
+            ir::CastPointerToInteger => {
+                loaded = codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: destination
+                    })
+            }
+            ir::CastIntegerToPointer => {
+                loaded = codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: destination
+                    })
+            }
+            ir::CastBitcast => {
+                loaded = codegen_load_value(program, compiler, ValueAccess {
+                        value: input.value, register: destination
+                    })
+            }
+            ir::CastSignExtend => {
+                loaded = codegen_load_signed(program, compiler, ValueAccess {
+                        value: input.value, register: destination
+                    })
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+            }
+        }
+        match move loaded {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: destination
+            })
+    }
+
+    fn codegen_float_cast(operator: ir::CastOperator) -> bool {
+        match read operator {
+            ir::CastSignedIntegerToFloat => {
+                return true
+            }
+            ir::CastUnsignedIntegerToFloat => {
+                return true
+            }
+            ir::CastFloatToSignedInteger => {
+                return true
+            }
+            ir::CastFloatToUnsignedInteger => {
+                return true
+            }
+            ir::CastFloatExtend => {
+                return true
+            }
+            ir::CastFloatTruncate => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

@@ -1,0 +1,6 @@
+interface Shape {
+    fn size(self: read Self) -> usize
+}
+fn main() -> usize {
+    return Shape.size_of()
+}

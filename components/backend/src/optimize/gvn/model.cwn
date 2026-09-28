@@ -1,0 +1,54 @@
+module optimize {
+    struct GvnExpression {
+        tag: u32
+        operator: u32
+        first: usize
+        second: usize
+        third: usize
+        target: ir::Type
+        symbol: Text
+    }
+
+    struct GvnEntry {
+        expression: GvnExpression
+        result: usize
+    }
+
+    struct GvnState {
+        pending: Vec<GvnFrame>
+        children: Vec<Vec<usize>>
+        expressions: Vec<GvnEntry>
+        replacements: Vec<Option<usize>>
+        eliminated: usize
+    }
+
+    fn gvn_expression_copy(value: GvnExpression) -> GvnExpression {
+        return GvnExpression {
+            tag: value.tag
+            operator: value.operator
+            first: value.first
+            second: value.second
+            third: value.third
+            target: value.target
+            symbol: value.symbol.clone()
+        }
+    }
+
+    fn gvn_entry_copy(value: GvnEntry) -> GvnEntry {
+        return GvnEntry {
+            expression: gvn_expression_copy(value.expression), result: value.result
+        }
+    }
+
+    fn gvn_base_expression(tag: u32) -> GvnExpression {
+        return GvnExpression {
+            tag: tag
+            operator: 0
+            first: 0
+            second: 0
+            third: 0
+            target: ir::TypeVoid()
+            symbol: ""
+        }
+    }
+}

@@ -1,0 +1,30 @@
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    var processes = Vec<i32>.new()
+    for index in 0..8 {
+        processes.push(start_parallel_build(root, index)?)
+    }
+    for index in 0..processes.length() {
+        testing::expect(toolchain::wait_process(processes[index], 300000)? == 0, "parallel build failed")?
+        var arguments = Vec<Text>.new()
+        arguments.push(toolchain::path_join(root, std::text::joined("program", std::text::decimal(u64.from(index)))))
+        testing::expect(toolchain::execute(toolchain::command(move arguments))? == i32.from(index), "parallel outputs remain isolated")?
+    }
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn start_parallel_build(root: Text, index: usize) -> Result<i32, Text> {
+    let stem = std::text::joined("program", std::text::decimal(u64.from(index)))
+    let source = testing::write_file(root, std::text::joined(stem, ".cwn"), std::text::joined(std::text::joined("fn main() -> u32 { ", std::text::decimal(u64.from(index))), " }"))?
+    var arguments = Vec<Text>.new()
+    arguments.push(testing::compiler()?);
+    arguments.push("build");
+    arguments.push(source.clone())
+    arguments.push("-o");
+    arguments.push(toolchain::path_join(root, stem))
+    return toolchain::start_process(toolchain::command(move arguments))
+}

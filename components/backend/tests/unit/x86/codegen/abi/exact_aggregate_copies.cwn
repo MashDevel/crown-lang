@@ -1,0 +1,58 @@
+fn copy_program() -> Result<ir::Program, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var function = ir::function_new("copy", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let block = safety_block(function)?
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn copy_case(size: u64, capture: bool) -> Result<void, u32> {
+    let program = copy_program()?
+    var compiler = safety_compiler(program, 0)?
+    var probe = CopyProbe {
+        size: size, source_base: x86::R10(), source_offset: 0
+        destination_base: x86::Rsp(), destination_offset: 0
+    }
+    var outcome: Result<void, x86::CodegenError> = Ok(())
+    if capture {
+        compiler.frame.locations[0] = Some(x86::ValueStackAddress(-64))
+        probe.source_base = x86::Rbp()
+        probe.source_offset = 16
+        probe.destination_base = x86::Rbp()
+        probe.destination_offset = -64
+        outcome = x86::codegen_capture_aggregate_memory(compiler, x86::AggregateCapture {
+                value: 0, slot: 0, size: size
+            })
+    } else {
+        compiler.frame.locations[0] = Some(x86::ValueRegister(x86::R10()))
+        outcome = x86::codegen_copy_stack_argument(program, compiler, x86::MemoryArgument {
+                value: 0, slot: 0, size: size
+            })
+    }
+    match move outcome {
+        Ok(done) => {
+            done
+        }
+        Err(error) => {
+            error;
+            return Err(39)
+        }
+    }
+    let instructions = x86::codegen_take_instructions(compiler)
+    return probe_copy(instructions, probe)
+}
+
+fn exact_aggregate_copies() -> Result<void, u32> {
+    for size in 1..17 {
+        copy_case(u64.from(size), false)?
+        copy_case(u64.from(size), true)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(exact_aggregate_copies())
+}

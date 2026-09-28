@@ -1,0 +1,6 @@
+extern "c" {
+    fn consume(value: read Vec<u32>) -> void
+}
+fn main() -> u32 {
+    return 0
+}

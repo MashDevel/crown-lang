@@ -1,0 +1,24 @@
+struct Payload {
+    value: u32
+}
+
+fn main() -> u32 {
+    var values = Vec<u32>.with_capacity(2)
+    values.push(19)
+    values.push(23)
+    let text = "crown"
+    let boxed = Box.new(Payload { value: 42 })
+    print(u32.from(text.length()))
+    loan read boxed as payload {
+        print(payload.value)
+    }
+    match values.pop() {
+        Some(right) => {
+            match values.pop() {
+                Some(left) => { return left + right }
+                None => { return 0 }
+            }
+        }
+        None => { return 0 }
+    }
+}

@@ -1,0 +1,3 @@
+[package]
+name = "crown_integration_tests"
+sources = ["../src", "../../platform/src", "../../src", "."]

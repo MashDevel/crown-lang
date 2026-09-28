@@ -1,0 +1,128 @@
+fn reuse(root: Text) -> Result<void, Text> {
+    let environment = testing_cache::environment(root, "first")
+    testing_cache::execute(environment)?
+    testing_cache::execute(environment)?
+    testing_cache::execute(testing_cache::environment(root, "second"))?
+    testing_cache::count(root, "compiles", 1)?
+    testing_cache::count(root, "runs", 3)?
+    return reuse_source(environment)
+}
+
+fn reuse_source(environment: harness::Environment) -> Result<void, Text> {
+    let root = environment.root.clone()
+    testing::write_file(root, "source.cwn", "second")?
+    testing_cache::build(environment, 128)?
+    testing_cache::count(root, "compiles", 2)?
+    testing::write_file(root, "source.cwn", "first")?
+    testing_cache::build(environment, 128)?
+    return testing_cache::count(root, "compiles", 2)
+}
+
+fn invalidation(root: Text) -> Result<void, Text> {
+    let environment = testing_cache::environment(root, "first")
+    let original = toolchain::read_text(environment.compiler)?
+    toolchain::write_text(environment.compiler, std::text::joined(original, "\n"))?
+    testing_cache::build(environment, 128)?
+    testing_cache::count(root, "compiles", 3)?
+    toolchain::write_text(environment.compiler, original)?
+    testing_cache::build(environment, 129)?
+    testing_cache::count(root, "compiles", 4)?
+    testing_cache::build(environment, 128)?
+    return testing_cache::count(root, "compiles", 4)
+}
+
+fn corruption(root: Text) -> Result<void, Text> {
+    let environment = testing_cache::environment(root, "first")
+    let request = harness::test_build(environment, testing_cache::sources(root), 128)
+    let input = toolchain::build_fingerprint(request)?
+    let cached = toolchain::path_join(root, std::text::joined("target/test-cache/", std::text::joined(input, "/program")))
+    toolchain::write_text(cached, "corrupt")?
+    testing_cache::execute(environment)?
+    testing_cache::count(root, "compiles", 5)?
+    toolchain::write_text(std::text::joined(cached, ".crown-build"), "invalid")?
+    testing_cache::execute(environment)?
+    testing_cache::count(root, "compiles", 6)?
+    toolchain::remove_file(cached)?
+    testing_cache::execute(environment)?
+    return testing_cache::count(root, "compiles", 7)
+}
+
+fn failures(root: Text) -> Result<void, Text> {
+    let environment = testing_cache::environment(root, "first")
+    testing::write_file(root, "source.cwn", "failed")?
+    let failure = testing::write_file(root, "fail", "")?
+    testing::error(testing_cache::build(environment, 128))?
+    toolchain::remove_file(failure)?
+    testing_cache::build(environment, 128)?
+    testing_cache::count(root, "compiles", 9)?
+    return changing_inputs(environment)
+}
+
+fn changing_inputs(environment: harness::Environment) -> Result<void, Text> {
+    let root = environment.root.clone()
+    testing::write_file(root, "source.cwn", "changing")?
+    let change = testing::write_file(root, "change", "")?
+    testing::error(testing_cache::build(environment, 128))?
+    toolchain::remove_file(change)?
+    testing::write_file(root, "source.cwn", "changing")?
+    testing_cache::build(environment, 128)?
+    testing_cache::count(root, "compiles", 11)?
+    toolchain::remove_file(toolchain::path_join(root, "source.cwn"))?
+    return testing::error(testing_cache::build(environment, 128))
+}
+
+fn coverage(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "source.cwn", "first")?
+    var environment = testing_cache::environment(root, "covered")
+    environment.coverage = toolchain::path_join(root, "coverage")
+    testing_cache::build(environment, 128)?
+    testing_cache::build(environment, 128)?
+    return testing_cache::count(root, "compiles", 13)
+}
+
+fn concurrent(root: Text, executable: Text) -> Result<void, Text> {
+    testing::write_file(root, "source.cwn", "parallel")?
+    var workers = Vec<i32>.new()
+    for index in 0..4 {
+        var arguments = Vec<Text>.new()
+        arguments.push(executable.clone())
+        arguments.push(root.clone())
+        arguments.push(std::text::decimal(u64.from(index)))
+        workers.push(toolchain::start_process(toolchain::command(move arguments))?)
+    }
+    for index in 0..workers.length() {
+        testing::expect(toolchain::wait_process(workers[index], 30000)? == 42, "concurrent cached build")?
+    }
+    return testing_cache::count(root, "compiles", 14)
+}
+
+fn run(executable: Text) -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    testing_cache::fixture(root)?
+    compiler_protocol(root)?
+    reuse(root)?
+    invalidation(root)?
+    corruption(root)?
+    failures(root)?
+    coverage(root)?
+    return concurrent(root, executable)
+}
+
+fn compiler_protocol(root: Text) -> Result<void, Text> {
+    let environment = testing_cache::environment(root, "probe")
+    let request = harness::test_build(environment, testing_cache::sources(root), 128)
+    let inputs = toolchain::compiler_link_inputs(request)?
+    testing::expect(inputs.length() == 0, "fixture compiler link input query")?
+    let result = toolchain::capture(toolchain::command(testing::list(std::text::joined(environment.compiler, "|unknown"))), root)?
+    testing::expect(result.status != 0, "fixture compiler rejects unknown commands")?
+    return testing_cache::count(root, "compiles", 0)
+}
+
+fn main(arguments: Arguments) -> u32 {
+    let values = toolchain::arguments(arguments)
+    if values.length() == 3 {
+        return testing::done(testing_cache::execute(testing_cache::environment(values[1], values[2])))
+    }
+    return testing::done(run(values[0]))
+}

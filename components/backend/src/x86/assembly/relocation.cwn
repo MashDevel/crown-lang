@@ -1,0 +1,86 @@
+module x86 {
+    fn assembly_relocation_at(position: AssemblyPosition, offset: u64) -> Option<usize> {
+        let index = ir::index_lower_bound(position.relocations, u64.from(position.section), offset)
+        if index >= position.relocations.length() {
+            return None()
+        }
+        if position.relocations[index].group != u64.from(position.section) || position.relocations[index].key != offset {
+            return None()
+        }
+        return Some(position.relocations[index].value)
+    }
+
+    fn assembly_emit_relocation(object: object::CompilerObject, relocation_id: usize, output: write AssemblyOutput) -> Result<u64, u32> {
+        loan read object.relocations[relocation_id] as relocation {
+            let width = object::relocation_width(relocation.kind)
+            if assembly_emit_relocation_directive(relocation.kind, output) == false {
+                return Err(3)
+            }
+            loan read object.symbols[relocation.symbol] as symbol {
+                assembly_append_symbol(output, symbol.name)
+            }
+            match read relocation.subtract {
+                Some(symbol) => {
+                    assembly_append(output, " - ")
+                    loan read object.symbols[symbol] as target {
+                        assembly_append_symbol(output, target.name)
+                    }
+                }
+                None => {
+                }
+            }
+            if assembly_relocation_is_relative(relocation.kind) {
+                assembly_append(output, " - .")
+            }
+            assembly_append_addend(output, relocation.addend)
+            output.text.push('\n')
+            return Ok(width)
+        }
+    }
+
+    fn assembly_emit_relocation_directive(kind: object::RelocationKind, output: write AssemblyOutput) -> bool {
+        match read kind {
+            object::RelocationAbsolute32 => {
+                assembly_append(output, ".long ");
+                return true
+            }
+            object::RelocationAbsolute64 => {
+                assembly_append(output, ".quad ");
+                return true
+            }
+            object::RelocationPcRelative32 => {
+                assembly_append(output, ".long ");
+                return true
+            }
+            object::RelocationPcRelativeCall32 => {
+                assembly_append(output, ".long ");
+                return true
+            }
+            object::RelocationDifference32 => {
+                assembly_append(output, ".long ");
+                return true
+            }
+            object::RelocationDifference64 => {
+                assembly_append(output, ".quad ");
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn assembly_relocation_is_relative(kind: object::RelocationKind) -> bool {
+        match read kind {
+            object::RelocationPcRelative32 => {
+                return true
+            }
+            object::RelocationPcRelativeCall32 => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

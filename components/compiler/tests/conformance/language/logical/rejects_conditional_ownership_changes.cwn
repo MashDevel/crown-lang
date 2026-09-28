@@ -1,0 +1,14 @@
+struct Item {
+    value: u32
+}
+fn consume(item: take Item) -> bool {
+    return item.value == 1
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    }
+    if true && consume(move item) {
+    }
+    return item.value
+}

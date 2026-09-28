@@ -1,0 +1,45 @@
+fn finite_instances(count: usize) -> Text {
+    var definitions = "fn identity<T>(value: take T) -> T { move value }\n"
+    var calls = "fn main() -> u32 {\n"
+    for index in 0..count {
+        let name = std::text::joined("Item", std::text::decimal(u64.from(index)))
+        std::text::append(definitions, std::text::joined(std::text::joined("struct ", name), " { value: u32 }\n"))
+        std::text::append(calls, std::text::joined(std::text::joined("identity(", name), " { value: 0 })\n"))
+    }
+    return std::text::joined(definitions, std::text::joined(calls, "0 }\n"))
+}
+
+fn default_boundary(root: Text, source: Text) -> Result<void, Text> {
+    toolchain::write_text(source, finite_instances(129))?
+    let command = std::text::joined("check|", source)
+    let result = testing::failed_call(root, command)?
+    testing::expect(std::text::contains(result.stderr, "instance limit"), "default instance budget")?
+    testing::clean_call(root, std::text::joined(command, "|--max-instances|129"))?
+    let limited = testing::failed_call(root, std::text::joined(command, "|--max-instances|128"))?
+    testing::expect(std::text::contains(limited.stderr, "instance limit"), "explicit boundary budget")?
+    return Ok(())
+}
+
+fn positive_budget(root: Text, source: Text) -> Result<void, Text> {
+    toolchain::write_text(source, finite_instances(2))?
+    testing::clean_call(root, std::text::joined(std::text::joined("check|", source), "|--max-instances|2"))?
+    let build = std::text::joined(std::text::joined("build|", source), "|--max-instances|2|-o|")
+    testing::clean_call(root, std::text::joined(build, toolchain::path_join(root, "program")))?
+    let invalid = testing::list("0|-1|abc|1")
+    for index in 0..invalid.length() {
+        testing::failed_call(root, std::text::joined(std::text::joined(std::text::joined("check|", source), "|--max-instances|"), invalid[index]))?
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let source = testing::write_file(root, "main.cwn", "")?
+    default_boundary(root, source)?;
+    positive_budget(root, source)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}

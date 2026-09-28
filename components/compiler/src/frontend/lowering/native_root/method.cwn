@@ -1,0 +1,81 @@
+module lowering {
+    struct RootMethod {
+        address: usize, value_type: sema::Type, method: frontend::Name
+    }
+    fn native_root_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 0 {
+                    return Err(766)
+                }
+                loan read receiver as source {
+                    let place = expression_place_info(compiler, analysis, source)?
+                    let request = RootMethod {
+                        address: place.address, value_type: sema::type_copy(place.value_type), method: frontend::name_copy(method)
+                    }
+                    return root_method_lower(compiler, analysis, request)
+                }
+            },
+            _ => {
+            }
+        }
+        return Err(767)
+    }
+    fn root_method_lower(compiler: write FunctionCompiler, analysis: sema::Analysis, request: RootMethod) -> Result<Value, u32> {
+        if sema::name_is(analysis.checker.symbols.source, request.method, "token") {
+            let value_type = match read request.value_type {
+                sema::BuiltinType(kind, arguments) => {
+                    kind;
+                    sema::root_wrapper(sema::RootToken(), arguments[0])
+                },
+                _ => {
+                    return Err(768)
+                }
+            }
+            let result = function_stack(compiler, analysis.checker.symbols, value_type)?
+            let value = AddressValue(request.address, sema::type_copy(value_type))
+            function_copy(compiler, analysis.checker.symbols, CopyRequest {
+                    destination: result, value: move value
+                })?
+            return Ok(AddressValue(result, move value_type))
+        }
+        if sema::name_is(analysis.checker.symbols.source, request.method, "acquire") {
+            return root_acquire_lower(compiler, analysis, request)
+        }
+        let generation = sema::name_is(analysis.checker.symbols.source, request.method, "generation")
+        let offset: u64 = if generation {
+            8
+        } else {
+            0
+        }
+        let address = function_offset(compiler, request.address, offset)?
+        let value = root_load_word(compiler, analysis.checker.symbols, address)?
+        return Ok(ScalarValue(value, sema::builtin_leaf(if generation {
+                        sema::U64()
+                    } else {
+                        sema::USize()
+                    })))
+    }
+    fn root_acquire_lower(compiler: write FunctionCompiler, analysis: sema::Analysis, request: RootMethod) -> Result<Value, u32> {
+        let value_type = match read request.value_type {
+            sema::BuiltinType(kind, arguments) => {
+                kind;
+                sema::root_acquisition(arguments[0])
+            },
+            _ => {
+                return Err(769)
+            }
+        }
+        let result = function_stack(compiler, analysis.checker.symbols, value_type)?
+        function_zero(compiler, analysis.checker.symbols, Place {
+                address: result, value_type: sema::type_copy(value_type)
+            })?
+        let destructor = root_type_pointer(compiler, request.value_type)?
+        var arguments = Vec<usize>.new()
+        arguments.push(result);
+        arguments.push(request.address);
+        arguments.push(destructor)
+        root_call(compiler, "crown_root_acquire", move arguments)?
+        return Ok(AddressValue(result, move value_type))
+    }
+}

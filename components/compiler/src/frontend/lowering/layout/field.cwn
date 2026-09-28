@@ -1,0 +1,253 @@
+module lowering {
+    struct FieldLayout {
+        offset: u64
+        value_type: sema::Type
+    }
+
+    struct VariantLayout {
+        tag: u64
+        fields: Vec<FieldLayout>
+    }
+
+    struct BuiltinVariantField {
+        tag: u64
+        value_type: sema::Type
+        alignment: u32
+    }
+
+    struct BuiltinVariantQuery {
+        builtin: sema::Builtin
+        arguments: Vec<sema::Type>
+        name: frontend::Name
+    }
+
+    fn layout_field(symbols: sema::Symbols, owner: sema::Type, name: frontend::Name) -> Result<FieldLayout, u32> {
+        match read owner {
+            sema::NamedType(symbol, arguments) => {
+                let request = NamedFieldRequest {
+                    symbol: symbol, arguments: sema::types_copy(arguments), name: frontend::name_copy(name)
+                }
+                return named_field(symbols, request)
+            }
+            _ => {
+                return Err(60)
+            }
+        }
+    }
+
+    fn named_field(symbols: sema::Symbols, request: NamedFieldRequest) -> Result<FieldLayout, u32> {
+        if request.symbol >= symbols.types.length() {
+            return Err(61)
+        }
+        var parameters = Vec<frontend::Name>.new()
+        var fields = Vec<sema::Field>.new()
+        loan read symbols.types[request.symbol] as declaration {
+            parameters = sema::names_copy(declaration.type_parameters)
+            fields = sema::fields_copy(declaration.fields)
+        }
+        let values = sema::parameter_values(parameters, request.arguments)
+        var offset: u64 = 0
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as field {
+                let value_type = sema::substitute(field.value_type, values)
+                match layout(symbols, value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        offset = align_to(offset, layout.alignment)
+                        if sema::names_equal(symbols.source, field.name, request.name) {
+                            return Ok(FieldLayout {
+                                    offset: offset, value_type: move value_type
+                                })
+                        }
+                        offset = offset + layout.size
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Err(62)
+    }
+
+    fn layout_variant(symbols: sema::Symbols, owner: sema::Type, name: frontend::Name) -> Result<VariantLayout, u32> {
+        match read owner {
+            sema::NamedType(symbol, arguments) => {
+                let request = NamedFieldRequest {
+                    symbol: symbol, arguments: sema::types_copy(arguments), name: frontend::name_copy(name)
+                }
+                return named_variant(symbols, request)
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                let query = BuiltinVariantQuery {
+                    builtin: builtin
+                    arguments: sema::types_copy(arguments)
+                    name: frontend::name_copy(name)
+                }
+                return builtin_variant(symbols, query)
+            }
+            _ => {
+                return Err(63)
+            }
+        }
+    }
+
+    fn builtin_variant(symbols: sema::Symbols, query: BuiltinVariantQuery) -> Result<VariantLayout, u32> {
+        let kind = query.builtin
+        if kind == sema::Option() && query.arguments.length() == 1 {
+            return option_variant(symbols, query)
+        }
+        if kind == sema::Result() && query.arguments.length() == 2 {
+            return result_variant(symbols, query)
+        }
+        Err(119)
+    }
+
+    fn option_variant(symbols: sema::Symbols, query: BuiltinVariantQuery) -> Result<VariantLayout, u32> {
+        if sema::name_is(symbols.source, query.name, "None") {
+            return Ok(VariantLayout {
+                    tag: 0, fields: Vec<FieldLayout>.new()
+                })
+        }
+        if sema::name_is(symbols.source, query.name, "Some") {
+            loan read query.arguments[0] as field {
+                let layout = layout(symbols, field)?
+                let request = BuiltinVariantField {
+                    tag: 1, value_type: sema::type_copy(field), alignment: layout.alignment
+                }
+                return single_builtin_variant(symbols, request)
+            }
+        }
+        Err(119)
+    }
+
+    fn result_variant(symbols: sema::Symbols, query: BuiltinVariantQuery) -> Result<VariantLayout, u32> {
+        var alignment: u32 = 1
+        var index: usize = 0
+        while index < query.arguments.length() {
+            loan read query.arguments[index] as field {
+                let layout = layout(symbols, field)?
+                if layout.alignment > alignment {
+                    alignment = layout.alignment
+                }
+            }
+            index = index + 1
+        }
+        if sema::name_is(symbols.source, query.name, "Err") {
+            loan read query.arguments[1] as field {
+                let request = BuiltinVariantField {
+                    tag: 0, value_type: sema::type_copy(field), alignment: alignment
+                }
+                return single_builtin_variant(symbols, request)
+            }
+        }
+        if sema::name_is(symbols.source, query.name, "Ok") {
+            loan read query.arguments[0] as field {
+                let request = BuiltinVariantField {
+                    tag: 1, value_type: sema::type_copy(field), alignment: alignment
+                }
+                return single_builtin_variant(symbols, request)
+            }
+        }
+        Err(119)
+    }
+
+    fn single_builtin_variant(symbols: sema::Symbols, request: BuiltinVariantField) -> Result<VariantLayout, u32> {
+        let layout = layout(symbols, request.value_type)?
+        var fields = Vec<FieldLayout>.new()
+        layout
+        fields.push(FieldLayout {
+                offset: align_to(4, request.alignment), value_type: sema::type_copy(request.value_type)
+            })
+        return Ok(VariantLayout {
+                tag: request.tag, fields: move fields
+            })
+    }
+
+    fn named_variant(symbols: sema::Symbols, request: NamedFieldRequest) -> Result<VariantLayout, u32> {
+        if request.symbol >= symbols.types.length() {
+            return Err(64)
+        }
+        var parameters = Vec<frontend::Name>.new()
+        var variants = Vec<sema::Variant>.new()
+        loan read symbols.types[request.symbol] as declaration {
+            parameters = sema::names_copy(declaration.type_parameters)
+            variants = variants_copy(declaration.variants)
+        }
+        let values = sema::parameter_values(parameters, request.arguments)
+        let payload_alignment = variant_alignment(symbols, variants, values)?
+        var index: usize = 0
+        while index < variants.length() {
+            loan read variants[index] as variant {
+                if sema::variant_name_matches(symbols.source, variant.name, request.name) {
+                    let field_request = VariantFieldRequest {
+                        values: sema::types_copy(values), alignment: payload_alignment
+                    }
+                    let fields = variant_fields(symbols, variant.fields, field_request)?
+                    return Ok(VariantLayout {
+                            tag: u64.from(index), fields: move fields
+                        })
+                }
+            }
+            index = index + 1
+        }
+        return Err(65)
+    }
+
+    fn variant_alignment(symbols: sema::Symbols, variants: Vec<sema::Variant>, values: Vec<sema::Type>) -> Result<u32, u32> {
+        var alignment: u32 = 1
+        var variant: usize = 0
+        while variant < variants.length() {
+            var field: usize = 0
+            while field < variants[variant].fields.length() {
+                loan read variants[variant].fields[field] as schema {
+                    let value_type = sema::substitute(schema, values)
+                    let layout = layout(symbols, value_type)?
+                    if layout.alignment > alignment {
+                        alignment = layout.alignment
+                    }
+                }
+                field = field + 1
+            }
+            variant = variant + 1
+        }
+        return Ok(alignment)
+    }
+
+    fn variant_fields(symbols: sema::Symbols, schemas: Vec<sema::Type>, request: VariantFieldRequest) -> Result<Vec<FieldLayout>, u32> {
+        var offset = align_to(4, request.alignment)
+        var output = Vec<FieldLayout>.new()
+        var index: usize = 0
+        while index < schemas.length() {
+            loan read schemas[index] as schema {
+                let value_type = sema::substitute(schema, request.values)
+                match layout(symbols, value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        offset = align_to(offset, layout.alignment)
+                        output.push(FieldLayout {
+                                offset: offset, value_type: move value_type
+                            })
+                        offset = offset + layout.size
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(move output)
+    }
+
+    struct NamedFieldRequest {
+        symbol: usize
+        arguments: Vec<sema::Type>
+        name: frontend::Name
+    }
+
+    struct VariantFieldRequest {
+        values: Vec<sema::Type>
+        alignment: u32
+    }
+}

@@ -1,0 +1,68 @@
+fn arm_object() -> Result<object::CompilerObject, Text> {
+    var object = object::new()
+    object.architecture = object::ArchitectureArm64()
+    var bytes = Vec<u8>.new()
+    arm64::append_word(bytes, arm64::move_wide(0, 42, 0, false)?)
+    arm64::append_word(bytes, 3596551104)
+    object.sections.push(object::Section {
+            name: "text", kind: object::SectionText(), alignment: 4, data: move bytes, memory_size: 8
+        })
+    object.symbols.push(object::Symbol {
+            name: "main", kind: object::SymbolFunction(), binding: object::SymbolGlobal(), section: Some(0), offset: 0, size: 8
+        })
+    object.entry = Some(0)
+    return Ok(move object)
+}
+
+fn arm_executable(interpreter: Text) -> Result<Vec<u8>, Text> {
+    return elf::executable(arm_object()?, elf::Options {
+            interpreter: interpreter.clone(), libraries: elf::libraries(Vec<Text>.new())?, versions: Vec<elf::SymbolVersion>.new()
+        })
+}
+
+fn arm_headers() -> Result<void, Text> {
+    let bytes = arm_executable("/lib/ld-linux-aarch64.so.1")?
+    testing::expect(link_binary::number(bytes, 18, 2)? == 183, "AArch64 ELF machine")?
+    testing::expect(std::text::equal(elf::interpreter(bytes)?, "/lib/ld-linux-aarch64.so.1"), "ARM64 interpreter")?
+    arm_startup(bytes)?
+    testing::expect(elf::global_relocation(object::ArchitectureArm64()) == 1025, "ARM64 dynamic GOT relocation")?
+    return testing::expect(elf::absolute_relocation(object::ArchitectureArm64()) == 257, "ARM64 dynamic absolute relocation")
+}
+
+fn arm_startup(bytes: Vec<u8>) -> Result<void, Text> {
+    let entry = usize.from(link_binary::number(bytes, 24, 8)? - elf::IMAGE_BASE)
+    testing::expect(entry % 16 == 0, "ARM64 startup alignment")?
+    testing::expect(link_binary::number(bytes, entry, 4)? == 3531603997, "ARM64 startup clears the frame pointer")?
+    return testing::expect(link_binary::number(bytes, entry + 48, 4)? == 3594453504, "ARM64 startup calls libc")
+}
+
+fn reject_wrong_architecture() -> Result<void, Text> {
+    var output = arm_object()?
+    testing::error(link_object::merge(output, object::new()))?
+    testing::expect(output.sections.length() == 1 && output.symbols.length() == 1, "architecture rejection preserves the destination")?
+    testing::error(x86::assembly(output, x86::AssemblyFormat::Elf()))?
+    return testing::error(bedrock::executable(output, "unavailable"))
+}
+fn supported_macho_architecture() -> Result<void, Text> {
+    let output = arm_object()?
+    let executable = macho::executable(output, Vec<Text>.new())?
+    testing::expect(link_binary::number(executable, 4, 4)? == 16777228, "ARM64 is supported by Mach-O")?
+    let decoded = macho::read_object(macho::object_file(output)?)?
+    return testing::expect(decoded.architecture == object::ArchitectureArm64(), "Mach-O preserves ARM64 architecture")
+}
+
+fn run(arguments: Arguments) -> Result<void, Text> {
+    arm_headers()?
+    reject_wrong_architecture()?
+    supported_macho_architecture()?
+    if arguments.length() == 3 {
+        let path = arguments[1].clone()
+        toolchain::write_bytes(path, arm_executable(arguments[2].clone())?)?
+        toolchain::executable(path)?
+    }
+    return Ok(())
+}
+
+fn main(arguments: Arguments) -> u32 {
+    return testing::done(run(arguments))
+}

@@ -1,0 +1,18 @@
+struct Outer {
+    inner: Inner
+}
+struct Inner {
+    value: u32
+}
+fn main() -> u32 {
+    let outer = Outer {
+        inner: Inner {
+            value: 7
+        }
+    }
+    if true {
+        return outer.inner.value
+    } else {
+        return 0
+    }
+}

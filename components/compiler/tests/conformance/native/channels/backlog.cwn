@@ -1,0 +1,31 @@
+fn count(argument: TextView) -> usize {
+    var value: usize = 0
+    for index in 0..argument.length() {
+        value = value * 10 + usize.from(argument[index] - 48)
+    }
+    return value
+}
+
+fn main(arguments: Arguments) -> u32 {
+    var length: usize = 20000
+    if arguments.length() == 2 {
+        length = count(arguments[1])
+    }
+    let channel = Channel<usize>.new()
+    for index in 0..length {
+        channel.send(index)
+    }
+    for index in 0..length {
+        match channel.try_receive() {
+            Some(value) => {
+                if value != index {
+                    return 1
+                }
+            }
+            None => {
+                return 2
+            }
+        }
+    }
+    return 0
+}

@@ -1,0 +1,96 @@
+module x86 {
+    fn codegen_memory_copy(program: ir::Program, compiler: write FunctionCompiler, input: take MemoryTriple) -> Result<void, CodegenError> {
+        match codegen_direct_memory_size(program, compiler.id, input.third) {
+            Some(size) => {
+                return codegen_direct_memory_copy(program, compiler, DirectMemoryCopy {
+                        destination: input.first, source: input.second, size: size
+                    })
+            }
+            None => {
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.first, register: Rdi()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.second, register: Rsi()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.third, register: Rcx()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        codegen_emit(compiler, MoveBytes())
+        return Ok(())
+    }
+
+    fn codegen_memory_set(program: ir::Program, compiler: write FunctionCompiler, input: take MemoryTriple) -> Result<void, CodegenError> {
+        match codegen_direct_memory_size(program, compiler.id, input.third) {
+            Some(size) => {
+                let value = codegen_integer_constant(program.functions[compiler.id], input.second)
+                match value {
+                    Some(byte) => {
+                        return codegen_direct_memory_set(program, compiler, DirectMemorySet {
+                                destination: input.first, value: byte & 255, size: size
+                            })
+                    }
+                    None => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.first, register: Rdi()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.second, register: Rax()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: input.third, register: Rcx()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        codegen_emit(compiler, SetBytes())
+        return Ok(())
+    }
+}

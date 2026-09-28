@@ -1,0 +1,14 @@
+fn outcome() -> Result<void, u32> {
+    return Ok(())
+}
+fn main() -> u32 {
+    match outcome() {
+        Ok(value) => {
+            value;
+            return 42
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}

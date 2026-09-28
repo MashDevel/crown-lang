@@ -1,0 +1,8 @@
+fn f(value: u8) -> u32 {
+    match value {
+        1 => 0
+    }
+}
+fn main() -> u32 {
+    0
+}

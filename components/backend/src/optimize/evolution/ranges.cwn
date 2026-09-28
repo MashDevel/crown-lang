@@ -1,0 +1,62 @@
+module optimize {
+    fn evolution_ranges(function: ir::Function, ranges: write Vec<Option<Range>>) -> void {
+        let loops = find_loops(function)
+        for index in 0..loops.length() {
+            match loop_evolution(function, loops[index]) {
+                Some(evolution) => {
+                    ranges[evolution.induction.value] = evolution_value_range(function, evolution)
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn evolution_value_range(function: ir::Function, evolution: LoopEvolution) -> Option<Range> {
+        let count = match evolution_trip_count(function, evolution) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let domain = match evolution_domain(function, evolution) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let step = match evolution_step(function, evolution) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let distance = count * step.magnitude
+        let final = if step.descending {
+            domain.start - distance
+        } else {
+            domain.start + distance
+        }
+        let sign = if evolution_signed(evolution.operator) {
+            sign_bit(evolution.induction.value_type)
+        } else {
+            0
+        }
+        let start = domain.start ^ sign
+        let end = final ^ sign
+        if step.descending !=(end < start) && end != start {
+            return None()
+        }
+        return Some(Range {
+                minimum: if start < end {
+                    start
+                } else {
+                    end
+                }, maximum: if start > end {
+                    start
+                } else {
+                    end
+                }
+            })
+    }
+}

@@ -1,0 +1,81 @@
+module sema {
+    fn validate_access(variable: Variable, usage: PathUse, path: frontend::Path) -> bool {
+        match read usage {
+            ReadPath => {
+                return validate_read(variable)
+            }
+            WritePath => {
+                return validate_write(variable, false, path)
+            }
+            ReassignPath => {
+                return validate_write(variable, true, path)
+            }
+            MovePath => {
+                return validate_move(variable, path)
+            }
+        }
+    }
+
+    fn validate_read(variable: Variable) -> bool {
+        match read variable.state {
+            Available => {
+                return true
+            }
+            ReadLoaned(count) => {
+                count;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn validate_write(variable: Variable, reassign: bool, path: frontend::Path) -> bool {
+        match read variable.access {
+            ReadAccess => {
+                return false
+            }
+            _ => {
+            }
+        }
+        if variable.mutable_value == false {
+            return false
+        }
+        match read variable.state {
+            Available => {
+                return true
+            }
+            Moved => {
+                return reassign && path.segments.length() == 1
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn validate_move(variable: Variable, path: frontend::Path) -> bool {
+        if path.segments.length() != 1 {
+            return false
+        }
+        match read variable.access {
+            OwnedAccess => {
+            }
+            _ => {
+                return false
+            }
+        }
+        if variable.copy_value {
+            return false
+        }
+        match read variable.state {
+            Available => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

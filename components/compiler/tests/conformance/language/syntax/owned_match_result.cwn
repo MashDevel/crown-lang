@@ -1,0 +1,20 @@
+resource Item {
+    value: u32
+    drop {
+        print(value)
+    }
+}
+fn choose(value: take Option<Item>) -> Item {
+    match move value {
+        Some(item) => move item,
+        None => Item {
+            value: 2
+        }
+    }
+}
+fn main() -> u32 {
+    let selected = choose(Some(Item {
+                value: 1
+            }))
+    selected.value + 41
+}

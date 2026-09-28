@@ -1,0 +1,96 @@
+module inspect {
+    copy struct Metrics {
+        span: frontend::Span, lines: usize, parameters: usize, cyclomatic: usize, cognitive: usize, nesting: usize
+    }
+
+    fn metrics(bundle: frontend::SourceBundle, nodes: Vec<Node>) -> Vec<Metrics> {
+        var stack = Vec<Metrics>.new()
+        var output = Vec<Metrics>.new()
+        for index in 0..nodes.length() {
+            metric_node(bundle, nodes[index], stack, output)
+        }
+        return move output
+    }
+
+    fn metric_node(bundle: frontend::SourceBundle, node: Node, stack: write Vec<Metrics>, output: write Vec<Metrics>) -> void {
+        if node.kind == Kind::Function() {
+            stack.push(Metrics {
+                    span: node.span, lines: code_lines(bundle.source, node.span.start, node.span.end), parameters: node.count, cyclomatic: 1, cognitive: 0, nesting: 0
+                })
+            return
+        }
+        if node.kind == Kind::EndFunction() {
+            match stack.pop() {
+                Some(value) => {
+                    output.push(value)
+                }
+                None => {
+                }
+            }
+            return
+        }
+        if stack.length() == 0 {
+            return
+        }
+        let last = stack.length() - 1
+        if node.depth > stack[last].nesting {
+            stack[last].nesting = node.depth
+        }
+        if node.kind == Kind::Control() {
+            stack[last].cyclomatic = stack[last].cyclomatic + node.count
+            stack[last].cognitive = stack[last].cognitive + 1 + node.depth
+        }
+    }
+
+    copy struct LineCount {
+        count: usize, content: bool
+    }
+
+    fn code_lines(source: Shared<Vec<u8>>, start: usize, end: usize) -> usize {
+        var lines = LineCount {
+            count: 0, content: false
+        }
+        loan read source as bytes {
+            for index in start..end {
+                line_byte(lines, bytes[index])
+            }
+        }
+        if lines.content {
+            lines.count = lines.count + 1
+        }
+        return lines.count
+    }
+
+    fn line_byte(lines: write LineCount, byte: u8) -> void {
+        if byte == 10 {
+            if lines.content {
+                lines.count = lines.count + 1
+            }
+            lines.content = false
+            return
+        }
+        if byte != 32 && byte != 9 && byte != 13 {
+            lines.content = true
+        }
+    }
+
+    fn violations(value: Metrics, limits: toolchain::StructuralLimits) -> usize {
+        var count: usize = 0
+        if value.lines > limits.function_lines {
+            count = count + 1
+        }
+        if value.parameters > limits.parameters {
+            count = count + 1
+        }
+        if value.cyclomatic > limits.cyclomatic {
+            count = count + 1
+        }
+        if value.cognitive > limits.cognitive {
+            count = count + 1
+        }
+        if value.nesting > limits.nesting {
+            count = count + 1
+        }
+        return count
+    }
+}

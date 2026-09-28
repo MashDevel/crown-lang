@@ -1,0 +1,3 @@
+fn main() -> usize {
+    return u32.size_of(4)
+}

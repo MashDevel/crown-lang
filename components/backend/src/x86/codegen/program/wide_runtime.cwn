@@ -1,0 +1,117 @@
+module x86 {
+    fn codegen_add_wide_runtime(program: write Program) -> Result<void, CodegenError> {
+        match program_add_function(program, codegen_unsigned_divide_runtime()) {
+            Err(error) => {
+                error;
+                return Err(codegen_error(CodegenEncodeError()))
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match program_add_function(program, codegen_signed_divide_runtime()) {
+            Err(error) => {
+                error;
+                return Err(codegen_error(CodegenEncodeError()))
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+
+    fn codegen_unsigned_divide_runtime() -> Function {
+        var instructions = Vec<Instruction>.new()
+        instructions.push(MoveImmediate(R8(), 0))
+        instructions.push(MoveImmediate(R9(), 0))
+        instructions.push(MoveImmediate(R10(), 0))
+        instructions.push(MoveImmediate(R11(), 0))
+        instructions.push(MoveImmediate(Rax(), 128))
+        instructions.push(Label(InternalLabel(0)))
+        instructions.push(Add(Rdi(), Rdi()))
+        instructions.push(AddCarry(Rsi(), Rsi()))
+        instructions.push(AddCarry(R10(), R10()))
+        instructions.push(AddCarry(R11(), R11()))
+        instructions.push(JumpIf(Below(), InternalLabel(1)))
+        instructions.push(Compare(R11(), Rcx()))
+        instructions.push(JumpIf(Above(), InternalLabel(1)))
+        instructions.push(JumpIf(Below(), InternalLabel(2)))
+        instructions.push(Compare(R10(), Rdx()))
+        instructions.push(JumpIf(Below(), InternalLabel(2)))
+        instructions.push(Label(InternalLabel(1)))
+        instructions.push(Subtract(R10(), Rdx()))
+        instructions.push(SubtractBorrow(R11(), Rcx()))
+        instructions.push(Add(R8(), R8()))
+        instructions.push(AddCarry(R9(), R9()))
+        instructions.push(AddImmediate(R8(), 1))
+        instructions.push(Jump(InternalLabel(3)))
+        instructions.push(Label(InternalLabel(2)))
+        instructions.push(Add(R8(), R8()))
+        instructions.push(AddCarry(R9(), R9()))
+        instructions.push(Label(InternalLabel(3)))
+        instructions.push(SubtractImmediate(Rax(), 1))
+        instructions.push(JumpIf(NotEqual(), InternalLabel(0)))
+        instructions.push(Move(Rax(), R8()))
+        instructions.push(Move(Rdx(), R9()))
+        instructions.push(Move(R8(), R10()))
+        instructions.push(Move(R9(), R11()))
+        instructions.push(Return())
+        return function_new("__compiler_u128_divrem", move instructions)
+    }
+
+    fn codegen_signed_divide_runtime() -> Function {
+        var instructions = Vec<Instruction>.new()
+        instructions.push(Push(Rbx()))
+        instructions.push(Push(R12()))
+        instructions.push(Push(R13()))
+        instructions.push(MoveImmediate(Rbx(), 0))
+        instructions.push(Test(Rsi(), Rsi()))
+        instructions.push(JumpIf(GreaterOrEqual(), InternalLabel(0)))
+        instructions.push(MoveImmediate(Rbx(), 1))
+        instructions.push(Not(Rdi()))
+        instructions.push(Not(Rsi()))
+        instructions.push(MoveImmediate(R13(), 1))
+        instructions.push(Add(Rdi(), R13()))
+        instructions.push(MoveImmediate(R13(), 0))
+        instructions.push(AddCarry(Rsi(), R13()))
+        instructions.push(Label(InternalLabel(0)))
+        instructions.push(Move(R13(), Rbx()))
+        instructions.push(MoveImmediate(R12(), 0))
+        instructions.push(Test(Rcx(), Rcx()))
+        instructions.push(JumpIf(GreaterOrEqual(), InternalLabel(1)))
+        instructions.push(MoveImmediate(R12(), 1))
+        instructions.push(Not(Rdx()))
+        instructions.push(Not(Rcx()))
+        instructions.push(MoveImmediate(Rax(), 1))
+        instructions.push(Add(Rdx(), Rax()))
+        instructions.push(MoveImmediate(Rax(), 0))
+        instructions.push(AddCarry(Rcx(), Rax()))
+        instructions.push(Label(InternalLabel(1)))
+        instructions.push(Call("__compiler_u128_divrem"))
+        instructions.push(Xor(Rbx(), R12()))
+        instructions.push(Test(Rbx(), Rbx()))
+        instructions.push(JumpIf(Equal(), InternalLabel(2)))
+        instructions.push(Not(Rax()))
+        instructions.push(Not(Rdx()))
+        instructions.push(MoveImmediate(Rbx(), 1))
+        instructions.push(Add(Rax(), Rbx()))
+        instructions.push(MoveImmediate(Rbx(), 0))
+        instructions.push(AddCarry(Rdx(), Rbx()))
+        instructions.push(Label(InternalLabel(2)))
+        instructions.push(Test(R13(), R13()))
+        instructions.push(JumpIf(Equal(), InternalLabel(3)))
+        instructions.push(Not(R8()))
+        instructions.push(Not(R9()))
+        instructions.push(MoveImmediate(Rbx(), 1))
+        instructions.push(Add(R8(), Rbx()))
+        instructions.push(MoveImmediate(Rbx(), 0))
+        instructions.push(AddCarry(R9(), Rbx()))
+        instructions.push(Label(InternalLabel(3)))
+        instructions.push(Pop(R13()))
+        instructions.push(Pop(R12()))
+        instructions.push(Pop(Rbx()))
+        instructions.push(Return())
+        return function_new("__compiler_i128_divrem", move instructions)
+    }
+}

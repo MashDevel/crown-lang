@@ -1,0 +1,23 @@
+fn signed() -> i16 {
+    return -8 / 2 + 10
+}
+fn small() -> u8 {
+    return 255
+}
+fn fraction() -> f32 {
+    return 1.5 + 2.25
+}
+fn letter() -> char {
+    return 'λ'
+}
+fn nothing() -> void {
+    return
+}
+fn main() -> u32 {
+    signed()
+    small()
+    fraction()
+    letter()
+    nothing()
+    return 0
+}

@@ -1,0 +1,152 @@
+module arm64 {
+    const FRAME_LIMIT: u64 = 1073741824
+
+    struct Frame {
+        size: u64
+        values: Vec<u64>
+        copies: Vec<u64>
+        allocations: Vec<u64>
+        registers: Vec<u32>
+        saved: Vec<u64>
+    }
+
+    fn frame_new(function: ir::Function) -> Result<Frame, Text> {
+        let count = u64.from(function.values.length())
+        if count > FRAME_LIMIT / 32 {
+            return Err("ARM64 function has too many values")
+        }
+        let lifetimes = frame_lifetimes(function)?
+        validate_register_inputs(function)?
+        var frame = Frame {
+            size: 0, values: Vec<u64>.new(), copies: Vec<u64>.new(), allocations: Vec<u64>.new(),
+            registers: allocate_registers(function), saved: Vec<u64>.new()
+        }
+        frame_value_slots(frame, function, lifetimes)?
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                frame_instruction(frame, function.blocks[block].instructions[index])?
+            }
+        }
+        reserve_saved_registers(frame)?
+        frame.size = abi_align(frame.size, 16)?
+        return Ok(move frame)
+    }
+
+    fn frame_value_slots(frame: write Frame, function: ir::Function, lifetimes: Vec<FrameLifetime>) -> Result<void, Text> {
+        for index in 0..function.values.length() {
+            let offset = if lifetimes[index].local || frame_register(frame, index) != REGISTER_SPILLED {
+                18446744073709551615
+            } else {
+                frame_reserve_value(frame, function, index)?
+            }
+            frame.values.push(offset)
+            frame.copies.push(18446744073709551615)
+            frame.allocations.push(18446744073709551615)
+        }
+        frame_assign_locals(frame, function, lifetimes)?
+        return Ok(())
+    }
+
+    fn frame_reserve_value(frame: write Frame, function: ir::Function, index: usize) -> Result<u64, Text> {
+        match ir::function_constant_index(function, index) {
+            Some(constant) => {
+                constant;
+                return Ok(18446744073709551615)
+            }
+            None => {
+            }
+        }
+        let size = frame_value_size(function.values[index])?
+        return frame_reserve(frame, size, u32.from(size))
+    }
+
+    fn frame_instruction(frame: write Frame, instruction: ir::Instruction) -> Result<void, Text> {
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                incoming;
+                let value = frame_result(frame, instruction.result)?
+                let size = frame_value_size(value_type)?
+                let offset = frame_reserve(frame, size, u32.from(size))?
+                frame.copies[value] = offset
+            }
+            ir::InstructionMemory(memory) => {
+                frame_allocation(frame, memory, instruction.result)?
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_allocation(frame: write Frame, memory: ir::MemoryInstruction, result: Option<usize>) -> Result<void, Text> {
+        match read memory {
+            ir::MemoryStackSlot(size, alignment) => {
+                let value = frame_result(frame, result)?
+                let offset = frame_reserve(frame, size, alignment)?
+                frame.allocations[value] = offset
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_reserve(frame: write Frame, size: u64, alignment: u32) -> Result<u64, Text> {
+        let aligned = abi_align(frame.size, u64.from(alignment))?
+        let padding: u64 = if alignment > 16 {
+            u64.from(alignment) - 1
+        } else {
+            0
+        }
+        if size > FRAME_LIMIT || padding > FRAME_LIMIT - size {
+            return Err("ARM64 stack allocation exceeds the frame limit")
+        }
+        let reserved = size + padding
+        if aligned > FRAME_LIMIT - reserved {
+            return Err("ARM64 frame exceeds the supported size")
+        }
+        frame.size = aligned + reserved
+        return Ok(aligned)
+    }
+
+    fn frame_value(frame: Frame, value: usize) -> Result<u64, Text> {
+        if value >= frame.values.length() {
+            return Err("ARM64 value is outside its frame")
+        }
+        if frame.values[value] == 18446744073709551615 {
+            return Err("ARM64 value has no stack slot")
+        }
+        return Ok(frame.values[value])
+    }
+
+    fn frame_copy(frame: Frame, value: usize) -> Result<u64, Text> {
+        if value >= frame.copies.length() {
+            return Err("ARM64 copy is outside its frame")
+        }
+        if frame.copies[value] == 18446744073709551615 {
+            return Err("ARM64 value has no parallel-copy slot")
+        }
+        return Ok(frame.copies[value])
+    }
+
+    fn frame_value_size(value_type: ir::Type) -> Result<u64, Text> {
+        let size = value_size(value_type)?
+        return Ok(if size <= 8 {
+                8
+            } else {
+                16
+            })
+    }
+
+    fn frame_result(frame: Frame, result: Option<usize>) -> Result<usize, Text> {
+        match result {
+            Some(value) => {
+                if value < frame.values.length() {
+                    return Ok(value)
+                }
+                return Err("ARM64 frame instruction has an invalid result")
+            }
+            None => Err("ARM64 frame instruction has no result")
+        }
+    }
+}

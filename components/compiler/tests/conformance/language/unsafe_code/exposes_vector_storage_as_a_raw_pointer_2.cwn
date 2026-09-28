@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let values = Vec<u8>.new()
+    values.as_raw()
+    return 0
+}

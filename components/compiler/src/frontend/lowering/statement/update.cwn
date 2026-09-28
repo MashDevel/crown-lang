@@ -1,0 +1,22 @@
+module lowering {
+    fn update_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementUpdate(target, operator, expression) => {
+                let right = function_scalar_expression(compiler, analysis, expression)?
+                let place = expression_place_info(compiler, analysis, target)?
+                let left = function_load(compiler, analysis.checker.symbols, place)?
+                let operation = ScalarOperation {
+                    operator: operator, left: left, right: right, value_type: sema::type_copy(place.value_type)
+                }
+                let result = scalar_operation(compiler, analysis, operation)?
+                let request = CopyRequest {
+                    destination: place.address, value: ScalarValue(result, sema::type_copy(place.value_type))
+                }
+                return function_copy(compiler, analysis.checker.symbols, request)
+            }
+            _ => {
+                return Err(100)
+            }
+        }
+    }
+}

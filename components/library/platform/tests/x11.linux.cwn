@@ -1,0 +1,102 @@
+fn main() -> u32 {
+    match x11_test::run() {
+        Ok(value) => {
+            return value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+}
+
+module x11_test {
+    extern "c" {
+        fn allocate(size: usize) -> RawPtr<u8> = "malloc"
+    }
+
+    fn run() -> Result<u32, std::dylib::Error> {
+        let library = native::x11::open()?
+        let inspect = unsafe {
+            std::dylib::open("libX11.so.6", std::text::split("XGetImage", 124))
+        }?
+        unsafe {
+            let display = native::x11::open_display(library, RawPtr<u8>.from_address(0))
+            if display == RawPtr<u8>.from_address(0) {
+                return Ok(2)
+            }
+            let screen = native::x11::default_screen(library, display)
+            let request = native::x11::Pixmap {
+                display: display, drawable: native::x11::root_window(library, display, screen),
+                width: 1, height: 1, depth: u32.from(native::x11::default_depth(library, display, screen))
+            }
+            var result = roundtrip(library, inspect, request)
+            if result == 0 {
+                var large = request
+                large.width = 1280
+                large.height = 800
+                result = roundtrip(library, inspect, large)
+            }
+            native::x11::close_display(library, display)
+            return Ok(result)
+        }
+    }
+
+    unsafe fn roundtrip(library: std::dylib::Library, inspect: std::dylib::Library, request: native::x11::Pixmap) -> u32 {
+        unsafe {
+            let serial = native::x11::next_request(library, request.display)
+            let source = native::x11::create_pixmap(library, request)
+            let destination = native::x11::create_pixmap(library, request)
+            let gc = native::x11::create_gc(library, request.display, source, 0, RawPtr<u8>.from_address(0))
+            let image = pattern(library, request)
+            native::x11::put_image(library, native::x11::PutImage {
+                    display: request.display, window: source, gc: gc, image: image,
+                    src_x: 0, src_y: 0, dst_x: 0, dst_y: 0, width: request.width, height: request.height
+                })
+            native::x11::copy_area(library, native::x11::CopyArea {
+                    display: request.display, source: source, destination: destination, gc: gc,
+                    width: request.width, height: request.height
+                })
+            let result = inspect_pixels(library, inspect, request, destination)
+            native::x11::destroy_image(library, image)
+            native::x11::free_gc(library, request.display, gc)
+            native::x11::free_pixmap(library, request.display, source)
+            native::x11::free_pixmap(library, request.display, destination)
+            if native::x11::next_request(library, request.display) <= serial {
+                return 3
+            }
+            return result
+        }
+    }
+
+    unsafe fn pattern(library: std::dylib::Library, request: native::x11::Pixmap) -> RawPtr<u8> {
+        unsafe {
+            let pixels = allocate(usize.from(request.width) * usize.from(request.height) * 4)
+            for index in 0..usize.from(request.width) * usize.from(request.height) {
+                RawPtr<u32>.cast(pixels).offset(index).write(u32.from(index) & 0xffffff)
+            }
+            let screen = native::x11::default_screen(library, request.display)
+            return native::x11::create_image(library, native::x11::CreateImage {
+                    display: request.display, visual: native::x11::default_visual(library, request.display, screen),
+                    depth: request.depth, format: 2, offset: 0, pixels: pixels, width: request.width,
+                    height: request.height, pad: 32, stride: i32.from(request.width * 4)
+                })
+        }
+    }
+
+    unsafe fn inspect_pixels(library: std::dylib::Library, inspect: std::dylib::Library, request: native::x11::Pixmap, drawable: u64) -> u32 {
+        unsafe {
+            let get = RawPtr<fn(read RawPtr<u8>, read u64, read i32, read i32, read u32, read u32, read u64, read i32) -> RawPtr<u8>>.cast(std::dylib::slot(inspect, 0)).read()
+            let image = get(request.display, drawable, 0, 0, request.width, request.height, 0xffffffffffffffff, 2)
+            let pixels = RawPtr<RawPtr<u32>>.cast(image.offset(16)).read()
+            var result: u32 = 0
+            for index in 0..usize.from(request.width) * usize.from(request.height) {
+                if pixels.offset(index).read() & 0xffffff != u32.from(index) & 0xffffff {
+                    result = 4
+                }
+            }
+            native::x11::destroy_image(library, image)
+            return result
+        }
+    }
+}

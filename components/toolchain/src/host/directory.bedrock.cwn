@@ -1,0 +1,10 @@
+module toolchain {
+    extern "c" {
+        fn raw_opendir(path: RawPtr<u8>) -> RawPtr<u8> = "crown_directory_open"
+        fn raw_readdir(directory: RawPtr<u8>) -> RawPtr<u8> = "crown_directory_next"
+        fn raw_closedir(directory: RawPtr<u8>) -> i32 = "crown_directory_close"
+        fn raw_errno() -> RawPtr<i32> = "crown_directory_error"
+    }
+
+    const DIRECTORY_NAME_OFFSET: usize = 0
+}

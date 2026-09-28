@@ -1,0 +1,65 @@
+module unicode_tables {
+    fn boundaries(values: Vec<u8>) -> Vec<u32> {
+        var output = Vec<u32>.new()
+        var previous: u8 = 0
+        for index in 0..values.length() {
+            if values[index] != previous {
+                output.push(u32.from(index))
+                previous = values[index]
+            }
+        }
+        if previous != 0 {
+            output.push(u32.from(values.length()))
+        }
+        return move output
+    }
+
+    fn hex(value: u32) -> Text {
+        var digits = Vec<u8>.new()
+        var remaining = value
+        while remaining != 0 {
+            digits.push(u8.from(remaining % 16))
+            remaining = remaining / 16
+        }
+        if digits.length() == 0 {
+            return "0x0"
+        }
+        var output = "0x"
+        for index in 0..digits.length() {
+            output.push(std::text::hex_digit(digits[digits.length() - index - 1]))
+        }
+        return move output
+    }
+
+    fn render(function: Text, values: Vec<u8>) -> Text {
+        let points = boundaries(values)
+        let name = std::text::joined(function, "_boundaries")
+        var output = std::text::joined("module std::unicode {\n    const ", name)
+        std::text::append(output, std::text::joined(": [u32; ", std::text::decimal(u64.from(points.length()))))
+        std::text::append(output, "] = [\n")
+        for index in 0..points.length() {
+            if index % 12 == 0 {
+                std::text::append(output, "        ")
+            }
+            std::text::append(output, hex(points[index]))
+            let ending = if index % 12 == 11 || index + 1 == points.length() {
+                ",\n"
+            } else {
+                ", "
+            }
+            std::text::append(output, ending)
+        }
+        std::text::append(output, std::text::joined("    ]\n    fn ", function))
+        std::text::append(output, "(value: u32) -> bool {\n        return boundary_contains(value, ")
+        std::text::append(output, std::text::joined(name, ")\n    }\n}\n"))
+        return move output
+    }
+
+    fn generate(input: Text, output: Text) -> Result<void, Text> {
+        let printable_values = printable(toolchain::read_text(toolchain::path_join(input, "printable.rs"))?)?
+        let grapheme_values = grapheme(toolchain::read_text(toolchain::path_join(input, "unicode_data.rs"))?)?
+        toolchain::make_directory(output)?
+        toolchain::write_text(toolchain::path_join(output, "printable.cwn"), render("is_printable", printable_values))?
+        return toolchain::write_text(toolchain::path_join(output, "grapheme.cwn"), render("is_grapheme_extend", grapheme_values))
+    }
+}

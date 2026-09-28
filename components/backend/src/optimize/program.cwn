@@ -1,0 +1,105 @@
+module optimize {
+    fn generated(program: write ir::Program) -> Report {
+        var report = report_new()
+        parallel_functions(program, false, report)
+        report.interprocedural_changes = report.interprocedural_changes + interprocedural(program)
+        report.functions_specialized = specialize(program)
+        report.calls_inlined = inline(program)
+        report.interprocedural_changes = report.interprocedural_changes + interprocedural(program)
+        parallel_functions(program, true, report)
+        return move report
+    }
+
+    fn sequential_functions(program: write ir::Program, enable_gvn: bool, report: write Report) -> void {
+        let effects = memory_effects(program)
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan write program.functions[index] as function {
+                if ir::function_is_import(function) == false {
+                    let current = function_effects(function, enable_gvn, effects)
+                    report_merge(report, current)
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn function(function: write ir::Function) -> Report {
+        return function_mode(function, true)
+    }
+
+    fn function_mode(function: write ir::Function, enable_gvn: bool) -> Report {
+        return function_effects(function, enable_gvn, Shared.new(Vec<MemoryEffect>.new()))
+    }
+
+    fn function_effects(function: write ir::Function, enable_gvn: bool, effects: Shared<Vec<MemoryEffect>>) -> Report {
+        var report = report_new()
+        report.blocks_removed = ir::function_prune_unreachable(function)
+        report.slots_scalarized = scalarize(function)
+        report.slots_promoted = promote(function)
+        if enable_gvn {
+            report.strength_reduced = induction_strength(function)
+            report.instructions_hoisted = licm(function)
+        }
+        var first = true
+        while report.iterations < 64 {
+            let iteration = iteration(function, enable_gvn, first, effects)
+            if report_changed(iteration) == false {
+                if enable_gvn {
+                    report.loops_vectorized = vectorize(function)
+                    report.instructions_removed = report.instructions_removed + dce(function)
+                }
+                return move report
+            }
+            report_merge(report, iteration)
+            report.iterations = report.iterations + 1
+            first = false
+        }
+        return move report
+    }
+
+    fn iteration(function: write ir::Function, enable_gvn: bool, first: bool, effects: Shared<Vec<MemoryEffect>>) -> Report {
+        var report = report_new()
+        report.strength_reduced = strength(function)
+        report.identities_simplified = identity(function)
+        report.casts_simplified = cast(function)
+        if enable_gvn {
+            report.expressions_eliminated = gvn(function)
+            report.loads_eliminated = load_with_effects(function, effects)
+            report.instructions_removed = dead_stores(function, effects)
+            report.instructions_hoisted = licm(function)
+            report.instructions_hoisted = report.instructions_hoisted + hoist_loads(function, effects)
+        }
+        report.comparisons_proven = range(function, enable_gvn)
+        report.constants_folded = fold(function)
+        if enable_gvn {
+            report.selects_formed = select(function)
+        }
+        report.branches_threaded = thread(function)
+        report.switches_formed = switch(function)
+        report.branches_simplified = branch(function)
+        cleanup_graph(function, first, report)
+        report.instructions_removed = report.instructions_removed + dce(function)
+        if enable_gvn {
+            report.branches_simplified = report.branches_simplified + optimize_loops(function)
+        }
+        return move report
+    }
+
+    fn cleanup_graph(function: write ir::Function, first: bool, report: write Report) -> void {
+        let branches_changed = first || report.branches_threaded != 0 || report.branches_simplified != 0
+        if branches_changed {
+            report.blocks_removed = ir::function_prune_unreachable(function)
+        }
+        let graph_changed = branches_changed || report.blocks_removed != 0
+        if graph_changed || report.constants_folded != 0 {
+            report.phis_simplified = phi(function)
+        }
+        if graph_changed || report.phis_simplified != 0 {
+            report.blocks_merged = ir::function_merge_linear_blocks(function)
+        }
+        if report.blocks_merged != 0 {
+            report.slots_promoted = promote(function)
+        }
+    }
+}

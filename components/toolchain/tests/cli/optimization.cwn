@@ -1,0 +1,81 @@
+fn optimization_command(root: Text, option: Text) -> Text {
+    return std::text::joined(std::text::joined("build|", toolchain::path_join(root, "main.cwn")), std::text::joined("|-o|", std::text::joined(toolchain::path_join(root, "program"), std::text::joined("|", option))))
+}
+
+fn optimization_training(root: Text, directory: Text) -> Result<void, Text> {
+    testing::write_file(root, "main.cwn", "fn main(arguments: Arguments) -> u32 { if arguments.length() > 1 { return 0 } return 3 }\n")?
+    let generate = std::text::joined("--profile-generate|", directory)
+    testing::clean_call(root, optimization_command(root, generate))?
+    var arguments = Vec<Text>.new()
+    arguments.push(toolchain::path_join(root, "program"));
+    arguments.push("train")
+    toolchain::require_command(std::text::clone_list(arguments))?
+    toolchain::require_command(move arguments)?
+    let entries = toolchain::directory_entries(directory)?
+    testing::expect(entries.length() == 3, "two independent training runs and metadata")?
+    return optimization_use(root, directory)
+}
+
+fn optimization_use(root: Text, directory: Text) -> Result<void, Text> {
+    let use_profile = std::text::joined("--profile-use|", directory)
+    testing::clean_call(root, optimization_command(root, use_profile))?
+    var execute = Vec<Text>.new();
+    execute.push(toolchain::path_join(root, "program"));
+    execute.push("train")
+    toolchain::require_command(move execute)?
+    let report = std::text::joined("--optimization-report|", toolchain::path_join(root, "remarks.json"))
+    testing::clean_call(root, optimization_command(root, report))?
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(root, "remarks.json"))?)?
+    toolchain::json_required(document, document.root, "transforms")?
+    testing::write_file(root, "main.cwn", "fn main() -> u32 { return 0 }\n")?
+    testing::failed_call(root, optimization_command(root, use_profile))?
+    return Ok(())
+}
+
+fn optimization_invalid(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "invalid")
+    let both = std::text::joined(std::text::joined("--profile-generate|", directory), std::text::joined("|--profile-use|", directory))
+    testing::failed_call(root, optimization_command(root, both))?
+    let mixed = std::text::joined(std::text::joined("--profile-generate|", directory), std::text::joined("|--coverage|", directory))
+    testing::failed_call(root, optimization_command(root, mixed))?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    optimization_training(root, toolchain::path_join(root, "profile"))?
+    optimization_missing_directory(root)?
+    optimization_invalid(root)?
+    return optimization_unreachable(root)
+}
+
+fn optimization_unreachable(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "unreachable.json")
+    let option = std::text::joined("--optimization-report|", path)
+    let entry = "fn main() -> u32 { return 0 }\n"
+    testing::write_file(root, "main.cwn", entry)?
+    testing::clean_call(root, optimization_command(root, option))?
+    let expected = toolchain::read_text(path)?
+    let unused = "fn unused() -> u32 { let value: u32 = 6; return value * 7 }\n"
+    testing::write_file(root, "main.cwn", std::text::joined(unused, entry))?
+    testing::clean_call(root, optimization_command(root, option))?
+    testing::expect(std::text::equal(expected, toolchain::read_text(path)?), "unreachable functions do not consume optimization work")?
+    testing::write_file(root, "main.cwn", std::text::joined("fn unused() -> u32 { return missing_name }\n", entry))?
+    let rejected = testing::failed_call(root, optimization_command(root, option))?
+    return testing::expect(std::text::contains(rejected.stderr, "unknown name"), "unused function bodies remain type checked")
+}
+
+fn optimization_missing_directory(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "missing-profile")
+    let option = std::text::joined("--profile-generate|", directory)
+    testing::clean_call(root, optimization_command(root, option))?
+    toolchain::remove_tree(directory)
+    let result = toolchain::capture(toolchain::command(testing::list(toolchain::path_join(root, "program"))), root)?
+    testing::expect(result.status == 125, "profile initialization failure exits before main")?
+    return testing::expect(std::text::contains(result.stderr, "cannot initialize Crown profiling"), "profile initialization identifies profiling")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

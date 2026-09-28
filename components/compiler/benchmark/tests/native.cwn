@@ -1,0 +1,96 @@
+fn native_stage() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let source = testing::write_file(root, "main.cwn", "fn main() -> u32 { return 42 }")?
+    let compiler = toolchain::path_join(root, "stage0")
+    toolchain::copy_file(testing::compiler()?, compiler)?
+    toolchain::executable(compiler)?
+    toolchain::set_environment("CC", "/usr/bin/false")?
+    var current = benchmark::Benchmark {
+        directory: root.clone(), results: Vec<Text>.new()
+    }
+    var sources = Vec<Text>.new()
+    sources.push(source.clone())
+    benchmark::build_stage(current, sources, 0)?
+    return verify_native_stage(root)
+}
+
+fn verify_native_stage(root: Text) -> Result<void, Text> {
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(root, "results.json"))?)?
+    let rows = toolchain::json_array_values(document, document.root)?
+    testing::expect(rows.length() == 2, "assembly and native build measured")?
+    let label = toolchain::json_text(document, toolchain::json_required(document, rows[1], "label")?)?
+    testing::expect(std::text::equal(label, "build1"), "native build timing label")?
+    var arguments = Vec<Text>.new()
+    arguments.push(toolchain::path_join(root, "stage1"))
+    let result = toolchain::capture(toolchain::command(move arguments), root)?
+    return testing::expect(result.status == 42, "benchmark stage uses native executable linking")
+}
+
+fn preparation() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let seed = testing::write_file(root, "seed", "#!/bin/sh\nexit 23\n")?
+    let input = benchmark::Inputs {
+        root: root.clone(), compiler: seed.clone(), jobs: 2
+    }
+    benchmark::prepare(root, input, "{\"source\":\"hash\"}")?
+    testing::expect(std::text::equal(toolchain::read_text(toolchain::path_join(root, "source.json"))?, "{\"source\":\"hash\"}"), "benchmark source provenance is preserved")?
+    return prepared_environment(root, input)
+}
+
+fn prepared_environment(root: Text, input: benchmark::Inputs) -> Result<void, Text> {
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(root, "environment.json"))?)?
+    testing::expect(field_number(document, document.root, "jobs")? == 2, "benchmark job count is recorded")?
+    let checksum = toolchain::json_text(document, toolchain::json_required(document, document.root, "seed_sha256")?)?
+    testing::expect(std::text::equal(checksum, toolchain::digest(input.compiler)?), "benchmark seed checksum is recorded")?
+    return executable_seed(root)
+}
+
+fn executable_seed(root: Text) -> Result<void, Text> {
+    let stage = toolchain::path_join(root, "stage0")
+    let result = toolchain::capture(toolchain::command(testing::list(stage)), root)?
+    testing::expect(result.status == 23, "prepared seed is executable")?
+    return Ok(())
+}
+
+fn rejected_preparation() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let missing = benchmark::Inputs {
+        root: root.clone(), compiler: toolchain::path_join(root, "missing"), jobs: 1
+    }
+    testing::error(benchmark::prepare(root, missing, "{}"))?
+    testing::expect(toolchain::exists(toolchain::path_join(root, "stage0")) == false, "failed preparation cannot publish a seed")?
+    testing::error(benchmark::prepare(toolchain::path_join(root, "missing-directory"), missing, "{}"))?
+    return Ok(())
+}
+
+fn finished_provenance() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let source = provenance_sources(root)?
+    let provenance = toolchain::source_record(root, toolchain::compiler_sources(root)?)?
+    testing::error(benchmark::finish(root, root, provenance))?
+    let stage = testing::write_file(root, "stage3", "verified seed")?
+    benchmark::finish(root, root, provenance)?
+    return verify_finished(root, provenance, source, stage)
+}
+
+fn verify_finished(root: Text, provenance: Text, source: Text, stage: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "fixed-point.json")
+    let original = toolchain::read_text(path)?
+    let document = toolchain::json(original.clone())?
+    let checksum = toolchain::json_text(document, toolchain::json_required(document, document.root, "sha256")?)?
+    testing::expect(std::text::equal(checksum, toolchain::digest(stage)?), "fixed point records the verified binary")?
+    toolchain::write_text(source, "fn main() -> u32 { 1 }")?
+    testing::error(benchmark::finish(root, root, provenance))?
+    return testing::expect(std::text::equal(toolchain::read_text(path)?, original), "source changes cannot publish a new fixed point")
+}
+
+fn provenance_sources(root: Text) -> Result<Text, Text> {
+    toolchain::make_directory(toolchain::path_join(root, "components/backend/src"))?
+    toolchain::make_directory(toolchain::path_join(root, "components/library/src"))?
+    toolchain::make_directory(toolchain::path_join(root, "components/toolchain/src"))?
+    return testing::write_file(root, "components/compiler/src/main.cwn", "fn main() -> u32 { 0 }")
+}

@@ -1,0 +1,45 @@
+module sema {
+    fn checker_expected_path(checker: write Checker, path: frontend::Path, expected: Type) -> Option<ExpressionInfo> {
+        if path.segments.length() == 1 {
+            let name = frontend::name_copy(path.segments[0])
+            match checker_find_variable(checker, name) {
+                Some(key) => {
+                    key
+                }
+                None => {
+                    match find_function(checker.symbols, name) {
+                        Some(index) => {
+                            if checker.symbols.functions[index].type_parameters.length() != 0 {
+                                return checker_generic_function_value(checker, index, expected, name.span)
+                            }
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return checker_path(checker, path, ReadPath())
+    }
+
+    fn checker_generic_function_value(checker: write Checker, function: usize, expected: Type, span: frontend::Span) -> Option<ExpressionInfo> {
+        let signature = function_call_signature(checker.symbols, function)
+        if signature.unsafe_value {
+            checker_error(checker, "unsafe functions cannot become safe function values");
+            return None()
+        }
+        let schema = FunctionType(parameter_types_copy(signature.parameters), Box.new(type_copy(signature.result)))
+        var values = inference_values(signature.type_parameter_count)
+        infer_type(schema, callable_type(expected), values)
+        if inference_complete(checker.symbols, values) == false {
+            checker_error(checker, "generic function values require a function type that determines every type argument");
+            return None()
+        }
+        let value_type = substitute(schema, values)
+        let state = CallState {
+            signature: call_signature_copy(signature), values: move values, checked: Vec<CheckedArgument>.new(), span: span
+        }
+        checker_record_generic_call(checker, state)
+        return Some(copy_info(move value_type))
+    }
+}

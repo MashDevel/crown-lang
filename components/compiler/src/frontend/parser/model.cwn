@@ -1,0 +1,36 @@
+module frontend {
+    struct Parser {
+        source: Shared<Vec<u8>>
+        tokens: Vec<Token>
+        module_name: Text
+        offset: usize
+        pending_greater: u32
+        depth: u32
+        stopped: bool
+        diagnostics: Option<Vec<Diagnostic>>
+    }
+
+    fn parser_new(source: take Shared<Vec<u8>>, tokens: take Vec<Token>) -> Parser {
+        return Parser {
+            source: move source
+            tokens: move tokens
+            module_name: ""
+            offset: 0
+            pending_greater: 0
+            depth: 0
+            stopped: false
+            diagnostics: Some(Vec<Diagnostic>.new())
+        }
+    }
+
+    fn parser_take_diagnostics(parser: write Parser) -> Vec<Diagnostic> {
+        match parser.diagnostics.take() {
+            Some(diagnostics) => {
+                return move diagnostics
+            }
+            None => {
+                return Vec<Diagnostic>.new()
+            }
+        }
+    }
+}

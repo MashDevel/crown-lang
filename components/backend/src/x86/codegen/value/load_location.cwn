@@ -1,0 +1,126 @@
+module x86 {
+    fn codegen_load_location(program: ir::Program, compiler: write FunctionCompiler, input: take LocationLoad) -> Result<void, CodegenError> {
+        match read input.location {
+            ValueFloatRegister(register) => {
+                let width = codegen_float_value_width(program, compiler, input.value)?
+                codegen_emit(compiler, MoveFromFloat(width, input.destination, register))
+                return Ok(())
+            }
+            ValueSlot(offset) => {
+                offset;
+                return codegen_load_slot(program, compiler, input)
+            }
+            ValueRegister(register) => {
+                match codegen_value_type(program, compiler, input.value) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value_type) => {
+                        match codegen_width(value_type) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(width) => {
+                                codegen_emit(compiler, MoveSized(MoveSizedArgs {
+                                            destination: input.destination
+                                            source: register
+                                            width: width
+                                            extension: input.extension
+                                        }))
+                                return Ok(())
+                            }
+                        }
+                    }
+                }
+            }
+            ValueStackAddress(offset) => {
+                codegen_emit(compiler, LoadAddress(input.destination, Rbp(), offset))
+                return Ok(())
+            }
+            ValueGlobalAddress(global) => {
+                let request = AddressLoad {
+                    id: global, destination: input.destination
+                }
+                return codegen_load_global(program, compiler, move request)
+            }
+            ValueFunctionAddress(function) => {
+                let request = AddressLoad {
+                    id: function, destination: input.destination
+                }
+                return codegen_load_function(program, compiler, move request)
+            }
+            ValueSymbolAddress => {
+                return codegen_load_symbol(compiler, input.value, input.destination)
+            }
+        }
+    }
+
+    fn codegen_load_slot(program: ir::Program, compiler: write FunctionCompiler, input: LocationLoad) -> Result<void, CodegenError> {
+        var offset: i32 = 0
+        match read input.location {
+            ValueSlot(value) => {
+                offset = value
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match codegen_value_type(program, compiler, input.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                match codegen_width(value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                                    destination: input.destination
+                                    base: Rbp()
+                                    offset: offset
+                                    width: width
+                                    extension: input.extension
+                                }))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_load_global(program: ir::Program, compiler: write FunctionCompiler, request: take AddressLoad) -> Result<void, CodegenError> {
+        if request.id >= program.globals.length() {
+            return Err(codegen_error_here(compiler, CodegenMissingSymbol()))
+        }
+        let name = program.globals[request.id].name.clone()
+        codegen_emit(compiler, LoadSymbolAddress(request.destination, move name))
+        return Ok(())
+    }
+
+    fn codegen_load_function(program: ir::Program, compiler: write FunctionCompiler, request: take AddressLoad) -> Result<void, CodegenError> {
+        if request.id >= program.functions.length() {
+            return Err(codegen_error_here(compiler, CodegenMissingSymbol()))
+        }
+        let name = program.functions[request.id].name.clone()
+        codegen_emit(compiler, LoadSymbolAddress(request.destination, move name))
+        return Ok(())
+    }
+
+    fn codegen_load_symbol(compiler: write FunctionCompiler, value: usize, destination: take Register) -> Result<void, CodegenError> {
+        if value >= compiler.symbols.length() {
+            return Err(codegen_error_here(compiler, CodegenMissingSymbol()))
+        }
+        var symbol = Text.new()
+        match read compiler.symbols[value] {
+            Some(name) => {
+                symbol = name.clone()
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenMissingSymbol()))
+            }
+        }
+        codegen_emit(compiler, LoadSymbolAddress(destination, move symbol))
+        return Ok(())
+    }
+}

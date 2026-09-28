@@ -1,0 +1,142 @@
+module sema {
+    struct CycleSearch {
+        target: usize
+        visiting: Vec<bool>
+        acyclic: Vec<Type>
+    }
+
+    fn validate_cycles(symbols: write Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.types.length() {
+            if declaration_cycle(symbols, index) {
+                symbols.current_span = symbols.types[index].name.span
+                var message = "type '"
+                let name = name_text(symbols.source, symbols.types[index].name)
+                std::text::append(message, name)
+                let suffix = "' contains itself by value"
+                std::text::append(message, suffix)
+                symbols_error(symbols, move message)
+            }
+            index = index + 1
+        }
+    }
+
+    fn declaration_cycle(symbols: Symbols, target: usize) -> bool {
+        var search = CycleSearch {
+            target: target, visiting: Vec<bool>.new(), acyclic: Vec<Type>.new()
+        }
+        var index: usize = 0
+        while index < symbols.types.length() {
+            search.visiting.push(false);
+            index = index + 1
+        }
+        var arguments = Vec<Type>.new()
+        index = 0
+        while index < symbols.types[target].type_parameters.length() {
+            arguments.push(ParameterType(index))
+            index = index + 1
+        }
+        let value = NamedType(target, move arguments)
+        return cycle_fields(symbols, search, value)
+    }
+
+    fn type_has_cycle(symbols: Symbols, search: write CycleSearch, value: Type) -> bool {
+        var index: usize = 0
+        while index < search.acyclic.length() {
+            if types_equal(search.acyclic[index], value) {
+                return false
+            }
+            index = index + 1
+        }
+        if cycle_kind(symbols, search, value) {
+            return true
+        }
+        search.acyclic.push(type_copy(value))
+        return false
+    }
+
+    fn cycle_kind(symbols: Symbols, search: write CycleSearch, value: Type) -> bool {
+        match read value {
+            ArrayType(element, length) => {
+                length;
+                loan read element as inner {
+                    return type_has_cycle(symbols, search, inner)
+                }
+            }
+            NamedType(symbol, arguments) => {
+                arguments
+                if symbol == search.target {
+                    return true
+                }
+                if search.visiting[symbol] {
+                    return false
+                }
+                search.visiting[symbol] = true
+                let result = cycle_fields(symbols, search, value)
+                search.visiting[symbol] = false
+                return result
+            }
+            BuiltinType(builtin, arguments) => {
+                if builtin_has_inline_payload(builtin) == false {
+                    return false
+                }
+                return cycle_arguments(symbols, search, arguments)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn cycle_arguments(symbols: Symbols, search: write CycleSearch, arguments: Vec<Type>) -> bool {
+        var index: usize = 0
+        while index < arguments.length() {
+            if type_has_cycle(symbols, search, arguments[index]) {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn cycle_fields(symbols: Symbols, search: write CycleSearch, value: Type) -> bool {
+        let fields = cycle_concrete_fields(symbols, value)
+        return cycle_arguments(symbols, search, fields)
+    }
+
+    fn cycle_concrete_fields(symbols: Symbols, value: Type) -> Vec<Type> {
+        var fields = Vec<Type>.new()
+        match read value {
+            NamedType(symbol, arguments) => {
+                var index: usize = 0
+                while index < symbols.types[symbol].fields.length() {
+                    fields.push(substitute(symbols.types[symbol].fields[index].value_type, arguments))
+                    index = index + 1
+                }
+                let variants = cycle_variant_fields(symbols.types[symbol], arguments)
+                index = 0
+                while index < variants.length() {
+                    fields.push(type_copy(variants[index]));
+                    index = index + 1
+                }
+            }
+            _ => {
+            }
+        }
+        return move fields
+    }
+
+    fn cycle_variant_fields(symbol: Symbol, arguments: Vec<Type>) -> Vec<Type> {
+        var fields = Vec<Type>.new()
+        var variant: usize = 0
+        while variant < symbol.variants.length() {
+            var field: usize = 0
+            while field < symbol.variants[variant].fields.length() {
+                fields.push(substitute(symbol.variants[variant].fields[field], arguments))
+                field = field + 1
+            }
+            variant = variant + 1
+        }
+        return move fields
+    }
+}

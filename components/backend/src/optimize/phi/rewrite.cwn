@@ -1,0 +1,123 @@
+module optimize {
+    fn phi_replacement(function: ir::Function, result: usize, kind: ir::InstructionKind, replacements: Vec<Option<usize>>) -> Option<PhiReplacement> {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                var candidate: Option<PhiReplacement> = None()
+                var index: usize = 0
+                while index < incoming.length() {
+                    let value = resolve_phi_value(incoming[index].value, replacements)
+                    if value != result {
+                        let current = phi_value_replacement(function, value, value_type)
+                        if phi_merge_candidate(candidate, current) == false {
+                            return None()
+                        }
+                    }
+                    index = index + 1
+                }
+                return move candidate
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn phi_value_replacement(function: ir::Function, value: usize, value_type: ir::Type) -> PhiReplacement {
+        match ir::function_constant_value(function, value) {
+            Some(constant) => {
+                return PhiConstantValue(value_type, move constant)
+            }
+            None => {
+                return PhiValue(value)
+            }
+        }
+    }
+
+    fn phi_replacement_copy(value: PhiReplacement) -> PhiReplacement {
+        match read value {
+            PhiValue(item) => {
+                return PhiValue(item)
+            }
+            PhiConstantValue(value_type, constant) => {
+                return PhiConstantValue(value_type, ir::constant_copy(constant))
+            }
+        }
+    }
+
+    fn materialize_phi_replacement(function: write ir::Function, replacement: PhiReplacement) -> usize {
+        match read replacement {
+            PhiValue(value) => {
+                return value
+            }
+            PhiConstantValue(value_type, constant) => {
+                return ir::function_constant(function, value_type, constant)
+            }
+        }
+    }
+
+    fn resolve_phi_value(value: usize, replacements: Vec<Option<usize>>) -> usize {
+        var current = value
+        var count: usize = 0
+        while count < replacements.length() {
+            match read replacements[current] {
+                Some(next) => {
+                    current = next
+                }
+                None => {
+                    return current
+                }
+            }
+            count = count + 1
+        }
+        return current
+    }
+
+    fn phi_creates_cycle(result: usize, value: usize, replacements: Vec<Option<usize>>) -> bool {
+        var current = value
+        var count: usize = 0
+        while count < replacements.length() {
+            if current == result {
+                return true
+            }
+            match read replacements[current] {
+                Some(next) => {
+                    current = next
+                }
+                None => {
+                    return false
+                }
+            }
+            count = count + 1
+        }
+        return true
+    }
+
+    fn count_some(values: Vec<Option<usize>>) -> usize {
+        var output: usize = 0
+        var index: usize = 0
+        while index < values.length() {
+            match read values[index] {
+                Some(value) => {
+                    value;
+                    output = output + 1
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return output
+    }
+
+    fn phi_merge_candidate(candidate: write Option<PhiReplacement>, current: PhiReplacement) -> bool {
+        match read candidate {
+            Some(existing) => {
+                return phi_replacement_equal(existing, current)
+            }
+            None => {
+            }
+        }
+        candidate = Some(phi_replacement_copy(current))
+        true
+    }
+}

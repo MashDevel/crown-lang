@@ -1,0 +1,39 @@
+module x86 {
+    fn codegen_offset_constant(function: ir::Function, value: usize) -> Option<i64> {
+        var value_type = function.values[value]
+        if codegen_integer_bits(value_type) > 64 {
+            value_type = ir::TypeInteger(ir::IntegerWidth64())
+        }
+        let constant = match ir::function_constant_value(function, value) {
+            Some(constant) => move constant
+            None => {
+                return None()
+            }
+        }
+        match codegen_immediate(constant, value_type, SignExtend()) {
+            Ok(offset) => Some(offset)
+            Err(error) => {
+                error;
+                None()
+            }
+        }
+    }
+
+    fn codegen_load_offset(program: ir::Program, compiler: write FunctionCompiler, value: usize) -> Result<Register, CodegenError> {
+        let value_type = codegen_value_type(program, compiler, value)?
+        let width = codegen_width(value_type)?
+        if width_code(width) == width_code(Qword()) {
+            match codegen_frame_register(compiler.frame, value) {
+                Some(register) => {
+                    return Ok(register)
+                }
+                None => {
+                }
+            }
+        }
+        codegen_load_signed(program, compiler, ValueAccess {
+                value: value, register: Rcx()
+            })?
+        return Ok(Rcx())
+    }
+}

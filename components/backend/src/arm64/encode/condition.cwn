@@ -1,0 +1,26 @@
+module arm64 {
+    fn compare_word(left: u32, right: u32) -> Result<u32, Text> {
+        return register_word(3942645760, Registers {
+                destination: 31, left: left, right: right
+            })
+    }
+
+    fn select_word(registers: Registers, condition: u32) -> Result<u32, Text> {
+        if condition > 15 {
+            return Err("ARM64 condition exceeds four bits")
+        }
+        return register_word(2592079872 |(condition << 12), registers)
+    }
+
+    fn extend_word(destination: u32, source: u32, width: u32, signed: bool) -> Result<u32, Text> {
+        if width == 0 || width > 64 {
+            return Err("ARM64 extension width must be between 1 and 64")
+        }
+        let opcode: u32 = if signed {
+            2470445056
+        } else {
+            3544186880
+        }
+        return immediate_word(opcode, destination, source, width - 1)
+    }
+}

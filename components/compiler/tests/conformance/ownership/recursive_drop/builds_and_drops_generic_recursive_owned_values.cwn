@@ -1,0 +1,10 @@
+enum List<T> {
+    End,
+    Link(T, Box<List<T>>)
+}
+fn main() -> u32 {
+    let end: List<Text> = End()
+    let tail = Box.new(move end)
+    let list = Link("tail", move tail)
+    return 0
+}

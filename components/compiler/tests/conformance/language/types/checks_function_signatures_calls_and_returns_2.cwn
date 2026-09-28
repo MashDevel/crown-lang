@@ -1,0 +1,3 @@
+fn main(value: read u32) -> bool {
+    return true
+}

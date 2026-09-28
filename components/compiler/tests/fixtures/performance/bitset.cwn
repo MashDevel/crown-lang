@@ -1,0 +1,43 @@
+fn bitset_case(length: read usize) -> bool {
+    var set = ir::bitset_new(length)
+    var excluded = ir::bitset_new(length)
+    var index: usize = 0
+    while index < length {
+        if index % 3 == 0 { ir::bitset_insert(set, index) }
+        if index % 5 == 0 { ir::bitset_insert(excluded, index) }
+        index = index + 1
+    }
+    let copied = ir::bitset_copy(set)
+    if ir::bitset_equal(set, copied) == false { return false }
+    var output = ir::bitset_new(length)
+    ir::bitset_extend_without(output, set, excluded)
+    var count: usize = 0
+    index = 0
+    while index < length {
+        let expected = index % 3 == 0 && index % 5 != 0
+        if ir::bitset_contains(output, index) != expected { return false }
+        if expected { count = count + 1 }
+        var next = index
+        while next < length && (next % 3 != 0 || next % 5 == 0) { next = next + 1 }
+        match ir::bitset_next(output, index) {
+            Some(value) => { if value != next { return false } }
+            None => { if next != length { return false } }
+        }
+        index = index + 1
+    }
+    if ir::bitset_count(output) != count { return false }
+    if ir::bitset_contains(output, length) { return false }
+    ir::bitset_insert(output, length)
+    if ir::bitset_count(output) != count { return false }
+    index = 0
+    while index < length { ir::bitset_remove(output, index); index = index + 1 }
+    return ir::bitset_count(output) == 0
+}
+fn main() -> u32 {
+    var length: usize = 0
+    while length < 140 {
+        if bitset_case(length) == false { return 1 }
+        length = length + 1
+    }
+    return 42
+}

@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let value: u8 = 255
+    value + 1
+    return 0
+}

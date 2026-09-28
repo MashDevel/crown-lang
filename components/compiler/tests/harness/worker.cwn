@@ -1,0 +1,32 @@
+module harness {
+    fn run_case_worker(arguments: Vec<Text>) -> Result<u32, Text> {
+        if arguments.length() != 9 {
+            return Err("invalid test worker arguments")
+        }
+        let document = toolchain::json(toolchain::read_text(arguments[5])?)?
+        let entries = toolchain::json_array_values(document, document.root)?
+        let index = usize.from(std::text::unsigned(arguments[3])?)
+        if index >= entries.length() {
+            return Err("test index is out of bounds")
+        }
+        let value = harness::case(document, entries[index], arguments[6])?
+        if harness::case_applies(value, toolchain::host_target()) == false {
+            return Err("test requires another host")
+        }
+        return execute_worker(value, document, index, arguments)
+    }
+
+    fn execute_worker(value: harness::Case, document: toolchain::Json, index: usize, arguments: Vec<Text>) -> Result<u32, Text> {
+        let environment = harness::Environment {
+            coverage: harness::case_coverage(arguments[7], index),
+            compiler: arguments[2].clone(), root: arguments[6].clone(), output: arguments[4].clone()
+        }
+        if value.unit {
+            let cases = harness::read_cases(document, arguments[6])?
+            harness::check_unit_case(cases, index, environment, arguments[8], arguments[7])?
+        } else {
+            harness::check_case(value, environment)?
+        }
+        return Ok(0)
+    }
+}

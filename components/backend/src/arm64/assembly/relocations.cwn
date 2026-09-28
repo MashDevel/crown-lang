@@ -1,0 +1,53 @@
+module arm64 {
+    fn assembly_relocations(object: object::CompilerObject, output: write Text, prefix: Text) -> Result<void, Text> {
+        for index in 0..object.relocations.length() {
+            loan read object.relocations[index] as relocation {
+                std::text::append(output, ".reloc ")
+                std::text::append(output, assembly_base(prefix, relocation.section))
+                output.push('+')
+                std::text::append(output, std::text::decimal(relocation.offset))
+                std::text::append(output, ", ")
+                std::text::append(output, assembly_relocation_name(relocation.kind)?)
+                std::text::append(output, ", ")
+                std::text::append(output, object.symbols[relocation.symbol].name)
+                assembly_addend(output, relocation.addend)
+                if ir::value_present(relocation.subtract) {
+                    return Err("ARM64 assembly cannot represent a subtracting relocation")
+                }
+                output.push('\n')
+            }
+        }
+        return Ok(())
+    }
+    fn assembly_relocation_name(kind: object::RelocationKind) -> Result<Text, Text> {
+        match kind {
+            object::RelocationAbsolute32 => Ok("R_AARCH64_ABS32")
+            object::RelocationAbsolute64 => Ok("R_AARCH64_ABS64")
+            object::RelocationArmBranch26 => Ok("R_AARCH64_CALL26")
+            object::RelocationArmPage21 => Ok("R_AARCH64_ADR_PREL_PG_HI21")
+            object::RelocationArmPageOffset12 => Ok("R_AARCH64_ADD_ABS_LO12_NC")
+            object::RelocationArmGotPage21 => Ok("R_AARCH64_ADR_GOT_PAGE")
+            object::RelocationArmGotLoadPageOffset12 => Ok("R_AARCH64_LD64_GOT_LO12_NC")
+            _ => Err("unsupported ARM64 assembly relocation")
+        }
+    }
+
+    fn assembly_addend(output: write Text, addend: i64) -> void {
+        if addend == 0 {
+            return
+        }
+        output.push(if addend < 0 {
+                '-'
+            } else {
+                '+'
+            })
+        let zero: u64 = 0
+        let amount = if addend < 0 {
+            zero.wrapping_sub(u64.from_bits(addend))
+        } else {
+            u64.from(addend)
+        }
+        std::text::append(output, std::text::decimal(amount))
+    }
+
+}

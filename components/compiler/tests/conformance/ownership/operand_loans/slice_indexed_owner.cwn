@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    var inner = operand_values()
+    var values = Vec<Vec<u32>>.new()
+    values.push(move inner)
+    loan write values[0][0..consume_nested(move values)] as part {
+        return u32.from(part.length())
+    }
+}

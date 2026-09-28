@@ -1,0 +1,108 @@
+module optimize {
+    fn scalar_rewrite(function: write ir::Function, analysis: ScalarAnalysis) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var source = ir::basic_block_new()
+            loan read function.blocks[block] as value {
+                source = ir::basic_block_copy(value)
+            }
+            var output = Vec<ir::Instruction>.new()
+            var index: usize = 0
+            while index < source.instructions.length() {
+                loan read source.instructions[index] as instruction {
+                    let emitted = scalar_rewrite_instruction(function, analysis, instruction)
+                    scalar_append_emitted(output, move emitted)
+                }
+                index = index + 1
+            }
+            function.blocks[block].instructions = move output
+            block = block + 1
+        }
+    }
+
+    fn scalar_rewrite_instruction(function: write ir::Function, analysis: ScalarAnalysis, instruction: ir::Instruction) -> Vec<ir::Instruction> {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryCopy(destination, source, size) => {
+                        return scalar_rewrite_copy(function, analysis, ScalarMemory {
+                                destination: destination, source: source, size: size
+                            })
+                    }
+                    ir::MemorySet(destination, value, size) => {
+                        return scalar_rewrite_set(function, analysis, ScalarMemory {
+                                destination: destination, source: value, size: size
+                            })
+                    }
+                    _ => {
+                        var output = Vec<ir::Instruction>.new()
+                        var value = ir::instruction_copy(instruction)
+                        scalar_rewrite_access(analysis, value.kind)
+                        output.push(move value)
+                        return move output
+                    }
+                }
+            }
+
+            _ => {
+                var output = Vec<ir::Instruction>.new()
+                var value = ir::instruction_copy(instruction)
+                scalar_rewrite_access(analysis, value.kind)
+                output.push(move value)
+                return move output
+            }
+        }
+    }
+
+    fn scalar_rewrite_access(analysis: ScalarAnalysis, kind: write ir::InstructionKind) -> void {
+        match write kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match write instruction_memory_kind {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        scalar_rewrite_address(analysis, address)
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        value;
+                        alignment;
+                        volatile
+                        scalar_rewrite_address(analysis, address)
+                    }
+                    _ => {
+                    }
+                }
+            }
+
+            _ => {
+            }
+        }
+    }
+
+    fn scalar_rewrite_address(analysis: ScalarAnalysis, address: write usize) -> void {
+        match scalar_selected(analysis, address) {
+            None => {
+            }
+            Some(value) => {
+                match scalar_field_slot(analysis, value.root, value.offset) {
+                    Some(slot) => {
+                        address = slot
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_append_emitted(output: write Vec<ir::Instruction>, emitted: take Vec<ir::Instruction>) -> void {
+        var index: usize = 0
+        while index < emitted.length() {
+            loan read emitted[index] as instruction {
+                output.push(ir::instruction_copy(instruction))
+            }
+            index = index + 1
+        }
+    }
+}

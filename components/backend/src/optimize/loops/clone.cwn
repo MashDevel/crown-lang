@@ -1,0 +1,92 @@
+module optimize {
+    fn loop_clone_mapping(function: write ir::Function, blocks: Vec<bool>) -> InlineMapping {
+        var mapping = InlineMapping {
+            values: none_usize(function.values.length()), blocks: Vec<usize>.new()
+        }
+        for block in 0..blocks.length() {
+            if blocks[block] {
+                mapping.blocks.push(function.blocks.length())
+                function.blocks.push(ir::basic_block_new())
+                loop_clone_values(function, block, mapping.values)
+            } else {
+                mapping.blocks.push(block)
+            }
+        }
+        return move mapping
+    }
+
+    fn loop_clone_values(function: write ir::Function, block: usize, values: write Vec<Option<usize>>) -> void {
+        for index in 0..function.blocks[block].instructions.length() {
+            match function.blocks[block].instructions[index].result {
+                Some(value) => {
+                    let value_type = function.values[value]
+                    values[value] = Some(ir::function_new_value(function, value_type))
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn loop_clone_blocks(function: write ir::Function, blocks: Vec<bool>, mapping: InlineMapping) -> void {
+        for block in 0..blocks.length() {
+            if blocks[block] {
+                let original = ir::basic_block_copy(function.blocks[block])
+                clone_inline_instructions(function.blocks[mapping.blocks[block]], original, mapping)
+                match read original.terminator {
+                    Some(terminator) => {
+                        function.blocks[mapping.blocks[block]].terminator = Some(inline_remap_terminator(terminator, mapping))
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+    }
+
+    fn loop_clone_exit_phis(function: write ir::Function, blocks: Vec<bool>, mapping: InlineMapping) -> void {
+        for block in 0..blocks.length() {
+            if blocks[block] == false {
+                for index in 0..function.blocks[block].instructions.length() {
+                    loop_clone_phi_inputs(function.blocks[block].instructions[index].kind, blocks, mapping)
+                }
+            }
+        }
+    }
+
+    fn loop_clone_phi_inputs(kind: write ir::InstructionKind, blocks: Vec<bool>, mapping: InlineMapping) -> void {
+        match write kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                let count = incoming.length()
+                for index in 0..count {
+                    let source = incoming[index]
+                    if source.block < blocks.length() && blocks[source.block] {
+                        incoming.push(ir::PhiIncoming {
+                                block: mapping.blocks[source.block], value: inline_mapped_value(mapping, source.value)
+                            })
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn loop_replace_phi_predecessor(block: write ir::BasicBlock, old: usize, replacement: usize) -> void {
+        for index in 0..block.instructions.length() {
+            match write block.instructions[index].kind {
+                ir::InstructionPhi(value_type, incoming) => {
+                    value_type;
+                    for cursor in 0..incoming.length() {
+                        if incoming[cursor].block == old {
+                            incoming[cursor].block = replacement
+                        }
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+    }
+}

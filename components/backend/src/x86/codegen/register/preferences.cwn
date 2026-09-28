@@ -1,0 +1,109 @@
+module x86 {
+    fn codegen_parameter_preferences(function: ir::Function) -> Vec<Option<Register>> {
+        var output = codegen_empty_registers(function.values.length())
+        match abi_locations(function.signature) {
+            Err(error) => {
+                error;
+                return move output
+            }
+            Ok(locations) => {
+                var index: usize = 0
+                while index < function.parameters.length() {
+                    let value = function.parameters[index]
+                    match read locations[index] {
+                        ArgumentInteger(register) => {
+                            if codegen_register_is_allocatable(register) {
+                                output[value] = Some(register)
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                    index = index + 1
+                }
+            }
+        }
+        return move output
+    }
+
+    fn codegen_preferences(function: ir::Function) -> Vec<Option<Register>> {
+        var output = codegen_parameter_preferences(function)
+        var block: usize = 0
+        while block < function.blocks.length() {
+            loan read function.blocks[block] as value {
+                codegen_instruction_preferences(value, output)
+                codegen_return_preference(value, output)
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn codegen_instruction_preferences(block: ir::BasicBlock, output: write Vec<Option<Register>>) -> void {
+        var index: usize = 0
+        while index < block.instructions.length() {
+            match read block.instructions[index].result {
+                Some(value) => {
+                    var absent = false
+                    loan read output[value] as preferred {
+                        absent = codegen_option_register_is_none(preferred)
+                    }
+                    if absent && codegen_is_call(block.instructions[index].kind) {
+                        output[value] = Some(Rax())
+                    }
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn codegen_return_preference(block: ir::BasicBlock, output: write Vec<Option<Register>>) -> void {
+        match read block.terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorReturn(value) => {
+                        match read value {
+                            Some(id) => {
+                                var absent = false
+                                loan read output[id] as preferred {
+                                    absent = codegen_option_register_is_none(preferred)
+                                }
+                                if absent {
+                                    output[id] = Some(Rax())
+                                }
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+    }
+
+    fn codegen_is_call(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionCall(function, arguments, result) => {
+                function;
+                arguments;
+                result;
+                return true
+            }
+            ir::InstructionCallIndirect(function, signature, arguments) => {
+                function;
+                signature;
+                arguments;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

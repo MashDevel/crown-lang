@@ -1,0 +1,121 @@
+module lowering {
+    fn function_bind_parameters(compiler: write FunctionCompiler, analysis: sema::Analysis) -> Result<void, u32> {
+        var parameter_value: usize = 0
+        if type_is_direct_result(compiler, analysis.checker.symbols) == false {
+            if compiler.ir.parameters.length() == 0 {
+                return Err(40)
+            }
+            compiler.result_address = Some(compiler.ir.parameters[0])
+            parameter_value = 1
+        }
+        var index: usize = 0
+        loan read analysis.checker.symbols.functions[compiler.semantic_function] as function {
+            while index < function.parameters.length() {
+                if parameter_value >= compiler.ir.parameters.length() {
+                    return Err(41)
+                }
+                loan read function.parameters[index] as parameter {
+                    let value_type = sema::substitute(parameter.value_type, compiler.substitutions)
+                    let direct_request = ParameterRequest {
+                        parameter: sema::NamedParameter {
+                            name: frontend::name_copy(parameter.name), mode: parameter.mode, value_type: sema::type_copy(parameter.value_type)
+                        }
+                        value_type: sema::type_copy(value_type)
+                        index: index
+                    }
+                    let direct = parameter_is_direct(compiler, analysis.checker.symbols, direct_request)
+                    let address_request = ParameterAddressRequest {
+                        value: compiler.ir.parameters[parameter_value]
+                        value_type: sema::type_copy(value_type)
+                        direct: direct
+                    }
+                    match parameter_address(compiler, analysis.checker.symbols, address_request) {
+                        Err(error) => {
+                            return Err(error)
+                        }
+                        Ok(address) => {
+                            function_add_binding(compiler, Binding {
+                                    name: frontend::name_copy(parameter.name)
+                                    value_type: sema::type_copy(value_type)
+                                    address: address
+                                    owned: sema::mode_is_take(parameter.mode)
+                                    available: true
+                                    depth: compiler.scope_depth
+                                })
+                        }
+                    }
+                }
+                parameter_value = parameter_value + 1
+                index = index + 1
+            }
+        }
+        return Ok(())
+    }
+
+    fn parameter_is_direct(compiler: FunctionCompiler, symbols: sema::Symbols, request: ParameterRequest) -> bool {
+        if sema::mode_is_read(request.parameter.mode) == false {
+            return false
+        }
+        if request.index == 0 && compiler.indirect_receiver {
+            return false
+        }
+        match type_is_direct(symbols, request.value_type) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(value) => {
+                return value
+            }
+        }
+    }
+
+    fn parameter_address(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ParameterAddressRequest) -> Result<usize, u32> {
+        if request.direct == false {
+            return Ok(request.value)
+        }
+        match function_stack(compiler, symbols, request.value_type) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(address) => {
+                let store = StoreRequest {
+                    address: address, value: request.value, value_type: sema::type_copy(request.value_type)
+                }
+                match function_store(compiler, symbols, store) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value) => {
+                        value;
+                        return Ok(address)
+                    }
+                }
+            }
+        }
+    }
+
+    fn type_is_direct_result(compiler: FunctionCompiler, symbols: sema::Symbols) -> bool {
+        match type_is_direct(symbols, compiler.result) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(value) => {
+                return value
+            }
+        }
+    }
+
+    struct ParameterRequest {
+        parameter: sema::NamedParameter
+        value_type: sema::Type
+        index: usize
+    }
+
+    struct ParameterAddressRequest {
+        value: usize
+        value_type: sema::Type
+        direct: bool
+    }
+}

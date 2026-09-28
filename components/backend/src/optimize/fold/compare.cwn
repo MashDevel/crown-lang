@@ -1,0 +1,87 @@
+module optimize {
+    fn fold_compare(function: ir::Function, kind: ir::InstructionKind) -> Option<ir::Constant> {
+        match read kind {
+            ir::InstructionCompare(operator, left, right) => {
+                let left_constant = integer_constant(function, left)
+                let right_constant = integer_constant(function, right)
+                match read left_constant {
+                    Some(left_value) => {
+                        match read right_constant {
+                            Some(right_value) => {
+                                match ir::function_value_type(function, left) {
+                                    Some(value_type) => {
+                                        let input = compare_input(operator, left_value, right_value)
+                                        return compare_integer(input, value_type)
+                                    }
+                                    None => {
+                                        return None()
+                                    }
+                                }
+                            }
+                            None => {
+                                return None()
+                            }
+                        }
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn compare_integer(input: CompareInput, value_type: ir::Type) -> Option<ir::Constant> {
+        if ir::type_is_integer(value_type) == false {
+            return None()
+        }
+        let result = match compare_integer_value(input, value_type) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if result {
+            return Some(ir::ConstantInteger(u64.from(1)))
+        }
+        Some(ir::ConstantInteger(u64.from(0)))
+    }
+
+    fn compare_integer_value(input: CompareInput, value_type: ir::Type) -> Option<bool> {
+        match read input.operator {
+            ir::CompareSignedLess => Some(signed_less(input.left, input.right, value_type))
+            ir::CompareSignedLessEqual => Some(signed_less(input.left, input.right, value_type) || input.left == input.right)
+            ir::CompareSignedGreater => Some(signed_less(input.right, input.left, value_type))
+            ir::CompareSignedGreaterEqual => Some(signed_less(input.right, input.left, value_type) || input.left == input.right)
+            _ => compare_unsigned_value(input)
+        }
+    }
+
+    fn compare_unsigned_value(input: CompareInput) -> Option<bool> {
+        match read input.operator {
+            ir::CompareEqual => Some(input.left == input.right)
+            ir::CompareNotEqual => Some(input.left != input.right)
+            ir::CompareUnsignedLess => Some(input.left < input.right)
+            ir::CompareUnsignedLessEqual => Some(input.left <= input.right)
+            ir::CompareUnsignedGreater => Some(input.left > input.right)
+            ir::CompareUnsignedGreaterEqual => Some(input.left >= input.right)
+            _ => None()
+        }
+    }
+
+    fn signed_less(left: u64, right: u64, value_type: ir::Type) -> bool {
+        let mask = ir::integer_mask(value_type)
+        let sign = sign_bit(value_type)
+        let normalized_left = left & mask
+        let normalized_right = right & mask
+        let left_negative = (normalized_left & sign) != 0
+        let right_negative = (normalized_right & sign) != 0
+        if left_negative != right_negative {
+            return left_negative
+        }
+        return normalized_left < normalized_right
+    }
+}

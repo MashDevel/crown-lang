@@ -1,0 +1,3 @@
+[package]
+name = "crown-benchmark"
+sources = ["main.cwn", "measure.cwn", "stages.cwn", "../../toolchain/src", "../../library/src"]

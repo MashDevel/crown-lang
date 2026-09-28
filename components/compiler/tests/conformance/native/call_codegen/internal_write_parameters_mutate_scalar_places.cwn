@@ -1,0 +1,9 @@
+fn increment(value: write u32) -> void {
+    value = value + 1
+    return
+}
+fn main() -> u32 {
+    var value = 6
+    increment(value)
+    return value
+}

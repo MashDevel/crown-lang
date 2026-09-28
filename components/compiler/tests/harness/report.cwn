@@ -1,0 +1,78 @@
+module harness {
+    struct Outcome {
+        name: Text, error: Text
+    }
+    struct Report {
+        rows: Vec<Outcome>, failed: usize
+    }
+
+    fn report() -> Report {
+        return Report {
+            rows: Vec<Outcome>.new(), failed: 0
+        }
+    }
+
+    fn outcome(name: Text, result: take Result<void, Text>) -> Outcome {
+        match move result {
+            Ok(done) => {
+                done;
+                return Outcome {
+                    name: name.clone(), error: ""
+                }
+            }
+            Err(error) => {
+                return Outcome {
+                    name: name.clone(), error: move error
+                }
+            }
+        }
+    }
+
+    fn record_result(report: write Report, row: take Outcome) -> void {
+        if row.error.length() != 0 {
+            report.failed = report.failed + 1
+            toolchain::say(std::text::joined(std::text::joined("FAIL ", row.name), std::text::joined(": ", row.error)))
+        }
+        report.rows.push(move row)
+    }
+
+    fn outcome_json(row: Outcome) -> Text {
+        var output = std::text::joined("{\"name\":", toolchain::json_quoted(row.name))
+        std::text::append(output, ",\"passed\":")
+        std::text::append(output, if row.error.length() == 0 {
+                "true"
+            } else {
+                "false"
+            })
+        std::text::append(output, ",\"error\":")
+        std::text::append(output, toolchain::json_quoted(row.error))
+        output.push('}')
+        return move output
+    }
+
+    fn report_json(report: Report) -> Text {
+        var output = "["
+        for index in 0..report.rows.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, outcome_json(report.rows[index]))
+        }
+        std::text::append(output, "]\n")
+        return move output
+    }
+
+    fn finish_report(report: Report, output: Text) -> Result<u32, Text> {
+        toolchain::write_text(toolchain::path_join(output, "results.json"), report_json(report))?
+        var message = std::text::decimal(u64.from(report.rows.length() - report.failed))
+        std::text::append(message, " passed, ")
+        std::text::append(message, std::text::decimal(u64.from(report.failed)))
+        std::text::append(message, " failed, 0 skipped")
+        toolchain::say(message)
+        return Ok(if report.failed == 0 {
+                0
+            } else {
+                1
+            })
+    }
+}

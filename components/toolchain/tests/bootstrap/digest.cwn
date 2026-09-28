@@ -1,0 +1,66 @@
+fn extract(root: Text, document: Text, field: Text, expected: bool) -> Result<void, Text> {
+    let path = testing::write_file(root, "document.json", document)?
+    let script = toolchain::path_join(toolchain::repository_root()?, "bootstrap/digest.awk")
+    var arguments = testing::list("awk|-v")
+    arguments.push(std::text::joined("field=", field))
+    arguments.push("-f")
+    arguments.push(move script)
+    arguments.push(move path)
+    let result = toolchain::capture(toolchain::command(move arguments), root)?
+    testing::expect((result.status == 0) == expected, std::text::joined("digest status: ", document))?
+    let output = if expected {
+        std::text::joined(std::text::repeat("a", 64), "\n")
+    } else {
+        ""
+    }
+    return testing::expect(std::text::equal(result.stdout, output), "digest output")
+}
+
+fn valid(root: Text, digest: Text) -> Result<void, Text> {
+    extract(root, std::text::joined("{\"seed\":", std::text::joined(digest, ",\"input\":\"other\"}")), "seed", true)?
+    let nested = std::text::joined("{\"assembly_sha256\":", std::text::joined(digest, ",\"source_files\":{\"escaped\\\\\\\"\\n.cwn\":\"other\"},\"values\":[true,false,null,-1.25e30,{},[],\"\\u0010\"]}"))
+    extract(root, nested, "assembly_sha256", true)?
+    let escapes = ",\"extra\":\"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u0041\"}"
+    return extract(root, std::text::joined("{\"seed\":", std::text::joined(digest, escapes)), "seed", true)
+}
+
+fn invalid(root: Text, digest: Text) -> Result<void, Text> {
+    var values = testing::list("\"\"|12|null|[]")
+    values.push(toolchain::json_quoted(std::text::repeat("a", 63)))
+    values.push(toolchain::json_quoted(std::text::repeat("a", 65)))
+    values.push(toolchain::json_quoted(std::text::repeat("A", 64)))
+    values.push(toolchain::json_quoted(std::text::repeat("g", 64)))
+    for index in 0..values.length() {
+        extract(root, std::text::joined("{\"seed\":", std::text::joined(values[index], "}")), "seed", false)?
+    }
+    extract(root, "{}", "seed", false)?
+    extract(root, std::text::joined("{\"other\":", std::text::joined(digest, "}")), "seed", false)?
+    extract(root, std::text::joined("{\"nested\":{\"seed\":", std::text::joined(digest, "}}")), "seed", false)?
+    let duplicate = std::text::joined(std::text::joined("{\"seed\":", digest), std::text::joined(",\"seed\":", std::text::joined(digest, "}")))
+    return extract(root, duplicate, "seed", false)
+}
+
+fn malformed(root: Text, digest: Text) -> Result<void, Text> {
+    extract(root, "", "seed", false)?
+    extract(root, "[]", "seed", false)?
+    let prefix = std::text::joined("{\"seed\":", digest)
+    let endings = testing::list("}garbage||,}|,\"extra\":01}|,\"extra\":[1,]}|,\"extra\":\"\\q\"}|,\"extra\":\"\\u012z\"}|,\"extra\":\"line\nbreak\"}")
+    for index in 0..endings.length() {
+        extract(root, std::text::joined(prefix, endings[index]), "seed", false)?
+    }
+    let deep = std::text::joined(std::text::repeat("[", 66), std::text::joined("0", std::text::repeat("]", 66)))
+    return extract(root, std::text::joined(prefix, std::text::joined(",\"extra\":", std::text::joined(deep, "}"))), "seed", false)
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let digest = toolchain::json_quoted(std::text::repeat("a", 64))
+    valid(root, digest)?
+    invalid(root, digest)?
+    return malformed(root, digest)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

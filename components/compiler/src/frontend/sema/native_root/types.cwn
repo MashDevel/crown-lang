@@ -1,0 +1,55 @@
+module sema {
+    fn native_root_builtin(source: Shared<Vec<u8>>, name: frontend::Name) -> Option<Builtin> {
+        if name_is(source, name, "NativeRoot") {
+            return Some(NativeRoot())
+        }
+        if name_is(source, name, "RootToken") {
+            return Some(RootToken())
+        }
+        if name_is(source, name, "RootLease") {
+            return Some(RootLease())
+        }
+        return None()
+    }
+    fn native_root_kind(kind: Builtin) -> bool {
+        return kind == NativeRoot() || kind == RootToken() || kind == RootLease()
+    }
+    fn root_wrapper(kind: Builtin, element: Type) -> Type {
+        var arguments = Vec<Type>.new()
+        arguments.push(type_copy(element))
+        return BuiltinType(kind, move arguments)
+    }
+    fn root_acquisition(element: Type) -> Type {
+        var arguments = Vec<Type>.new()
+        arguments.push(root_wrapper(RootLease(), element))
+        arguments.push(builtin_leaf(U32()))
+        return BuiltinType(Result(), move arguments)
+    }
+    fn root_method_signature(checker: Checker, receiver: Type, method: frontend::Name) -> Option<MethodSignature> {
+        match read receiver {
+            BuiltinType(kind, arguments) => {
+                if arguments.length() != 1 {
+                    return None()
+                }
+                if kind == NativeRoot() && name_is(checker.symbols.source, method, "token") {
+                    return Some(empty_method(false, root_wrapper(RootToken(), arguments[0])))
+                }
+                if kind != RootToken() {
+                    return None()
+                }
+                if name_is(checker.symbols.source, method, "slot") {
+                    return Some(empty_method(false, builtin_leaf(USize())))
+                }
+                if name_is(checker.symbols.source, method, "generation") {
+                    return Some(empty_method(false, builtin_leaf(U64())))
+                }
+                if name_is(checker.symbols.source, method, "acquire") {
+                    return Some(empty_method(false, root_acquisition(arguments[0])))
+                }
+            },
+            _ => {
+            }
+        }
+        return None()
+    }
+}

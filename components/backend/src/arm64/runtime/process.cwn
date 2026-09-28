@@ -1,0 +1,67 @@
+module arm64 {
+    fn append_process_runtime(object: write object::CompilerObject) -> Result<void, Text> {
+        if object.architecture != object::ArchitectureArm64() {
+            return Err("ARM64 runtime requires an ARM64 object")
+        }
+        let function = match link_object::existing_symbol(object, "crown_process_environment") {
+            Some(index) => index
+            None => {
+                return Ok(())
+            }
+        }
+        if object::symbol_is_import(object.symbols[function].binding) == false {
+            return Ok(())
+        }
+        if object::symbol_is_function(object.symbols[function].kind) == false {
+            return Err("process environment accessor must be a function")
+        }
+        let environment = process_environment_symbol(object)?
+        let section = object.sections.length()
+        object.sections.push(object::Section {
+                name: "process_environment", kind: object::SectionText(), alignment: 4,
+                data: process_environment_code()?, memory_size: 16
+            })
+        process_environment_relocations(object, section, environment)
+        object.symbols[function].binding = object::SymbolLocal()
+        object.symbols[function].section = Some(section)
+        object.symbols[function].offset = 0
+        object.symbols[function].size = 16
+        return Ok(())
+    }
+
+    fn process_environment_symbol(object: write object::CompilerObject) -> Result<usize, Text> {
+        match link_object::existing_symbol(object, "environ") {
+            Some(index) => {
+                if object::symbol_is_function(object.symbols[index].kind) {
+                    return Err("process environment requires a data symbol")
+                }
+                return Ok(index)
+            }
+            None => {
+            }
+        }
+        let index = object.symbols.length()
+        object.symbols.push(object::Symbol {
+                name: "environ", kind: object::SymbolData(), binding: object::SymbolImport(), section: None(), offset: 0, size: 0
+            })
+        return Ok(index)
+    }
+
+    fn process_environment_code() -> Result<Vec<u8>, Text> {
+        var bytes = Vec<u8>.new()
+        append_word(bytes, page_address(0, 0)?)
+        append_word(bytes, memory_word(0, 0, 0, 8, true)?)
+        append_word(bytes, memory_word(0, 0, 0, 8, true)?)
+        append_word(bytes, 3596551104)
+        return Ok(move bytes)
+    }
+
+    fn process_environment_relocations(object: write object::CompilerObject, section: usize, symbol: usize) -> void {
+        object.relocations.push(object::Relocation {
+                section: section, offset: 0, kind: object::RelocationArmGotPage21(), symbol: symbol, subtract: None(), addend: 0
+            })
+        object.relocations.push(object::Relocation {
+                section: section, offset: 4, kind: object::RelocationArmGotLoadPageOffset12(), symbol: symbol, subtract: None(), addend: 0
+            })
+    }
+}

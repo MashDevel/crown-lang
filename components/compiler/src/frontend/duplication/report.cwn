@@ -1,0 +1,78 @@
+module duplication {
+    fn count_marked(values: Vec<u8>, start: usize, end: usize) -> usize {
+        var count: usize = 0
+        for index in start..end {
+            if values[index] != 0 {
+                count = count + 1
+            }
+        }
+        return count
+    }
+
+    fn percentage(duplicated: usize, lines: usize) -> Text {
+        let hundredths: usize = if lines == 0 {
+            0
+        } else {
+            duplicated * 10000 / lines
+        }
+        let remainder = hundredths % 100
+        let prefix = if remainder < 10 {
+            ".0"
+        } else {
+            "."
+        }
+        return std::text::joined(std::text::joined(std::text::decimal(u64.from(hundredths / 100)), prefix), std::text::decimal(u64.from(remainder)))
+    }
+
+    fn report(corpus: Corpus, findings: Findings, rules: toolchain::DuplicationRules) -> Text {
+        let duplicated = count_marked(findings.duplicated, 0, findings.duplicated.length())
+        var output = "{\"language\":\"Crown\",\"lines\":"
+        std::text::append(output, std::text::decimal(u64.from(corpus.lines)))
+        inspect::number_field(output, "duplicated_lines", duplicated)
+        std::text::append(output, std::text::joined(",\"percent\":", percentage(duplicated, corpus.lines)))
+        inspect::number_field(output, "max_percent", rules.max_percent)
+        inspect::number_field(output, "min_lines", rules.min_lines)
+        inspect::number_field(output, "min_tokens", rules.min_tokens)
+        std::text::append(output, ",\"files\":[")
+        for index in 0..corpus.files.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, file_json(corpus.files[index], findings.duplicated))
+        }
+        std::text::append(output, "],\"clones\":[")
+        for index in 0..findings.clones.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, clone_json(corpus, findings.clones[index]))
+        }
+        std::text::append(output, "]}\n")
+        return move output
+    }
+
+    fn file_json(file: File, duplicated: Vec<u8>) -> Text {
+        var output = std::text::joined("{\"path\":", toolchain::json_quoted(file.path))
+        inspect::number_field(output, "lines", file.lines)
+        inspect::number_field(output, "duplicated_lines", count_marked(duplicated, file.first_line, file.first_line + file.lines))
+        output.push('}')
+        return move output
+    }
+
+    fn clone_json(corpus: Corpus, value: Clone) -> Text {
+        var output = std::text::joined("{\"first\":", occurrence(corpus, value.first, value.tokens))
+        std::text::append(output, std::text::joined(",\"second\":", occurrence(corpus, value.second, value.tokens)))
+        inspect::number_field(output, "tokens", value.tokens)
+        output.push('}')
+        return move output
+    }
+
+    fn occurrence(corpus: Corpus, start: usize, length: usize) -> Text {
+        let symbol = corpus.symbols[start]
+        var output = std::text::joined("{\"path\":", toolchain::json_quoted(corpus.files[symbol.file].path))
+        inspect::number_field(output, "line", symbol.line)
+        inspect::number_field(output, "end_line", corpus.symbols[start + length - 1].line)
+        output.push('}')
+        return move output
+    }
+}

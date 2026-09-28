@@ -1,0 +1,9 @@
+fn main() -> u32 {
+    let value = if true {
+        let local = 1;
+        local
+    } else {
+        local
+    }
+    return 0
+}

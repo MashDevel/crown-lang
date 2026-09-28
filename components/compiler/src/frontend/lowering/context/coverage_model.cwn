@@ -1,0 +1,29 @@
+module lowering {
+    copy enum CoverageKind {
+        Line, Taken, NotTaken, Arm
+    }
+    copy struct CoveragePoint {
+        span: frontend::Span, kind: CoverageKind, next: usize
+    }
+    struct CoverageLayout {
+        points: Vec<CoveragePoint>, lines: Vec<usize>, branches: Vec<usize>
+    }
+
+    fn coverage_index(layout: CoverageLayout, span: frontend::Span, branch: bool) -> usize {
+        if span.start >= layout.lines.length() {
+            return 0
+        }
+        if branch == false {
+            return layout.lines[span.start]
+        }
+        var index = layout.branches[span.start]
+        while index != 0 {
+            let point = layout.points[index - 1]
+            if point.span.end == span.end {
+                return index
+            }
+            index = point.next
+        }
+        return 0
+    }
+}

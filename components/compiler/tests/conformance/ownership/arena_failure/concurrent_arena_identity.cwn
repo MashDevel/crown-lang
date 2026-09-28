@@ -1,0 +1,49 @@
+fn produce(channel: Channel<Handle<u32>>) -> void {
+    for index in 0..256 {
+        var arena = Arena<u32>.new()
+        channel.send(arena.insert(u32.from(index)))
+    }
+}
+
+fn unique(channel: Channel<Handle<u32>>) -> bool {
+    var handles = Vec<Handle<u32>>.new()
+    for index in 0..1024 {
+        index
+        match channel.try_receive() {
+            Some(handle) => {
+                for previous in 0..handles.length() {
+                    if handle == handles[previous] {
+                        return false
+                    }
+                }
+                handles.push(handle)
+            }
+            None => {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+fn main() -> u32 {
+    let channel = Channel<Handle<u32>>.new()
+    var threads = Vec<Thread>.new()
+    for index in 0..4 {
+        index
+        let output = channel.share()
+        threads.push(spawn move {
+                produce(output)
+            })
+    }
+    for index in 0..threads.length() {
+        loan write threads[index] as thread {
+            thread.join()
+        }
+    }
+    return if unique(channel) {
+        0
+    } else {
+        1
+    }
+}

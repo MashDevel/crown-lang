@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let values = [40, 2]
+    loan read values[0..2] as all {
+        return all[0] + all[1]
+    }
+}

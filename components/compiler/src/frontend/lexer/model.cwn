@@ -1,0 +1,59 @@
+module frontend {
+    struct Lexer {
+        source: Shared<Vec<u8>>
+        source_id: usize
+        length: usize
+        offset: usize
+        line: usize
+        column: usize
+        tokens: Option<Vec<Token>>
+        diagnostics: Option<Vec<Diagnostic>>
+    }
+
+    fn lexer_new(source: take Shared<Vec<u8>>, length: usize, source_id: usize) -> Lexer {
+        return Lexer {
+            source: move source
+            source_id: source_id
+            length: length
+            offset: 0
+            line: 1
+            column: 1
+            tokens: Some(Vec<Token>.new())
+            diagnostics: Some(Vec<Diagnostic>.new())
+        }
+    }
+
+    fn lexer_take_tokens(lexer: write Lexer) -> Vec<Token> {
+        match lexer.tokens.take() {
+            Some(tokens) => {
+                return move tokens
+            }
+            None => {
+                return Vec<Token>.new()
+            }
+        }
+    }
+
+    fn lexer_take_diagnostics(lexer: write Lexer) -> Vec<Diagnostic> {
+        match lexer.diagnostics.take() {
+            Some(diagnostics) => {
+                return move diagnostics
+            }
+            None => {
+                return Vec<Diagnostic>.new()
+            }
+        }
+    }
+
+    fn source_byte(source: Shared<Vec<u8>>, index: usize) -> u8 {
+        loan read source as bytes {
+            return bytes[index]
+        }
+    }
+
+    fn text_byte(value: Text, index: usize) -> u8 {
+        loan read value as bytes {
+            return bytes[index]
+        }
+    }
+}

@@ -1,0 +1,169 @@
+module optimize {
+    fn vector_access(function: ir::Function, plan: VectorPlan, address: usize, writing: bool) -> Option<VectorAccess> {
+        let location = Definition {
+            block: plan.definitions[address].block, instruction: plan.definitions[address].instruction
+        }
+        if location.block >= function.blocks.length() {
+            return None()
+        }
+        let offset = match ir::instruction_offset(function.blocks[location.block].instructions[location.instruction].kind) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if plan.inside[offset.base] {
+            return None()
+        }
+        let affine = match vector_affine(function, plan, offset.offset, 0) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let size = match ir::type_size(plan.scalar) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if affine.scale != size {
+            return None()
+        }
+        return Some(VectorAccess {
+                address: address, base: offset.base, bias: affine.bias, writing: writing
+            })
+    }
+
+    fn vector_affine(function: ir::Function, plan: VectorPlan, value: usize, depth: usize) -> Option<AffineOffset> {
+        if depth > 16 {
+            return None()
+        }
+        match integer_constant(function, value) {
+            Some(constant) => {
+                return Some(AffineOffset {
+                        scale: 0, bias: constant
+                    })
+            }
+            None => {
+            }
+        }
+        if value != plan.evolution.induction.value && ir::type_size(function.values[value]) != Some(8) {
+            return None()
+        }
+        for index in 0..plan.inductions.length() {
+            if plan.inductions[index].value == value {
+                return vector_induction_affine(function, plan.evolution.induction, plan.inductions[index])
+            }
+        }
+        let location = Definition {
+            block: plan.definitions[value].block, instruction: plan.definitions[value].instruction
+        }
+        if location.block >= function.blocks.length() {
+            return None()
+        }
+        return vector_affine_instruction(function, plan, function.blocks[location.block].instructions[location.instruction].kind, depth + 1)
+    }
+
+    fn vector_affine_instruction(function: ir::Function, plan: VectorPlan, kind: ir::InstructionKind, depth: usize) -> Option<AffineOffset> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let first = match vector_affine(function, plan, left, depth) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                let second = match vector_affine(function, plan, right, depth) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                return vector_affine_binary(operator, first, second)
+            }
+            ir::InstructionCast(operator, value, target) => {
+                target;
+                if operator == ir::CastZeroExtend() {
+                    return vector_affine(function, plan, value, depth)
+                }
+                return None()
+            }
+            _ => None()
+        }
+    }
+
+    fn vector_affine_binary(operator: ir::BinaryOperator, left: AffineOffset, right: AffineOffset) -> Option<AffineOffset> {
+        if operator == ir::BinaryAdd() {
+            if left.scale > 18446744073709551615 - right.scale || left.bias > 18446744073709551615 - right.bias {
+                return None()
+            }
+            return Some(AffineOffset {
+                    scale: left.scale + right.scale, bias: left.bias + right.bias
+                })
+        }
+        if operator != ir::BinaryMultiply() ||(left.scale != 0 && right.scale != 0) {
+            return None()
+        }
+        let factor = if left.scale == 0 {
+            left.bias
+        } else {
+            right.bias
+        }
+        let scaled = if left.scale == 0 {
+            right
+        } else {
+            left
+        }
+        return vector_affine_scale(scaled, factor)
+    }
+
+    fn vector_affine_scale(scaled: AffineOffset, factor: u64) -> Option<AffineOffset> {
+        if factor == 0 {
+            return Some(AffineOffset {
+                    scale: 0, bias: 0
+                })
+        }
+        if scaled.scale > 18446744073709551615 / factor || scaled.bias > 18446744073709551615 / factor {
+            return None()
+        }
+        return Some(AffineOffset {
+                scale: scaled.scale * factor, bias: scaled.bias * factor
+            })
+    }
+
+    fn vector_induction_affine(function: ir::Function, main: Induction, value: Induction) -> Option<AffineOffset> {
+        if value.value == main.value {
+            return Some(AffineOffset {
+                    scale: 1, bias: 0
+                })
+        }
+        if value.operator != ir::BinaryAdd() {
+            return None()
+        }
+        let step = match integer_constant(function, value.step) {
+            Some(found) => found
+            None => {
+                return None()
+            }
+        }
+        let start = match integer_constant(function, value.start) {
+            Some(found) => found
+            None => {
+                return None()
+            }
+        }
+        let main_start = match integer_constant(function, main.start) {
+            Some(found) => found
+            None => {
+                return None()
+            }
+        }
+        if main_start != 0 || start != 0 {
+            return None()
+        }
+        return Some(AffineOffset {
+                scale: step, bias: 0
+            })
+    }
+}

@@ -1,0 +1,209 @@
+module optimize {
+    fn infer_ranges(function: ir::Function) -> Vec<Option<Range>> {
+        var ranges = none_ranges(function.values.length())
+        evolution_ranges(function, ranges)
+        var index: usize = 0
+        while index < function.parameters.length() {
+            let parameter = function.parameters[index]
+            match ir::function_value_type(function, parameter) {
+                Some(value_type) => {
+                    ranges[parameter] = type_range(value_type)
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        var changed = true
+        while changed {
+            changed = infer_range_iteration(function, ranges)
+        }
+        return move ranges
+    }
+
+    fn infer_range_iteration(function: ir::Function, ranges: write Vec<Option<Range>>) -> bool {
+        var changed = false
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                changed = infer_instruction_range(function, ranges, function.blocks[block].instructions[index]) || changed
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return changed
+    }
+
+    fn instruction_range(function: ir::Function, ranges: Vec<Option<Range>>, instruction: ir::Instruction) -> Option<Range> {
+        var result: usize = 0
+        match read instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return None()
+            }
+        }
+        let value_type = ir::function_value_type(function, result)
+        match value_type {
+            None => {
+                return None()
+            }
+            Some(result_type) => {
+                match read instruction.kind {
+                    ir::InstructionBinary(operator, left, right) => {
+                        let left_range = value_range(function, ranges, left)
+                        let right_range = value_range(function, ranges, right)
+                        let full = type_range(result_type)
+                        return binary_ranges(operator, move left_range, move right_range, move full)
+                    }
+                    ir::InstructionCast(operator, value, target) => {
+                        match value_range(function, ranges, value) {
+                            Some(source) => {
+                                return cast_range(operator, source, target)
+                            }
+                            None => {
+                                return None()
+                            }
+                        }
+                    }
+                    ir::InstructionSelect(condition, then_value, else_value) => {
+                        condition
+                        return union_value_ranges(function, ranges, then_value, else_value)
+                    }
+                    _ => {
+                        return type_range(result_type)
+                    }
+                }
+            }
+        }
+    }
+
+    fn value_range(function: ir::Function, ranges: Vec<Option<Range>>, value: usize) -> Option<Range> {
+        match ir::function_constant_value(function, value) {
+            Some(constant) => {
+                match move constant {
+                    ir::ConstantInteger(integer) => {
+                        return Some(Range {
+                                minimum: integer, maximum: integer
+                            })
+                    }
+                    ir::ConstantWideInteger(integer) => {
+                        if integer.high == 0 {
+                            return Some(Range {
+                                    minimum: integer.low, maximum: integer.low
+                                })
+                        };
+                        return None()
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                if value >= ranges.length() {
+                    return None()
+                }
+                match read ranges[value] {
+                    Some(range) => {
+                        return Some(range_copy(range))
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+        }
+    }
+
+    fn type_range(value_type: ir::Type) -> Option<Range> {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                let bits = ir::integer_width_bits(width)
+                if bits == 128 {
+                    return None()
+                }
+                if bits == 64 {
+                    return Some(Range {
+                            minimum: 0, maximum: 18446744073709551615
+                        })
+                }
+                return Some(Range {
+                        minimum: 0, maximum: (u64.from(1) << u64.from(bits)) - 1
+                    })
+            }
+            ir::TypePointer => {
+                return Some(Range {
+                        minimum: 0, maximum: 18446744073709551615
+                    })
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn union_value_ranges(function: ir::Function, ranges: Vec<Option<Range>>, first: usize, second: usize) -> Option<Range> {
+        let left = value_range(function, ranges, first)
+        let right = value_range(function, ranges, second)
+        return union_optional_ranges(move left, move right)
+    }
+
+    fn union_optional_ranges(left: take Option<Range>, right: take Option<Range>) -> Option<Range> {
+        match move left {
+            None => {
+                return None()
+            }
+            Some(left_range) => {
+                match move right {
+                    None => {
+                        return None()
+                    }
+                    Some(right_range) => {
+                        return Some(range_union(left_range, right_range))
+                    }
+                }
+            }
+        }
+    }
+
+    fn range_union(left: Range, right: Range) -> Range {
+        var minimum = left.minimum
+        var maximum = left.maximum
+        if right.minimum < minimum {
+            minimum = right.minimum
+        }
+        if right.maximum > maximum {
+            maximum = right.maximum
+        }
+        return Range {
+            minimum: minimum, maximum: maximum
+        }
+    }
+
+    fn infer_instruction_range(function: ir::Function, ranges: write Vec<Option<Range>>, instruction: ir::Instruction) -> bool {
+        let result = match read instruction.result {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        match read ranges[result] {
+            Some(value) => {
+                value;
+                return false
+            }
+            None => {
+            }
+        }
+        match instruction_range(function, ranges, instruction) {
+            Some(value) => {
+                ranges[result] = Some(move value);
+                return true
+            }
+            None => false
+        }
+    }
+}

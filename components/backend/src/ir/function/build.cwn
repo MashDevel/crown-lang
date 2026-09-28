@@ -1,0 +1,204 @@
+module ir {
+    fn function_add_block(function: write Function) -> Result<usize, BuildError> {
+        if function_is_import(function) {
+            return Err(build_error(BuildImportHasBody(), None()))
+        }
+        let id = function.blocks.length()
+        function.blocks.push(basic_block_new())
+        return Ok(id)
+    }
+
+    fn function_constant(function: write Function, value_type: Type, value: Constant) -> usize {
+        let normalized = constant_normalized(value, value_type)
+        var index: usize = 0
+        while index < function.constants.length() {
+            loan read function.constants[index] as entry {
+                if type_equal(entry.value_type, value_type) {
+                    if constant_equal(entry.value, normalized) {
+                        return entry.id
+                    }
+                }
+            }
+            index = index + 1
+        }
+        let id = function_new_value(function, value_type)
+        function.constant_indices[id] = function.constants.length()
+        function.constants.push(ConstantEntry {
+                id: id
+                value_type: value_type
+                value: move normalized
+            })
+        return id
+    }
+
+    fn constant_equal(left: Constant, right: Constant) -> bool {
+        match read left {
+            ConstantInteger(value) => {
+                return constant_is_integer(right, value)
+            }
+            ConstantWideInteger(value) => {
+                return constant_is_wide(right, value)
+            }
+            ConstantFloat32(value) => {
+                return constant_is_float32(right, value)
+            }
+            ConstantFloat64(value) => {
+                return constant_is_float64(right, value)
+            }
+            ConstantNull => {
+                return constant_is_null(right)
+            }
+        }
+    }
+
+    fn constant_is_integer(constant: Constant, expected: u64) -> bool {
+        match read constant {
+            ConstantInteger(value) => {
+                return value == expected
+            }
+            ConstantWideInteger(value) => {
+                value.low;
+                return false
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn constant_is_wide(constant: Constant, expected: WideInteger) -> bool {
+        match read constant {
+            ConstantWideInteger(value) => {
+                return value.low == expected.low && value.high == expected.high
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn constant_is_float32(constant: Constant, expected: u32) -> bool {
+        match read constant {
+            ConstantFloat32(value) => {
+                return value == expected
+            }
+            ConstantWideInteger(value) => {
+                value.low;
+                return false
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn constant_is_float64(constant: Constant, expected: u64) -> bool {
+        match read constant {
+            ConstantFloat64(value) => {
+                return value == expected
+            }
+            ConstantWideInteger(value) => {
+                value.low;
+                return false
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn constant_is_null(constant: Constant) -> bool {
+        match read constant {
+            ConstantNull => {
+                return true
+            }
+            ConstantWideInteger(value) => {
+                value.low;
+                return false
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn function_append(function: write Function, block: usize, kind: take InstructionKind) -> Result<Option<usize>, BuildError> {
+        if block >= function.blocks.length() {
+            return Err(build_error(BuildUnknownBlock(), Some(block)))
+        }
+        match function_instruction_type(function, kind) {
+            Some(value_type) => {
+                let result = function_new_value(function, value_type)
+                function.blocks[block].instructions.push(Instruction {
+                        result: Some(result), kind: move kind
+                    })
+                return Ok(Some(result))
+            }
+            None => {
+                function.blocks[block].instructions.push(Instruction {
+                        result: None(), kind: move kind
+                    })
+                return Ok(None())
+            }
+        }
+    }
+
+    fn function_instruction_type(function: Function, kind: InstructionKind) -> Option<Type> {
+        match read kind {
+            InstructionBinary(operator, left, right) => {
+                operator;
+                right;
+                return function_value_type(function, left)
+            }
+            InstructionUnary(operator, value) => {
+                operator;
+                return function_value_type(function, value)
+            }
+            InstructionSelect(condition, then_value, else_value) => {
+                condition;
+                else_value
+                return function_value_type(function, then_value)
+            }
+            _ => {
+            }
+        }
+        return instruction_result_type(kind)
+    }
+
+    fn function_new_value(function: write Function, value_type: Type) -> usize {
+        let id = function.values.length()
+        function.values.push(value_type)
+        function.constant_indices.push(18446744073709551615)
+        return id
+    }
+
+    fn function_terminate(function: write Function, block: usize, value: take Terminator) -> Result<void, BuildError> {
+        if block >= function.blocks.length() {
+            return Err(build_error(BuildUnknownBlock(), Some(block)))
+        }
+        var occupied = false
+        match read function.blocks[block].terminator {
+            Some(existing) => {
+                existing;
+                occupied = true
+            }
+            None => {
+            }
+        }
+        if occupied {
+            return Err(build_error(BuildBlockAlreadyTerminated(), Some(block)))
+        }
+        function.blocks[block].terminator = Some(move value)
+        return Ok(())
+    }
+
+    fn function_replace_uses(function: write Function, from: usize, to: usize) -> void {
+        let empty = Vec<Option<usize>>.new()
+        loan read empty as values {
+            let replacement = Replacement {
+                from: from, to: to, values: values, direct: false
+            }
+            function_replace_mapped_uses(function, replacement)
+        }
+    }
+}

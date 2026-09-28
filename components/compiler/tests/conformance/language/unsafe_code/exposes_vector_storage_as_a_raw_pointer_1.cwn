@@ -1,0 +1,15 @@
+fn main() -> u32 {
+    var values = Vec<u16>.new()
+    values.push(4660)
+    values.push(22136)
+    unsafe {
+        let pointer = values.as_raw()
+        if pointer.read() != 4660 {
+            return 1
+        }
+        if pointer.offset(1).read() != 22136 {
+            return 2
+        }
+    }
+    return 0
+}

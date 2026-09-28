@@ -1,0 +1,52 @@
+resource Item {
+    code: u32, drop {
+        print(code)
+    }
+}
+
+fn sum(left: Item, right: Item) -> u32 {
+    left.code + right.code
+}
+fn fail() -> Result<Item, u32> {
+    Err(7)
+}
+
+fn attempted() -> Result<u32, u32> {
+    let local = Item {
+        code: 1
+    }
+    let answer = sum(Item {
+            code: 2
+        }, fail()?)
+    Ok(answer + local.code)
+}
+
+fn returning() -> u32 {
+    let local = Item {
+        code: 3
+    }
+    let answer = sum(Item {
+            code: 4
+        }, if true {
+            return 8
+        } else {
+            Item {
+                code: 5
+            }
+        })
+    answer + local.code
+}
+
+fn main() -> u32 {
+    match attempted() {
+        Err(value) => {
+            print(value)
+        }
+        Ok(value) => {
+            value;
+            return 1
+        }
+    }
+    print(returning())
+    return 42
+}

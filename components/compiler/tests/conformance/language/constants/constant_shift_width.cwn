@@ -1,0 +1,4 @@
+const BAD: u8 = 1 << 8
+fn main() -> u32 {
+    0
+}

@@ -1,0 +1,112 @@
+fn limit_state() -> bool {
+    let source = frontend_test_source("fn main() -> u32 { 0 }")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(tokens) => {
+            var parser = frontend::parser_new(source.bytes.share(), move tokens)
+            for index in 0..usize.from(frontend::SYNTAX_DEPTH_LIMIT) {
+                index
+                if frontend::parser_enter(parser) == false {
+                    return false
+                }
+            }
+            return stopped_state(parser)
+        }
+    }
+}
+
+fn stopped_state(parser: write frontend::Parser) -> bool {
+    parser.pending_greater = 1
+    if frontend::parser_enter(parser) {
+        return false
+    }
+    if parser.depth != frontend::SYNTAX_DEPTH_LIMIT || parser.stopped == false {
+        return false
+    }
+    if frontend::parser_at(parser, frontend::TokenEnd()) == false {
+        return false
+    }
+    if frontend::parser_enter(parser) {
+        return false
+    }
+    frontend::parser_expect(parser, frontend::TokenLeftBrace())
+    let errors = frontend::parser_take_diagnostics(parser)
+    if errors.length() != 1 {
+        return false
+    }
+    match read errors[0].kind {
+        frontend::SyntaxDepthExceeded => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn tree_depth() -> bool {
+    let source = frontend_test_source("fn first() -> u32 { return (1 + 2) * (3 + 4) }\nfn second() -> u32 { return 1 }")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(program) => {
+            if program.functions.length() != 2 {
+                return false
+            }
+            if program.functions[0].body[0].depth != 4 {
+                return false
+            }
+            return program.functions[1].body[0].depth == 2
+        }
+    }
+}
+
+fn match_depth(depth: usize, rejected: bool) -> bool {
+    let opening = std::text::repeat("match Some(1) { Some(value) => ", depth)
+    let closing = std::text::repeat(" None => 0 }", depth)
+    let body = std::text::joined(std::text::joined(opening, "1"), closing)
+    let source = frontend_test_source(std::text::joined(std::text::joined("fn main() -> u32 { ", body), " }"))
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Ok(program) => {
+            program;
+            rejected == false
+        }
+        Err(errors) => {
+            if rejected == false || errors.length() != 1 {
+                return false
+            }
+            match read errors[0].kind {
+                frontend::SyntaxDepthExceeded => true
+                _ => false
+            }
+        }
+    }
+}
+
+fn nested_matches() -> bool {
+    let depths = [0, 1, 32]
+    for index in 0..3 {
+        if match_depth(usize.from(depths[index]), false) == false {
+            return false
+        }
+    }
+    return match_depth(512, true)
+}
+
+fn main() -> u32 {
+    if limit_state() == false {
+        return 1
+    }
+    if tree_depth() == false {
+        return 2
+    }
+    if nested_matches() == false {
+        return 3
+    }
+    return 42
+}

@@ -1,0 +1,11 @@
+enum Wrapped<T> {
+    Wrap(T)
+}
+fn expand<T>(value: take T) -> void {
+    expand(Wrap(move value))
+    return
+}
+fn main() -> u32 {
+    expand(1)
+    return 0
+}

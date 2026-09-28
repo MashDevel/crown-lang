@@ -1,0 +1,68 @@
+module frontend {
+    struct NamespaceEntry {
+        name: Text
+        target: Text
+        type_value: bool
+    }
+
+    struct NamespaceResolver {
+        source: Shared<Vec<u8>>
+        modules: Vec<NamespaceModule>
+        entries: Vec<NamespaceEntry>
+        module_name: Text
+        parameters: Vec<Name>
+        locals: Vec<Name>
+    }
+
+    fn namespace_resolve(source: take Shared<Vec<u8>>, program: write Program) -> void {
+        if program.modules.length() == 0 {
+            return
+        }
+        var resolver = NamespaceResolver {
+            source: move source
+            modules: namespace_modules_copy(program.modules)
+            entries: Vec<NamespaceEntry>.new()
+            module_name: ""
+            parameters: Vec<Name>.new()
+            locals: Vec<Name>.new()
+        }
+        namespace_collect(resolver, program)
+        namespace_declarations(resolver, program)
+    }
+
+    fn namespace_modules_copy(modules: Vec<NamespaceModule>) -> Vec<NamespaceModule> {
+        var output = Vec<NamespaceModule>.new()
+        var index: usize = 0
+        while index < modules.length() {
+            loan read modules[index] as item {
+                output.push(NamespaceModule {
+                        name: item.name.clone(), span: item.span
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn namespace_module_at(modules: Vec<NamespaceModule>, span: Span) -> Text {
+        var output = Text.new()
+        var index: usize = 0
+        while index < modules.length() {
+            loan read modules[index] as item {
+                if namespace_span_contains(item.span, span) && item.name.length() > output.length() {
+                    output = item.name.clone()
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn namespace_set_module(resolver: write NamespaceResolver, span: Span) -> void {
+        resolver.module_name = namespace_module_at(resolver.modules, span)
+    }
+
+    fn namespace_span_contains(container: Span, inner: Span) -> bool {
+        return container.source == inner.source && container.start <= inner.start && container.end >= inner.end
+    }
+}

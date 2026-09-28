@@ -1,0 +1,99 @@
+module lowering {
+    struct Range {
+        span: frontend::Span
+        address: usize
+        limit: usize
+        value_type: sema::Type
+        header: usize
+        body: usize
+        advance: usize
+        exit: usize
+    }
+
+    fn range_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementFor(name, start, end, body) => {
+                let range = initialize_range(compiler, analysis, start, end, statement.span)?
+                return lower_range_body(compiler, analysis, name, body, range)
+            }
+            _ => {
+                return Err(112)
+            }
+        }
+    }
+
+    fn initialize_range(compiler: write FunctionCompiler, analysis: sema::Analysis, start: frontend::Expression, end: frontend::Expression, span: frontend::Span) -> Result<Range, u32> {
+        let first = function_scalar_expression(compiler, analysis, start)?
+        let limit = function_scalar_expression(compiler, analysis, end)?
+        let value_type = function_expression_type(compiler, analysis, start)?
+        let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+        function_store(compiler, analysis.checker.symbols, StoreRequest {
+                address: address, value: first, value_type: sema::type_copy(value_type)
+            })?
+        let header = function_new_block(compiler)?
+        let body = function_new_block(compiler)?
+        let advance = function_new_block(compiler)?
+        let exit = function_new_block(compiler)?
+        return Ok(Range {
+                span: span, address: address, limit: limit, value_type: move value_type,
+                header: header, body: body, advance: advance, exit: exit
+            })
+    }
+
+    fn lower_range_body(compiler: write FunctionCompiler, analysis: sema::Analysis, name: frontend::Name, body: Vec<frontend::Statement>, range: Range) -> Result<void, u32> {
+        let before = bindings_copy(compiler.bindings)
+        range_header(compiler, analysis.checker.symbols, range)?
+        function_push_scope(compiler)
+        function_add_binding(compiler, Binding {
+                name: frontend::name_copy(name), value_type: sema::type_copy(range.value_type), address: range.address,
+                owned: false, available: true, depth: compiler.scope_depth
+            })
+        compiler.loops.push(LoopTarget {
+                continue_block: range.advance, break_block: range.exit, breaks: false, scope_depth: compiler.scope_depth
+            })
+        function_statements(compiler, analysis, body)?
+        compiler.loops.pop()
+        function_pop_scope(compiler)?
+        function_branch_if_active(compiler, range.advance)?
+        range_advance(compiler, analysis.checker.symbols, range)?
+        compiler.bindings = move before
+        function_select_block(compiler, range.exit)
+        return Ok(())
+    }
+
+    fn range_header(compiler: write FunctionCompiler, symbols: sema::Symbols, range: Range) -> Result<void, u32> {
+        function_finish(compiler, ir::TerminatorBranch(range.header))?
+        function_select_block(compiler, range.header)
+        let load = Place {
+            address: range.address, value_type: sema::type_copy(range.value_type)
+        }
+        let value = function_load(compiler, symbols, load)?
+        var operator = ir::CompareUnsignedLess()
+        if sema::type_is_signed(range.value_type) {
+            operator = ir::CompareSignedLess()
+        }
+        let within = function_append_value(compiler, ir::InstructionCompare(operator, value, range.limit))?
+        finish_condition(compiler, range.span, ir::TerminatorConditional(within, range.body, range.exit))?
+        function_select_block(compiler, range.body)
+        return Ok(())
+    }
+
+    fn range_advance(compiler: write FunctionCompiler, symbols: sema::Symbols, range: Range) -> Result<void, u32> {
+        function_select_block(compiler, range.advance)
+        let load = Place {
+            address: range.address, value_type: sema::type_copy(range.value_type)
+        }
+        let value = function_load(compiler, symbols, load)?
+        let value_type = ir_type(symbols, range.value_type)?
+        let one = function_integer(compiler, value_type, 1)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: value, right: one, value_type: sema::type_copy(range.value_type)
+        }
+        let next = integer_binary(compiler, symbols, operation)?
+        let store = StoreRequest {
+            address: range.address, value: next, value_type: sema::type_copy(range.value_type)
+        }
+        function_store(compiler, symbols, store)?
+        return function_finish(compiler, ir::TerminatorBranch(range.header))
+    }
+}

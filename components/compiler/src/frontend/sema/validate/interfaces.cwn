@@ -1,0 +1,122 @@
+module sema {
+    struct ImplementationCheck {
+        interface_symbol: usize
+        owner: usize
+        target: Type
+    }
+
+    fn validate_interfaces(symbols: write Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            symbols.current_span = symbols.functions[index].name.span
+            var invalid = false
+            match read symbols.functions[index].kind {
+                InterfaceFunction(interface_symbol) => {
+                    invalid = interface_function_invalid(symbols, symbols.functions[index], interface_symbol)
+                }
+                _ => {
+                }
+            }
+            if invalid {
+                symbols_error(symbols, "interface declaration has an invalid method signature")
+            }
+            index = index + 1
+        }
+        validate_implementations(symbols)
+    }
+
+    fn interface_function_invalid(symbols: Symbols, function: Function, interface_symbol: usize) -> bool {
+        if function.parameters.length() == 0 {
+            return true
+        }
+        loan read function.parameters[0] as receiver {
+            if name_is(symbols.source, receiver.name, "self") == false {
+                return true
+            }
+            if mode_is_take(receiver.mode) {
+                return true
+            }
+            if type_is_self(receiver.value_type, interface_symbol) == false {
+                return true
+            }
+        }
+        var index: usize = 1
+        while index < function.parameters.length() {
+            loan read function.parameters[index] as parameter {
+                if type_contains_symbol(parameter.value_type, interface_symbol) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return type_contains_symbol(function.result, interface_symbol)
+    }
+
+    fn type_is_self(value_type: Type, interface_symbol: usize) -> bool {
+        match read value_type {
+            NamedType(symbol, arguments) => {
+                return symbol == interface_symbol && arguments.length() == 0
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_contains_symbol(value_type: Type, expected: usize) -> bool {
+        match read value_type {
+            NamedType(symbol, arguments) => {
+                return symbol == expected || types_contain_symbol(arguments, expected)
+            }
+            BuiltinType(builtin, arguments) => {
+                builtin;
+                return types_contain_symbol(arguments, expected)
+            }
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return type_contains_symbol(value, expected)
+                }
+            }
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return type_contains_symbol(value, expected)
+                }
+            }
+            FunctionType(parameters, result) => {
+                return function_contains_symbol(parameters, result, expected)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn types_contain_symbol(values: Vec<Type>, expected: usize) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if type_contains_symbol(value, expected) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn function_contains_symbol(parameters: Vec<ParameterType>, result: Box<Type>, expected: usize) -> bool {
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                if type_contains_symbol(parameter.value_type, expected) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        loan read result as value {
+            return type_contains_symbol(value, expected)
+        }
+    }
+}

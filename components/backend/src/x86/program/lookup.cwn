@@ -1,0 +1,45 @@
+module x86 {
+    fn program_has_function(program: Program, name: Text) -> bool {
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                if std::text::equal(function.name, name) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn program_has_data(program: Program, name: Text) -> bool {
+        var index: usize = 0
+        while index < program.data.length() {
+            loan read program.data[index] as data {
+                if std::text::equal(data.name, name) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn program_has_import(program: Program, name: Text) -> bool {
+        var index: usize = 0
+        while index < program.imports.length() {
+            loan read program.imports[index] as import {
+                if std::text::equal(import.name, name) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn program_has_symbol(program: Program, name: Text) -> bool {
+        return program_has_function(program, name) || program_has_data(program, name) || program_has_import(program, name)
+    }
+
+}

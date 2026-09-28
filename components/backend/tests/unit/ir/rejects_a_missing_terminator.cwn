@@ -1,0 +1,29 @@
+fn main() -> u32 {
+    var parameters = Vec<ir::Type>.new()
+    let signature = ir::signature_new(move parameters, ir::TypeVoid())
+    var function = ir::function_new("unfinished", move signature, ir::LinkageLocal())
+    match ir::function_add_block(function) {
+        Ok(block) => {
+            block
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    match ir::validate_program(program) {
+        Ok(item) => {
+            item;
+            return 2
+        }
+        Err(error) => {
+            let expected = ir::ValidationMissingTerminator()
+            if error.kind.code == expected.code {
+                return 42
+            }
+            return 3
+        }
+    }
+}

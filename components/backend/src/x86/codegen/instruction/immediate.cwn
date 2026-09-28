@@ -1,0 +1,296 @@
+module x86 {
+    struct ImmediateBinary {
+        operator: ir::BinaryOperator
+        operand: usize
+        value: i32
+        width: Width
+    }
+
+    fn codegen_compile_immediate_binary(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<bool, CodegenError> {
+        match codegen_immediate_binary_input(program, compiler, input) {
+            None => {
+                return Ok(false)
+            }
+            Some(immediate) => {
+                var result: usize = 0
+                match read input.result {
+                    Some(value) => {
+                        result = value
+                    }
+                    None => {
+                        return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+                    }
+                }
+                let destination = codegen_load_immediate_dynamic(program, compiler, result, immediate)?
+                let sized = codegen_emit_immediate_operator(compiler, destination, immediate)
+                if sized {
+                    codegen_store_sized_result(program, compiler, SizedResultStore {
+                            result: result
+                            source: destination
+                            width: immediate.width
+                        })?
+                } else {
+                    codegen_store_result(program, compiler, ResultStore {
+                            result: Some(result)
+                            source: destination
+                        })?
+                }
+                return Ok(true)
+            }
+        }
+    }
+
+    fn codegen_immediate_binary_input(program: ir::Program, compiler: FunctionCompiler, input: BinaryInput) -> Option<ImmediateBinary> {
+        var result: usize = 0
+        match read input.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return None()
+            }
+        }
+        match codegen_immediate_binary_values(program, compiler, input) {
+            None => {
+                return None()
+            }
+            Some(values) => {
+                match codegen_value_type(program, compiler, result) {
+                    Err(error) => {
+                        error;
+                        return None()
+                    }
+                    Ok(value_type) => {
+                        match codegen_width(value_type) {
+                            Err(error) => {
+                                error;
+                                return None()
+                            }
+                            Ok(width) => {
+                                match codegen_normalized_immediate(values.constant, width) {
+                                    None => {
+                                        return None()
+                                    }
+                                    Some(value) => {
+                                        return Some(ImmediateBinary {
+                                                operator: input.operator
+                                                operand: values.operand
+                                                value: value
+                                                width: codegen_zeroing_width(input.operator, width)
+                                            })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_immediate_binary_values(program: ir::Program, compiler: FunctionCompiler, input: BinaryInput) -> Option<ImmediateComparison> {
+        if codegen_immediate_operator(input.operator) == false && ir::binary_is_shift(input.operator) == false && codegen_binary_is_multiply(input.operator) == false {
+            return None()
+        }
+        loan read program.functions[compiler.id] as function {
+            match codegen_integer_constant(function, input.right) {
+                Some(value) => {
+                    return Some(ImmediateComparison {
+                            operator: ir::CompareEqual(), operand: input.left, constant: value
+                        })
+                }
+                None => {
+                }
+            }
+            if ir::binary_is_commutative(input.operator) {
+                match codegen_integer_constant(function, input.left) {
+                    Some(value) => {
+                        return Some(ImmediateComparison {
+                                operator: ir::CompareEqual(), operand: input.right, constant: value
+                            })
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return None()
+    }
+
+    fn codegen_load_immediate_dynamic(program: ir::Program, compiler: write FunctionCompiler, result: usize, input: ImmediateBinary) -> Result<Register, CodegenError> {
+        var destination = R11()
+        match codegen_frame_register(compiler.frame, result) {
+            Some(register) => {
+                destination = register
+            }
+            None => {
+            }
+        }
+        var loaded = false
+        match codegen_frame_register(compiler.frame, input.operand) {
+            Some(register) => {
+                loaded = register_equal(register, destination)
+            }
+            None => {
+            }
+        }
+        if loaded == false {
+            if codegen_binary_is_signed_shift(input.operator) {
+                codegen_load_signed(program, compiler, ValueAccess {
+                        value: input.operand, register: destination
+                    })?
+            } else {
+                codegen_load_value(program, compiler, ValueAccess {
+                        value: input.operand, register: destination
+                    })?
+            }
+        }
+        return Ok(destination)
+    }
+
+    fn codegen_emit_immediate_operator(compiler: write FunctionCompiler, destination: Register, input: ImmediateBinary) -> bool {
+        match read input.operator {
+            ir::BinaryMultiply => {
+                if width_is_byte(input.width) {
+                    codegen_emit(compiler, MultiplyImmediate(destination, input.value));
+                    return false
+                }
+                codegen_emit(compiler, MultiplyImmediateSized(destination, input.value, input.width))
+            }
+            ir::BinaryShiftLeft => {
+                codegen_emit(compiler, ShiftLeftImmediateSized(destination, u8.from(u32.from_bits(input.value) & 255), input.width))
+            }
+            ir::BinaryShiftRightSigned => {
+                codegen_emit(compiler, ShiftRightArithmeticImmediateSized(destination, u8.from(u32.from_bits(input.value) & 255), input.width))
+            }
+            ir::BinaryShiftRightUnsigned => {
+                codegen_emit(compiler, ShiftRightLogicalImmediateSized(destination, u8.from(u32.from_bits(input.value) & 255), input.width))
+            }
+            _ => {
+                match codegen_immediate_machine_operator(input.operator) {
+                    Some(operator) => {
+                        codegen_emit(compiler, Immediate(ImmediateArgs {
+                                    operator: move operator
+                                    destination: destination
+                                    value: input.value
+                                    width: input.width
+                                }))
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    fn codegen_integer_constant(function: ir::Function, value: usize) -> Option<u64> {
+        match ir::function_constant_value(function, value) {
+            None => {
+                return None()
+            }
+            Some(constant) => {
+                match read constant {
+                    ir::ConstantInteger(integer) => {
+                        return Some(integer)
+                    }
+                    ir::ConstantNull => {
+                        return Some(0)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_normalized_immediate(value: u64, width: Width) -> Option<i32> {
+        match read width {
+            Byte => {
+                return Some(i32.from(u8.from(value & 255)))
+            }
+            Word => {
+                return Some(i32.from(u16.from(value & 65535)))
+            }
+            Dword => {
+                return Some(i32.from_bits(u32.from(value & 4294967295)))
+            }
+            Qword => {
+                if value <= u64.from(2147483647) || value >= 18446744071562067968 {
+                    return Some(i32.from_bits(u32.from(value & 4294967295)))
+                }
+                return None()
+            }
+        }
+    }
+
+    fn codegen_immediate_operator(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryAdd => {
+                return true
+            }
+            ir::BinarySubtract => {
+                return true
+            }
+            ir::BinaryAnd => {
+                return true
+            }
+            ir::BinaryOr => {
+                return true
+            }
+            ir::BinaryXor => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_immediate_machine_operator(operator: ir::BinaryOperator) -> Option<ImmediateOperator> {
+        match read operator {
+            ir::BinaryAdd => {
+                return Some(ImmediateAdd())
+            }
+            ir::BinarySubtract => {
+                return Some(ImmediateSubtract())
+            }
+            ir::BinaryAnd => {
+                return Some(ImmediateAnd())
+            }
+            ir::BinaryOr => {
+                return Some(ImmediateOr())
+            }
+            ir::BinaryXor => {
+                return Some(ImmediateXor())
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn codegen_binary_is_multiply(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryMultiply => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_binary_is_signed_shift(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinaryShiftRightSigned => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

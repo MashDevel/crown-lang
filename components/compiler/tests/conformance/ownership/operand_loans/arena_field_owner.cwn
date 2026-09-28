@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    var owner = operand_owner()
+    let key = owner.arena.insert(7)
+    owner.arena.with(consume_owner_key(move owner, key)) as read item {
+        return item
+    }
+    return 0
+}

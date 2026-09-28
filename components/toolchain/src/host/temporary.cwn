@@ -1,0 +1,95 @@
+module toolchain {
+    extern "c" {
+        fn raw_mkdtemp(path: RawPtr<u8>) -> RawPtr<u8> = "mkdtemp"
+    }
+
+    opaque resource Temporary {
+        private path: Text
+        drop {
+            remove_tree(path)
+        }
+    }
+
+    fn temporary(parent: Text) -> Result<Temporary, Text> {
+        make_directory(parent)?
+        let pattern = path_join(absolute(parent)?, "crown-XXXXXX")
+        var bytes = Vec<u8>.new()
+        loan read pattern as view {
+            for index in 0..view.length() {
+                bytes.push(view[index])
+            }
+        }
+        bytes.push(0)
+        unsafe {
+            let pointer = raw_mkdtemp(bytes.as_raw())
+            if pointer == null() {
+                return Err(std::text::joined("could not create temporary directory in: ", parent))
+            }
+            return Ok(Temporary {
+                    path: pointer_text(pointer)
+                })
+        }
+    }
+
+    fn temporary_path(value: Temporary) -> Text {
+        unsafe {
+            return value.path.clone()
+        }
+    }
+
+    fn remove_tree(path: Text) -> void {
+        if path.length() == 0 {
+            return
+        }
+        var directories = Vec<Text>.new()
+        directories.push(path.clone())
+        var index: usize = 0
+        while index < directories.length() {
+            match directory_entries(directories[index]) {
+                Ok(entries) => {
+                    remove_entries(entries, directories)
+                }
+                Err(error) => {
+                    error
+                }
+            }
+            index = index + 1
+        }
+        for offset in 0..directories.length() {
+            match cstring(directories[directories.length() - offset - 1]) {
+                Ok(encoded) => {
+                    unsafe {
+                        raw_rmdir(std::cstr::as_raw(encoded))
+                    }
+                }
+                Err(error) => {
+                    error
+                }
+            }
+        }
+    }
+
+    fn remove_entries(entries: Vec<Text>, directories: write Vec<Text>) -> void {
+        for index in 0..entries.length() {
+            match remove_file(entries[index]) {
+                Ok(done) => {
+                    done
+                }
+                Err(error) => {
+                    error;
+                    if is_directory(entries[index]) {
+                        directories.push(entries[index].clone())
+                    }
+                }
+            }
+        }
+    }
+
+    fn temporary_directory() -> Text {
+        let value = environment("TMPDIR")
+        if value.length() != 0 {
+            return move value
+        }
+        return "/tmp"
+    }
+}

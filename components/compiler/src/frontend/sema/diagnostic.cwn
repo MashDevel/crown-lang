@@ -1,0 +1,118 @@
+module sema {
+    struct Diagnostic {
+        span: frontend::Span
+        message: Text
+        notes: Vec<DiagnosticNote>
+    }
+
+    struct DiagnosticNote {
+        span: frontend::Span
+        message: Text
+    }
+
+    fn empty_span() -> frontend::Span {
+        return frontend::Span {
+            source: 0, start: 0, end: 0, line: 1, column: 1
+        }
+    }
+
+    fn checker_error(checker: write Checker, message: take Text) -> void {
+        checker.errors = checker.errors + 1
+        checker.diagnostics.push(Diagnostic {
+                span: checker.current_span, message: move message, notes: Vec<DiagnosticNote>.new()
+            })
+    }
+
+    fn symbols_error(symbols: write Symbols, message: take Text) -> void {
+        symbols.errors = symbols.errors + 1
+        symbols.diagnostics.push(Diagnostic {
+                span: symbols.current_span, message: move message, notes: Vec<DiagnosticNote>.new()
+            })
+    }
+
+    fn checker_error_at(checker: write Checker, span: frontend::Span, message: take Text) -> void {
+        let previous = replace(checker.current_span, span)
+        checker_error(checker, move message)
+        checker.current_span = previous
+    }
+
+    fn checker_note(checker: write Checker, span: frontend::Span, message: take Text) -> void {
+        if checker.diagnostics.length() == 0 {
+            return
+        }
+        let index = checker.diagnostics.length() - 1
+        checker.diagnostics[index].notes.push(DiagnosticNote {
+                span: span, message: move message
+            })
+    }
+
+    fn checker_type_error(checker: write Checker, expected: Type, actual: Type) -> void {
+        var message = "expected type '"
+        let expected_name = type_name(expected, checker.symbols)
+        let actual_name = type_name(actual, checker.symbols)
+        std::text::append(message, expected_name)
+        let middle = "' but found '"
+        std::text::append(message, middle)
+        std::text::append(message, actual_name)
+        message.push('\'')
+        checker_error(checker, move message)
+    }
+
+    fn access_error(variable: Variable, usage: PathUse, path: frontend::Path) -> Text {
+        match read variable.state {
+            Moved => {
+                return "value was moved; reinitialize it before use"
+            }
+            WriteLoaned => {
+                return "value is exclusively loaned; wait until the write loan ends"
+            }
+            _ => {
+            }
+        }
+        match read usage {
+            MovePath => {
+                if variable.copy_value {
+                    return "copy values do not use 'move'"
+                }
+                if path.segments.length() != 1 {
+                    return "partial moves are not allowed; use replace, swap, or a consuming match"
+                }
+                return "cannot move a borrowed or loaned value"
+            }
+            _ => {
+                match read variable.access {
+                    ReadAccess => {
+                        return "cannot write through read access; use a write parameter or write loan"
+                    }
+                    _ => {
+                    }
+                }
+                if variable.mutable_value == false {
+                    return "cannot write an immutable binding; declare it with 'var'"
+                }
+                return "cannot write through a read loan or while another loan is active"
+            }
+        }
+    }
+
+    fn variable_access_note(checker: write Checker, variable: Variable) -> void {
+        match read variable.state {
+            Moved => {
+                checker_note(checker, variable.state_span, "ownership transferred here");
+                return
+            }
+            WriteLoaned => {
+                checker_note(checker, variable.state_span, "exclusive loan starts here; it ends when this scope exits");
+                return
+            }
+            ReadLoaned(count) => {
+                count;
+                checker_note(checker, variable.state_span, "read loan starts here; it ends when this scope exits");
+                return
+            }
+            _ => {
+            }
+        }
+        checker_note(checker, variable.span, "binding or parameter access declared here")
+    }
+}

@@ -1,0 +1,39 @@
+struct Empty {
+}
+struct Single {
+    value: u32
+}
+fn empty() -> void {
+    let {
+    } = Empty {
+    }
+}
+fn invoke(callback: scoped fn() -> u32) -> u32 {
+    return callback()
+}
+fn scoped() -> u32 {
+    let input = Single {
+        value: 9
+    }
+    return invoke(fn[read input]() {
+            let {
+                value
+            } = Single {
+                value: input.value
+            }
+            return value
+        })
+}
+fn main() -> u32 {
+    empty()
+    let {
+        value: first
+    } = Single {
+        value: 3
+    }
+    return if first == 3 && scoped() == 9 {
+        0
+    } else {
+        1
+    }
+}

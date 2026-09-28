@@ -1,0 +1,52 @@
+module arm64 {
+    copy enum AbiVariant {
+        Aapcs64, Darwin
+    }
+
+    copy enum AbiKind {
+        Integer, Float, Vector, Aggregate, Homogeneous(u32, u32)
+    }
+
+    copy struct AbiValue {
+        size: u64
+        alignment: u32
+        kind: AbiKind
+    }
+
+    copy enum AbiLocation {
+        General(u32, u32), Simd(u32, u32), Stack(u64, u64), Omitted
+    }
+
+    copy struct AbiArgument {
+        location: AbiLocation
+        indirect: bool
+    }
+
+    struct AbiState {
+        variant: AbiVariant
+        integer: u32
+        simd: u32
+        stack: u64
+    }
+
+    fn abi_state(variant: AbiVariant) -> AbiState {
+        return AbiState {
+            variant: variant, integer: 0, simd: 0, stack: 0
+        }
+    }
+
+    fn abi_align(value: u64, alignment: u64) -> Result<u64, Text> {
+        if alignment == 0 ||(alignment &(alignment - 1)) != 0 {
+            return Err("ARM64 ABI alignment must be a power of two")
+        }
+        let padding = (alignment - value % alignment) % alignment
+        if value > 18446744073709551615 - padding {
+            return Err("ARM64 ABI stack size overflow")
+        }
+        return Ok(value + padding)
+    }
+
+    fn abi_stack_size(state: AbiState) -> Result<u64, Text> {
+        return abi_align(state.stack, 16)
+    }
+}

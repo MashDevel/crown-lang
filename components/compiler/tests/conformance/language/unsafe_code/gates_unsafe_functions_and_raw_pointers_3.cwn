@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    unsafe {
+        let pointer = RawPtr<Text>.from_address(0)
+        let value = pointer.read_volatile()
+    }
+    return 0
+}

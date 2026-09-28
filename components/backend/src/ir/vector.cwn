@@ -1,0 +1,75 @@
+module ir {
+    copy enum VectorLane {
+        VectorInteger(IntegerWidth)
+        VectorFloat(FloatWidth)
+    }
+
+    fn vector_type(scalar: Type) -> Option<Type> {
+        match scalar {
+            TypeInteger(width) => {
+                let bits = integer_width_bits(width)
+                if bits < 8 || bits > 64 {
+                    return None()
+                }
+                return Some(TypeVector(VectorInteger(width)))
+            }
+            TypeFloat(width) => Some(TypeVector(VectorFloat(width)))
+            _ => None()
+        }
+    }
+
+    fn vector_scalar(value_type: Type) -> Option<Type> {
+        match value_type {
+            TypeVector(lane) => {
+                match lane {
+                    VectorInteger(width) => Some(TypeInteger(width))
+                    VectorFloat(width) => Some(TypeFloat(width))
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn type_is_vector(value_type: Type) -> bool {
+        match value_type {
+            TypeVector(lane) => {
+                lane;
+                true
+            }
+            _ => false
+        }
+    }
+
+    fn vector_lanes(value_type: Type) -> usize {
+        let scalar = match vector_scalar(value_type) {
+            Some(value) => value
+            None => {
+                return 0
+            }
+        }
+        let size = match type_size(scalar) {
+            Some(value) => value
+            None => {
+                return 0
+            }
+        }
+        return usize.from(u64.from(16) / size)
+    }
+
+    fn vector_binary_supported(value_type: Type, operator: BinaryOperator) -> bool {
+        let scalar = match vector_scalar(value_type) {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        if type_is_float(scalar) {
+            return binary_is_float(operator) && operator != BinaryFloatRemainder()
+        }
+        match operator {
+            BinaryAdd | BinarySubtract | BinaryAnd | BinaryOr | BinaryXor => true
+            BinaryMultiply => scalar == TypeInteger(IntegerWidth16())
+            _ => false
+        }
+    }
+}

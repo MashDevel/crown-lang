@@ -1,0 +1,17 @@
+module lowering {
+    fn drop_lock_owner(compiler: write FunctionCompiler, symbols: sema::Symbols, owner: BufferOwner, mutex: bool) -> Result<void, u32> {
+        let lock = function_load_pointer(compiler, owner.address)?
+        var name = "pthread_rwlock_destroy"
+        if mutex {
+            name = "pthread_mutex_destroy"
+        }
+        call_lock(compiler, move name, lock)?
+        free_pointer(compiler, lock)?
+        let layout = layout(symbols, owner.element)?
+        let value = function_offset(compiler, owner.address, align_to(8, layout.alignment))?
+        let value_drop = Place {
+            address: value, value_type: sema::type_copy(owner.element)
+        }
+        return drop_value(compiler, value_drop)
+    }
+}

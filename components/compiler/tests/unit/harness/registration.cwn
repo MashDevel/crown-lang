@@ -1,0 +1,77 @@
+fn cached_entries(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "shared/first.cwn", "fn first() -> u32 { 1 }")?
+    let directory = toolchain::parent_path(path)
+    let target = toolchain::host_target()
+    var audit = harness::registration_audit()
+    testing::expect(harness::register_entry(directory, target, audit)? == 1, "first root expansion")?
+    testing::write_file(root, "shared/second.cwn", "fn second() -> u32 { 2 }")?
+    let alias = toolchain::path_join(directory, "../shared")
+    testing::expect(harness::register_entry(alias, target, audit)? == 1, "shared roots reuse their snapshot")?
+    testing::expect(std::map::text_length(audit.entries) == 1, "canonical roots share one cache entry")?
+    testing::expect(std::map::text_length(audit.covered) == 1, "shared sources recorded once")?
+    return refreshed_entries(path)
+}
+
+fn refreshed_entries(path: Text) -> Result<void, Text> {
+    let target = toolchain::host_target()
+    var next = harness::registration_audit()
+    testing::expect(harness::register_entry(toolchain::parent_path(path), target, next)? == 2, "each audit discovers source changes")?
+    toolchain::remove_file(path)?
+    var missing = harness::registration_audit()
+    return testing::error(harness::register_entry(path, target, missing))
+}
+
+fn target_entries(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "host.linux.cwn", "fn host() -> u32 { 1 }")?
+    let linux = toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux())
+    let macos = toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos())
+    var audit = harness::registration_audit()
+    testing::expect(harness::register_entry(path, macos, audit)? == 0, "foreign source is excluded")?
+    testing::expect(harness::register_entry(path, macos, audit)? == 0, "empty expansions are cached")?
+    testing::expect(harness::register_entry(path, linux, audit)? == 1, "target has its own source expansion")?
+    testing::expect(std::map::text_length(audit.entries) == 2, "target participates in the cache key")?
+    return empty_target(root, audit)
+}
+
+fn empty_target(root: Text, audit: write harness::RegistrationAudit) -> Result<void, Text> {
+    let macos = toolchain::parse_target("x86_64-macos")?
+    let document = toolchain::json("{\"name\":\"host\",\"mode\":\"check\",\"source\":\"host.linux.cwn\"}")?
+    var value = harness::case(document, document.root, root)?
+    testing::error(harness::register_target(value, root, macos, audit))?
+    value.roots.push("shared")
+    return harness::register_target(value, root, macos, audit)
+}
+
+fn manifest_entries(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "project/src/main.cwn", "fn main() -> u32 { 0 }")?
+    let ignored = testing::write_file(root, "project/src/ignored.cwn", "invalid")?
+    let manifest = testing::write_file(root, "project/Crown.toml", "[package]\nname = \"test\"\nsource = \"src\"\nexclude = [\"src/ignored.cwn\"]\n")?
+    var audit = harness::registration_audit()
+    let count = harness::register_entry(toolchain::parent_path(manifest), toolchain::host_target(), audit)?
+    testing::expect(count == 1 && std::map::text_contains(audit.covered, ignored) == false, "manifest exclusions remain effective")?
+    return failed_entries(root, audit)
+}
+
+fn failed_entries(root: Text, audit: write harness::RegistrationAudit) -> Result<void, Text> {
+    let target = toolchain::host_target()
+    let path = toolchain::path_join(root, "missing")
+    testing::error(harness::register_entry(path, target, audit))?
+    toolchain::make_directory(path)?
+    testing::error(harness::register_entry(path, target, audit))?
+    testing::write_file(root, "missing/main.cwn", "fn main() -> u32 { 0 }")?
+    testing::expect(harness::register_entry(path, target, audit)? == 1, "failed expansions do not poison the cache")?
+    let invalid = testing::write_file(root, "invalid/Crown.toml", "invalid")?
+    return testing::error(harness::register_entry(invalid, target, audit))
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    cached_entries(root)?
+    target_entries(root)?
+    return manifest_entries(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

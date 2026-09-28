@@ -1,0 +1,168 @@
+fn totals(root: Text, directory: Text, status: i32) -> Result<toolchain::Json, Text> {
+    let result = testing::invoke(testing::list(std::text::joined("coverage|", directory)), root)?
+    testing::expect(result.status == status, "coverage report status")?
+    return toolchain::json(result.stdout.clone())
+}
+
+fn count(document: toolchain::Json, field: Text) -> Result<u64, Text> {
+    let totals = toolchain::json_required(document, document.root, "totals")?
+    return toolchain::json_integer(document, toolchain::json_required(document, totals, field)?)
+}
+
+fn build(root: Text, source: Text, directory: Text) -> Result<Text, Text> {
+    let path = testing::write_file(root, "program.cwn", source)?
+    let binary = toolchain::path_join(root, "program")
+    var arguments = testing::list("build")
+    arguments.push(path.clone());
+    arguments.push("-o");
+    arguments.push(binary.clone())
+    arguments.push("--coverage");
+    arguments.push(directory.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(result), std::text::joined("coverage build: ", result.stderr))?
+    return Ok(move binary)
+}
+
+fn run_binary(root: Text, binary: Text, extra: bool) -> Result<toolchain::ProcessResult, Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push(binary.clone())
+    if extra {
+        arguments.push("extra")
+    }
+    return toolchain::capture(toolchain::command(move arguments), root)
+}
+
+copy struct Expected {
+    lines: u64, covered_lines: u64, branches: u64, covered_branches: u64
+}
+
+fn expect_totals(document: toolchain::Json, expected: Expected) -> Result<void, Text> {
+    testing::expect(count(document, "lines")? == expected.lines, "executable line count")?
+    testing::expect(count(document, "covered_lines")? == expected.covered_lines, "covered line count")?
+    testing::expect(count(document, "branches")? == expected.branches, "branch count")?
+    return testing::expect(count(document, "covered_branches")? == expected.covered_branches, "covered branch count")
+}
+
+fn execute_and_expect(root: Text, binary: Text, directory: Text, extra: bool, expected: Expected) -> Result<void, Text> {
+    let result = run_binary(root, binary, extra)?
+    testing::expect(result.status == 0, "covered execution")?
+    let document = totals(root, directory, 1)?
+    return expect_totals(document, expected)
+}
+
+fn decisions(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "decisions")
+    let source = "fn unused<T>(value: T) -> void { value }\nfn main(arguments: Arguments) -> u32 {\n    if arguments.length() > 1 {\n        return 0\n    }\n    return 0\n}\n"
+    let binary = build(root, source, directory)?
+    let initial = totals(root, directory, 1)?
+    expect_totals(initial, Expected {
+            lines: 5, covered_lines: 0, branches: 2, covered_branches: 0
+        })?
+    execute_and_expect(root, binary, directory, false, Expected {
+            lines: 5, covered_lines: 3, branches: 2, covered_branches: 1
+        })?
+    execute_and_expect(root, binary, directory, true, Expected {
+            lines: 5, covered_lines: 4, branches: 2, covered_branches: 2
+        })?
+    return invalid_data(root, directory)
+}
+
+fn invalid_data(root: Text, directory: Text) -> Result<void, Text> {
+    testing::error(build(root, "fn main() -> u32 { 0 }", directory))?
+    toolchain::write_text(toolchain::path_join(directory, "run.invalid"), "bad")?
+    testing::failed_call(root, std::text::joined("coverage|", directory))?
+    return Ok(())
+}
+
+fn failure(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "failure")
+    let binary = build(root, "fn main() -> u32 {\n    let values = [1]\n    let index: usize = 2\n    return values[index]\n}\n", directory)?
+    let result = run_binary(root, binary, false)?
+    testing::expect(result.status != 0, "program aborts")?
+    let report = totals(root, directory, 0)?
+    testing::expect(count(report, "covered_lines")? == 4, "coverage survives abort")?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    standalone_runtime(root)?
+    decisions(root)?
+    failure(root)?
+    nested_decisions(root)?
+    threaded(root)?
+    bitmap_words(root)?
+    missing_directory(root)?
+    return Ok(())
+}
+
+fn standalone_runtime(root: Text) -> Result<void, Text> {
+    let previous = toolchain::environment("CROWN_ROOT")
+    let directory = toolchain::path_join(root, "standalone")
+    toolchain::set_environment("CROWN_ROOT", root)?
+    let source = "fn main() -> u32 { var bytes = Vec<u8>.new(); for index in 0..131087 { index; bytes.push(0) }; var number: u32 = 0; thread_scope { let child = spawn(move bytes)[write number] { number = 7 }; if child.started() == false { return 3 }; child.join() }; let owner = NativeRoot<u32>.new(number); let token = owner.token(); let lease = match token.acquire() { Ok(value) => move value, Err(error) => { return error } }; loan read lease as value { return if value == 7 { 0 } else { 2 } } }"
+    let result = build(root, source, directory)
+    toolchain::set_environment("CROWN_ROOT", previous)?
+    let binary = match move result {
+        Ok(value) => move value,
+        Err(error) => {
+            return Err(move error)
+        }
+    }
+    let execution = run_binary(root, binary, false)?
+    return testing::expect(execution.status == 0, "coverage runtime does not require repository files")
+}
+
+fn bitmap_words(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "words")
+    var source = "fn main() -> u32 {\nvar value: u32 = 0\n"
+    for index in 0..130 {
+        index;
+        std::text::append(source, "value = value + 1\n")
+    }
+    std::text::append(source, "return value - 130\n}\n")
+    let binary = build(root, source, directory)?
+    let result = run_binary(root, binary, false)?
+    testing::expect(result.status == 0, "coverage spans multiple bitmap words")?
+    let report = totals(root, directory, 0)?
+    let lines = count(report, "lines")?
+    testing::expect(lines > 128, "coverage boundary fixture spans three words")?
+    return testing::expect(lines == count(report, "covered_lines")?, "all bitmap words are recorded")
+}
+
+fn missing_directory(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "missing")
+    let binary = build(root, "fn main() -> u32 { return 0 }", directory)?
+    toolchain::remove_tree(directory)
+    let result = run_binary(root, binary, false)?
+    testing::expect(result.status == 125, "coverage initialization failure exits before main")?
+    return testing::expect(std::text::contains(result.stderr, "cannot initialize Crown coverage"), "coverage initialization reports the failure")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn nested_decisions(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "nested")
+    let source = "fn maybe(value: bool) -> Result<u32, u32> { if value { return Ok(1) }; return Err(2) }\nfn forward(value: bool) -> Result<u32, u32> { return Ok(maybe(value)?) }\nfn logic(a: bool, b: bool) -> bool { return a && b || a || b }\nfn main() -> u32 { for index in 0..4 { let a = index & 1 != 0; let b = index & 2 != 0; logic(a, b); match forward(a) { Ok(value) => { value } Err(error) => { error } } }; return 0 }\n"
+    let binary = build(root, source, directory)?
+    let result = run_binary(root, binary, false)?
+    testing::expect(result.status == 0, "nested conditions execute")?
+    let report = totals(root, directory, 0)?
+    testing::expect(count(report, "branches")? == 14, "logical, loop, try, match branch count")?
+    testing::expect(count(report, "covered_branches")? == 14, "nested decisions retain independent outcomes")?
+    return Ok(())
+}
+
+fn threaded(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "threaded")
+    let source = "resource Guard { value: u32, drop { print(value) } }\nfn task(value: u32) -> void { let guard = Guard { value: value }; guard }\nfn main() -> u32 { var first = spawn move { task(1) }; var second = spawn move { task(2) }; first.join(); second.join(); return 0 }\n"
+    let binary = build(root, source, directory)?
+    let result = run_binary(root, binary, false)?
+    testing::expect(result.status == 0, "instrumented threads and destructors execute")?
+    let report = totals(root, directory, 0)?
+    testing::expect(count(report, "lines")? == count(report, "covered_lines")?, "thread and destructor lines are recorded")?
+    return Ok(())
+}

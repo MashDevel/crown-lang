@@ -1,0 +1,42 @@
+module lowering {
+    fn is_layout_query(source: Shared<Vec<u8>>, expression: frontend::Expression) -> bool {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                arguments
+                return sema::layout_query_name(source, method)
+            }
+            _ => false
+        }
+    }
+
+    fn layout_query(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                let owner = function_span_type(compiler, analysis, reference.span)?
+                let number = layout_query_value(analysis.checker.symbols, owner, method, arguments)?
+                let value = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), number)
+                return Ok(ScalarValue(value, sema::builtin_leaf(sema::USize())))
+            }
+            _ => Err(133)
+        }
+    }
+
+    fn layout_query_value(symbols: sema::Symbols, owner: sema::Type, method: frontend::Name, arguments: Vec<frontend::Expression>) -> Result<u64, u32> {
+        if sema::name_is(symbols.source, method, "offset_of") {
+            match sema::layout_query_field(symbols.source, arguments) {
+                Some(name) => {
+                    let field = layout_field(symbols, owner, name)?
+                    return Ok(field.offset)
+                }
+                None => Err(133)
+            }
+        } else {
+            let value = layout(symbols, owner)?
+            if sema::name_is(symbols.source, method, "size_of") {
+                return Ok(value.size)
+            }
+            return Ok(u64.from(value.alignment))
+        }
+    }
+}

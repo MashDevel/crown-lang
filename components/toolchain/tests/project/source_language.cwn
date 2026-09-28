@@ -1,0 +1,39 @@
+fn allowed_file(path: Text) -> bool {
+    let extensions = testing::list(".cwn|.md|.toml|.json|.tsv")
+    for index in 0..extensions.length() {
+        if std::text::ends(path, extensions[index]) {
+            return true
+        }
+    }
+    let fixtures = testing::list("components/compiler/tests/platform/linux/abi_probe.c|components/compiler/tests/platform/linux/external.c|components/compiler/tests/platform/linux/arm_external.c|components/compiler/tests/fixtures/arm64_macos/abi.c|components/compiler/tests/fixtures/arm64_macos/host_abi.c")
+    return std::text::list_contains(fixtures, path)
+}
+
+fn scan(root: Text, relative: Text) -> Result<void, Text> {
+    let entries = toolchain::directory_entries(toolchain::path_join(root, relative))?
+    for index in 0..entries.length() {
+        let name = toolchain::file_name(entries[index])
+        if std::text::list_contains(testing::list("target|experimental|__pycache__|.DS_Store"), name) {
+            continue
+        }
+        let path = toolchain::path_join(relative, name)
+        if toolchain::is_directory(entries[index]) {
+            scan(root, path)?
+        } else {
+            testing::expect(allowed_file(path), std::text::joined("non-Crown implementation outside bootstrap: ", path))?
+        }
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    testing::expect(allowed_file("components/compiler/tests/platform/linux/abi_probe.c"), "independent ABI fixture exception")?
+    testing::expect(allowed_file("components/compiler/src/unexpected.c") == false, "C exception must be explicit")?
+    testing::expect(allowed_file("components/library/tools/tool.py") == false, "Python implementation rejected")?
+    testing::expect(allowed_file("components/compiler/src/main.cwn"), "Crown source accepted")?
+    return scan(toolchain::repository_root()?, "components")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

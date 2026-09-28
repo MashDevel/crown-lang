@@ -1,0 +1,94 @@
+module frontend {
+    fn parser_conditional(parser: write Parser, start: Span) -> Expression {
+        if parser_consumed(parser, TokenLet()) {
+            return parser_pattern_value(parser, start)
+        }
+        let condition = parser_condition(parser)
+        var then_body = parser_block(parser)
+        parser_skip_breaks(parser)
+        parser_expect(parser, TokenElse())
+        var else_body = Vec<Statement>.new()
+        if parser_at(parser, TokenIf()) {
+            let value = parser_expression(parser)
+            let span = value.span
+            else_body.push(statement(StatementExpression(move value), span))
+        } else {
+            else_body = parser_block(parser)
+        }
+        parser_promote_tail(then_body)
+        parser_promote_tail(else_body)
+        let end = parser_previous_span(parser)
+        let span = span_through(start, end)
+        let value = ConditionalExpression {
+            condition: Box.new(move condition), then_body: move then_body, else_body: move else_body, span: span
+        }
+        return expression(ExpressionConditional(move value), span)
+    }
+
+    fn parser_promote_tail(body: write Vec<Statement>) -> void {
+        match body.pop() {
+            None => {
+            }
+            Some(value) => {
+                var statement = move value
+                if parser_is_conditional(statement.kind) == false {
+                    body.push(move statement);
+                    return
+                }
+                parser_promote_statement(statement)
+                body.push(move statement)
+            }
+        }
+    }
+
+    fn parser_promote_statement(statement: write Statement) -> void {
+        let kind = replace(statement.kind, StatementContinue())
+        match move kind {
+            StatementUnsafe(values) => {
+                var body = move values
+                parser_promote_tail(body)
+                statement.kind = StatementExpression(expression(ExpressionUnsafe(move body), statement.span))
+            }
+            StatementIf(condition, then_values, else_values) => {
+                var then_body = move then_values
+                var else_body = move else_values
+                parser_promote_tail(then_body)
+                parser_promote_tail(else_body)
+                let value = ConditionalExpression {
+                    condition: Box.new(move condition), then_body: move then_body, else_body: move else_body, span: statement.span
+                }
+                statement.kind = StatementExpression(expression(ExpressionConditional(move value), statement.span))
+            }
+            StatementMatch(matched) => {
+                var value = move matched
+                parser_value_arms(value.arms)
+                statement.kind = StatementExpression(expression(ExpressionMatch(Box.new(move value)), statement.span))
+            }
+            _ => {
+            }
+        }
+        statement.depth = statement_depth(statement.kind) + 1
+    }
+
+    fn parser_is_conditional(kind: StatementKind) -> bool {
+        match read kind {
+            StatementUnsafe(body) => {
+                body;
+                return true
+            }
+            StatementIf(condition, then_body, else_body) => {
+                condition;
+                then_body;
+                else_body;
+                return true
+            }
+            StatementMatch(value) => {
+                value;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

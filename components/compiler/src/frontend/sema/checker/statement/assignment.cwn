@@ -1,0 +1,132 @@
+module sema {
+    fn checker_assignment(checker: write Checker, target: frontend::Expression, value: frontend::Expression) -> void {
+        match checker_assignment_type(checker, target) {
+            None => {
+            }
+            Some(expected) => {
+                if checker_require_storable(checker, expected) == false {
+                    return
+                }
+                checker_value(checker, value, expected)
+                var usage = WritePath()
+                if assignment_is_root(target) {
+                    usage = ReassignPath()
+                }
+                match checker_place(checker, target, usage) {
+                    None => {
+                    }
+                    Some(info) => {
+                        info
+                        if assignment_is_root(target) {
+                            checker_restore_root(checker, target)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn assignment_is_root(target: frontend::Expression) -> bool {
+        match read target.kind {
+            frontend::ExpressionPath(path) => {
+                return path.segments.length() == 1
+            }
+            _ => {
+            }
+        }
+        return false
+    }
+
+    fn checker_restore_root(checker: write Checker, target: frontend::Expression) -> void {
+        match read target.kind {
+            frontend::ExpressionPath(path) => {
+                if path.segments.length() == 1 {
+                    match checker_find_variable(checker, path.segments[0]) {
+                        Some(key) => {
+                            checker_set_state(checker, key, Available())
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn checker_assignment_type(checker: write Checker, target: frontend::Expression) -> Option<Type> {
+        match read target.kind {
+            frontend::ExpressionPath(path) => {
+                return checker_assignment_path_type(checker, path)
+            }
+            frontend::ExpressionIndex(value, index) => {
+                index;
+                return checker_assignment_index_type(checker, value)
+            }
+            frontend::ExpressionField(value, name) => {
+                return checker_assignment_field_type(checker, value, name)
+            }
+            _ => {
+                checker_error(checker, "invalid assignment: check mutability, type, active loans, and ownership");
+                return None()
+            }
+        }
+    }
+
+    fn checker_assignment_path_type(checker: write Checker, path: frontend::Path) -> Option<Type> {
+        if path.segments.length() == 0 {
+            checker_error(checker, "invalid assignment: check mutability, type, active loans, and ownership");
+            return None()
+        }
+        loan read path.segments[0] as name {
+            match checker_find_variable(checker, name) {
+                None => {
+                    checker_error(checker, "invalid assignment: check mutability, type, active loans, and ownership");
+                    return None()
+                }
+                Some(key) => {
+                    let variable = checker_variable_copy(checker, key)
+                    return checker_path_type(checker, variable.value_type, path)
+                }
+            }
+        }
+    }
+
+    fn checker_assignment_index_type(checker: write Checker, target: Box<frontend::Expression>) -> Option<Type> {
+        loan read target as value {
+            match checker_assignment_type(checker, value) {
+                None => {
+                    return None()
+                }
+                Some(container) => {
+                    match indexed_element(container) {
+                        None => {
+                            checker_error(checker, "invalid assignment: check mutability, type, active loans, and ownership");
+                            return None()
+                        }
+                        Some(element) => {
+                            return Some(move element)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn checker_assignment_field_type(checker: write Checker, target: Box<frontend::Expression>, name: frontend::Name) -> Option<Type> {
+        loan read target as value {
+            match checker_assignment_type(checker, value) {
+                None => {
+                    return None()
+                }
+                Some(container) => {
+                    if checker_require_field_access(checker, container) == false {
+                        return None()
+                    }
+                    return checker_field_type(checker, container, name)
+                }
+            }
+        }
+    }
+}

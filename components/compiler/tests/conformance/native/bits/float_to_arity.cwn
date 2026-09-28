@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let value: f32 = 1.0;
+    let bits = value.to_bits(1);
+    bits;
+    return 0
+}

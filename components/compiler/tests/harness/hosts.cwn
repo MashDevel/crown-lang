@@ -1,0 +1,70 @@
+module harness {
+    fn case_hosts(document: toolchain::Json, index: usize) -> Result<Vec<Text>, Text> {
+        let hosts = toolchain::json_optional_strings(document, index, "hosts")?
+        match toolchain::json_field(document, index, "hosts") {
+            Some(field) => {
+                field;
+                if hosts.length() == 0 {
+                    return Err("test hosts must not be empty")
+                }
+            }
+            None => {
+            }
+        }
+        var seen = Vec<Text>.new()
+        for offset in 0..hosts.length() {
+            toolchain::parse_target(hosts[offset])?;
+            if std::text::list_contains(seen, hosts[offset]) {
+                return Err("duplicate test host")
+            }
+            seen.push(hosts[offset].clone())
+        }
+        return Ok(move hosts)
+    }
+
+    fn case_applies(value: Case, host: toolchain::Target) -> bool {
+        return value.hosts.length() == 0 || std::text::list_contains(value.hosts, toolchain::target_name(host))
+    }
+
+    fn applicability_json(value: Case, host: toolchain::Target) -> Text {
+        var output = std::text::joined("{\"name\":", toolchain::json_quoted(value.name))
+        std::text::append(output, ",\"applicable\":")
+        std::text::append(output, if case_applies(value, host) {
+                "true"
+            } else {
+                "false"
+            })
+        std::text::append(output, ",\"host\":")
+        std::text::append(output, toolchain::json_quoted(toolchain::target_name(host)))
+        std::text::append(output, ",\"required_hosts\":[")
+        for index in 0..value.hosts.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, toolchain::json_quoted(value.hosts[index]))
+        }
+        std::text::append(output, "]}")
+        return move output
+    }
+
+    fn write_applicability(cases: Vec<Case>, request: Suite) -> Result<usize, Text> {
+        var output = "["
+        var count: usize = 0
+        var unavailable: usize = 0
+        for index in 0..cases.length() {
+            if std::text::contains(cases[index].name, request.filter) {
+                if count != 0 {
+                    output.push(',')
+                }
+                std::text::append(output, applicability_json(cases[index], toolchain::host_target()))
+                count = count + 1
+                if case_applies(cases[index], toolchain::host_target()) == false {
+                    unavailable = unavailable + 1
+                }
+            }
+        }
+        std::text::append(output, "]\n")
+        toolchain::write_text(toolchain::path_join(request.environment.output, "applicability.json"), output)?
+        return Ok(unavailable)
+    }
+}

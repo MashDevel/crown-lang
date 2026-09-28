@@ -1,0 +1,42 @@
+module lowering {
+    fn drop_shared(compiler: write FunctionCompiler, symbols: sema::Symbols, request: BufferOwner) -> Result<void, u32> {
+        let data = function_load_pointer(compiler, request.address)?
+        let control = function_load_pointer_field(compiler, request.address, 8)?
+        let mutex = function_offset(compiler, control, 8)?
+        let release_request = ReferenceRelease {
+            owner: control, mutex: mutex
+        }
+        let final_reference = release_reference(compiler, symbols, release_request)?
+        let ready = function_begin_guarded_block(compiler, final_reference)?
+        destroy_mutex(compiler, mutex)?
+        drop_allocated_value(compiler, data, request.element)?
+        free_pointer(compiler, control)?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+    struct ReferenceRelease {
+        owner: usize
+        mutex: usize
+    }
+
+    fn release_reference(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ReferenceRelease) -> Result<usize, u32> {
+        call_lock(compiler, "pthread_mutex_lock", request.mutex)?
+        let load = Place {
+            address: request.owner, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let references = function_load(compiler, symbols, load)?
+        let one_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, one_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), references, one))?
+        let store = StoreRequest {
+            address: request.owner, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        call_lock(compiler, "pthread_mutex_unlock", request.mutex)?
+        let zero_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, zero_type, 0)
+        return function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), next, zero))
+    }
+
+}

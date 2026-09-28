@@ -1,0 +1,87 @@
+module x86 {
+    fn codegen_compile_instruction(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Result<void, CodegenError> {
+        codegen_compile_instruction_inner(program, compiler, instruction)?
+        codegen_keep_result_cache(compiler, instruction.result)
+        return Ok(())
+    }
+
+    fn codegen_compile_instruction_inner(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Result<void, CodegenError> {
+        match codegen_vector_instruction(program, compiler, instruction) {
+            Some(result) => {
+                return move result
+            }
+            None => {
+            }
+        }
+        match codegen_wide_instruction(program, compiler, instruction) {
+            Some(result) => {
+                return move result
+            }
+            None => {
+            }
+        }
+        match codegen_scalar_instruction(program, compiler, instruction) {
+            Some(result) => {
+                return move result
+            }
+            None => {
+            }
+        }
+        match codegen_memory_instruction(program, compiler, instruction) {
+            Some(result) => {
+                return move result
+            }
+            None => {
+            }
+        }
+        match codegen_call_instruction(program, compiler, instruction) {
+            Some(result) => {
+                return move result
+            }
+            None => {
+            }
+        }
+        if codegen_deferred_instruction(instruction.kind) {
+            return Ok(())
+        }
+        Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+    }
+
+    fn codegen_deferred_instruction(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryStackSlot(size, alignment) => {
+                        size;
+                        alignment;
+                        return true
+                    }
+                    ir::MemoryGlobalAddress(global) => {
+                        global;
+                        return true
+                    }
+                    ir::MemorySymbolAddress(symbol) => {
+                        symbol;
+                        return true
+                    }
+                    ir::MemoryFunctionAddress(function) => {
+                        function;
+                        return true
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

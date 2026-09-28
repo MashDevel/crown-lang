@@ -1,0 +1,76 @@
+module optimize {
+    copy struct EffectRegion {
+        root: MemoryRoot
+        effect: u8
+    }
+
+    struct MemoryEffect {
+        unknown: u8
+        regions: Vec<EffectRegion>
+    }
+
+    struct EffectScope {
+        roots: Vec<MemoryRoot>
+        offsets: Vec<Option<ir::AddressOffset>>
+    }
+
+    fn memory_effect_new() -> MemoryEffect {
+        return MemoryEffect {
+            unknown: 0, regions: Vec<EffectRegion>.new()
+        }
+    }
+
+    fn memory_effect_bits(effect: MemoryEffect) -> u8 {
+        var bits = effect.unknown
+        for index in 0..effect.regions.length() {
+            bits = bits | effect.regions[index].effect
+        }
+        return bits
+    }
+
+    fn memory_effect_add(effect: write MemoryEffect, root: MemoryRoot, bits: u8) -> void {
+        if bits == 0 ||(effect.unknown & bits) == bits {
+            return
+        }
+        match root {
+            MemoryStack(value) => {
+                value;
+                return
+            }
+            MemoryUnknown => {
+                effect.unknown = effect.unknown | bits;
+                return
+            }
+            _ => {
+            }
+        }
+        for index in 0..effect.regions.length() {
+            if effect.regions[index].root == root {
+                effect.regions[index].effect = effect.regions[index].effect | bits
+                return
+            }
+        }
+        effect.regions.push(EffectRegion {
+                root: root, effect: bits
+            })
+    }
+
+    fn memory_effect_merge(target: write MemoryEffect, source: MemoryEffect) -> bool {
+        let before = memory_effect_weight(target)
+        target.unknown = target.unknown | source.unknown
+        for index in 0..source.regions.length() {
+            memory_effect_add(target, source.regions[index].root, source.regions[index].effect)
+        }
+        return before != memory_effect_weight(target)
+    }
+
+    fn memory_effect_weight(effect: MemoryEffect) -> usize {
+        var weight = usize.from(effect.unknown & 1) + usize.from((effect.unknown >> 1) & 1)
+        for index in 0..effect.regions.length() {
+            let bits = effect.regions[index].effect
+            weight = weight + usize.from(bits & 1) + usize.from((bits >> 1) & 1)
+        }
+        return weight
+    }
+
+}

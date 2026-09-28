@@ -1,0 +1,97 @@
+module ir {
+    fn function_compact_values(function: write Function) -> usize {
+        let active = compact_active_values(function)
+        var mapping = Vec<Option<usize>>.with_capacity(function.values.length())
+        var types = Vec<Type>.new()
+        for value in 0..function.values.length() {
+            if bitset_contains(active, value) {
+                mapping.push(Some(types.length()))
+                types.push(function.values[value])
+            } else {
+                mapping.push(None())
+            }
+        }
+        let removed = function.values.length() - types.length()
+        if removed == 0 {
+            return 0
+        }
+        compact_constants(function, mapping, types.length())
+        loan read mapping as values {
+            let replacement = Replacement {
+                from: 0, to: 0, values: values, direct: true
+            }
+            replace_values(function.parameters, replacement)
+            replace_values(function.exclusive_parameters, replacement)
+            function_replace_mapped_uses(function, replacement)
+            compact_results(function, replacement)
+        }
+        function.values = move types
+        return removed
+    }
+
+    fn compact_active_values(function: Function) -> BitSet {
+        var active = bitset_new(function.values.length())
+        compact_mark_values(function.parameters, active)
+        for block in 0..function.blocks.length() {
+            compact_mark_block(function.blocks[block], active)
+        }
+        return move active
+    }
+
+    fn compact_mark_block(block: BasicBlock, active: write BitSet) -> void {
+        for index in 0..block.instructions.length() {
+            loan read block.instructions[index] as instruction {
+                compact_mark_values(instruction_operands(instruction.kind), active)
+                match instruction.result {
+                    Some(value) => bitset_insert(active, value)
+                    None => {
+                    }
+                }
+            }
+        }
+        match read block.terminator {
+            Some(terminator) => compact_mark_values(terminator_operands(terminator), active)
+            None => {
+            }
+        }
+    }
+
+    fn compact_mark_values(values: Vec<usize>, active: write BitSet) -> void {
+        for index in 0..values.length() {
+            bitset_insert(active, values[index])
+        }
+    }
+
+    fn compact_results(function: write Function, replacement: Replacement) -> void {
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                replace_optional_value(function.blocks[block].instructions[index].result, replacement)
+            }
+        }
+    }
+
+    fn compact_constants(function: write Function, mapping: Vec<Option<usize>>, count: usize) -> void {
+        var constants = Vec<ConstantEntry>.new()
+        var indices = Vec<usize>.with_capacity(count)
+        for index in 0..count {
+            index;
+            indices.push(18446744073709551615)
+        }
+        for index in 0..function.constants.length() {
+            loan read function.constants[index] as constant {
+                match mapping[constant.id] {
+                    Some(value) => {
+                        indices[value] = constants.length()
+                        constants.push(ConstantEntry {
+                                id: value, value_type: constant.value_type, value: constant_copy(constant.value)
+                            })
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        function.constants = move constants
+        function.constant_indices = move indices
+    }
+}

@@ -1,0 +1,6 @@
+fn duplicate(value: read Option<Text>) -> Option<Text> {
+    return value
+}
+fn main() -> u32 {
+    return 0
+}

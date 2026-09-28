@@ -1,0 +1,21 @@
+module x86 {
+    fn codegen_add_process_runtime(program: write Program) -> Result<void, CodegenError> {
+        let name = "crown_process_environment"
+        if program_has_import(program, name) == false {
+            return Ok(())
+        }
+        program_remove_import(program, name)
+        var instructions = Vec<Instruction>.new()
+        instructions.push(LoadSymbolAddress(Rax(), "environ"))
+        instructions.push(Load(Rax(), Rax(), 0))
+        instructions.push(Return())
+        codegen_insert_function(program, function_new(name.clone(), move instructions))?
+        match program_add_typed_import(program, "environ", object::SymbolData()) {
+            Ok(value) => Ok(value)
+            Err(error) => {
+                error;
+                Err(codegen_error(CodegenEncodeError()))
+            }
+        }
+    }
+}

@@ -1,0 +1,11 @@
+fn main() -> u32 {
+    let owned = "value"
+    let selected = match Some(true) {
+        Some(flag) => {
+            let consumed = move owned
+            1
+        },
+        None => 2
+    }
+    selected
+}

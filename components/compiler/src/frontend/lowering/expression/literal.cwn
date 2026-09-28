@@ -1,0 +1,130 @@
+module lowering {
+    struct LiteralRequest {
+        span: frontend::Span
+        integer: u64
+    }
+
+    fn integer_literal(compiler: write FunctionCompiler, analysis: sema::Analysis, request: LiteralRequest) -> Result<Value, u32> {
+        match function_span_type(compiler, analysis, request.span) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value_type) => {
+                match ir_type(analysis.checker.symbols, value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(ir_type) => {
+                        let value = function_integer(compiler, ir_type, request.integer)
+                        return Ok(ScalarValue(value, move value_type))
+                    }
+                }
+            }
+        }
+    }
+
+    copy struct FloatLiteralRequest {
+        expression: frontend::Span, literal: frontend::Span
+    }
+
+    fn float_literal(compiler: write FunctionCompiler, analysis: sema::Analysis, request: FloatLiteralRequest) -> Result<Value, u32> {
+        let value_type = function_span_type(compiler, analysis, request.expression)?
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                arguments
+                let kind = builtin
+                if kind == sema::F32() {
+                    let bits = frontend::float32_bits(analysis.checker.symbols.source, request.literal)
+                    let ir_type = ir::TypeFloat(ir::FloatWidth32())
+                    let constant = ir::ConstantFloat32(bits)
+                    let value = ir::function_constant(compiler.ir, ir_type, constant)
+                    return Ok(ScalarValue(value, sema::type_copy(value_type)))
+                }
+                if kind == sema::F64() {
+                    let bits = frontend::float64_bits(analysis.checker.symbols.source, request.literal)
+                    let ir_type = ir::TypeFloat(ir::FloatWidth64())
+                    let constant = ir::ConstantFloat64(bits)
+                    let value = ir::function_constant(compiler.ir, ir_type, constant)
+                    return Ok(ScalarValue(value, sema::type_copy(value_type)))
+                }
+                return Err(332)
+            }
+            _ => {
+                return Err(333)
+            }
+        }
+    }
+
+    fn boolean_literal(compiler: write FunctionCompiler, value: bool) -> Result<Value, u32> {
+        var integer: u64 = 0
+        if value {
+            integer = 1
+        }
+        let ir_type = ir::TypeInteger(ir::IntegerWidth1())
+        let id = function_integer(compiler, ir_type, integer)
+        return Ok(ScalarValue(id, sema::builtin_leaf(sema::Bool())))
+    }
+
+    fn character_literal(compiler: write FunctionCompiler, source: Shared<Vec<u8>>, span: frontend::Span) -> Result<Value, u32> {
+        match frontend::character_scalar(source, span) {
+            None => {
+                return Err(52)
+            }
+            Some(value) => {
+                let ir_type = ir::TypeInteger(ir::IntegerWidth32())
+                let id = function_integer(compiler, ir_type, u64.from(value))
+                return Ok(ScalarValue(id, sema::builtin_leaf(sema::Char())))
+            }
+        }
+    }
+
+    fn text_literal(compiler: write FunctionCompiler, analysis: sema::Analysis, span: frontend::Span) -> Result<Value, u32> {
+        if sema::type_builtin(function_span_type(compiler, analysis, span)?) == sema::TextView() {
+            return borrowed_text_literal(compiler, analysis, span)
+        }
+        return owned_text_literal(compiler, analysis, span)
+    }
+
+    fn owned_text_literal(compiler: write FunctionCompiler, analysis: sema::Analysis, span: frontend::Span) -> Result<Value, u32> {
+        let value_type = sema::builtin_leaf(sema::Text())
+        let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let zero_request = Place {
+            address: address, value_type: sema::type_copy(value_type)
+        }
+        function_zero(compiler, analysis.checker.symbols, zero_request)?
+        let bytes = frontend::text_literal_bytes(analysis.checker.symbols.source, span)
+        if bytes.length() == 0 {
+            return Ok(AddressValue(address, move value_type))
+        }
+        let integer_type = ir::TypeInteger(ir::IntegerWidth64())
+        let length = function_integer(compiler, integer_type, u64.from(bytes.length()))
+        let pointer = function_allocate(compiler, length)?
+        let source = text_literal_pointer(compiler, span)?
+        match function_append(compiler, ir::InstructionMemoryCopy(pointer, source, length)) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        store_text_descriptor(compiler, analysis.checker.symbols, address, pointer, length)?
+        return Ok(AddressValue(address, move value_type))
+    }
+
+    fn store_text_descriptor(compiler: write FunctionCompiler, symbols: sema::Symbols, address: usize, pointer: usize, length: usize) -> Result<void, u32> {
+        function_store_pointer(compiler, address, pointer)?
+        let length_address = function_offset(compiler, address, 8)?
+        let capacity_address = function_offset(compiler, address, 16)?
+        let size_type = sema::builtin_leaf(sema::USize())
+        let length_store = StoreRequest {
+            address: length_address, value: length, value_type: sema::type_copy(size_type)
+        }
+        function_store(compiler, symbols, length_store)?
+        let capacity_store = StoreRequest {
+            address: capacity_address, value: length, value_type: move size_type
+        }
+        function_store(compiler, symbols, capacity_store)?
+        return Ok(())
+    }
+}

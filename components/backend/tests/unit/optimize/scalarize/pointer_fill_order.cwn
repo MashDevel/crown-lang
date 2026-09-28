@@ -1,0 +1,54 @@
+fn pointer_fill_program(load_first: bool, fill: u64) -> Result<ir::Program, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let entry = safety_block(function)?
+    let first = safety_block(function)?
+    let second = safety_block(function)?
+    var loading = first
+    var filling = second
+    if load_first == false {
+        loading = second;
+        filling = first
+    }
+    let slot = safety_append(function, entry, ir::InstructionStackSlot(8, 8))?
+    let byte = safety_integer(function, ir::IntegerWidth8(), fill)
+    let size = safety_integer(function, ir::IntegerWidth64(), 8)
+    safety_append(function, filling, ir::InstructionMemorySet(slot, byte, size))?
+    safety_terminate(function, entry, ir::TerminatorBranch(filling))?
+    safety_terminate(function, filling, ir::TerminatorBranch(loading))?
+    pointer_fill_read(function, loading, slot, fill)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn pointer_fill_case(load_first: bool, fill: u64) -> Result<void, u32> {
+    var program = pointer_fill_program(load_first, fill)?
+    let expected: usize = if fill == 0 {
+        1
+    } else {
+        0
+    }
+    let analysis = optimize::scalar_analysis(program.functions[0])
+    safety_require(optimize::scalar_selected_roots(analysis) == expected, 1)?
+    safety_require(optimize::scalarize(program.functions[0]) == expected, 2)?
+    return safety_execute(move program)
+}
+
+fn pointer_fill_order() -> Result<void, u32> {
+    for fill in 0..2 {
+        pointer_fill_case(false, u64.from(fill))?
+        pointer_fill_case(true, u64.from(fill))?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(pointer_fill_order())
+}
+
+fn pointer_fill_read(function: write ir::Function, block: usize, slot: usize, fill: u64) -> Result<void, u32> {
+    let pointer = safety_append(function, block, ir::InstructionLoad(slot, ir::TypePointer(), 8, false))?
+    let value = safety_append(function, block, ir::InstructionCast(ir::CastPointerToInteger(), pointer, ir::TypeInteger(ir::IntegerWidth64())))?
+    let expected = safety_integer(function, ir::IntegerWidth64(), fill * 72340172838076673)
+    return safety_return_equal(function, block, value, expected)
+}

@@ -1,0 +1,17 @@
+fn main() -> u32 {
+    let high: u8 = 255 << 4
+    let signed: i8 = i8.from_bits(128)
+    if high != 240 {
+        return 1
+    }
+    if signed >> 7 != -1 {
+        return 2
+    }
+    if 1 << 7 != 128 {
+        return 3
+    }
+    if 128 >> 7 != 1 {
+        return 4
+    }
+    return 0
+}

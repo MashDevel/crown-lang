@@ -1,0 +1,52 @@
+module frontend {
+    struct CompileSettings {
+        optimization: toolchain::OptimizationOptions
+        source: Text
+        target: toolchain::Target
+    }
+
+    fn compile_settings(bundle: SourceBundle, options: toolchain::OptimizationOptions, target: toolchain::Target) -> Result<CompileSettings, Text> {
+        var source = ""
+        if options.generate.length() != 0 || options.use_profile.length() != 0 {
+            source = toolchain::digest_text(std::text::joined(coverage::source_metadata(bundle)?, toolchain::target_name(target)))?
+        }
+        return Ok(CompileSettings {
+                optimization: toolchain::optimization_copy(options), source: move source, target: target
+            })
+    }
+
+    fn optimization_error(error: Text) -> u32 {
+        toolchain::failure(error)
+        return 255
+    }
+
+    fn optimize_program(program: write ir::Program, settings: CompileSettings) -> Result<u64, u32> {
+        prune_compiled_program(program)?
+        let report = optimize::generated(program)
+        prune_compiled_program(program)?
+        match write_optimization_report(program, report, settings.optimization.report) {
+            Err(error) => {
+                return Err(optimization_error(error))
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        match profile::prepare(program, settings.optimization, settings.source) {
+            Err(error) => Err(optimization_error(error))
+            Ok(value) => Ok(value)
+        }
+    }
+
+    fn prune_compiled_program(program: write ir::Program) -> Result<void, u32> {
+        match optimize::prune_program(program) {
+            Err(error) => {
+                return Err(ir_validation_error(error, program))
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+}

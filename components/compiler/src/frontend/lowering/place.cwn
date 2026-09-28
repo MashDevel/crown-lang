@@ -1,0 +1,215 @@
+module lowering {
+    struct Place {
+        address: usize
+        value_type: sema::Type
+    }
+
+    fn expression_place(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        let place = expression_place_info(compiler, analysis, expression)?
+        return Ok(place.address)
+    }
+
+    fn expression_place_info(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Place, u32> {
+        coverage_line(compiler, expression.span)?
+        return place_kind(compiler, analysis, expression, expression.kind)
+    }
+
+    fn place_kind(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, kind: frontend::ExpressionKind) -> Result<Place, u32> {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                return path_place(compiler, analysis, path)
+            }
+            frontend::ExpressionField(target, name) => {
+                return field_place(compiler, analysis, target, name)
+            }
+            frontend::ExpressionIndex(target, index) => {
+                target;
+                index;
+                return index_place(compiler, analysis, expression)
+            }
+            _ => {
+                return materialized_place(compiler, analysis, expression)
+            }
+        }
+    }
+
+    fn field_place(compiler: write FunctionCompiler, analysis: sema::Analysis, target: Box<frontend::Expression>, name: frontend::Name) -> Result<Place, u32> {
+        loan read target as value {
+            let base = expression_place_info(compiler, analysis, value)?
+            let field = layout_field(analysis.checker.symbols, base.value_type, name)?
+            let address = function_offset(compiler, base.address, field.offset)?
+            return Ok(Place {
+                    address: address, value_type: sema::type_copy(field.value_type)
+                })
+        }
+    }
+
+    fn path_place(compiler: write FunctionCompiler, analysis: sema::Analysis, path: frontend::Path) -> Result<Place, u32> {
+        if path.segments.length() == 0 {
+            return Err(125)
+        }
+        var address: usize = 0
+        var value_type = sema::Invalid()
+        loan read path.segments[0] as name {
+            match function_binding_index(compiler, analysis.checker.symbols.source, name) {
+                None => {
+                    return constant_place(compiler, analysis, name)
+                }
+                Some(index) => {
+                    loan read compiler.bindings[index] as binding {
+                        address = binding.address
+                        value_type = sema::type_copy(binding.value_type)
+                    }
+                }
+            }
+        }
+        var index: usize = 1
+        while index < path.segments.length() {
+            loan read path.segments[index] as name {
+                let field = layout_field(analysis.checker.symbols, value_type, name)?
+                address = function_offset(compiler, address, field.offset)?
+                value_type = sema::type_copy(field.value_type)
+            }
+            index = index + 1
+        }
+        return Ok(Place {
+                address: address, value_type: move value_type
+            })
+    }
+
+    fn place_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let place = expression_place_info(compiler, analysis, expression)?
+        place_value(compiler, analysis.checker.symbols, place)
+    }
+
+    fn place_value(compiler: write FunctionCompiler, symbols: sema::Symbols, place: Place) -> Result<Value, u32> {
+        if sema::type_is_unit(place.value_type) {
+            return Ok(VoidValue())
+        }
+        return stored_place_value(compiler, symbols, place)
+    }
+
+    fn stored_place_value(compiler: write FunctionCompiler, symbols: sema::Symbols, place: Place) -> Result<Value, u32> {
+        if type_is_direct(symbols, place.value_type)? {
+            let value = function_load(compiler, symbols, place)?
+            return Ok(ScalarValue(value, sema::type_copy(place.value_type)))
+        }
+        return Ok(AddressValue(place.address, sema::type_copy(place.value_type)))
+    }
+
+    struct IndexState {
+        container: usize
+        index: usize
+        container_type: sema::Type
+        element_type: sema::Type
+        checked: bool
+    }
+
+    fn index_place(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Place, u32> {
+        match read expression.kind {
+            frontend::ExpressionIndex(target, index) => {
+                var container: usize = 0
+                var container_type = sema::Invalid()
+                loan read target as value {
+                    let place = expression_place_info(compiler, analysis, value)?
+                    container = place.address
+                    container_type = sema::type_copy(place.value_type)
+                }
+                var index_value: usize = 0
+                loan read index as value {
+                    index_value = function_scalar_expression(compiler, analysis, value)?
+                }
+                var element_type = sema::Invalid()
+                match sema::indexed_element(container_type) {
+                    None => {
+                        return Err(129)
+                    }
+                    Some(value_type) => {
+                        element_type = move value_type
+                    }
+                }
+                let state = IndexState {
+                    container: container, index: index_value, container_type: move container_type, element_type: move element_type, checked: true
+                }
+                return finish_index_place(compiler, analysis.checker.symbols, move state)
+            }
+            _ => {
+                return Err(128)
+            }
+        }
+    }
+
+    fn finish_index_place(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take IndexState) -> Result<Place, u32> {
+        var address: usize = 0
+        if sema::type_builtin(state.container_type) == sema::Arguments() {
+            address = argument_index(compiler, symbols, state)?
+        }
+        else {
+            address = sequence_index(compiler, symbols, state)?
+        }
+        return Ok(Place {
+                address: address, value_type: sema::type_copy(state.element_type)
+            })
+    }
+
+    fn sequence_index(compiler: write FunctionCompiler, symbols: sema::Symbols, state: IndexState) -> Result<usize, u32> {
+        let sequence = sequence_storage(compiler, symbols, state)?
+        if state.checked {
+            let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), state.index, sequence.length))?
+            function_guard_with(compiler, valid, "index_out_of_bounds")?
+        }
+        let layout = layout(symbols, state.element_type)?
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, size_type, layout.size)
+        let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), state.index, size))?
+        return function_append_value(compiler, ir::InstructionOffset(sequence.data, offset))
+    }
+
+    fn place_binding(compiler: FunctionCompiler, source: Shared<Vec<u8>>, expression: frontend::Expression) -> Result<Option<usize>, u32> {
+        match read expression.kind {
+            frontend::ExpressionPath(path) => {
+                if path.segments.length() != 1 {
+                    return Ok(None())
+                }
+                return Ok(function_binding_index(compiler, source, path.segments[0]))
+            }
+            _ => Ok(None())
+        }
+    }
+    struct SequenceStorage {
+        data: usize
+        length: usize
+    }
+
+    fn sequence_storage(compiler: write FunctionCompiler, symbols: sema::Symbols, state: IndexState) -> Result<SequenceStorage, u32> {
+        var data = state.container
+        var length: usize = 0
+        match read state.container_type {
+            sema::ArrayType(element, count) => {
+                element
+                let value_type = ir::TypeInteger(ir::IntegerWidth64())
+                length = function_integer(compiler, value_type, u64.from(count))
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                arguments
+                let kind = builtin
+                if kind != sema::TextView() && kind != sema::Vec() && kind != sema::Slice() {
+                    return Err(129)
+                }
+                data = function_load_pointer(compiler, state.container)?
+                let length_address = function_offset(compiler, state.container, 8)?
+                let request = Place {
+                    address: length_address, value_type: sema::builtin_leaf(sema::USize())
+                }
+                length = function_load(compiler, symbols, request)?
+            }
+            _ => {
+                return Err(130)
+            }
+        }
+        return Ok(SequenceStorage {
+                data: data, length: length
+            })
+    }
+
+}

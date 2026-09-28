@@ -1,0 +1,103 @@
+module frontend {
+    fn lexer_float_finite(lexer: Lexer, start: usize, end: usize) -> bool {
+        let magnitude = lexer_float_magnitude(lexer, start, end)
+        if magnitude.zero {
+            return true
+        }
+        if magnitude.value < 308 {
+            return true
+        }
+        if magnitude.value > 308 {
+            return false
+        }
+        return lexer_float_leading(lexer, start, end) <= 17976931348623157
+    }
+
+    fn lexer_float_magnitude(lexer: Lexer, start: usize, end: usize) -> FloatMagnitude {
+        var index = start
+        var digit_position: isize = 0
+        var decimal_position: isize = -1
+        var first_nonzero: isize = -1
+        while index < end {
+            let value = source_byte(lexer.source, index)
+            if value == 101 || value == 69 {
+                break
+            }
+            if value == 95 {
+                index = index + 1;
+                continue
+            }
+            if value == 46 {
+                decimal_position = digit_position
+                index = index + 1
+                continue
+            }
+            if value != 48 && first_nonzero < 0 {
+                first_nonzero = digit_position
+            }
+            digit_position = digit_position + 1
+            index = index + 1
+        }
+        if first_nonzero < 0 {
+            return FloatMagnitude {
+                zero: true, value: 0
+            }
+        }
+        if decimal_position < 0 {
+            decimal_position = digit_position
+        }
+        let exponent = lexer_float_exponent_value(lexer, index, end)
+        return FloatMagnitude {
+            zero: false, value: decimal_position - first_nonzero - 1 + exponent
+        }
+    }
+
+    fn lexer_float_exponent_value(lexer: Lexer, start: usize, end: usize) -> isize {
+        if start >= end {
+            return 0
+        }
+        var index = start + 1
+        var negative = false
+        if index < end && source_byte(lexer.source, index) == 43 {
+            index = index + 1
+        }
+        if index < end && source_byte(lexer.source, index) == 45 {
+            negative = true
+            index = index + 1
+        }
+        var exponent: isize = 0
+        while index < end {
+            let value = source_byte(lexer.source, index)
+            if value != 95 && exponent < 10000 {
+                exponent = exponent * 10 + isize.from(value - 48)
+            }
+            index = index + 1
+        }
+        if negative {
+            return 0 - exponent
+        }
+        return exponent
+    }
+
+    fn lexer_float_leading(lexer: Lexer, start: usize, end: usize) -> u64 {
+        var leading: u64 = 0
+        var significant: usize = 0
+        var index = start
+        while index < end && significant < 17 {
+            let value = source_byte(lexer.source, index)
+            if value == 101 || value == 69 {
+                break
+            }
+            if value >= 48 && value <= 57 &&(significant > 0 || value != 48) {
+                leading = leading * 10 + u64.from(value - 48)
+                significant = significant + 1
+            }
+            index = index + 1
+        }
+        while significant < 17 {
+            leading = leading * 10;
+            significant = significant + 1
+        }
+        return leading
+    }
+}

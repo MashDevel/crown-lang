@@ -1,0 +1,48 @@
+module x86 {
+    fn codegen_scalar_instruction(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Option<Result<void, CodegenError>> {
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                return Some(codegen_compile_binary(program, compiler, BinaryInput {
+                            result: instruction.result
+                            operator: operator
+                            left: left
+                            right: right
+                        }))
+            }
+            ir::InstructionUnary(operator, value) => {
+                return Some(codegen_compile_unary(program, compiler, UnaryInput {
+                            result: instruction.result
+                            operator: operator
+                            value: value
+                        }))
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                return Some(codegen_compile_compare(program, compiler, CompareInput {
+                            result: instruction.result
+                            operator: operator
+                            left: left
+                            right: right
+                        }))
+            }
+            ir::InstructionCast(operator, value, target) => {
+                target
+                return Some(codegen_compile_cast(program, compiler, CastInput {
+                            result: instruction.result
+                            operator: operator
+                            value: value
+                        }))
+            }
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                return Some(codegen_compile_select(program, compiler, SelectInput {
+                            result: instruction.result
+                            condition: condition
+                            then_value: then_value
+                            else_value: else_value
+                        }))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+}

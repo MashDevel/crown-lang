@@ -1,0 +1,16 @@
+fn safety_load_store_load(function: write ir::Function, first: usize, second: usize, volatile: bool) -> Result<void, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let value = safety_integer(function, ir::IntegerWidth64(), 7)
+    safety_append(function, 0, ir::InstructionLoad(first, value_type, 8, false))?
+    safety_append(function, 0, ir::InstructionStore(second, value, 8, volatile))?
+    safety_append(function, 0, ir::InstructionLoad(first, value_type, 8, false))?
+    return Ok(())
+}
+
+fn safety_blocks(function: write ir::Function, count: usize) -> Result<Vec<usize>, u32> {
+    var blocks = Vec<usize>.new()
+    for index in 0..count {
+        blocks.push(safety_block(function)?)
+    }
+    return Ok(move blocks)
+}

@@ -1,0 +1,165 @@
+module toolchain {
+    struct Toml {
+        document: Json, sections: Vec<Text>
+    }
+
+    fn toml(source: take Text) -> Result<Toml, Text> {
+        var input = cursor(move source)
+        var document = Json {
+            values: Vec<JsonValue>.new(), root: 0
+        }
+        var fields = TomlFields {
+            section: "", fields: Vec<JsonField>.new()
+        }
+        var sections = Vec<Text>.new()
+        toml_space(input)
+        while input.position < input.source.length() {
+            if consumed(input, 91) {
+                fields.section = toml_section(input, sections)?
+            } else {
+                toml_field(input, document, fields)?
+            }
+            toml_line_end(input)?
+            toml_space(input)
+        }
+        document.root = json_add(document, JsonObject(replace(fields.fields, Vec<JsonField>.new())))
+        return Ok(Toml {
+                document: move document, sections: move sections
+            })
+    }
+
+    fn toml_section(input: write Cursor, sections: write Vec<Text>) -> Result<Text, Text> {
+        let section = toml_key(input)?
+        require_byte(input, 93)?
+        if std::text::list_contains(sections, section) {
+            return Err(std::text::joined("duplicate section: ", section))
+        }
+        sections.push(section.clone())
+        return Ok(move section)
+    }
+
+    struct TomlFields {
+        section: Text, fields: Vec<JsonField>
+    }
+
+    fn toml_field(input: write Cursor, document: write Json, fields: write TomlFields) -> Result<void, Text> {
+        var key = toml_key(input)?
+        if fields.section.length() != 0 {
+            key = std::text::joined(std::text::joined(fields.section, "."), key)
+        }
+        if json_field_exists(fields.fields, key) {
+            return Err(std::text::joined("duplicate key: ", key))
+        }
+        horizontal_space(input)
+        require_byte(input, 61)?
+        horizontal_space(input)
+        let value = toml_value(input, document, 0)?
+        return flatten_field(document, fields.fields, JsonField {
+                name: move key, value: value
+            })
+    }
+
+    fn toml_key(input: write Cursor) -> Result<Text, Text> {
+        horizontal_space(input)
+        var key = toml_key_part(input)?
+        horizontal_space(input)
+        while consumed(input, 46) {
+            horizontal_space(input)
+            key = std::text::joined(std::text::joined(key, "."), toml_key_part(input)?)
+            horizontal_space(input)
+        }
+        return Ok(move key)
+    }
+
+    fn toml_key_part(input: write Cursor) -> Result<Text, Text> {
+        if peek(input) == 34 || peek(input) == 39 {
+            let value = toml_string(input)?
+            if std::text::contains(value, ".") || std::text::contains(value, "\n") {
+                return Err("unsupported manifest key")
+            }
+            return Ok(move value)
+        }
+        let start = input.position
+        while key_byte(peek(input)) && peek(input) != 46 {
+            input.position = input.position + 1
+        }
+        if start == input.position {
+            return Err(parse_error(input, "expected key"))
+        }
+        return Ok(std::text::slice(input.source, start, input.position))
+    }
+
+    fn key_byte(byte: u8) -> bool {
+        if byte == 45 || byte == 95 || byte == 46 {
+            return true
+        }
+        if byte >= 48 && byte <= 57 {
+            return true
+        }
+        return byte >= 65 && byte <= 90 || byte >= 97 && byte <= 122
+    }
+
+    fn horizontal_space(input: write Cursor) -> void {
+        while peek(input) == 32 || peek(input) == 9 {
+            input.position = input.position + 1
+        }
+    }
+
+    fn toml_space(input: write Cursor) -> void {
+        while true {
+            whitespace(input)
+            if consumed(input, 35) == false {
+                return
+            }
+            while input.position < input.source.length() && peek(input) != 10 {
+                input.position = input.position + 1
+            }
+        }
+    }
+
+    fn toml_line_end(input: write Cursor) -> Result<void, Text> {
+        horizontal_space(input)
+        if consumed(input, 35) {
+            while input.position < input.source.length() && peek(input) != 10 {
+                input.position = input.position + 1
+            }
+        }
+        consumed(input, 13)
+        if input.position == input.source.length() || consumed(input, 10) {
+            return Ok(())
+        }
+        return Err(parse_error(input, "expected end of line"))
+    }
+
+    fn toml_value(input: write Cursor, document: write Json, depth: usize) -> Result<usize, Text> {
+        if depth >= 64 {
+            return Err("TOML nesting exceeds 64")
+        }
+        if peek(input) == 39 || peek(input) == 34 {
+            return Ok(json_add(document, JsonString(toml_string(input)?)))
+        }
+        if consumed(input, 91) {
+            return toml_array(input, document, depth + 1)
+        }
+        if consumed(input, 123) {
+            return toml_inline(input, document, depth + 1)
+        }
+        return Ok(json_add(document, json_scalar(input)?))
+    }
+
+    fn toml_array(input: write Cursor, document: write Json, depth: usize) -> Result<usize, Text> {
+        var values = Vec<usize>.new()
+        toml_space(input)
+        while consumed(input, 93) == false {
+            values.push(toml_value(input, document, depth)?)
+            toml_space(input)
+            if consumed(input, 93) {
+                break
+            }
+            require_byte(input, 44)?
+            toml_space(input)
+        }
+        return Ok(json_add(document, JsonArray(move values)))
+    }
+
+}

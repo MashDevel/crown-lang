@@ -1,0 +1,75 @@
+module x86 {
+    fn codegen_value_type(program: ir::Program, compiler: FunctionCompiler, value: usize) -> Result<ir::Type, CodegenError> {
+        if compiler.id >= program.functions.length() {
+            return Err(codegen_error_here(compiler, CodegenMissingSymbol()))
+        }
+        loan read program.functions[compiler.id] as function {
+            match ir::function_value_type(function, value) {
+                Some(value_type) => {
+                    return Ok(value_type)
+                }
+                None => {
+                    return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                }
+            }
+        }
+    }
+
+    fn codegen_width(value_type: ir::Type) -> Result<Width, CodegenError> {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                let bits = ir::integer_width_bits(width)
+                if bits == 1 || bits == 8 {
+                    return Ok(Byte())
+                }
+                if bits == 16 {
+                    return Ok(Word())
+                }
+                if bits == 32 {
+                    return Ok(Dword())
+                }
+                if bits == 64 {
+                    return Ok(Qword())
+                }
+            }
+            ir::TypePointer => {
+                return Ok(Qword())
+            }
+            ir::TypeFloat(width) => {
+                match read width {
+                    ir::FloatWidth32 => {
+                        return Ok(Dword())
+                    }
+                    ir::FloatWidth64 => {
+                        return Ok(Qword())
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return Err(codegen_error(CodegenUnsupportedType(value_type)))
+    }
+
+    fn codegen_float_width(value_type: ir::Type) -> Result<FloatWidth, CodegenError> {
+        match read value_type {
+            ir::TypeFloat(width) => {
+                match read width {
+                    ir::FloatWidth32 => {
+                        return Ok(Float32())
+                    }
+                    ir::FloatWidth64 => {
+                        return Ok(Float64())
+                    }
+                }
+            }
+            _ => {
+                return Err(codegen_error(CodegenUnsupportedType(value_type)))
+            }
+        }
+    }
+
+    fn codegen_width_equal(left: Width, right: Width) -> bool {
+        return width_code(left) == width_code(right)
+    }
+}

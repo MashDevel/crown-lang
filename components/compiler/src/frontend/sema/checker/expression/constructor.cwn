@@ -1,0 +1,129 @@
+module sema {
+    fn checker_non_function_call(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                match checker_variable_signature(checker, name) {
+                    Some(signature) => {
+                        let request = CallRequest {
+                            signature: move signature, expected: type_copy(expected), span: name.span
+                        }
+                        return checker_invoke_variable(checker, arguments, move request, name)
+                    }
+                    None => {
+                    }
+                }
+                match constructor_signature(checker.symbols, name) {
+                    None => {
+                        checker_error(checker, "invalid variant construction: check the variant name, payload types, and moves");
+                        return None()
+                    }
+                    Some(signature) => {
+                        let request = CallRequest {
+                            signature: move signature, expected: type_copy(expected), span: name.span
+                        }
+                        return checker_start_call(checker, arguments, move request)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid variant construction: check the variant name, payload types, and moves");
+                return None()
+            }
+        }
+    }
+
+    fn checker_variable_signature(checker: Checker, name: frontend::Name) -> Option<CallSignature> {
+        match checker_find_variable(checker, name) {
+            None => {
+                return None()
+            }
+            Some(key) => {
+                let variable = checker_variable_copy(checker, key)
+                return function_value_signature(variable.value_type)
+            }
+        }
+    }
+
+    fn constructor_signature(symbols: Symbols, name: frontend::Name) -> Option<CallSignature> {
+        match user_constructor_signature(symbols, name) {
+            Some(signature) => {
+                return Some(move signature)
+            }
+            None => {
+                return builtin_constructor_signature(symbols, name)
+            }
+        }
+    }
+
+    fn user_constructor_signature(symbols: Symbols, name: frontend::Name) -> Option<CallSignature> {
+        if variant_name_count(symbols, name) != 1 {
+            return None()
+        }
+        var symbol: usize = 0
+        while symbol < symbols.types.length() {
+            var enumeration = false
+            match read symbols.types[symbol].kind {
+                Enum => {
+                    enumeration = true
+                }
+                _ => {
+                }
+            }
+            if enumeration {
+                match variant_signature(symbols, symbol, name) {
+                    Some(signature) => {
+                        return Some(move signature)
+                    }
+                    None => {
+                    }
+                }
+            }
+            symbol = symbol + 1
+        }
+        return None()
+    }
+
+    fn variant_signature(symbols: Symbols, symbol: usize, name: frontend::Name) -> Option<CallSignature> {
+        var index: usize = 0
+        while index < symbols.types[symbol].variants.length() {
+            loan read symbols.types[symbol].variants[index] as variant {
+                if variant_name_matches(symbols.source, variant.name, name) {
+                    return Some(variant_call_signature(symbols, symbol, variant))
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn variant_call_signature(symbols: Symbols, symbol: usize, variant: Variant) -> CallSignature {
+        var parameters = Vec<ParameterType>.with_capacity(variant.fields.length())
+        var index: usize = 0
+        while index < variant.fields.length() {
+            loan read variant.fields[index] as field {
+                parameters.push(ParameterType {
+                        mode: frontend::ModeTake(), value_type: type_copy(field)
+                    })
+            }
+            index = index + 1
+        }
+        let count = symbols.types[symbol].type_parameters.length()
+        return CallSignature {
+            function: None()
+            parameters: move parameters
+            result: NamedType(symbol, parameter_arguments(count))
+            type_parameter_count: count
+            unsafe_value: false
+        }
+    }
+
+    fn parameter_arguments(count: usize) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(count)
+        var index: usize = 0
+        while index < count {
+            output.push(ParameterType(index));
+            index = index + 1
+        }
+        return move output
+    }
+}

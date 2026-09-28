@@ -1,0 +1,67 @@
+module std {
+    module dylib {
+        extern "c" {
+            fn raw_open(name: RawPtr<u8>, flags: i32) -> RawPtr<u8> = "dlopen"
+            fn raw_symbol(handle: RawPtr<u8>, name: RawPtr<u8>) -> RawPtr<u8> = "dlsym"
+            fn raw_close(handle: RawPtr<u8>) -> i32 = "dlclose"
+        }
+
+        copy enum Error {
+            InvalidName, Open, MissingSymbol
+        }
+
+        opaque resource Library {
+            handle: RawPtr<u8>
+            symbols: Vec<RawPtr<u8>>
+            drop {
+                unsafe {
+                    raw_close(handle)
+                }
+            }
+        }
+
+        fn encoded(value: Text) -> Result<cstr::CString, Error> {
+            loan read value as bytes {
+                match cstr::new(bytes) {
+                    Some(name) => {
+                        return Ok(move name)
+                    }
+                    None => {
+                        return Err(Error::InvalidName())
+                    }
+                }
+            }
+        }
+
+        unsafe fn open(name: Text, symbols: Vec<Text>) -> Result<Library, Error> {
+            let path = encoded(name)?
+            unsafe {
+                let handle = raw_open(cstr::as_raw(path), 2)
+                if handle == RawPtr<u8>.from_address(0) {
+                    return Err(Error::Open())
+                }
+                var library = Library {
+                    handle: handle, symbols: Vec<RawPtr<u8>>.new()
+                }
+                for index in 0..symbols.length() {
+                    let symbol = encoded(symbols[index])?
+                    let pointer = raw_symbol(handle, cstr::as_raw(symbol))
+                    if pointer == RawPtr<u8>.from_address(0) {
+                        return Err(Error::MissingSymbol())
+                    }
+                    library.symbols.push(pointer)
+                }
+                return Ok(move library)
+            }
+        }
+
+        unsafe fn slot(library: Library, index: usize) -> RawPtr<RawPtr<u8>> {
+            unsafe {
+                if index >= library.symbols.length() {
+                    return RawPtr<RawPtr<u8>>.from_address(0)
+                }
+                return library.symbols.as_raw().offset(index)
+            }
+        }
+    }
+}

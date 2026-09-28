@@ -1,0 +1,35 @@
+struct Pixel {
+    visible: bool
+    color: u32
+    priority: u8
+    order: u8
+    layer: u8
+    semi: bool
+}
+fn make() -> Pixel {
+    return Pixel {
+        visible: true, color: 17, priority: 2, order: 3, layer: 4, semi: true
+    }
+}
+fn main() -> u32 {
+    let pixel = make()
+    if pixel.visible == false {
+        return 1
+    }
+    if pixel.color != 17 {
+        return 2
+    }
+    if pixel.priority != 2 {
+        return 3
+    }
+    if pixel.order != 3 {
+        return 4
+    }
+    if pixel.layer != 4 {
+        return 5
+    }
+    if pixel.semi == false {
+        return 6
+    }
+    return 0
+}

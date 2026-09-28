@@ -1,0 +1,95 @@
+module lowering {
+    fn float_conversion(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Conversion) -> Result<usize, u32> {
+        if sema::type_is_float(request.source) {
+            if sema::type_is_float(request.target) {
+                return float_width_conversion(compiler, symbols, request)
+            }
+            float_conversion_guard(compiler, symbols, request)?
+            var operator = ir::CastFloatToUnsignedInteger()
+            if conversion_is_signed(request.target) {
+                operator = ir::CastFloatToSignedInteger()
+            }
+            let wide = function_append_value(compiler, ir::InstructionCast(operator, request.value, ir::TypeInteger(ir::IntegerWidth128())))?
+            let target = ir_type(symbols, request.target)?
+            return function_append_value(compiler, ir::InstructionCast(ir::CastTruncate(), wide, target))
+        }
+        if sema::type_is_float(request.target) == false {
+            return Err(334)
+        }
+        var operator = ir::CastUnsignedIntegerToFloat()
+        if conversion_is_signed(request.source) {
+            operator = ir::CastSignedIntegerToFloat()
+        }
+        let target = ir_type(symbols, request.target)?
+        return function_append_value(compiler, ir::InstructionCast(operator, request.value, target))
+    }
+
+    fn float_width_conversion(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Conversion) -> Result<usize, u32> {
+        let source = layout(symbols, request.source)?
+        let target = layout(symbols, request.target)?
+        var operator = ir::CastBitcast()
+        if target.size > source.size {
+            operator = ir::CastFloatExtend()
+        }
+        if target.size < source.size {
+            operator = ir::CastFloatTruncate()
+        }
+        let target_type = ir_type(symbols, request.target)?
+        return function_append_value(compiler, ir::InstructionCast(operator, request.value, target_type))
+    }
+
+    fn float_conversion_guard(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Conversion) -> Result<void, u32> {
+        let target = layout(symbols, request.target)?
+        let bits = target.size * 8
+        var exponent = bits
+        var negative = false
+        if conversion_is_signed(request.target) {
+            exponent = bits - 1
+            negative = true
+        }
+        let lower_request = FloatBound {
+            source: sema::type_copy(request.source), exponent: exponent, negative: negative, zero: negative == false
+        }
+        let lower = float_bound(compiler, symbols, lower_request)?
+        let upper_request = FloatBound {
+            source: sema::type_copy(request.source), exponent: exponent, negative: false, zero: false
+        }
+        let upper = float_bound(compiler, symbols, upper_request)?
+        let above = function_append_value(compiler, ir::InstructionCompare(ir::CompareFloatOrderedGreaterEqual(), request.value, lower))?
+        function_guard_with(compiler, above, "numeric_conversion")?
+        let below = function_append_value(compiler, ir::InstructionCompare(ir::CompareFloatOrderedLess(), request.value, upper))?
+        function_guard_with(compiler, below, "numeric_conversion")?
+        return Ok(())
+    }
+
+    struct FloatBound {
+        source: sema::Type
+        exponent: u64
+        negative: bool
+        zero: bool
+    }
+
+    fn float_bound(compiler: write FunctionCompiler, symbols: sema::Symbols, bound: FloatBound) -> Result<usize, u32> {
+        let value_type = ir_type(symbols, bound.source)?
+        if ir::type_is_float32(value_type) {
+            var bits: u32 = 0
+            if bound.zero == false {
+                bits = u32.from(bound.exponent + 127) << 23
+            }
+            if bound.negative {
+                bits = bits |(u32.from(1) << 31)
+            }
+            let constant = ir::ConstantFloat32(bits)
+            return Ok(ir::function_constant(compiler.ir, value_type, constant))
+        }
+        var bits: u64 = 0
+        if bound.zero == false {
+            bits = (bound.exponent + 1023) << 52
+        }
+        if bound.negative {
+            bits = bits |(u64.from(1) << 63)
+        }
+        let constant = ir::ConstantFloat64(bits)
+        return Ok(ir::function_constant(compiler.ir, value_type, constant))
+    }
+}

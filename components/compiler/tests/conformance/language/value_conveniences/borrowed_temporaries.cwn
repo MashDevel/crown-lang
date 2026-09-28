@@ -1,0 +1,36 @@
+resource Item {
+    id: u32
+    drop {
+        print(id)
+    }
+}
+fn make() -> Vec<Item> {
+    var values = Vec<Item>.new();
+    values.push(Item {
+            id: 7
+        });
+    return move values
+}
+fn fail() -> Result<u32, u32> {
+    return Err(9)
+}
+fn use_values(values: Slice<Item>, ignored: u32) -> u32 {
+    ignored;
+    return u32.from(values.length())
+}
+fn attempt() -> Result<u32, u32> {
+    return Ok(use_values(make(), fail()?))
+}
+fn main() -> u32 {
+    match attempt() {
+        Err(error) => {
+            if error == 9 {
+                return 0
+            };
+            return 2
+        },
+        _ => {
+            return 1
+        }
+    }
+}

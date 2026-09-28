@@ -1,0 +1,38 @@
+fn round32(bits: u32) -> bool {
+    return f32.from_bits(bits).to_bits() == bits
+}
+fn round64(bits: u64) -> bool {
+    return f64.from_bits(bits).to_bits() == bits
+}
+fn counted(count: write u32) -> f64 {
+    count = count + 1
+    return -0.0
+}
+fn main() -> u32 {
+    let narrow: [u32; 12] = [0, 0x80000000, 1, 0x007fffff, 0x00800000, 0x3f800000, 0x7f800000, 0xff800000, 0x7fc12345, 0x7f812345, 0x7f7fffff, 0xffffffff]
+    for index in 0..12 {
+        if round32(narrow[index]) == false {
+            return 1
+        }
+    }
+    let wide: [u64; 12] = [0, 0x8000000000000000, 1, 0x000fffffffffffff, 0x0010000000000000, 0x3ff0000000000000, 0x7ff0000000000000, 0xfff0000000000000, 0x7ff8123456789abc, 0x7ff0123456789abc, 0x7fefffffffffffff, 0xffffffffffffffff]
+    for index in 0..12 {
+        if round64(wide[index]) == false {
+            return 2
+        }
+    }
+    if f32.from_bits(0x3f800000) != 1.0 {
+        return 3
+    }
+    if f64.from_bits(0x4000000000000000) != 2.0 {
+        return 4
+    }
+    var calls: u32 = 0
+    if counted(calls).to_bits() != 0x8000000000000000 || calls != 1 {
+        return 5
+    }
+    if (1.0).to_bits() != 0x3ff0000000000000 {
+        return 6
+    }
+    return 42
+}

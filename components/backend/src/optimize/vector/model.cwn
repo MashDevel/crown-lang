@@ -1,0 +1,175 @@
+module optimize {
+    copy struct VectorAccess {
+        address: usize
+        base: usize
+        bias: u64
+        writing: bool
+    }
+
+    copy struct AffineOffset {
+        scale: u64
+        bias: u64
+    }
+
+    struct VectorPlan {
+        evolution: LoopEvolution
+        inductions: Vec<Induction>
+        accesses: Vec<VectorAccess>
+        widened: Vec<bool>
+        definitions: Vec<Definition>
+        inside: Vec<bool>
+        scalar: ir::Type
+        lanes: usize
+    }
+
+    fn vectorize(function: write ir::Function) -> usize {
+        var loops = find_loops(function)
+        var count: usize = 0
+        for index in 0..loops.length() {
+            while loops[index].blocks.length() < function.blocks.length() {
+                loops[index].blocks.push(false)
+            }
+            match vector_plan(function, loops[index]) {
+                Ok(plan) => {
+                    vector_apply(function, loops[index], plan)
+                    count = count + 1
+                }
+                Err(reason) => {
+                    reason;
+                }
+            }
+        }
+        return count
+    }
+
+    fn vector_plan(function: ir::Function, natural_loop: NaturalLoop) -> Result<VectorPlan, Text> {
+        let evolution = vector_evolution(function, natural_loop)?
+        var plan = VectorPlan {
+            evolution: move evolution, inductions: induction_find(function, natural_loop)
+            accesses: Vec<VectorAccess>.new(), widened: false_values(function.values.length())
+            definitions: range_definitions(function), inside: licm_definitions(function, natural_loop.blocks)
+            scalar: ir::TypeVoid(), lanes: 0
+        }
+        if vector_header_valid(function, plan) == false {
+            return Err("loop header contains an unsupported operation or reduction")
+        }
+        vector_body_valid(function, plan)?
+        for index in 0..plan.inductions.length() {
+            if integer_constant(function, plan.inductions[index].step) == None() {
+                return Err("secondary induction step is not constant")
+            }
+        }
+        if plan.lanes == 0 {
+            return Err("loop has no vectorizable memory operations")
+        }
+        if vector_external_valid(function, natural_loop, plan) == false {
+            return Err("body value escapes the loop")
+        }
+        return Ok(move plan)
+    }
+
+    fn vector_evolution(function: ir::Function, natural_loop: NaturalLoop) -> Result<LoopEvolution, Text> {
+        if natural_loop.count != 2 || function.blocks.length() > 256 {
+            return Err("loop exceeds the block budget or has more than one body block")
+        }
+        let evolution = match loop_evolution(function, natural_loop) {
+            Some(value) => move value
+            None => {
+                return Err("no supported induction variable and invariant bound")
+            }
+        }
+        let step = match evolution_step(function, evolution) {
+            Some(value) => value
+            None => {
+                return Err("induction step is not a supported constant")
+            }
+        }
+        if step.descending || step.magnitude != 1 || evolution.operator != ir::CompareUnsignedLess() {
+            return Err("vector path requires an ascending unit step and unsigned exclusive bound")
+        }
+        if evolution.induction.latch != evolution.body {
+            return Err("loop has a separate latch")
+        }
+        if vector_preheader_has_phi(function.blocks[natural_loop.preheader]) {
+            return Err("scalar remainder or preheader phi requires a separate entry analysis")
+        }
+        return Ok(move evolution)
+    }
+
+    fn vector_preheader_has_phi(block: ir::BasicBlock) -> bool {
+        for index in 0..block.instructions.length() {
+            if vector_is_generated_phi(block.instructions[index].kind) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn vector_is_generated_phi(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                true
+            }
+            _ => false
+        }
+    }
+
+    fn vector_header_valid(function: ir::Function, plan: VectorPlan) -> bool {
+        loan read function.blocks[plan.evolution.induction.header] as header {
+            var phis: usize = 0
+            for index in 0..header.instructions.length() {
+                match read header.instructions[index].kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        value_type;
+                        incoming;
+                        phis = phis + 1
+                    }
+                    ir::InstructionCompare(operator, left, right) => {
+                        operator;
+                        left;
+                        right;
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            return phis == plan.inductions.length()
+        }
+    }
+
+    fn vector_external_valid(function: ir::Function, natural_loop: NaturalLoop, plan: VectorPlan) -> bool {
+        var body_values = false_values(function.values.length())
+        for index in 0..function.blocks[plan.evolution.body].instructions.length() {
+            match function.blocks[plan.evolution.body].instructions[index].result {
+                Some(value) => {
+                    body_values[value] = true
+                }
+                None => {
+                }
+            }
+        }
+        for block in 0..natural_loop.blocks.length() {
+            if natural_loop.blocks[block] == false {
+                if vector_external_block(function.blocks[block], body_values) {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    fn vector_external_block(block: ir::BasicBlock, values: Vec<bool>) -> bool {
+        for index in 0..block.instructions.length() {
+            if loop_uses_inside(ir::instruction_operands(block.instructions[index].kind), values) {
+                return true
+            }
+        }
+        match read block.terminator {
+            Some(terminator) => loop_uses_inside(ir::terminator_operands(terminator), values)
+            None => false
+        }
+    }
+}

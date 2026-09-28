@@ -1,0 +1,33 @@
+module arm64 {
+    fn capture_register_parameter(function: ir::Function, compiler: write Compiler, index: usize, location: AbiLocation) -> Result<void, Text> {
+        let value = function.parameters[index]
+        let value_type = function.values[value]
+        match location {
+            AbiLocation::General(start, count) => {
+                if count != 1 {
+                    return Err("ARM64 register value requires one argument register")
+                }
+                register_move(compiler, 9, start)
+            }
+            AbiLocation::Simd(start, count) => {
+                if count != 1 || ir::type_is_float(value_type) == false {
+                    return Err("ARM64 register value requires one scalar SIMD argument")
+                }
+                emit_encoding(compiler, float_move_bits(9, start, false, ir::type_is_float64(value_type)))
+            }
+            AbiLocation::Stack(source, size) => {
+                if size > 8 {
+                    return Err("ARM64 register value requires a scalar stack argument")
+                }
+                frame_address(compiler, 16, compiler.frame.size + 32 + source)
+                memory_load(compiler, value_type)?
+            }
+            AbiLocation::Omitted => {
+                return Err("ARM64 live parameter has no ABI location")
+            }
+        }
+        normalize(compiler, value_type, 9, false)
+        value_store(compiler, value, 9)
+        return Ok(())
+    }
+}

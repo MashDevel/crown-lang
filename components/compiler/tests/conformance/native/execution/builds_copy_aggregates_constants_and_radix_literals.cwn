@@ -1,0 +1,14 @@
+const MASK: u32 = 0b0010_0000
+copy struct Point {
+    x: u32, y: u32
+}
+fn sum(point: read Point) -> u32 {
+    return point.x + point.y
+}
+fn main() -> u32 {
+    let point = Point {
+        x: 0x5, y: 0x5
+    }
+    let duplicate = point
+    return MASK + sum(point) + sum(duplicate)
+}

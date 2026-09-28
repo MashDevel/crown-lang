@@ -1,0 +1,107 @@
+module lowering {
+    fn declaration_token(value_type: sema::Type) -> Result<sema::Type, u32> {
+        match read value_type {
+            sema::BuiltinType(kind, arguments) => {
+                if kind == sema::Result() && arguments.length() == 2 {
+                    return Ok(sema::type_copy(arguments[0]))
+                }
+            },
+            _ => {
+            }
+        }
+        return Err(780)
+    }
+    fn root_declaration(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let token = declaration_token(value_type)?
+        let element = declaration_element(analysis.checker.symbols, token)?
+        let factory = declaration_factory(compiler, analysis, expression)?
+        let result = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let initialize = declaration_begin(compiler, result, factory, token)?
+        let ready = function_begin_guarded_block(compiler, initialize)?
+        declaration_create(compiler, analysis, DeclarationCreate {
+                result: result, factory: factory, token: move token, element: move element
+            })?
+        function_branch_if_active(compiler, ready)?
+        function_select_block(compiler, ready)
+        return Ok(AddressValue(result, move value_type))
+    }
+    fn declaration_factory(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method;
+                if arguments.length() == 1 {
+                    return function_scalar_expression(compiler, analysis, arguments[0])
+                }
+            },
+            _ => {
+            }
+        }
+        return Err(781)
+    }
+    struct DeclarationCreate {
+        result: usize, factory: usize, token: sema::Type, element: sema::Type
+    }
+    fn declaration_create(compiler: write FunctionCompiler, analysis: sema::Analysis, request: DeclarationCreate) -> Result<void, u32> {
+        let layout = layout(analysis.checker.symbols, request.element)?
+        let size = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), layout.size)
+        let data = function_allocate(compiler, size)?
+        declaration_factory_value(compiler, analysis.checker.symbols, request, data)?
+        let eight = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 8)
+        let container = function_allocate(compiler, eight)?
+        function_store_pointer(compiler, container, data)?
+        var arguments = Vec<usize>.new()
+        arguments.push(request.result);
+        arguments.push(container)
+        arguments.push(root_drop_pointer(compiler, request.token)?);
+        arguments.push(root_type_pointer(compiler, request.token)?)
+        root_call(compiler, "crown_root_declare_publish", move arguments)?
+        return Ok(())
+    }
+    fn declaration_element(symbols: sema::Symbols, token: sema::Type) -> Result<sema::Type, u32> {
+        let boxed = root_box_type(token)?
+        let element = owner_element(boxed)?
+        var visiting = Vec<usize>.new()
+        if sema::type_transferable(symbols, element, visiting) == false {
+            return Err(772)
+        }
+        return Ok(move element)
+    }
+
+    fn declaration_begin(compiler: write FunctionCompiler, result: usize, factory: usize, token: sema::Type) -> Result<usize, u32> {
+        var arguments = Vec<usize>.new()
+        arguments.push(result)
+        arguments.push(factory)
+        arguments.push(root_type_pointer(compiler, token)?)
+        let state = root_call(compiler, "crown_root_declare", move arguments)?
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth32()), 1)
+        return function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), state, one))
+    }
+
+    fn declaration_factory_value(compiler: write FunctionCompiler, symbols: sema::Symbols, request: DeclarationCreate, data: usize) -> Result<void, u32> {
+        var parameters = Vec<usize>.new()
+        let direct = type_is_direct(symbols, request.element)?
+        if direct == false {
+            parameters.push(data)
+        }
+        let signature = callable_signature(Vec<sema::ParameterType>.new(), request.element, symbols)?
+        let called = function_append(compiler, ir::InstructionCallIndirect(request.factory, move signature, move parameters))?
+        if direct {
+            match called {
+                Some(value) => {
+                    function_store(compiler, symbols, StoreRequest {
+                            address: data, value: value, value_type: sema::type_copy(request.element)
+                        })?
+                },
+                None => {
+                    if sema::type_is_unit(request.element) == false {
+                        return Err(782)
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+
+}

@@ -1,0 +1,57 @@
+module native::x11 {
+    unsafe fn select_input(library: std::dylib::Library, display: RawPtr<u8>, window: u64, mask: i64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read i64) -> i32>.cast(std::dylib::slot(library, 8)).read()
+            return action(display, window, mask)
+        }
+    }
+
+    unsafe fn map_window(library: std::dylib::Library, display: RawPtr<u8>, window: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 9)).read()
+            return action(display, window)
+        }
+    }
+
+    unsafe fn store_name(library: std::dylib::Library, display: RawPtr<u8>, window: u64, name: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 10)).read()
+            return action(display, window, name)
+        }
+    }
+
+    unsafe fn intern_atom(library: std::dylib::Library, display: RawPtr<u8>, name: RawPtr<u8>, exists: i32) -> u64 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>, read i32) -> u64>.cast(std::dylib::slot(library, 11)).read()
+            return action(display, name, exists)
+        }
+    }
+
+    unsafe fn protocols(library: std::dylib::Library, display: RawPtr<u8>, window: u64, atoms: RawPtr<u64>, count: i32) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read RawPtr<u64>, read i32) -> i32>.cast(std::dylib::slot(library, 12)).read()
+            return action(display, window, atoms, count)
+        }
+    }
+
+    unsafe fn create_gc(library: std::dylib::Library, display: RawPtr<u8>, window: u64, mask: u64, values: RawPtr<u8>) -> RawPtr<u8> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read u64, read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 13)).read()
+            return action(display, window, mask, values)
+        }
+    }
+
+    unsafe fn free_gc(library: std::dylib::Library, display: RawPtr<u8>, gc: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 14)).read()
+            return action(display, gc)
+        }
+    }
+
+    unsafe fn pending(library: std::dylib::Library, display: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 15)).read()
+            return action(display)
+        }
+    }
+}

@@ -1,0 +1,136 @@
+module x86 {
+    struct SplitCandidate {
+        header: usize
+        value: usize
+    }
+
+    fn codegen_split_ranges(function: write ir::Function) -> usize {
+        let loops = codegen_loop_analysis(function)
+        if codegen_has_split_loop(function, loops) == false {
+            return 0
+        }
+        let original = codegen_allocate_registers(function)
+        let candidates = codegen_split_candidates(function, loops, original)
+        var count: usize = 0
+        for index in 0..candidates.length() {
+            if count >= 4 {
+                break
+            }
+            var trial = ir::function_copy(function)
+            let value = codegen_split_apply(trial, loops, candidates[index])
+            let allocation = codegen_allocate_registers(trial)
+            let integer = codegen_option_register_is_none(allocation.values[value]) == false
+            let floating = codegen_option_register_is_none(allocation.floats[value]) == false
+            if integer || floating {
+                function = ir::function_take(trial)
+                count = count + 1
+            }
+        }
+        return count
+    }
+
+    fn codegen_split_candidates(function: ir::Function, loops: LoopAnalysis, allocation: RegisterAllocation) -> Vec<SplitCandidate> {
+        let eligible = codegen_eligible_values(function)
+        let liveness = ir::value_liveness(function, eligible)
+        var output = Vec<SplitCandidate>.new()
+        for header in 0..function.blocks.length() {
+            if ir::bitset_contains(loops.by_header[header], header) == false {
+                continue
+            }
+            if codegen_has_preheader(function, header, loops) {
+                codegen_split_header(header, eligible, liveness.blocks[header].live_in, allocation, output)
+            }
+        }
+        return move output
+    }
+
+    fn codegen_split_apply(function: write ir::Function, loops: LoopAnalysis, candidate: SplitCandidate) -> usize {
+        let value_type = function.values[candidate.value]
+        let value = ir::function_new_value(function, value_type)
+        let empty = Vec<Option<usize>>.new()
+        loan read empty as values {
+            let replacement = ir::Replacement {
+                from: candidate.value, to: value, values: values, direct: false
+            }
+            for block in 0..function.blocks.length() {
+                if ir::bitset_contains(loops.by_header[candidate.header], block) {
+                    codegen_split_block(function.blocks[block], loops.by_header[candidate.header], replacement)
+                }
+            }
+        }
+        var incoming = Vec<ir::PhiIncoming>.new()
+        for index in 0..loops.predecessors[candidate.header].length() {
+            let block = loops.predecessors[candidate.header][index]
+            let source = if ir::bitset_contains(loops.by_header[candidate.header], block) {
+                value
+            } else {
+                candidate.value
+            }
+            incoming.push(ir::PhiIncoming {
+                    block: block, value: source
+                })
+        }
+        var instructions = Vec<ir::Instruction>.new()
+        instructions.push(ir::Instruction {
+                result: Some(value), kind: ir::InstructionPhi(value_type, move incoming)
+            })
+        for index in 0..function.blocks[candidate.header].instructions.length() {
+            instructions.push(ir::instruction_copy(function.blocks[candidate.header].instructions[index]))
+        }
+        function.blocks[candidate.header].instructions = move instructions
+        return value
+    }
+
+    fn codegen_split_block(block: write ir::BasicBlock, inside: ir::BitSet, replacement: ir::Replacement) -> void {
+        for index in 0..block.instructions.length() {
+            if codegen_instruction_is_phi(block.instructions[index].kind) {
+                codegen_split_phi(block.instructions[index].kind, inside, replacement)
+            } else {
+                ir::instruction_replace_mapped_uses(block.instructions[index].kind, replacement)
+            }
+        }
+        match write block.terminator {
+            Some(terminator) => ir::terminator_replace_mapped_uses(terminator, replacement)
+            None => {
+            }
+        }
+    }
+
+    fn codegen_has_split_loop(function: ir::Function, loops: LoopAnalysis) -> bool {
+        for header in 0..function.blocks.length() {
+            if ir::bitset_contains(loops.by_header[header], header) && codegen_has_preheader(function, header, loops) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn codegen_split_header(header: usize, eligible: Vec<bool>, live: ir::BitSet, allocation: RegisterAllocation, output: write Vec<SplitCandidate>) -> void {
+        for value in 0..eligible.length() {
+            if output.length() >= 16 {
+                return
+            }
+            let spilled = codegen_option_register_is_none(allocation.values[value]) && codegen_option_register_is_none(allocation.floats[value])
+            if eligible[value] && spilled && ir::bitset_contains(live, value) {
+                output.push(SplitCandidate {
+                        header: header, value: value
+                    })
+            }
+        }
+    }
+
+    fn codegen_split_phi(kind: write ir::InstructionKind, inside: ir::BitSet, replacement: ir::Replacement) -> void {
+        match write kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                for cursor in 0..incoming.length() {
+                    if ir::bitset_contains(inside, incoming[cursor].block) && incoming[cursor].value == replacement.from {
+                        incoming[cursor].value = replacement.to
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+}

@@ -1,0 +1,32 @@
+module frontend {
+    fn parser_boolean_not(parser: write Parser, start: Span, structs: bool) -> Expression {
+        let value = parser_postfix(parser, structs)
+        let span = span_through(start, value.span)
+        let negative = expression(ExpressionBoolean(false), start)
+        return expression(ExpressionBinary(Box.new(move value), BinaryEqual(), Box.new(move negative)), span)
+    }
+
+    fn parser_unsafe_expression(parser: write Parser, start: Span) -> Expression {
+        var body = parser_block(parser)
+        parser_promote_tail(body)
+        return expression(ExpressionUnsafe(move body), span_through(start, parser_previous_span(parser)))
+    }
+
+    fn parser_field_expression(parser: write Parser, name: Name, moving: bool) -> Expression {
+        if parser_consumed(parser, TokenColon()) {
+            if moving {
+                parser_report(parser, UnexpectedToken())
+            }
+            return parser_expression(parser)
+        }
+        var segments = Vec<Name>.new()
+        segments.push(name_copy(name))
+        let path = Path {
+            segments: move segments, span: name.span
+        }
+        if moving {
+            return expression(ExpressionMove(move path), name.span)
+        }
+        return expression(ExpressionPath(move path), name.span)
+    }
+}

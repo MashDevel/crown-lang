@@ -1,0 +1,146 @@
+module optimize {
+    fn gvn_expression(kind: ir::InstructionKind, replacements: Vec<Option<usize>>) -> Option<GvnExpression> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                var output = gvn_base_expression(1)
+                output.operator = match gvn_binary_code(operator) {
+                    Some(code) => code
+                    None => {
+                        return None()
+                    }
+                }
+                gvn_operand_pair(output, left, right, replacements, ir::binary_is_commutative(operator))
+                return Some(move output)
+            }
+            ir::InstructionUnary(operator, value) => {
+                var output = gvn_base_expression(2)
+                output.operator = gvn_unary_code(operator)
+                output.first = gvn_resolve(value, replacements)
+                return Some(move output)
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                var output = gvn_base_expression(3)
+                output.operator = match gvn_compare_code(operator) {
+                    Some(code) => code
+                    None => {
+                        return None()
+                    }
+                }
+                gvn_operand_pair(output, left, right, replacements, gvn_compare_commutative(operator))
+                return Some(move output)
+            }
+            ir::InstructionCast(operator, value, target) => {
+                var output = gvn_base_expression(4)
+                output.operator = match gvn_cast_code(operator) {
+                    Some(code) => code
+                    None => {
+                        return None()
+                    }
+                }
+                output.first = gvn_resolve(value, replacements)
+                output.target = target
+                return Some(move output)
+            }
+            _ => gvn_value_expression(kind, replacements)
+        }
+    }
+
+    fn gvn_value_expression(kind: ir::InstructionKind, replacements: Vec<Option<usize>>) -> Option<GvnExpression> {
+        match read kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryOffset(base, offset) => {
+                        var output = gvn_base_expression(5)
+                        output.first = gvn_resolve(base, replacements)
+                        output.second = gvn_resolve(offset, replacements)
+                        return Some(move output)
+                    }
+                    ir::MemoryGlobalAddress(global) => {
+                        var output = gvn_base_expression(6);
+                        output.first = global;
+                        return Some(move output)
+                    }
+                    ir::MemorySymbolAddress(symbol) => {
+                        var output = gvn_base_expression(7);
+                        output.symbol = symbol.clone();
+                        return Some(move output)
+                    }
+                    ir::MemoryFunctionAddress(function) => {
+                        var output = gvn_base_expression(8);
+                        output.first = function;
+                        return Some(move output)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                var output = gvn_base_expression(9)
+                output.first = gvn_resolve(condition, replacements)
+                output.second = gvn_resolve(then_value, replacements)
+                output.third = gvn_resolve(else_value, replacements)
+                return Some(move output)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn gvn_expression_equal(left: GvnExpression, right: GvnExpression) -> bool {
+        if left.tag != right.tag || left.operator != right.operator {
+            return false
+        }
+        if left.first != right.first || left.second != right.second || left.third != right.third {
+            return false
+        }
+        if ir::type_equal(left.target, right.target) == false {
+            return false
+        }
+        return std::text::equal(left.symbol, right.symbol)
+    }
+
+    fn gvn_resolve(value: usize, replacements: Vec<Option<usize>>) -> usize {
+        var output = value
+        var count: usize = 0
+        while output < replacements.length() && count < replacements.length() {
+            match read replacements[output] {
+                Some(next) => {
+                    output = next
+                }
+                None => {
+                    return output
+                }
+            }
+            count = count + 1
+        }
+        return output
+    }
+
+    fn gvn_compare_commutative(operator: ir::CompareOperator) -> bool {
+        match read operator {
+            ir::CompareEqual => {
+                return true
+            }
+            ir::CompareNotEqual => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn gvn_operand_pair(output: write GvnExpression, left: usize, right: usize, replacements: Vec<Option<usize>>, commutative: bool) -> void {
+        let first = gvn_resolve(left, replacements)
+        let second = gvn_resolve(right, replacements)
+        output.first = first
+        output.second = second
+        if commutative && second < first {
+            output.first = second;
+            output.second = first
+        }
+    }
+}

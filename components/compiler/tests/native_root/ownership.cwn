@@ -1,0 +1,116 @@
+module root_tests {
+    struct Payload {
+        text: Text, count: u64
+    }
+    fn mutate(token: RootToken<Payload>) -> u32 {
+        match token.acquire() {
+            Err(error) => {
+                return error
+            },
+            Ok(lease) => {
+                var held = move lease
+                loan write held as payload {
+                    payload.count = payload.count + 1
+                    payload.text = "changed"
+                }
+                match token.acquire() {
+                    Err(error) => {
+                        return if error == 2 {
+                            0
+                        } else {
+                            8
+                        }
+                    },
+                    Ok(other) => {
+                        other;
+                        return 9
+                    }
+                }
+            }
+        }
+    }
+    fn expired() -> RootToken<Payload> {
+        let owner = NativeRoot<Payload>.new(Payload {
+                text: "closed", count: 0
+            })
+        return owner.token()
+    }
+    fn closed_with_lease() -> Option<RootLease<Payload>> {
+        let owner = NativeRoot<Payload>.new(Payload {
+                text: "deferred", count: 12
+            })
+        let token = owner.token()
+        match token.acquire() {
+            Ok(lease) => {
+                return Some(move lease)
+            },
+            Err(error) => {
+                error;
+                return None()
+            }
+        }
+    }
+    fn run() -> u32 {
+        let owner = NativeRoot<Payload>.new(Payload {
+                text: "initial", count: 0
+            })
+        let token = owner.token()
+        if mutate(token) != 0 {
+            return 1
+        }
+        let reconstructed = RootToken<Payload>.from_parts(token.slot(), token.generation())
+        match reconstructed.acquire() {
+            Err(error) => {
+                return error
+            },
+            Ok(lease) => {
+                loan read lease as payload {
+                    if payload.count != 1 {
+                        return 4
+                    }
+                }
+            }
+        }
+        let wrong = RootToken<u64>.from_parts(token.slot(), token.generation())
+        match wrong.acquire() {
+            Err(error) => {
+                if error != 3 {
+                    return 5
+                }
+            },
+            Ok(lease) => {
+                lease;
+                return 6
+            }
+        }
+        let stale = expired()
+        match stale.acquire() {
+            Err(error) => {
+                if error != 1 {
+                    return 7
+                }
+            },
+            Ok(lease) => {
+                lease;
+                return 8
+            }
+        }
+        let deferred = closed_with_lease()
+        match move deferred {
+            None => {
+                return 10
+            },
+            Some(lease) => {
+                loan read lease as payload {
+                    if payload.count != 12 {
+                        return 9
+                    }
+                }
+            }
+        }
+        return 0
+    }
+}
+fn main() -> u32 {
+    return root_tests::run()
+}

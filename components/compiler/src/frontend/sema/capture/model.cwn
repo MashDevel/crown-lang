@@ -1,0 +1,53 @@
+module sema {
+    struct CaptureScan {
+        locals: Vec<frontend::Name>
+        captures: Vec<frontend::Name>
+    }
+
+    fn capture_scan_new() -> CaptureScan {
+        return CaptureScan {
+            locals: Vec<frontend::Name>.new(), captures: Vec<frontend::Name>.new()
+        }
+    }
+
+    fn capture_scope_end(scan: write CaptureScan, length: usize) -> void {
+        while scan.locals.length() > length {
+            scan.locals.pop()
+        }
+    }
+
+    fn capture_local(scan: write CaptureScan, name: frontend::Name) -> void {
+        scan.locals.push(frontend::name_copy(name))
+    }
+
+    fn capture_name(checker: Checker, scan: write CaptureScan, name: frontend::Name) -> void {
+        if capture_contains(checker, scan.locals, name) {
+            return
+        }
+        if capture_contains(checker, scan.captures, name) {
+            return
+        }
+        match find_function(checker.symbols, name) {
+            Some(index) => {
+                index;
+                return
+            }
+            None => {
+            }
+        }
+        scan.captures.push(frontend::name_copy(name))
+    }
+
+    fn capture_contains(checker: Checker, values: Vec<frontend::Name>, name: frontend::Name) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                if names_equal(checker.symbols.source, value, name) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+}

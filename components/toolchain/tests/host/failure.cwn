@@ -1,0 +1,118 @@
+fn process_failures(root: Text) -> Result<void, Text> {
+    testing::error(toolchain::capture(toolchain::command(testing::list("/nonexistent/crown-command")), root))?
+    testing::error(toolchain::capture(toolchain::command(Vec<Text>.new()), root))?
+    testing::error(toolchain::cstring("a\0b"))?
+    process_timeout(root)?
+    process_without_timeout(root)?
+    process_polling()?
+    return process_status(root)
+}
+
+fn process_polling() -> Result<void, Text> {
+    let arguments = testing::list("/bin/sh|-c|sleep 0.05; exit 42")
+    let pid = toolchain::start_process(toolchain::command(move arguments))?
+    var status_slot = toolchain::process_status_slot()
+    match toolchain::poll_process(pid, status_slot)? {
+        Some(status) => {
+            status
+            return Err("running child was reported complete")
+        }
+        None() => {
+        }
+    }
+    let started = toolchain::milliseconds()
+    while toolchain::milliseconds() - started < 5000 {
+        match toolchain::poll_process(pid, status_slot)? {
+            Some(status) => {
+                testing::expect(status == 42, "polled child status")?
+                return testing::error(toolchain::poll_process(pid, status_slot))
+            }
+            None() => {
+                toolchain::wait_briefly()
+            }
+        }
+    }
+    return Err("polled child did not finish")
+}
+
+fn process_status(root: Text) -> Result<void, Text> {
+    let result = toolchain::capture(toolchain::command(testing::list("/bin/sh|-c|printf error >&2; exit 19")), root)?
+    testing::expect(result.status == 19 && std::text::equal(result.stderr, "error") && result.stdout.length() == 0, "failure output capture")?
+    let signal = toolchain::capture(toolchain::command(testing::list("/bin/sh|-c|kill -ABRT $$")), root)?
+    testing::expect(signal.status == -6, "aborted child status")?
+    return Ok(())
+}
+
+fn invalid_file_operations(root: Text) -> Result<void, Text> {
+    let missing = toolchain::path_join(root, "missing")
+    testing::expect(toolchain::exists("invalid\0path") == false, "invalid path does not exist")?
+    testing::error(toolchain::read_bytes(missing))?
+    testing::error(toolchain::remove_file(missing))?
+    testing::error(toolchain::rename_file(missing, toolchain::path_join(root, "other")))?
+    testing::error(toolchain::copy_file(missing, toolchain::path_join(root, "other")))?
+    testing::error(toolchain::executable(missing))?
+    testing::error(toolchain::write_text(root, "directory"))?
+    testing::error(toolchain::write_bytes(root, Vec<u8>.new()))?
+    return Ok(())
+}
+
+fn file_failures(root: Text) -> Result<void, Text> {
+    invalid_file_operations(root)?
+    invalid_text_file(root)?
+    let file = testing::write_file(root, "file", "text")?
+    testing::error(toolchain::make_directory(toolchain::path_join(file, "nested")))?
+    testing::expect(toolchain::below(toolchain::path_join(root, "child"), root), "child path")?
+    testing::expect(toolchain::below(std::text::joined(root, "other"), root) == false, "path prefix boundary")?
+    return Ok(())
+}
+
+fn cleanup_test(root: Text) -> Result<void, Text> {
+    let removed = temporary_tree(root)?
+    testing::expect(toolchain::exists(removed) == false, "temporary tree cleanup")?
+    return Ok(())
+}
+
+fn temporary_tree(root: Text) -> Result<Text, Text> {
+    let temporary = toolchain::temporary(root)?
+    let path = toolchain::temporary_path(temporary)
+    testing::write_file(path, "nested/file", "value")?
+    return Ok(move path)
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    process_failures(root)?;
+    file_failures(root)?;
+    cleanup_test(root)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn process_timeout(root: Text) -> Result<void, Text> {
+    var timeout = toolchain::command(testing::list("/bin/sh|-c|sleep 10 & wait"))
+    timeout.timeout = 20
+    let started = toolchain::milliseconds()
+    testing::error(toolchain::capture(timeout, root))?
+    testing::expect(toolchain::milliseconds() - started < 5000, "process timeout is bounded")?
+    return Ok(())
+}
+
+fn invalid_text_file(root: Text) -> Result<void, Text> {
+    var invalid = Vec<u8>.new();
+    invalid.push(255)
+    let invalid_path = toolchain::path_join(root, "invalid-utf8")
+    toolchain::write_bytes(invalid_path, invalid)?
+    testing::error(toolchain::read_text(invalid_path))?
+    testing::expect(std::text::equal(toolchain::read_output(invalid_path)?, "�"), "lossy process output")?
+    return Ok(())
+}
+
+fn process_without_timeout(root: Text) -> Result<void, Text> {
+    var request = toolchain::command(testing::list("/bin/sh|-c|sleep 0.02; exit 42"))
+    request.timeout = 0
+    let result = toolchain::capture(request, root)?
+    return testing::expect(result.status == 42, "zero timeout allows a child to finish")
+}

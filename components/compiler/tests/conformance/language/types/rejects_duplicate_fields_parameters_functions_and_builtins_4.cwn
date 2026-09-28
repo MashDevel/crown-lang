@@ -1,0 +1,6 @@
+struct u32 {
+    value: u32
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,107 @@
+module lowering {
+    fn layout(symbols: sema::Symbols, value_type: sema::Type) -> Result<Layout, u32> {
+        match scalar_layout(value_type) {
+            Some(layout) => {
+                return Ok(move layout)
+            }
+            None => {
+            }
+        }
+        match read value_type {
+            sema::ArrayType(element, length) => {
+                loan read element as value {
+                    return array_layout(symbols, value, length)
+                }
+            }
+            sema::ScopedFunction(inner) => {
+                inner;
+                return Ok(layout_new(16, 8))
+            }
+            sema::FunctionType(parameters, result) => {
+                parameters;
+                result;
+                return Ok(layout_new(8, 8))
+            }
+            sema::DynamicType(interface_symbol) => {
+                interface_symbol;
+                return Ok(layout_new(24, 8))
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                return builtin_layout(symbols, builtin, arguments)
+            }
+            sema::NamedType(symbol, arguments) => {
+                return named_layout(symbols, symbol, arguments)
+            }
+            _ => {
+                return Err(1)
+            }
+        }
+    }
+
+    fn scalar_layout(value_type: sema::Type) -> Option<Layout> {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                if arguments.length() != 0 {
+                    return None()
+                }
+                let representation = match builtin_ir_type(builtin, 0) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                let size = match ir::type_size(representation) {
+                    Some(value) => value
+                    None => {
+                        return None()
+                    }
+                }
+                if size == 0 {
+                    return Some(layout_new(1, 1))
+                }
+                Some(layout_new(size, u32.from(size)))
+            }
+            _ => None()
+        }
+    }
+
+    fn array_layout(symbols: sema::Symbols, element: sema::Type, length: usize) -> Result<Layout, u32> {
+        match layout(symbols, element) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(item) => {
+                if length != 0 && item.size > 18446744073709551615 / u64.from(length) {
+                    return Err(2)
+                }
+                let total = item.size * u64.from(length)
+                var size = total
+                if size == 0 {
+                    size = 1
+                }
+                return Ok(layout_new(size, item.alignment))
+            }
+        }
+    }
+
+    fn named_layout(symbols: sema::Symbols, symbol: usize, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        if symbol >= symbols.types.length() {
+            return Err(3)
+        }
+        match read symbols.types[symbol].kind {
+            sema::Struct => {
+                return struct_layout(symbols, symbol, arguments)
+            }
+            sema::Resource(opaque_value, transferable) => {
+                opaque_value;
+                return struct_layout(symbols, symbol, arguments)
+            }
+            sema::Enum => {
+                return enum_layout(symbols, symbol, arguments)
+            }
+            sema::Interface => {
+                return Err(4)
+            }
+        }
+    }
+}

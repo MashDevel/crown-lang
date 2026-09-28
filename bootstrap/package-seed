@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+host=${1:?expected host}
+output=${2:?expected output directory}
+case "$host" in
+    x86_64-macos|arm64-macos|x86_64-linux|arm64-linux) ;;
+    *) printf '%s\n' 'error: unsupported seed host' >&2; exit 1 ;;
+esac
+seed="$root/bootstrap/$host"
+expected=$(awk -v field=assembly_sha256 -f "$root/bootstrap/digest.awk" "$seed/manifest.json")
+test "$(sh "$root/bootstrap/checksum" "$seed/compiler.s")" = "$expected"
+mkdir -p "$output"
+output=$(CDPATH= cd -- "$output" && pwd)
+stage=$(mktemp -d "$output/seed-XXXXXX")
+trap 'rm -rf "$stage"' EXIT HUP INT TERM
+name="crown-bootstrap-$host"
+gzip -nc "$seed/compiler.s" > "$stage/$name.s.gz"
+cp "$seed/manifest.json" "$stage/$name.json"
+archive=$(sh "$root/bootstrap/checksum" "$stage/$name.s.gz")
+manifest=$(sh "$root/bootstrap/checksum" "$stage/$name.json")
+printf '{"archive_sha256":"%s","manifest_sha256":"%s","assembly_sha256":"%s"}\n' "$archive" "$manifest" "$expected" > "$stage/$name.lock.json"
+mv "$stage/$name.s.gz" "$stage/$name.json" "$stage/$name.lock.json" "$output/"

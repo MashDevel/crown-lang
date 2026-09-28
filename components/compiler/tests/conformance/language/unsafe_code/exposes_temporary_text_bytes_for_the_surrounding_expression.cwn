@@ -1,0 +1,11 @@
+extern "c" {
+    fn length(value: read RawPtr<u8>) -> usize = "strlen"
+}
+fn main() -> u32 {
+    unsafe {
+        if length("crown\0".as_raw()) == 5 {
+            return 0
+        }
+    }
+    return 1
+}

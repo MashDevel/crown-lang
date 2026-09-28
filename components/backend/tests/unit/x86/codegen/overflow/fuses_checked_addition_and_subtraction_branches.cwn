@@ -1,0 +1,202 @@
+fn append_value(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => {
+            match value {
+                Some(result) => {
+                    return result
+                }
+                None => {
+                    return 0
+                }
+            }
+        }
+        Err(error) => {
+            error;
+            return 0
+        }
+    }
+}
+
+fn add_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            return value
+        }
+        Err(error) => {
+            error;
+            return 0
+        }
+    }
+}
+
+fn compile_unsigned() -> Vec<x86::Instruction> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    parameters.push(value_type)
+    let signature = ir::signature_new(move parameters, value_type)
+    var function = ir::function_new("unsigned", move signature, ir::LinkageLocal())
+    let entry = add_block(function)
+    let pass = add_block(function)
+    let fail = add_block(function)
+    let left = function.parameters[0]
+    let right = function.parameters[1]
+    let result = append_value(function, entry, ir::InstructionBinary(ir::BinaryAdd(), left, right))
+    let valid = append_value(function, entry, ir::InstructionCompare(ir::CompareUnsignedGreaterEqual(), result, left))
+    match ir::function_terminate(function, entry, ir::TerminatorConditional(valid, pass, fail)) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match ir::function_terminate(function, pass, ir::TerminatorReturn(Some(result))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+        }
+    }
+    let zero_type = value_type
+    let zero_value = ir::ConstantInteger(u64.from(0))
+    let zero = ir::function_constant(function, zero_type, zero_value)
+    match ir::function_terminate(function, fail, ir::TerminatorReturn(Some(zero))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+        }
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Ok(value) => {
+            return move value
+        }
+        Err(error) => {
+            error;
+            return Vec<x86::Instruction>.new()
+        }
+    }
+}
+
+fn compile_signed(operator: take ir::BinaryOperator) -> Vec<x86::Instruction> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth32())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    parameters.push(value_type)
+    let signature = ir::signature_new(move parameters, value_type)
+    var function = ir::function_new("signed", move signature, ir::LinkageLocal())
+    let entry = add_block(function)
+    let pass = add_block(function)
+    let fail = add_block(function)
+    let left = function.parameters[0]
+    let right = function.parameters[1]
+    let subtract = subtracts(operator)
+    let result = append_value(function, entry, ir::InstructionBinary(operator, left, right))
+    let overflow = overflow_mask(function, entry, SignedOperands {
+            left: left, right: right, result: result
+        }, subtract)
+    let zero_type = value_type
+    let zero_value = ir::ConstantInteger(u64.from(0))
+    let zero = ir::function_constant(function, zero_type, zero_value)
+    let valid = append_value(function, entry, ir::InstructionCompare(ir::CompareSignedGreaterEqual(), overflow, zero))
+    match ir::function_terminate(function, entry, ir::TerminatorConditional(valid, pass, fail)) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match ir::function_terminate(function, pass, ir::TerminatorReturn(Some(result))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match ir::function_terminate(function, fail, ir::TerminatorReturn(Some(zero))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+        }
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Ok(value) => {
+            return move value
+        }
+        Err(error) => {
+            error;
+            return Vec<x86::Instruction>.new()
+        }
+    }
+}
+
+fn has_fused_condition(instructions: read Vec<x86::Instruction>, expected: x86::Condition) -> bool {
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::JumpIf(condition, label) => {
+                label
+                if x86::condition_code(condition) == x86::condition_code(expected) {
+                    return true
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return false
+}
+
+fn main() -> u32 {
+    let unsigned = compile_unsigned()
+    let signed_add = compile_signed(ir::BinaryAdd())
+    let signed_subtract = compile_signed(ir::BinarySubtract())
+    if has_fused_condition(unsigned, x86::AboveOrEqual()) == false {
+        return 1
+    }
+    if has_fused_condition(signed_add, x86::NotOverflow()) == false {
+        return 2
+    }
+    if has_fused_condition(signed_subtract, x86::NotOverflow()) == false {
+        return 3
+    }
+    return 42
+}
+
+copy struct SignedOperands {
+    left: usize, right: usize, result: usize
+}
+
+fn overflow_mask(function: write ir::Function, entry: usize, values: SignedOperands, subtract: bool) -> usize {
+    let left = values.left
+    let right = values.right
+    let result = values.result
+    var first_right = result
+    var second_left = right
+    if subtract {
+        first_right = right;
+        second_left = left
+    }
+    let first = append_value(function, entry, ir::InstructionBinary(ir::BinaryXor(), left, first_right))
+    let second = append_value(function, entry, ir::InstructionBinary(ir::BinaryXor(), second_left, result))
+    return append_value(function, entry, ir::InstructionBinary(ir::BinaryAnd(), first, second))
+}
+
+fn subtracts(operator: ir::BinaryOperator) -> bool {
+    match operator {
+        ir::BinarySubtract => true
+        _ => false
+    }
+}

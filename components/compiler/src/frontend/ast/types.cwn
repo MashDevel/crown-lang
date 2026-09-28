@@ -1,0 +1,37 @@
+module frontend {
+    struct TypeRef {
+        kind: TypeRefKind
+        span: Span
+    }
+
+    enum TypeRefKind {
+        TypeNamed(Name, Vec<TypeRef>)
+        TypeArray(Box<TypeRef>, ArrayLength)
+        TypeFunction(Vec<FunctionTypeParameter>, Box<TypeRef>)
+        TypeDynamic(Name)
+        TypeScoped(Box<TypeRef>)
+    }
+
+    enum ArrayLength {
+        LiteralLength(usize), NamedLength(Name)
+    }
+
+    struct FunctionTypeParameter {
+        mode: Mode
+        value_type: TypeRef
+    }
+
+    struct Parameter {
+        name: Name
+        mode: Mode
+        value_type: TypeRef
+        span: Span
+    }
+
+    struct Field {
+        private_value: bool
+        name: Name
+        value_type: TypeRef
+        span: Span
+    }
+}

@@ -1,0 +1,29 @@
+module coverage {
+    fn source_metadata(bundle: frontend::SourceBundle) -> Result<Text, Text> {
+        var output = "["
+        for index in 0..bundle.files.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, "{\"path\":")
+            std::text::append(output, toolchain::json_quoted(bundle.files[index].path))
+            std::text::append(output, ",\"checksum\":")
+            std::text::append(output, toolchain::json_quoted(source_checksum(bundle, index)?))
+            output.push('}')
+        }
+        output.push(']')
+        return Ok(move output)
+    }
+
+    fn source_checksum(bundle: frontend::SourceBundle, index: usize) -> Result<Text, Text> {
+        let start = bundle.files[index].start
+        let end = bundle.files[index].end
+        var source = Vec<u8>.with_capacity(end - start)
+        loan read bundle.source as bytes {
+            for offset in start..end {
+                source.push(bytes[offset])
+            }
+        }
+        return toolchain::digest_bytes(source)
+    }
+}

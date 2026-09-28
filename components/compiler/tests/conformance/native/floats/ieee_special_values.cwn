@@ -1,0 +1,71 @@
+fn unordered(zero: f64) -> bool {
+    let nan = zero / zero
+    if nan == nan {
+        return false
+    }
+    if (nan != nan) == false {
+        return false
+    }
+    if nan < zero || nan <= zero {
+        return false
+    }
+    if nan > zero || nan >= zero {
+        return false
+    }
+    true
+}
+
+fn nonfinite_arithmetic(zero: f64) -> bool {
+    let infinity = 1.0 / zero
+    if infinity <= zero {
+        return false
+    }
+    let difference = infinity - infinity
+    if difference == difference {
+        return false
+    }
+    let product = infinity * zero
+    if product == product {
+        return false
+    }
+    let negative = -zero
+    if 1.0 / negative >= zero {
+        return false
+    }
+    true
+}
+
+fn narrow_special_values(zero: f32) -> bool {
+    let one: f32 = 1.0
+    let nan = zero / zero
+    if nan == nan {
+        return false
+    }
+    if (nan != nan) == false {
+        return false
+    }
+    if nan < zero || nan >= zero {
+        return false
+    }
+    let negative = -zero
+    if one / negative >= zero {
+        return false
+    }
+    let infinity = one / zero
+    let difference = infinity - infinity
+    difference != difference
+}
+
+fn main(arguments: Arguments) -> u32 {
+    let zero = arguments.length() - 1
+    if unordered(f64.from(zero)) == false {
+        return 1
+    }
+    if nonfinite_arithmetic(f64.from(zero)) == false {
+        return 2
+    }
+    if narrow_special_values(f32.from(zero)) == false {
+        return 3
+    }
+    42
+}

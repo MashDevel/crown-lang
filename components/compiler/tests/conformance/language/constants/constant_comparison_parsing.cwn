@@ -1,0 +1,26 @@
+const MASK: u32 = 255
+const LIMIT: u32 = 128
+const SMALL: u32 = 3
+const LARGE: u32 = 7
+
+fn main() -> u32 {
+    if SMALL < LARGE == false {
+        return 1
+    }
+    if 0x1234 & MASK < LIMIT == false {
+        return 2
+    }
+    let comparison = SMALL < LARGE
+    if comparison == false {
+        return 3
+    }
+    var nested = Vec<Vec<u8>>.new()
+    nested.push(Vec<u8>.new())
+    if nested.length() != 1 {
+        return 4
+    }
+    if LARGE > SMALL == false {
+        return 5
+    }
+    return 0
+}

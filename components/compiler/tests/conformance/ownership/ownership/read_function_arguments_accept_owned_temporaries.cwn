@@ -1,0 +1,11 @@
+struct Item {
+    value: u32
+}
+fn inspect(item: read Item) -> u32 {
+    return item.value
+}
+fn main() -> u32 {
+    return inspect(Item {
+            value: 1
+        })
+}

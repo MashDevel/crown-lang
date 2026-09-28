@@ -1,0 +1,4 @@
+const VALUES: [u64; 2097153] = [0; 2097153]
+fn main() -> u32 {
+    return 0
+}

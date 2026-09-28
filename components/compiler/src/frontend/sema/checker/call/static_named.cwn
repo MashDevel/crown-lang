@@ -1,0 +1,136 @@
+module sema {
+    fn checker_named_static(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        if native_root_kind(builtin) {
+            return checker_root_static(checker, kind, builtin)
+        }
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                if builtin == RawPtr() {
+                    return checker_raw_pointer_static(checker, kind)
+                }
+                if name_is(checker.symbols.source, method, "new") {
+                    return checker_new_static(checker, kind, builtin, reference, arguments)
+                }
+                if builtin == Vec() && name_is(checker.symbols.source, method, "with_capacity") {
+                    return checker_capacity_static(checker, kind)
+                }
+                checker_error(checker, "invalid static constructor or allocation arguments")
+                return None()
+            }
+            _ => {
+                checker_error(checker, "invalid static constructor or allocation arguments");
+                return None()
+            }
+        }
+    }
+
+    fn checker_empty_static(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                method
+                match static_type_argument(checker, reference) {
+                    None => {
+                        return None()
+                    }
+                    Some(element) => {
+                        if arguments.length() != 0 {
+                            checker_error(checker, "invalid static constructor or allocation arguments");
+                            return None()
+                        }
+                        var types = Vec<Type>.new()
+                        types.push(move element)
+                        return Some(owned_info(BuiltinType(builtin, move types)))
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid static constructor or allocation arguments");
+                return None()
+            }
+        }
+    }
+
+    fn static_type_argument(checker: write Checker, reference: frontend::TypeRef) -> Option<Type> {
+        match read reference.kind {
+            frontend::TypeNamed(name, arguments) => {
+                name
+                if arguments.length() != 1 {
+                    checker_error(checker, "invalid static constructor or allocation arguments");
+                    return None()
+                }
+                loan read arguments[0] as argument {
+                    let value_type = checker_resolve_type(checker, argument)
+                    if checker_require_storable(checker, value_type) {
+                        return Some(move value_type)
+                    }
+                }
+                return None()
+            }
+            _ => {
+                checker_error(checker, "invalid static constructor or allocation arguments");
+                return None()
+            }
+        }
+    }
+
+    fn checker_capacity_static(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                method
+                match static_type_argument(checker, reference) {
+                    None => {
+                        return None()
+                    }
+                    Some(element) => {
+                        if arguments.length() != 1 {
+                            checker_error(checker, "invalid static constructor or allocation arguments");
+                            return None()
+                        }
+                        loan read arguments[0] as argument {
+                            let expected = builtin_leaf(USize())
+                            checker_value(checker, argument, expected)
+                        }
+                        var types = Vec<Type>.new()
+                        types.push(move element)
+                        return Some(owned_info(BuiltinType(Vec(), move types)))
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid static constructor or allocation arguments");
+                return None()
+            }
+        }
+    }
+
+    fn checker_text_static(checker: write Checker, reference: frontend::TypeRef, arguments: Vec<frontend::Expression>) -> Option<ExpressionInfo> {
+        match read reference.kind {
+            frontend::TypeNamed(name, types) => {
+                name;
+                if types.length() != 0 || arguments.length() != 0 {
+                    checker_error(checker, "invalid static constructor or allocation arguments");
+                    return None()
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid static constructor or allocation arguments");
+                return None()
+            }
+        }
+        return Some(owned_info(builtin_leaf(Text())))
+    }
+
+    fn checker_new_static(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin, reference: frontend::TypeRef, arguments: Vec<frontend::Expression>) -> Option<ExpressionInfo> {
+        if builtin == Vec() || builtin == Arena() || builtin == Channel() {
+            return checker_empty_static(checker, kind, builtin)
+        }
+        if builtin == Box() || builtin == Shared() || builtin == Mutex() || builtin == RwLock() {
+            return checker_owning_static(checker, kind, builtin)
+        }
+        if builtin == Text() {
+            return checker_text_static(checker, reference, arguments)
+        }
+        checker_error(checker, "invalid static constructor or allocation arguments")
+        None()
+    }
+}

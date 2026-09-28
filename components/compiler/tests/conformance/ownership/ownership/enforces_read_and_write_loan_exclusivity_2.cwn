@@ -1,0 +1,14 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+
+    var item = Item {
+        value: 1
+    }
+    loan write item as target {
+        print(item.value)
+    }
+    return target.value
+
+}

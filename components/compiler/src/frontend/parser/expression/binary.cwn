@@ -1,0 +1,43 @@
+module frontend {
+    fn parser_expression(parser: write Parser) -> Expression {
+        return parser_binary(parser, 1, true)
+    }
+
+    fn parser_condition(parser: write Parser) -> Expression {
+        return parser_binary(parser, 1, false)
+    }
+
+    fn parser_binary(parser: write Parser, minimum: u32, structs: bool) -> Expression {
+        var left = parser_postfix(parser, structs)
+        var running = true
+        while running {
+            if parser_depth_allowed(parser, left.depth) == false {
+                return expression(ExpressionUnit(), left.span)
+            }
+            if parser_is_update(parser) {
+                break
+            }
+            let kind = parser_current_kind(parser)
+            match parser_binary_operator(kind) {
+                None => {
+                    running = false
+                }
+                Some(parsed) => {
+                    if parsed.precedence < minimum {
+                        running = false
+                    } else {
+                        parser_advance(parser)
+                        let right = parser_binary(parser, parsed.precedence + 1, structs)
+                        let span = span_through(left.span, right.span)
+                        left = expression(ExpressionBinary(
+                                Box.new(move left),
+                                parsed.operator,
+                                Box.new(move right)
+                            ), span)
+                    }
+                }
+            }
+        }
+        return move left
+    }
+}

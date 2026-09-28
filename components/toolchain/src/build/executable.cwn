@@ -1,0 +1,33 @@
+module toolchain {
+    fn compile_executable(request: CompileRequest, objects: Vec<Text>, links: Vec<Text>) -> Result<void, Text> {
+        var arguments = compiler_arguments(request, "_executable")
+        for index in 0..objects.length() {
+            arguments.push("--object")
+            arguments.push(objects[index].clone())
+        }
+        append_native_links(arguments, links)?
+        return require_compiler(move arguments)
+    }
+
+    fn append_native_links(arguments: write Vec<Text>, links: Vec<Text>) -> Result<void, Text> {
+        var index: usize = 0
+        while index < links.length() {
+            if std::text::equal(links[index], "-framework") {
+                index = index + 1
+                if index == links.length() {
+                    return Err("missing framework name")
+                }
+                arguments.push("--framework")
+                arguments.push(links[index].clone())
+            } else {
+                if std::text::starts(links[index], "-l") == false {
+                    return Err("unsupported native link option")
+                }
+                arguments.push("--library")
+                arguments.push(std::text::slice(links[index], 2, links[index].length()))
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

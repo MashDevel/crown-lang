@@ -1,0 +1,77 @@
+compiler_fixture() {
+    release_package
+    cp "$assets/package/crown-bootstrap-$host.lock.json" "$project/bootstrap/locks/$host.json"
+}
+fetch_compiler() {
+    CROWN_BOOTSTRAP_ASSETS="$assets/package" sh "$project/bootstrap/fetch-compiler" "$host"
+}
+compiler_downloads() {
+    compiler_fixture
+    binary=$(fetch_compiler)
+    test -x "$binary"
+    cmp "$binary" "$project/target/bootstrap/crown"
+    test ! -e "$(dirname -- "$binary")/README.md"
+    repeated=$(CROWN_BOOTSTRAP_ASSETS=/unavailable sh "$project/bootstrap/fetch-compiler" "$host")
+    test "$binary" = "$repeated"
+    printf 'corrupt' >> "$binary"
+    expect_failure fetch_compiler
+    expect_failure sh "$project/bootstrap/fetch-compiler" unsupported
+}
+compiler_failures() {
+    compiler_fixture
+    archive="$assets/package/crown-$host.tar.gz"
+    cp "$archive" "$assets/compiler-original.tar.gz"
+    printf 'corrupt' >> "$archive"
+    expect_failure fetch_compiler
+    test ! -e "$project/target/bootstrap-release"
+    cp "$assets/compiler-original.tar.gz" "$archive"
+    lock_digest compiler_sha256 "$project/README.md"
+    expect_failure fetch_compiler
+    test ! -e "$project/target/bootstrap-release"
+    cp "$assets/package/crown-bootstrap-$host.lock.json" "$project/bootstrap/locks/$host.json"
+    tar -czf "$archive" -C "$project" README.md
+    lock_digest compiler_archive_sha256 "$archive"
+    expect_failure fetch_compiler
+    test ! -e "$project/target/bootstrap-release"
+}
+compiler_installation() {
+    compiler_fixture
+    release=$(cat "$project/bootstrap/seed-release")
+    destination="$project/target/bootstrap-release/$release/$host"
+    mkdir -p "$destination.installing"
+    expect_failure fetch_compiler
+    test ! -e "$destination"
+    rmdir "$destination.installing"
+    binary=$(fetch_compiler)
+    chmod -x "$binary"
+    expect_failure fetch_compiler
+}
+launcher_dispatch() {
+    fixture
+    seed
+    fetch
+    mkdir -p "$project/target/bootstrap"
+    binary="$project/target/bootstrap/crown"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "$CROWN_TEST_ARGV"\n' > "$binary"
+    chmod +x "$binary"
+    compiler_digest=$(sh "$root/bootstrap/checksum" "$binary")
+    seed_digest=$(sh "$root/bootstrap/checksum" "$project/bootstrap/$host/compiler.s")
+    printf '{"input":"%s","output":"%s","seed":"%s"}\n' "$compiler_digest" "$compiler_digest" "$seed_digest" > "$binary.crown-build"
+    env CROWN_TEST_ARGV="$project/arguments" sh "$project/bootstrap/crown" bootstrap --force
+    test "$(cat "$project/arguments")" = 'bootstrap --force'
+    env CROWN_TEST_ARGV="$project/arguments" sh "$project/bootstrap/crown" --version
+    test "$(cat "$project/arguments")" = '_launch --version'
+    env CROWN_BOOTSTRAP_DIR="$project/separate" CROWN_TEST_ARGV="$project/arguments" sh "$project/bootstrap/crown" bootstrap --force
+    test "$(cat "$project/arguments")" = 'bootstrap --force'
+    mv "$binary" "$project/fake-compiler"
+    cat > "$project/cc" <<'SH'
+#!/bin/sh
+set -eu
+for output in "$@"; do :; done
+cp "$CROWN_TEST_COMPILER" "$output"
+chmod +x "$output"
+SH
+    chmod +x "$project/cc"
+    env CC="$project/cc" CROWN_TEST_COMPILER="$project/fake-compiler" CROWN_TEST_ARGV="$project/arguments" sh "$project/bootstrap/crown" bootstrap --force
+    test "$(cat "$project/arguments")" = 'bootstrap --force'
+}

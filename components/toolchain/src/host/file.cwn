@@ -1,0 +1,131 @@
+module toolchain {
+    extern "c" {
+        fn raw_access(path: RawPtr<u8>, mode: i32) -> i32 = "access"
+        fn raw_unlink(path: RawPtr<u8>) -> i32 = "unlink"
+        fn raw_rmdir(path: RawPtr<u8>) -> i32 = "rmdir"
+        fn raw_rename(source: RawPtr<u8>, destination: RawPtr<u8>) -> i32 = "rename"
+    }
+
+    fn exists(path: Text) -> bool {
+        match cstring(path) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(encoded) => {
+                unsafe {
+                    return raw_access(std::cstr::as_raw(encoded), 0) == 0
+                }
+            }
+        }
+    }
+
+    fn read_bytes(path: Text) -> Result<Vec<u8>, Text> {
+        loan read path as view {
+            match std::io::read_file(view) {
+                Ok(value) => {
+                    return Ok(move value)
+                }
+                Err(error) => {
+                    return Err(std::text::joined(std::text::joined("could not read: ", path), std::text::joined("; ", std::io::error_message(error))))
+                }
+            }
+        }
+    }
+
+    fn read_text(path: Text) -> Result<Text, Text> {
+        let bytes = read_bytes(path)?;
+        return std::text::from_bytes(bytes)
+    }
+
+    fn read_output(path: Text) -> Result<Text, Text> {
+        let bytes = read_bytes(path)?;
+        return Ok(std::text::from_bytes_lossy(bytes))
+    }
+
+    fn write_bytes(path: Text, value: Vec<u8>) -> Result<void, Text> {
+        loan read path as view {
+            match std::io::write_file(view, value) {
+                Ok(done) => {
+                    done;
+                    return Ok(())
+                }
+                Err(error) => {
+                    error;
+                    return Err(std::text::joined("could not write: ", path))
+                }
+            }
+        }
+    }
+
+    fn write_text(path: Text, value: Text) -> Result<void, Text> {
+        loan read path as view {
+            match std::io::write_text(view, value) {
+                Ok(done) => {
+                    done;
+                    return Ok(())
+                }
+                Err(error) => {
+                    error;
+                    return Err(std::text::joined("could not write: ", path))
+                }
+            }
+        }
+    }
+
+    fn make_directory(path: Text) -> Result<void, Text> {
+        if is_directory(path) {
+            return Ok(())
+        }
+        let parent = parent_path(path)
+        if std::text::equal(parent, path) == false {
+            make_directory(parent)?
+        }
+        let encoded = cstring(path)?
+        unsafe {
+            if raw_mkdir(std::cstr::as_raw(encoded), 493) == 0 {
+                return Ok(())
+            }
+        }
+        if is_directory(path) {
+            return Ok(())
+        }
+        return Err(std::text::joined("could not create directory: ", path))
+    }
+
+    fn remove_file(path: Text) -> Result<void, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            if raw_unlink(std::cstr::as_raw(encoded)) != 0 {
+                return Err(std::text::joined("could not remove file: ", path))
+            }
+        }
+        return Ok(())
+    }
+
+    fn rename_file(source: Text, destination: Text) -> Result<void, Text> {
+        let from = cstring(source)?
+        let to = cstring(destination)?
+        unsafe {
+            if raw_rename(std::cstr::as_raw(from), std::cstr::as_raw(to)) != 0 {
+                return Err(std::text::joined("could not replace: ", destination))
+            }
+        }
+        return Ok(())
+    }
+
+    fn copy_file(source: Text, destination: Text) -> Result<void, Text> {
+        let bytes = read_bytes(source)?
+        return write_bytes(destination, bytes)
+    }
+
+    fn executable(path: Text) -> Result<void, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            if raw_chmod(std::cstr::as_raw(encoded), 493) != 0 {
+                return Err(std::text::joined("could not make executable: ", path))
+            }
+        }
+        return Ok(())
+    }
+}

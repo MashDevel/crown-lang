@@ -1,0 +1,20 @@
+module native::x11 {
+    copy struct Property {
+        display: RawPtr<u8>, window: u64, property: u64, kind: u64
+        format: i32, mode: i32, data: RawPtr<u8>, count: i32
+    }
+
+    unsafe fn change_property(library: std::dylib::Library, request: Property) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read u64, read u64, read i32, read i32, read RawPtr<u8>, read i32) -> i32>.cast(std::dylib::slot(library, 23)).read()
+            return action(request.display, request.window, request.property, request.kind, request.format, request.mode, request.data, request.count)
+        }
+    }
+
+    unsafe fn class_hint(library: std::dylib::Library, display: RawPtr<u8>, window: u64, names: RawPtr<RawPtr<u8>>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read RawPtr<RawPtr<u8>>) -> i32>.cast(std::dylib::slot(library, 24)).read()
+            return action(display, window, names)
+        }
+    }
+}

@@ -1,0 +1,79 @@
+module sema {
+    struct ResultParts {
+        success: Type
+        error: Type
+    }
+
+    fn result_parts(value_type: Type) -> Option<ResultParts> {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                if builtin == Result() && arguments.length() == 2 {
+                    var success = Invalid()
+                    var error = Invalid()
+                    loan read arguments[0] as value {
+                        success = type_copy(value)
+                    }
+                    loan read arguments[1] as value {
+                        error = type_copy(value)
+                    }
+                    return Some(ResultParts {
+                            success: move success, error: move error
+                        })
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn checker_try(checker: write Checker, value: Box<frontend::Expression>, expected: Type) -> Option<ExpressionInfo> {
+        if type_builtin(checker.result) == Option() {
+            return checker_option_try(checker, value, expected)
+        }
+        match result_parts(checker.result) {
+            None => {
+                checker_error(checker, "'?' requires Result with the same error type as the enclosing function");
+                return None()
+            }
+            Some(enclosing) => {
+                var success = Infer()
+                if type_is_infer(expected) == false {
+                    success = type_copy(expected)
+                }
+                var arguments = Vec<Type>.new()
+                arguments.push(move success)
+                arguments.push(type_copy(enclosing.error))
+                let hint = BuiltinType(Result(), move arguments)
+                loan read value as expression {
+                    match checker_expression_expected(checker, expression, hint) {
+                        None => {
+                            return None()
+                        }
+                        Some(info) => {
+                            return checker_finish_try(checker, move info, move enclosing)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn checker_finish_try(checker: write Checker, info: take ExpressionInfo, enclosing: take ResultParts) -> Option<ExpressionInfo> {
+        match result_parts(info.value_type) {
+            None => {
+                checker_error(checker, "'?' requires Result with the same error type as the enclosing function");
+                return None()
+            }
+            Some(actual) => {
+                if types_equal(actual.error, enclosing.error) == false {
+                    checker_error(checker, "'?' requires Result with the same error type as the enclosing function")
+                }
+                if value_is_borrowed(info.value) {
+                    checker_error(checker, "'?' requires Result with the same error type as the enclosing function")
+                }
+                return Some(checker_type_info(checker, type_copy(actual.success)))
+            }
+        }
+    }
+}

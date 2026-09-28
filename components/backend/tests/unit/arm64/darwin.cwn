@@ -1,0 +1,84 @@
+fn scalar_signature() -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    for index in 0..10 {
+        index;
+        parameters.push(ir::TypeInteger(ir::IntegerWidth8()))
+    }
+    var signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth8()))
+    signature.signed_parameters.push(9)
+    signature.result_signed = true
+    return move signature
+}
+fn packed_layout() -> Result<void, Text> {
+    let signature = scalar_signature()
+    let darwin = arm64::call_layout(signature, arm64::AbiVariant::Darwin())?
+    let linux = arm64::call_layout(signature, arm64::AbiVariant::Aapcs64())?
+    testing::expect(darwin.locations[8].location == arm64::AbiLocation::Stack(0, 1), "Darwin ninth byte")?
+    testing::expect(darwin.locations[9].location == arm64::AbiLocation::Stack(1, 1), "Darwin tenth byte")?
+    testing::expect(linux.locations[9].location == arm64::AbiLocation::Stack(8, 8), "AAPCS64 stack unchanged")?
+    return testing::expect(darwin.size == 16 && linux.size == 16, "call frame alignment")
+}
+fn attributes() -> Result<void, Text> {
+    var signature = scalar_signature()
+    signature.variadic_start = Some(2)
+    let copied = ir::signature_copy(signature)
+    testing::expect(ir::signature_signed_parameter(copied, 9) && copied.result_signed, "signed attributes survive copying")?
+    testing::expect(ir::signature_variadic(copied, 1) == false && ir::signature_variadic(copied, 2), "variadic boundary")?
+    testing::expect(ir::signature_attributes_valid(copied), "valid ABI metadata")?
+    signature.variadic_start = Some(11)
+    testing::expect(ir::signature_attributes_valid(signature) == false, "invalid variadic boundary")?
+    signature.variadic_start = None()
+    signature.signed_parameters.push(10)
+    return testing::expect(ir::signature_attributes_valid(signature) == false, "invalid signed parameter")
+}
+fn signed_return() -> Result<void, Text> {
+    let byte = ir::TypeInteger(ir::IntegerWidth8())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(byte)
+    var signature = ir::signature_new(move parameters, byte)
+    signature.result_signed = true
+    var function = ir::function_new("signed_return", move signature, ir::LinkageExport())
+    let block = match ir::function_add_block(function) {
+        Ok(value) => value,
+        Err(error) => {
+            error;
+            return Err("IR block")
+        }
+    }
+    let value = function.parameters[0]
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(value))) {
+        Ok(done) => {
+            done;
+        }
+        Err(error) => {
+            error;
+            return Err("IR return")
+        }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    let output = arm64::codegen(move program, arm64::AbiVariant::Darwin())?
+    let expected = u64.from(arm64::extend_word(0, 0, 8, true)?)
+    var found = false
+    for index in 0..output.sections[0].data.length() / 4 {
+        found = found || link_binary::number(output.sections[0].data, index * 4, 4)? == expected
+    }
+    return testing::expect(found, "Darwin callee extends signed narrow result")
+}
+fn run() -> Result<void, Text> {
+    packed_layout()?
+    attributes()?
+    return signed_return()
+}
+fn main() -> u32 {
+    match run() {
+        Ok(value) => {
+            value;
+            42
+        },
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

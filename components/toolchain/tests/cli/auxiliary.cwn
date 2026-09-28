@@ -1,0 +1,57 @@
+fn build(root: Text, project: Text, name: Text) -> Result<Text, Text> {
+    let binary = toolchain::path_join(root, name)
+    var arguments = testing::list("build")
+    arguments.push(toolchain::path_join(toolchain::repository_root()?, project))
+    arguments.push("-o")
+    arguments.push(binary.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(result), result.stderr)?
+    return Ok(move binary)
+}
+
+fn call(binary: Text, arguments: take Vec<Text>, root: Text, status: i32) -> Result<toolchain::ProcessResult, Text> {
+    var command = Vec<Text>.new()
+    command.push(binary.clone())
+    for index in 0..arguments.length() {
+        command.push(arguments[index].clone())
+    }
+    let result = toolchain::capture(toolchain::command(move command), root)?
+    testing::expect(result.status == status, std::text::joined("auxiliary CLI: ", result.stderr))?
+    return Ok(move result)
+}
+
+fn unicode(root: Text) -> Result<void, Text> {
+    let binary = build(root, "components/library/tools/unicode", "unicode-tables")?
+    call(binary, Vec<Text>.new(), root, 2)?
+    var arguments = Vec<Text>.new()
+    arguments.push(toolchain::path_join(root, "missing"))
+    arguments.push(toolchain::path_join(root, "output"))
+    call(binary, std::text::clone_list(arguments), root, 1)?
+    let source = toolchain::path_join(root, "input")
+    testing::write_file(source, "printable.rs", unicode_tests::printable_source())?
+    testing::write_file(source, "unicode_data.rs", unicode_tests::grapheme_source("768"))?
+    arguments[0] = source.clone()
+    call(binary, move arguments, root, 0)?
+    return testing::expect(toolchain::exists(toolchain::path_join(root, "output/grapheme.cwn")), "CLI generated tables")
+}
+
+fn guest(root: Text) -> Result<void, Text> {
+    let binary = build(root, "components/compiler/tests/platform/guest", "guest")?
+    call(binary, Vec<Text>.new(), root, 2)?
+    let help = call(binary, testing::list("--help"), root, 0)?
+    testing::expect(std::text::contains(help.stdout, "--wait-pid"), "guest help")?
+    call(binary, testing::list("--socket|/nonexistent/crown-guest.sock"), root, 1)?
+    call(binary, testing::list("--socket|socket|--execute|true|--wait-pid|17"), root, 2)?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    unicode(root)?
+    return guest(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

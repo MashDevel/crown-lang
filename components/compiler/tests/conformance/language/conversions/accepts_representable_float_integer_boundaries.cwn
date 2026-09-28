@@ -1,0 +1,24 @@
+fn main() -> u32 {
+    if u64.from(18446744073709549568.0) != 18446744073709549568 {
+        return 1
+    }
+    if i64.from(9223372036854774784.0) != 9223372036854774784 {
+        return 2
+    }
+    if i64.from(-9223372036854775808.0) != -9223372036854775808 {
+        return 3
+    }
+    let unsigned: f32 = 4294967040.0
+    if u32.from(unsigned) != 4294967040 {
+        return 4
+    }
+    let signed: f32 = 2147483520.0
+    if i32.from(signed) != 2147483520 {
+        return 5
+    }
+    let minimum: f32 = -2147483648.0
+    if i32.from(minimum) != -2147483648 {
+        return 6
+    }
+    return 0
+}

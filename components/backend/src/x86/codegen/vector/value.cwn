@@ -1,0 +1,94 @@
+module x86 {
+    fn codegen_load_vector(compiler: write FunctionCompiler, access: FloatValueAccess) -> Result<void, CodegenError> {
+        let location = match codegen_frame_location(compiler.frame, access.value) {
+            Some(value) => move value
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match read location {
+            ValueFloatRegister(register) => {
+                codegen_emit(compiler, MovePacked(access.register, register))
+            }
+            ValueSlot(offset) => {
+                codegen_emit(compiler, LoadPackedFloat(LoadFloatMemoryArgs {
+                            width: Float64(), destination: access.register, base: Rbp(), offset: offset
+                        }))
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_store_vector(compiler: write FunctionCompiler, access: FloatValueAccess) -> Result<void, CodegenError> {
+        let location = match codegen_frame_location(compiler.frame, access.value) {
+            Some(value) => move value
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match read location {
+            ValueFloatRegister(register) => {
+                codegen_emit(compiler, MovePacked(register, access.register))
+            }
+            ValueSlot(offset) => {
+                codegen_emit(compiler, StorePackedFloat(StoreFloatMemoryArgs {
+                            width: Float64(), source: access.register, base: Rbp(), offset: offset
+                        }))
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_vector_binary(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<void, CodegenError> {
+        let value_type = codegen_value_type(program, compiler, input.left)?
+        codegen_load_vector(compiler, FloatValueAccess {
+                value: input.left, register: Xmm0()
+            })?
+        codegen_load_vector(compiler, FloatValueAccess {
+                value: input.right, register: Xmm1()
+            })?
+        let scalar = match ir::vector_scalar(value_type) {
+            Some(value) => value
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedType(value_type)))
+            }
+        }
+        codegen_vector_operation(compiler, scalar, input.operator)?
+        let result = match input.result {
+            Some(value) => value
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        return codegen_store_vector(compiler, FloatValueAccess {
+                value: result, register: Xmm0()
+            })
+    }
+
+    fn codegen_vector_operation(compiler: write FunctionCompiler, scalar: ir::Type, operator: ir::BinaryOperator) -> Result<void, CodegenError> {
+        match scalar {
+            ir::TypeInteger(width) => {
+                codegen_emit(compiler, PackedIntegerBinary(PackedIntegerArgs {
+                            operator: operator, width: width, destination: Xmm0(), source: Xmm1()
+                        }))
+            }
+            ir::TypeFloat(width) => {
+                width;
+                let operation = codegen_float_binary_operator(operator)?
+                codegen_emit(compiler, PackedFloatBinary(FloatBinaryArgs {
+                            operator: move operation, width: codegen_float_width(scalar)?, destination: Xmm0(), source: Xmm1()
+                        }))
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedType(scalar)))
+            }
+        }
+        return Ok(())
+    }
+}

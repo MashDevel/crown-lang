@@ -1,0 +1,58 @@
+module x86 {
+    fn codegen_wide_division(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.left, registers: WideRegisters {
+                    low: Rdi(), high: Rsi()
+                }
+            })?
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.right, registers: WideRegisters {
+                    low: Rdx(), high: Rcx()
+                }
+            })?
+        codegen_clear_cache(compiler)
+        if codegen_wide_signed_division(input.operator) {
+            codegen_emit(compiler, Call("__compiler_i128_divrem"))
+        }
+        else {
+            codegen_emit(compiler, Call("__compiler_u128_divrem"))
+        }
+        var registers = WideRegisters {
+            low: Rax(), high: Rdx()
+        }
+        if codegen_wide_remainder(input.operator) {
+            registers = WideRegisters {
+                low: R8(), high: R9()
+            }
+        }
+        return codegen_store_wide_result(compiler, input.result, move registers)
+    }
+
+    fn codegen_wide_signed_division(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinarySignedDivide => {
+                return true
+            }
+            ir::BinarySignedRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_wide_remainder(operator: ir::BinaryOperator) -> bool {
+        match read operator {
+            ir::BinarySignedRemainder => {
+                return true
+            }
+            ir::BinaryUnsignedRemainder => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

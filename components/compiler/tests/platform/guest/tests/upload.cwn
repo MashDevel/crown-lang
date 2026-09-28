@@ -1,0 +1,93 @@
+module guest_tests {
+    struct Upload {
+        opened: bool, closed: bool, chunks: usize, bytes: Vec<u8>, fail: bool
+    }
+
+    fn respond(state: write Upload, message: Text) -> Result<Text, Text> {
+        let document = toolchain::json(message.clone())?
+        let command = toolchain::json_text(document, toolchain::json_required(document, document.root, "execute")?)?
+        let arguments = toolchain::json_required(document, document.root, "arguments")?
+        if std::text::equal(command, "guest-file-open") {
+            state.opened = true
+            return Ok("{\"return\":7}")
+        }
+        check_handle(document, arguments)?
+        if std::text::equal(command, "guest-file-close") {
+            state.closed = true
+            return Ok("{\"return\":{}}")
+        }
+        testing::expect(std::text::equal(command, "guest-file-write"), "upload request")?
+        return respond_write(state, document, arguments)
+    }
+
+    fn check_handle(document: toolchain::Json, arguments: usize) -> Result<void, Text> {
+        let handle = toolchain::json_integer(document, toolchain::json_required(document, arguments, "handle")?)?
+        return testing::expect(handle == 7, "upload handle")
+    }
+
+    fn respond_write(state: write Upload, document: toolchain::Json, arguments: usize) -> Result<Text, Text> {
+        if state.fail {
+            return Err("write failed")
+        }
+        let encoded = toolchain::json_text(document, toolchain::json_required(document, arguments, "buf-b64")?)?
+        let bytes = guest::unbase64(encoded)?
+        testing::expect(bytes.length() <= 65536, "chunk size")?
+        std::bytes::append(state.bytes, bytes)
+        state.chunks = state.chunks + 1
+        return Ok(std::text::joined("{\"return\":{\"count\":", std::text::joined(std::text::decimal(u64.from(bytes.length())), "}}")))
+    }
+
+    fn state(fail: bool) -> Upload {
+        return Upload {
+            opened: false, closed: false, chunks: 0, bytes: Vec<u8>.new(), fail: fail
+        }
+    }
+
+    fn upload_size(root: Text, size: usize) -> Result<void, Text> {
+        let path = toolchain::path_join(root, "source")
+        let bytes = std::bytes::filled(size, 255)
+        toolchain::write_bytes(path, bytes)?
+        var response = state(false)
+        guest::upload(path, "/tmp/destination", fn[write response](message) {
+                return respond(response, message)
+            })?
+        testing::expect(response.opened && response.closed, "upload lifecycle")?
+        testing::expect(response.bytes.length() == size && response.chunks ==(size + 65535) / 65536, "upload boundaries")?
+        for index in 0..size {
+            testing::expect(response.bytes[index] == 255, "upload binary data")?
+        }
+        return Ok(())
+    }
+
+    fn upload() -> Result<void, Text> {
+        let temporary = toolchain::temporary(toolchain::temporary_directory())?
+        let root = toolchain::temporary_path(temporary)
+        upload_size(root, 0)?
+        upload_size(root, 1)?
+        upload_size(root, 65536)?
+        upload_size(root, 65537)?
+        return upload_failures(root)
+    }
+
+    fn upload_failures(root: Text) -> Result<void, Text> {
+        var missing = state(false)
+        testing::error(guest::upload(toolchain::path_join(root, "missing"), "/tmp/destination", fn[write missing](message) {
+                    return respond(missing, message)
+                }))?
+        testing::expect(missing.closed, "close after missing source")?
+        var failed = state(true)
+        testing::error(guest::upload(toolchain::path_join(root, "source"), "/tmp/destination", fn[write failed](message) {
+                    return respond(failed, message)
+                }))?
+        testing::expect(failed.closed, "close after write failure")?
+        let bytes = std::bytes::filled(3, 42)
+        guest::write_chunk(7, bytes, fn(message) {
+                message;
+                return Ok("{\"return\":{\"count\":3}}")
+            })?
+        return testing::error(guest::write_chunk(7, bytes, fn(message) {
+                    message;
+                    return Ok("{\"return\":{\"count\":2}}")
+                }))
+    }
+}

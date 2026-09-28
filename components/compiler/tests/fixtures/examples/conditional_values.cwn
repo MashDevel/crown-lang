@@ -1,0 +1,34 @@
+fn unselected() -> u32 {
+    let zero = 0
+    return 1 / zero
+}
+
+fn early(flag: read bool) -> u32 {
+    let value = if flag { return 21 } else { 21 }
+    return value
+}
+
+fn select_owned<T>(flag: read bool, value: take T) -> T {
+    return if flag { move value } else { move value }
+}
+
+fn selected_result(flag: read bool) -> Result<u32, u32> {
+    let result: Result<u32, u32> = if flag { Ok(21) } else { Err(9) }
+    let value = result?
+    return Ok(value)
+}
+
+fn main() -> u32 {
+    let lazy = if true { 21 } else { unselected() }
+    let nested = if false { 0 } else if true { if false { 0 } else { 21 } } else { 0 }
+    let scoped = if true { let value = 20; value + 1 } else { 0 }
+    let text = if false { "unused" } else { let value = "selected"; move value }
+    let owned = select_owned(true, move text)
+    if owned.length() != 8 { return 1 }
+    if early(true) != 21 || early(false) != 21 { return 2 }
+    if scoped != 21 || nested != 21 { return 3 }
+    let numbers: [u32; 2] = if true { [20, 1] } else { [0, 0] }
+    if numbers[0] + numbers[1] != 21 { return 4 }
+    match selected_result(false) { Err(error) => { if error != 9 { return 5 } } Ok(value) => { return value } }
+    match selected_result(true) { Ok(value) => { return lazy + value } Err(error) => { return error } }
+}

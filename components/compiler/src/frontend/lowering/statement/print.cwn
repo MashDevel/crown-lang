@@ -1,0 +1,69 @@
+module lowering {
+    fn print_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let value = function_scalar_expression(compiler, analysis, expression)?
+        let extension = PrintExtension {
+            value: value, value_type: sema::type_copy(value_type)
+        }
+        let extended = print_extend(compiler, analysis.checker.symbols, extension)?
+        return print_call(compiler, extended, value_type)
+    }
+
+    struct PrintExtension {
+        value: usize
+        value_type: sema::Type
+    }
+
+    fn print_extend(compiler: write FunctionCompiler, symbols: sema::Symbols, extension: PrintExtension) -> Result<usize, u32> {
+        let layout = layout(symbols, extension.value_type)?
+        if layout.size >= 8 {
+            return Ok(extension.value)
+        }
+        var operator = ir::CastZeroExtend()
+        if sema::type_is_signed(extension.value_type) {
+            operator = ir::CastSignExtend()
+        }
+        return function_append_value(compiler, ir::InstructionCast(operator, extension.value, ir::TypeInteger(ir::IntegerWidth64())))
+    }
+
+    fn print_call(compiler: write FunctionCompiler, value: usize, value_type: sema::Type) -> Result<void, u32> {
+        let descriptor_type = ir::TypeInteger(ir::IntegerWidth32())
+        let descriptor = function_integer(compiler, descriptor_type, 1)
+        var format_name = "print_unsigned"
+        if sema::type_is_signed(value_type) {
+            format_name = "print_signed"
+        }
+        var global: usize = 0
+        match function_global_id(compiler, format_name) {
+            Some(id) => {
+                global = id
+            }
+            None => {
+                return Err(226)
+            }
+        }
+        let format = function_append_value(compiler, ir::InstructionGlobalAddress(global))?
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth32()))
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        var arguments = Vec<usize>.new()
+        arguments.push(descriptor)
+        arguments.push(format)
+        arguments.push(value)
+        var signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+        signature.variadic_start = Some(2)
+        let request = ImportedCall {
+            name: "dprintf", signature: move signature, arguments: move arguments
+        }
+        match function_imported_call(compiler, request) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                result;
+                return Ok(())
+            }
+        }
+    }
+}

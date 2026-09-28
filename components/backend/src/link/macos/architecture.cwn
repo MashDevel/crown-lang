@@ -1,0 +1,67 @@
+module macho {
+    fn cpu_type(architecture: object::Architecture) -> u64 {
+        return if architecture == object::ArchitectureArm64() {
+            16777228
+        } else {
+            16777223
+        }
+    }
+    fn cpu_subtype(architecture: object::Architecture) -> u64 {
+        return if architecture == object::ArchitectureArm64() {
+            0
+        } else {
+            3
+        }
+    }
+    fn page_size(architecture: object::Architecture) -> usize {
+        return if architecture == object::ArchitectureArm64() {
+            16384
+        } else {
+            4096
+        }
+    }
+    fn stub_size(architecture: object::Architecture) -> usize {
+        return if architecture == object::ArchitectureArm64() {
+            12
+        } else {
+            6
+        }
+    }
+    fn write_stub(image: write Image, symbol: usize, offset: usize) -> Result<void, Text> {
+        let target = image.slots[symbol]
+        let address = image.symbols[symbol]
+        if image.architecture == object::ArchitectureArm64() {
+            let pages = i64.from(target - target % 4096) - i64.from(address - address % 4096)
+            link_binary::put(image.text, offset, u64.from(arm64::page_address(16, pages)?), 4)
+            link_binary::put(image.text, offset + 4, u64.from(arm64::memory_word(16, 16, u32.from(target % 4096), 8, true)?), 4)
+            link_binary::put(image.text, offset + 8, u64.from(arm64::indirect_branch(16, false)?), 4)
+        } else {
+            image.text[offset] = 255
+            image.text[offset + 1] = 37
+            link_binary::put(image.text, offset + 2, u64.from_bits(i64.from(target) - i64.from(address) - 6), 4)
+        }
+        return Ok(())
+    }
+    fn relocate_arm(image: write Image, relocation: object::Relocation, address: u64, value: i64) -> Result<void, Text> {
+        if image.architecture != object::ArchitectureArm64() || address % 4 != 0 {
+            return Err("ARM64 Mach-O instruction relocation requires an aligned ARM64 instruction")
+        }
+        if ir::value_present(relocation.subtract) {
+            return Err("ARM64 instruction relocation cannot subtract a symbol")
+        }
+        let word = if address >= image.data_base {
+            link_binary::number(image.data, usize.from(address - image.data_base), 4)?
+        } else {
+            link_binary::number(image.text, usize.from(address - 4294967296), 4)?
+        }
+        let encoded = arm64::arm_relocated_word(relocation.kind, u32.from(word), value, address)?
+        return patch(image, address, u64.from(encoded), 4)
+    }
+    fn maximum_alignment_power(architecture: object::Architecture) -> u64 {
+        return if architecture == object::ArchitectureArm64() {
+            14
+        } else {
+            12
+        }
+    }
+}

@@ -1,0 +1,106 @@
+module x86 {
+    fn codegen_wide_shift(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.left, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_load_wide_shift(program, compiler, input.right)?
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, Test(Rcx(), Rcx()))
+        codegen_emit(compiler, JumpIf(Equal(), local_label_copy(done)))
+        match read input.operator {
+            ir::BinaryShiftLeft => {
+                codegen_emit_wide_shift_left(compiler)
+            }
+            ir::BinaryShiftRightUnsigned => {
+                codegen_emit_wide_shift_right(compiler, false)
+            }
+            ir::BinaryShiftRightSigned => {
+                codegen_emit_wide_shift_right(compiler, true)
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        codegen_emit(compiler, Label(move done))
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_load_wide_shift(program: ir::Program, compiler: write FunctionCompiler, value: usize) -> Result<void, CodegenError> {
+        if codegen_value_is_wide(program, compiler, value) {
+            return codegen_load_wide(program, compiler, WideValueAccess {
+                    value: value, registers: WideRegisters {
+                        low: Rcx(), high: R8()
+                    }
+                })
+        }
+        return codegen_load_value(program, compiler, ValueAccess {
+                value: value, register: Rcx()
+            })
+    }
+
+    fn codegen_emit_wide_shift_left(compiler: write FunctionCompiler) -> void {
+        let large = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, CompareImmediate(Rcx(), 64))
+        codegen_emit(compiler, JumpIf(AboveOrEqual(), local_label_copy(large)))
+        codegen_emit(compiler, Move(R8(), Rax()))
+        codegen_emit(compiler, ShiftLeft(Rax()))
+        codegen_emit(compiler, ShiftLeft(Rdx()))
+        codegen_emit(compiler, Negate(Rcx()))
+        codegen_emit(compiler, ShiftRightLogical(R8()))
+        codegen_emit(compiler, Or(Rdx(), R8()))
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move large))
+        codegen_emit(compiler, Move(Rdx(), Rax()))
+        codegen_emit(compiler, ShiftLeft(Rdx()))
+        codegen_emit(compiler, MoveImmediate(Rax(), 0))
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_emit_wide_shift_right(compiler: write FunctionCompiler, signed: bool) -> void {
+        let large = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, CompareImmediate(Rcx(), 64))
+        codegen_emit(compiler, JumpIf(AboveOrEqual(), local_label_copy(large)))
+        codegen_emit(compiler, Move(R8(), Rdx()))
+        codegen_emit(compiler, ShiftRightLogical(Rax()))
+        codegen_wide_high_shift(compiler, Rdx(), signed)
+        codegen_emit(compiler, Negate(Rcx()))
+        codegen_emit(compiler, ShiftLeft(R8()))
+        codegen_emit(compiler, Or(Rax(), R8()))
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move large))
+        codegen_wide_high_shift(compiler, Rdx(), signed)
+        codegen_emit(compiler, Move(Rax(), Rdx()))
+        codegen_wide_large_shift_high(compiler, signed)
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_wide_high_shift(compiler: write FunctionCompiler, register: take Register, signed: bool) -> void {
+        if signed {
+            codegen_emit(compiler, ShiftRightArithmetic(register));
+            return
+        }
+        codegen_emit(compiler, ShiftRightLogical(register))
+    }
+
+    fn codegen_wide_large_shift_high(compiler: write FunctionCompiler, signed: bool) -> void {
+        if signed == false {
+            codegen_emit(compiler, MoveImmediate(Rdx(), 0));
+            return
+        }
+        let negative = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, Test(Rdx(), Rdx()))
+        codegen_emit(compiler, JumpIf(Less(), local_label_copy(negative)))
+        codegen_emit(compiler, MoveImmediate(Rdx(), 0))
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move negative))
+        codegen_emit(compiler, MoveImmediate(Rdx(), -1))
+        codegen_emit(compiler, Label(move done))
+    }
+}

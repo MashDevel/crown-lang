@@ -1,0 +1,8 @@
+const VALUES: [u32; 2] = [1, 2]
+fn change(values: write Slice<u32>) -> void {
+    values[0] = 3
+}
+fn main() -> u32 {
+    change(VALUES);
+    return 0
+}

@@ -1,0 +1,152 @@
+module sema {
+    fn checker_call(checker: write Checker, kind: frontend::ExpressionKind, expected: Type) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionCall(name, arguments) => {
+                if is_exchange(checker.symbols.source, name) {
+                    return checker_exchange(checker, kind)
+                }
+                match find_function(checker.symbols, name) {
+                    Some(index) => {
+                        let signature = function_call_signature(checker.symbols, index)
+                        let request = CallRequest {
+                            signature: move signature, expected: type_copy(expected), span: name.span
+                        }
+                        return checker_start_call(checker, arguments, move request)
+                    }
+                    None => {
+                        return checker_non_function_call(checker, kind, expected)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid function call: check the function name, arguments, and parameter modes");
+                return None()
+            }
+        }
+    }
+
+    fn checker_start_call(checker: write Checker, arguments: Vec<frontend::Expression>, request: take CallRequest) -> Option<ExpressionInfo> {
+        if request.signature.unsafe_value && checker.unsafe_depth == 0 {
+            checker_error_at(checker, request.span, "call to unsafe function requires an unsafe block")
+            call_declaration_note(checker, request.signature, "unsafe function declared here")
+            return None()
+        }
+        if request.signature.parameters.length() != arguments.length() {
+            call_arity_error(checker, request, arguments.length())
+            return None()
+        }
+        return checker_apply_call(checker, arguments, move request)
+    }
+
+    fn checker_apply_call(checker: write Checker, arguments: Vec<frontend::Expression>, request: take CallRequest) -> Option<ExpressionInfo> {
+        var values = inference_values(request.signature.type_parameter_count)
+        infer_type(request.signature.result, request.expected, values)
+        var state = CallState {
+            signature: call_signature_copy(request.signature)
+            values: move values
+            checked: Vec<CheckedArgument>.with_capacity(arguments.length())
+            span: request.span
+        }
+        let loan_count = checker.place_loans.length()
+        let errors = checker.errors
+        checker_check_arguments(checker, arguments, state)
+        while checker.place_loans.length() > loan_count {
+            checker.place_loans.pop()
+        }
+        if checker.errors != errors {
+            return None()
+        }
+        if inference_complete(checker.symbols, state.values) == false {
+            call_inference_error(checker, state)
+            return None()
+        }
+        checker_validate_arguments(checker, state, arguments)
+        if checker.errors != errors {
+            return None()
+        }
+        checker_resolved_call_aliases(checker, state, arguments)
+        if checker.errors != errors {
+            return None()
+        }
+        checker_record_generic_call(checker, state)
+        let result = call_substitute(state, state.signature.result)
+        return Some(checker_type_info(checker, move result))
+    }
+
+    fn checker_check_arguments(checker: write Checker, arguments: Vec<frontend::Expression>, state: write CallState) -> void {
+        var index: usize = 0
+        while index < arguments.length() {
+            var parameter = ParameterType {
+                mode: frontend::ModeRead(), value_type: Invalid()
+            }
+            var schema_type = Invalid()
+            loan read state.signature.parameters[index] as schema {
+                parameter = parameter_type_copy(schema)
+                schema_type = type_copy(schema.value_type)
+            }
+            parameter.value_type = call_substitute(state, parameter.value_type)
+            loan read arguments[index] as argument {
+                match checker_argument(checker, argument, parameter) {
+                    None => {
+                        state.checked.push(InvalidArgument())
+                    }
+                    Some(info) => {
+                        infer_type(schema_type, info.value_type, state.values)
+                        parameter.value_type = type_copy(info.value_type)
+                        reserve_call_argument(checker, argument, parameter)
+                        state.checked.push(ValidArgument(move info))
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_argument(checker: write Checker, argument: frontend::Expression, parameter: ParameterType) -> Option<ExpressionInfo> {
+        let previous = replace(checker.current_span, argument.span)
+        let result = checker_argument_value(checker, argument, parameter)
+        checker.current_span = previous
+        return move result
+    }
+
+    fn checker_argument_value(checker: write Checker, argument: frontend::Expression, parameter: ParameterType) -> Option<ExpressionInfo> {
+        if type_is_scoped_function(parameter.value_type) {
+            return checker_scoped_argument(checker, argument, parameter.value_type)
+        }
+        if parameter_uses_view(parameter) {
+            return checker_view_argument(checker, argument, parameter)
+        }
+        match read parameter.mode {
+            frontend::ModeRead => {
+                if type_is_copy_with_symbols(checker.symbols, parameter.value_type) || argument_is_temporary(argument) {
+                    return checker_expression_expected(checker, argument, parameter.value_type)
+                }
+                let usage = ReadPath()
+                return checker_path_argument(checker, argument, usage)
+            }
+            frontend::ModeWrite => {
+                let usage = WritePath()
+                return checker_path_argument(checker, argument, usage)
+            }
+            frontend::ModeTake => {
+                return checker_expression_expected(checker, argument, parameter.value_type)
+            }
+        }
+    }
+
+    fn argument_is_temporary(argument: frontend::Expression) -> bool {
+        match place_path(argument) {
+            Some(path) => {
+                path;
+                return false
+            }
+            None => {
+                return true
+            }
+        }
+    }
+
+    fn checker_path_argument(checker: write Checker, argument: frontend::Expression, usage: PathUse) -> Option<ExpressionInfo> {
+        return checker_place(checker, argument, usage)
+    }
+}

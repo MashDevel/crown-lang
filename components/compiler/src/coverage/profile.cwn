@@ -1,0 +1,82 @@
+module coverage {
+    copy struct ProfilePoint {
+        line: usize, column: usize, kind: usize, hit: bool
+    }
+    struct SourceProfile {
+        path: Text, checksum: Text, points: Vec<ProfilePoint>
+    }
+    struct Profile {
+        files: Vec<SourceProfile>, runs: usize
+    }
+
+    fn load_profile(directory: Text) -> Result<Profile, Text> {
+        let document = toolchain::json(toolchain::read_text(toolchain::path_join(directory, "map.json"))?)?
+        let points = toolchain::json_array_values(document, toolchain::json_required(document, document.root, "points")?)?
+        let size = report_size(document, points.length())?
+        var output = Profile {
+            files: source_profiles(document)?, runs: 0
+        }
+        let hits = read_hits(directory, size, output.runs)?
+        for index in 0..points.length() {
+            let hit = hits[index / 8] &(u8.from(1) << u8.from(index % 8)) != 0
+            append_profile_point(document, points[index], hit, output.files)?
+        }
+        return Ok(move output)
+    }
+
+    fn source_profiles(document: toolchain::Json) -> Result<Vec<SourceProfile>, Text> {
+        let entries = toolchain::json_array_values(document, toolchain::json_required(document, document.root, "files")?)?
+        var output = Vec<SourceProfile>.new()
+        for index in 0..entries.length() {
+            let value = source_profile(document, entries[index])?
+            if profile_index(output, value.path) != output.length() {
+                return Err("duplicate source in coverage map")
+            }
+            output.push(move value)
+        }
+        return Ok(move output)
+    }
+
+    fn source_profile(document: toolchain::Json, entry: usize) -> Result<SourceProfile, Text> {
+        let path = toolchain::json_text(document, toolchain::json_required(document, entry, "path")?)?
+        let checksum = toolchain::json_text(document, toolchain::json_required(document, entry, "checksum")?)?
+        if path.length() == 0 || checksum.length() == 0 {
+            return Err("coverage source needs a path and checksum")
+        }
+        return Ok(SourceProfile {
+                path: move path, checksum: move checksum, points: Vec<ProfilePoint>.new()
+            })
+    }
+
+    fn profile_index(files: Vec<SourceProfile>, path: Text) -> usize {
+        for index in 0..files.length() {
+            if std::text::equal(files[index].path, path) {
+                return index
+            }
+        }
+        return files.length()
+    }
+
+    fn append_profile_point(document: toolchain::Json, point: usize, hit: bool, files: write Vec<SourceProfile>) -> Result<void, Text> {
+        let path = toolchain::json_text(document, toolchain::json_required(document, point, "file")?)?
+        let index = profile_index(files, path)
+        if index == files.length() {
+            return Err("coverage point has no source checksum")
+        }
+        let value = profile_point(document, point, hit)?
+        files[index].points.push(value)
+        return Ok(())
+    }
+
+    fn profile_point(document: toolchain::Json, point: usize, hit: bool) -> Result<ProfilePoint, Text> {
+        let line = integer(document, point, "line")?
+        let column = integer(document, point, "column")?
+        let kind = integer(document, point, "kind")?
+        if line == 0 || line > 10000000 || column == 0 || kind > 3 {
+            return Err("invalid coverage point")
+        }
+        return Ok(ProfilePoint {
+                line: line, column: column, kind: kind, hit: hit
+            })
+    }
+}

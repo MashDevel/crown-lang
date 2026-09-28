@@ -1,0 +1,19 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    test_encode(x86::FloatBinary(x86::FloatBinaryArgs {
+                operator: x86::FloatAdd(), width: x86::Float32(), destination: x86::Xmm0(), source: x86::Xmm1()
+            }), bytes)
+    test_encode(x86::FloatBinary(x86::FloatBinaryArgs {
+                operator: x86::FloatSubtract(), width: x86::Float64(), destination: x86::Xmm8(), source: x86::Xmm9()
+            }), bytes)
+    test_encode(x86::FloatUnary(x86::FloatUnaryArgs {
+                operator: x86::FloatSquareRoot(), width: x86::Float64(), destination: x86::Xmm10(), source: x86::Xmm11()
+            }), bytes)
+    let expected: [u8; 14] = [243, 15, 88, 193, 242, 69, 15, 92, 193, 242, 69, 15, 81, 211]
+    loan read expected as values {
+        if test_bytes_equal(bytes, values) == false {
+            return 1
+        }
+    }
+    return 42
+}

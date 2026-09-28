@@ -1,0 +1,13 @@
+fn call(first: scoped fn() -> void, second: scoped fn() -> void) -> void {
+    first();
+    second()
+}
+fn main() -> u32 {
+    var value = 0;
+    call(fn[write value]() {
+            value = 1
+        }, fn[read value]() {
+            print(value)
+        });
+    return 0
+}

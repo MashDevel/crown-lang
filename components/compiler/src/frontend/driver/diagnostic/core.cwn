@@ -1,0 +1,136 @@
+module frontend {
+    extern "c" {
+        fn diagnostic_host_write(descriptor: i32, data: RawPtr<u8>, length: usize) -> isize = "write"
+    }
+
+    fn diagnostic_write(value: Text) -> void {
+        unsafe {
+            frontend_diagnostic_bytes(value.as_raw(), value.length())
+        }
+    }
+
+    unsafe fn frontend_diagnostic_bytes(pointer: RawPtr<u8>, length: usize) -> void {
+        var offset: usize = 0
+        while offset < length {
+            var written: isize = 0
+            unsafe {
+                written = diagnostic_host_write(2, pointer.offset(offset), length - offset)
+            }
+            if written <= 0 {
+                return
+            }
+            offset = offset + usize.from(written)
+        }
+    }
+
+    fn diagnostic_literal(value: take Text) -> void {
+        diagnostic_write(value)
+    }
+
+    fn print_semantic_errors(bundle: SourceBundle, analysis: sema::Analysis) -> void {
+        print_semantic_list(bundle, analysis.checker.symbols.diagnostics)
+        print_semantic_list(bundle, analysis.checker.diagnostics)
+    }
+
+    fn print_semantic_list(bundle: SourceBundle, diagnostics: Vec<sema::Diagnostic>) -> void {
+        var index: usize = 0
+        while index < diagnostics.length() {
+            loan read diagnostics[index] as diagnostic {
+                print_diagnostic(bundle, diagnostic.span, diagnostic.message)
+                print_semantic_notes(bundle, diagnostic.notes)
+            }
+            index = index + 1
+        }
+    }
+
+    fn print_semantic_notes(bundle: SourceBundle, notes: Vec<sema::DiagnosticNote>) -> void {
+        for index in 0..notes.length() {
+            loan read notes[index] as note {
+                print_labeled_diagnostic(bundle, note.span, note.message, "note")
+            }
+        }
+    }
+
+    fn print_parse_errors(bundle: SourceBundle, diagnostics: Vec<Diagnostic>) -> void {
+        var index: usize = 0
+        while index < diagnostics.length() {
+            loan read diagnostics[index] as diagnostic {
+                let message = diagnostic_message(diagnostic.kind)
+                print_diagnostic(bundle, diagnostic.span, message)
+            }
+            index = index + 1
+        }
+    }
+
+    fn diagnostic_message(kind: DiagnosticKind) -> Text {
+        match read kind {
+            UnexpectedCharacter => {
+                return "unexpected character"
+            }
+            InvalidInteger => {
+                return "invalid integer literal"
+            }
+            InvalidFloat => {
+                return "invalid floating-point literal"
+            }
+            InvalidCharacter => {
+                return "invalid character literal"
+            }
+            InvalidText => {
+                return "invalid text literal"
+            }
+            MissingToken => {
+                return "expected token is missing"
+            }
+            UnexpectedToken => {
+                return "unexpected token"
+            }
+            SyntaxDepthExceeded => {
+                return "syntax depth exceeds the limit of 128"
+            }
+        }
+    }
+
+    fn print_compile_error(status: u32) -> void {
+        var output = "error: "
+        let message = compile_error_message(status)
+        std::text::append(output, message)
+        let suffix = " (code "
+        std::text::append(output, suffix)
+        text_push_usize(output, usize.from(status))
+        output.push(')')
+        output.push('\n')
+        diagnostic_write(output)
+    }
+
+    fn compile_error_message(status: u32) -> Text {
+        if status < 240 {
+            return "native lowering failed for the checked program"
+        }
+        if status == 240 {
+            return "generated IR failed validation"
+        }
+        if status == 241 {
+            return "target backend does not support this type"
+        }
+        if status == 242 {
+            return "target backend does not support this instruction"
+        }
+        if status == 243 {
+            return "target backend does not support this conversion"
+        }
+        if status == 244 {
+            return "target call exceeds the supported argument layout"
+        }
+        if status == 245 {
+            return "numeric overflow during code generation"
+        }
+        if status == 246 {
+            return "target symbol was not found"
+        }
+        if status == 247 {
+            return "target instruction encoding failed"
+        }
+        return "could not render or write the output assembly"
+    }
+}

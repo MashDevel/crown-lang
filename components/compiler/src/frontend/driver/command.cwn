@@ -1,0 +1,61 @@
+module frontend {
+    fn execute_command(options: toolchain::FrontendRequest) -> u32 {
+        match execute_frontend(options) {
+            Ok(value) => {
+                value;
+                return 0
+            }
+            Err(error) => {
+                toolchain::failure(error);
+                return 1
+            }
+        }
+    }
+
+    fn execute_frontend(options: toolchain::FrontendRequest) -> Result<void, Text> {
+        let source = parsed_sources(options.sources)?
+        match read options.command {
+            toolchain::FrontendCommand::Parse => {
+                return Ok(())
+            }
+            _ => {
+            }
+        }
+        let checked = check_parsed(move source, options.max_instances)?
+        match move checked {
+            CheckedSource::Source(bundle, program, analysis) => {
+                match read options.command {
+                    toolchain::FrontendCommand::Compile(output) => {
+                        return compile_checked(bundle, move program, move analysis, CompileOutput {
+                                path: output.clone(), coverage: options.coverage.clone(), optimization: toolchain::optimization_copy(options.optimization), target: options.target
+                            })
+                    }
+                    _ => {
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    struct CompileOutput {
+        path: Text, coverage: Text, optimization: toolchain::OptimizationOptions, target: toolchain::Target
+    }
+
+    fn compile_checked(bundle: SourceBundle, program: take Program, analysis: take sema::Analysis, output: CompileOutput) -> Result<void, Text> {
+        let instrumentation = coverage::prepare(bundle, program, output.coverage)?
+        let bytes = coverage::instrumentation_bytes(instrumentation)
+        let settings = compile_settings(bundle, output.optimization, output.target)?
+        let status = compile_program(move analysis, move program, output, move instrumentation, settings)
+        if status != 0 {
+            print_compile_error(status);
+            return Err("native compilation failed")
+        }
+        if output.optimization.generate.length() != 0 {
+            var assembly = toolchain::read_text(output.path)?
+            std::text::append(assembly, coverage::runtime_sections(output.target))
+            toolchain::write_text(output.path, assembly)?
+        }
+        return coverage::append_runtime(output.path, output.coverage, output.target, bytes)
+    }
+}

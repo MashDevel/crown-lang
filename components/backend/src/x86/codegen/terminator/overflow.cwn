@@ -1,0 +1,263 @@
+module x86 {
+    struct OverflowBranch {
+        condition: Condition
+        then_block: usize
+        else_block: usize
+        skipped: usize
+    }
+
+    struct OverflowCondition {
+        condition: Condition
+        guards: usize
+    }
+
+    struct OverflowSearch {
+        block: usize
+        index: usize
+        comparison: ComparisonTail
+    }
+
+    struct ImmediateFlagInput {
+        result: usize
+        immediate: ImmediateBinary
+    }
+
+    fn codegen_fused_overflow(program: ir::Program, compiler: FunctionCompiler) -> Option<OverflowBranch> {
+        let block = match read compiler.block {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let branch = match ir::block_conditional(program.functions[compiler.id].blocks[block]) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        let tail = match codegen_comparison_tail(program, compiler, ComparisonSearch {
+                block: block, value: branch.condition
+            }) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        let length = program.functions[compiler.id].blocks[block].instructions.length()
+        if length < tail.skipped {
+            return None()
+        }
+        let search = OverflowSearch {
+            block: block
+            index: length - tail.skipped
+            comparison: ComparisonTail {
+                operator: tail.operator, left: tail.left, right: tail.right, skipped: tail.skipped, inverted: tail.inverted
+            }
+        }
+        let found = match codegen_overflow_condition(program, compiler, search) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        var condition = found.condition
+        if tail.inverted {
+            condition = normalize_invert_condition(condition)
+        }
+        Some(OverflowBranch {
+                condition: condition, then_block: branch.then_block, else_block: branch.else_block, skipped: tail.skipped + found.guards
+            })
+    }
+
+    fn codegen_overflow_condition(program: ir::Program, compiler: FunctionCompiler, search: OverflowSearch) -> Option<OverflowCondition> {
+        match codegen_unsigned_add_condition(program, compiler, search) {
+            Some(value) => {
+                return Some(move value)
+            }
+            None => {
+                return codegen_signed_overflow_condition(program, compiler, search)
+            }
+        }
+    }
+
+    fn codegen_unsigned_add_condition(program: ir::Program, compiler: FunctionCompiler, search: OverflowSearch) -> Option<OverflowCondition> {
+        match read search.comparison.operator {
+            ir::CompareUnsignedGreaterEqual => {
+            }
+            _ => {
+                return None()
+            }
+        }
+        if search.index == 0 {
+            return None()
+        }
+        loan read program.functions[compiler.id].blocks[search.block].instructions[search.index - 1] as instruction {
+            let values = match codegen_overflow_arithmetic(instruction) {
+                Some(value) => move value
+                None => {
+                    return None()
+                }
+            }
+            if values.kind != 1 || search.comparison.left != values.result {
+                return None()
+            }
+            if search.comparison.right != values.left && search.comparison.right != values.right {
+                return None()
+            }
+            return Some(OverflowCondition {
+                    condition: AboveOrEqual(), guards: 0
+                })
+        }
+    }
+
+    fn codegen_signed_overflow_condition(program: ir::Program, compiler: FunctionCompiler, search: OverflowSearch) -> Option<OverflowCondition> {
+        match read search.comparison.operator {
+            ir::CompareSignedGreaterEqual => {
+            }
+            _ => {
+                return None()
+            }
+        }
+        loan read program.functions[compiler.id] as function {
+            let constant = match codegen_integer_constant(function, search.comparison.right) {
+                Some(value) => value
+                None => {
+                    return None()
+                }
+            }
+            if constant != 0 {
+                return None()
+            }
+            if search.index < 4 {
+                return None()
+            }
+            let start = search.index - 4
+            loan read function.blocks[search.block] as block {
+                if codegen_signed_overflow_guard(compiler, block, start, search.comparison.left) == false {
+                    return None()
+                }
+                return Some(OverflowCondition {
+                        condition: NotOverflow(), guards: 3
+                    })
+            }
+        }
+    }
+
+    fn codegen_signed_overflow_guard(compiler: FunctionCompiler, block: ir::BasicBlock, start: usize, left: usize) -> bool {
+        if codegen_overflow_single_use_chain(compiler, block, start) == false {
+            return false
+        }
+        let result = match read block.instructions[start + 3].result {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        if result != left {
+            return false
+        }
+        if codegen_signed_guard_matches(block, start) == false {
+            return false
+        }
+        return true
+    }
+
+    fn codegen_compile_overflow_block(program: ir::Program, compiler: write FunctionCompiler, input: take OverflowBranch) -> Result<void, CodegenError> {
+        loan read program.functions[compiler.id].blocks[codegen_current_block(compiler)] as block {
+            let retained = block.instructions.length() - input.skipped
+            if retained == 0 {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+            codegen_compile_block_range(program, compiler, retained - 1)?
+            loan read block.instructions[retained - 1] as arithmetic {
+                codegen_compile_flag_binary(program, compiler, arithmetic)?
+            }
+        }
+        let branch = ConditionBranch {
+            condition: input.condition, then_block: input.then_block, else_block: input.else_block
+        }
+        return codegen_compile_condition_branch(program, compiler, move branch)
+    }
+
+    fn codegen_compile_flag_binary(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Result<void, CodegenError> {
+        var result: usize = 0
+        match read instruction.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let input = BinaryInput {
+                    result: Some(result), operator: operator, left: left, right: right
+                }
+                match codegen_immediate_binary_input(program, compiler, input) {
+                    Some(immediate) => {
+                        match read operator {
+                            ir::BinaryAdd => {
+                                let request = ImmediateFlagInput {
+                                    result: result, immediate: move immediate
+                                }
+                                return codegen_compile_immediate_flag(program, compiler, request)
+                            }
+                            ir::BinarySubtract => {
+                                let request = ImmediateFlagInput {
+                                    result: result, immediate: move immediate
+                                }
+                                return codegen_compile_immediate_flag(program, compiler, request)
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                return codegen_compile_register_flag(program, compiler, input)
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+    }
+
+    fn codegen_compile_immediate_flag(program: ir::Program, compiler: write FunctionCompiler, input: ImmediateFlagInput) -> Result<void, CodegenError> {
+        let destination = codegen_load_immediate_dynamic(program, compiler, input.result, input.immediate)?
+        codegen_emit_immediate_operator(compiler, destination, input.immediate)
+        return codegen_store_sized_result(program, compiler, SizedResultStore {
+                result: input.result, source: destination, width: input.immediate.width
+            })
+    }
+
+    fn codegen_compile_register_flag(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<void, CodegenError> {
+        var result: usize = 0
+        match read input.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        let value_type = codegen_value_type(program, compiler, result)?
+        let width = codegen_width(value_type)?
+        let registers = codegen_load_direct_operands(program, compiler, input)?
+        match read input.operator {
+            ir::BinaryAdd => {
+                codegen_emit(compiler, AddSized(registers.destination, registers.source, width))
+            }
+            ir::BinarySubtract => {
+                codegen_emit(compiler, SubtractSized(registers.destination, registers.source, width))
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        return codegen_store_sized_result(program, compiler, SizedResultStore {
+                result: result, source: registers.destination, width: width
+            })
+    }
+}

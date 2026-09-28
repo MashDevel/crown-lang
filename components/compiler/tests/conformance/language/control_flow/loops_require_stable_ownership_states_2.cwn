@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    break
+    return 0
+}

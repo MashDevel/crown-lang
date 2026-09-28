@@ -1,0 +1,8 @@
+fn apply(action: fn(u32) -> u32, value: u32) -> u32 {
+    action(value)
+}
+fn main() -> u32 {
+    apply(fn(value) {
+            value + 1
+        }, 41)
+}

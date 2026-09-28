@@ -1,0 +1,15 @@
+struct Item {
+    value: u32
+}
+fn choose(value: Option<Item>) -> u32 {
+    match read value {
+        Some(item) => item.value,
+        None => 0
+    }
+}
+fn main() -> u32 {
+    let value = Some(Item {
+            value: 42
+        })
+    choose(value)
+}

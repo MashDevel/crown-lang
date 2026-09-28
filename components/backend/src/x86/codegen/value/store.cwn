@@ -1,0 +1,102 @@
+module x86 {
+    fn codegen_store_value(program: ir::Program, compiler: write FunctionCompiler, access: take ValueAccess) -> Result<void, CodegenError> {
+        match codegen_frame_location(compiler.frame, access.value) {
+            Some(location) => {
+                match move location {
+                    ValueFloatRegister(register) => {
+                        let width = codegen_float_value_width(program, compiler, access.value)?
+                        codegen_emit(compiler, MoveToFloat(width, register, access.register))
+                        return Ok(())
+                    }
+                    ValueSlot(offset) => {
+                        let request = StoreLocation {
+                            access: move access, location: ValueSlot(offset)
+                        }
+                        return codegen_store_slot(program, compiler, move request)
+                    }
+                    ValueRegister(register) => {
+                        let request = StoreLocation {
+                            access: move access, location: ValueRegister(register)
+                        }
+                        return codegen_store_register(program, compiler, move request)
+                    }
+                    _ => {
+                        return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                    }
+                }
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_store_slot(program: ir::Program, compiler: write FunctionCompiler, request: take StoreLocation) -> Result<void, CodegenError> {
+        var offset: i32 = 0
+        match read request.location {
+            ValueSlot(value) => {
+                offset = value
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match codegen_value_type(program, compiler, request.access.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                match codegen_width(value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                                    base: Rbp()
+                                    offset: offset
+                                    source: request.access.register
+                                    width: width
+                                }))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+
+    fn codegen_store_register(program: ir::Program, compiler: write FunctionCompiler, request: take StoreLocation) -> Result<void, CodegenError> {
+        var destination = Rax()
+        match read request.location {
+            ValueRegister(register) => {
+                destination = register
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        match codegen_value_type(program, compiler, request.access.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                match codegen_width(value_type) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(width) => {
+                        if register_equal(destination, request.access.register) && width_is_qword(width) {
+                            return Ok(())
+                        }
+                        codegen_emit(compiler, MoveSized(MoveSizedArgs {
+                                    destination: destination
+                                    source: request.access.register
+                                    width: width
+                                    extension: ZeroExtend()
+                                }))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+}

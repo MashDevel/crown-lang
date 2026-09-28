@@ -1,0 +1,145 @@
+fn copied_operands(kind: take ir::InstructionKind, count: usize) -> bool {
+    var copied = ir::instruction_kind_copy(kind)
+    let operands = ir::instruction_operands(copied)
+    if operands.length() != count {
+        return false
+    }
+    var index: usize = 0
+    while index < count {
+        if operands[index] != index + 1 {
+            return false
+        }
+        index = index + 1
+    }
+    ir::instruction_replace_uses(copied, 1, 99)
+    let original = ir::instruction_operands(kind)
+    let replaced = ir::instruction_operands(copied)
+    if count != 0 {
+        return original[0] == 1 && replaced[0] == 99
+    }
+    original.length() == 0 && replaced.length() == 0
+}
+
+fn memory_operands() -> bool {
+    if copied_operands(ir::InstructionLoad(1, ir::TypePointer(), 8, true), 1) == false {
+        return false
+    }
+    if copied_operands(ir::InstructionStore(1, 2, 8, true), 2) == false {
+        return false
+    }
+    if copied_operands(ir::InstructionOffset(1, 2), 2) == false {
+        return false
+    }
+    if copied_operands(ir::InstructionMemoryCopy(1, 2, 3), 3) == false {
+        return false
+    }
+    if copied_operands(ir::InstructionMemorySet(1, 2, 3), 3) == false {
+        return false
+    }
+    copied_operands(ir::InstructionMemoryRepeat(1, 2, 3, 4), 4)
+}
+
+fn address_constants() -> bool {
+    if copied_operands(ir::InstructionStackSlot(32, 16), 0) == false {
+        return false
+    }
+    if copied_operands(ir::InstructionGlobalAddress(8), 0) == false {
+        return false
+    }
+    if copied_operands(ir::InstructionFunctionAddress(9), 0) == false {
+        return false
+    }
+    copied_operands(ir::InstructionSymbolAddress(Text.new()), 0)
+}
+
+fn symbol_length(kind: ir::InstructionKind) -> usize {
+    match read kind {
+        ir::InstructionMemory(memory) => {
+            match read memory {
+                ir::MemorySymbolAddress(symbol) => symbol.length()
+                _ => 99
+            }
+        }
+        _ => 99
+    }
+}
+
+fn owned_symbol_copy(empty: bool) -> bool {
+    var name = Text.new()
+    if empty == false {
+        name.push('x')
+    }
+    let original = ir::InstructionSymbolAddress(move name)
+    var copied = ir::instruction_kind_copy(original)
+    match write copied {
+        ir::InstructionMemory(memory) => {
+            match write memory {
+                ir::MemorySymbolAddress(symbol) => {
+                    symbol.push('y')
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+    let expected: usize = if empty {
+        0
+    } else {
+        1
+    }
+    symbol_length(original) == expected && symbol_length(copied) == expected + 1
+}
+
+fn offset_recognition() -> bool {
+    let offset = ir::InstructionOffset(3, 5)
+    match ir::instruction_offset(offset) {
+        Some(value) => {
+            if value.base != 3 || value.offset != 5 {
+                return false
+            }
+        }
+        None => {
+            return false
+        }
+    }
+    let load = ir::InstructionLoad(1, ir::TypePointer(), 8, false)
+    let unary = ir::InstructionUnary(ir::UnaryNegate(), 1)
+    match ir::instruction_offset(load) {
+        Some(value) => {
+            value;
+            return false
+        }
+        None => {
+        }
+    }
+    match ir::instruction_offset(unary) {
+        Some(value) => {
+            value;
+            false
+        }
+        None => true
+    }
+}
+
+fn main() -> u32 {
+    if memory_operands() == false {
+        return 1
+    }
+    if address_constants() == false {
+        return 2
+    }
+    if owned_symbol_copy(false) == false {
+        return 3
+    }
+    if owned_symbol_copy(true) == false {
+        return 4
+    }
+    if offset_recognition() == false {
+        return 5
+    }
+    42
+}

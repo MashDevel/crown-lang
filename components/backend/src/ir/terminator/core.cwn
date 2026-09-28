@@ -1,0 +1,137 @@
+module ir {
+    struct SwitchCase {
+        value: u64
+        block: usize
+    }
+
+    enum Terminator {
+        TerminatorBranch(usize)
+        TerminatorConditional(usize, usize, usize)
+        TerminatorSwitch(usize, Vec<SwitchCase>, usize)
+        TerminatorReturn(Option<usize>)
+        TerminatorUnreachable
+    }
+
+    fn terminator_operands(terminator: Terminator) -> Vec<usize> {
+        var operands = Vec<usize>.new()
+        match read terminator {
+            TerminatorBranch(target) => {
+                target
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                then_block;
+                else_block
+                operands.push(condition)
+            }
+            TerminatorSwitch(value, cases, default) => {
+                cases;
+                default;
+                operands.push(value)
+            }
+            TerminatorReturn(result) => {
+                match read result {
+                    Some(value) => {
+                        operands.push(value)
+                    }
+                    None => {
+                    }
+                }
+            }
+            TerminatorUnreachable => {
+            }
+        }
+        return move operands
+    }
+
+    fn terminator_targets(terminator: Terminator) -> Vec<usize> {
+        var targets = Vec<usize>.new()
+        match read terminator {
+            TerminatorBranch(target) => {
+                targets.push(target)
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                condition
+                targets.push(then_block)
+                targets.push(else_block)
+            }
+            TerminatorSwitch(value, cases, default) => {
+                value
+                var index: usize = 0
+                while index < cases.length() {
+                    targets.push(cases[index].block)
+                    index = index + 1
+                }
+                targets.push(default)
+            }
+            TerminatorReturn(result) => {
+                result
+            }
+            TerminatorUnreachable => {
+            }
+        }
+        return move targets
+    }
+
+    fn terminator_replace_uses(terminator: write Terminator, from: usize, to: usize) -> void {
+        let empty = Vec<Option<usize>>.new()
+        loan read empty as values {
+            let replacement = Replacement {
+                from: from, to: to, values: values, direct: false
+            }
+            terminator_replace_mapped_uses(terminator, replacement)
+        }
+    }
+
+    fn terminator_replace_mapped_uses(terminator: write Terminator, replacement: Replacement) -> void {
+        match write terminator {
+            TerminatorBranch(target) => {
+                target
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                then_block;
+                else_block
+                replace_value(condition, replacement)
+            }
+            TerminatorSwitch(value, cases, default) => {
+                cases;
+                default
+                replace_value(value, replacement)
+            }
+            TerminatorReturn(result) => {
+                replace_optional_value(result, replacement)
+            }
+            TerminatorUnreachable => {
+            }
+        }
+    }
+
+    fn replace_optional_value(result: write Option<usize>, replacement: Replacement) -> void {
+        match write result {
+            Some(value) => {
+                replace_value(value, replacement)
+            }
+            None => {
+            }
+        }
+    }
+
+    copy struct ConditionalBranch {
+        condition: usize
+        then_block: usize
+        else_block: usize
+    }
+
+    fn block_conditional(block: BasicBlock) -> Option<ConditionalBranch> {
+        match read block.terminator {
+            Some(terminator) => {
+                match read terminator {
+                    TerminatorConditional(condition, then_block, else_block) => Some(ConditionalBranch {
+                            condition: condition, then_block: then_block, else_block: else_block
+                        })
+                    _ => None()
+                }
+            }
+            None => None()
+        }
+    }
+}

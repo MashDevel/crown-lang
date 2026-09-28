@@ -1,0 +1,101 @@
+module sema {
+    fn interface_signatures_match(expected: Function, actual: Function, check: ImplementationCheck) -> bool {
+        if expected.parameters.length() != actual.parameters.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < expected.parameters.length() {
+            var expected_parameter = ParameterType {
+                mode: frontend::ModeRead(), value_type: Invalid()
+            }
+            var actual_parameter = ParameterType {
+                mode: frontend::ModeRead(), value_type: Invalid()
+            }
+            loan read expected.parameters[index] as parameter {
+                expected_parameter.mode = parameter.mode
+                expected_parameter.value_type = replace_self(parameter.value_type, check.target, check.interface_symbol)
+            }
+            loan read actual.parameters[index] as parameter {
+                actual_parameter.mode = parameter.mode
+                actual_parameter.value_type = type_copy(parameter.value_type)
+            }
+            if expected_parameter.mode != actual_parameter.mode {
+                return false
+            }
+            if types_equal(expected_parameter.value_type, actual_parameter.value_type) == false {
+                return false
+            }
+            index = index + 1
+        }
+        let result = replace_self(expected.result, check.target, check.interface_symbol)
+        return types_equal(result, actual.result)
+    }
+
+    fn replace_self(value_type: Type, target: Type, interface_symbol: usize) -> Type {
+        if type_is_self(value_type, interface_symbol) {
+            return type_copy(target)
+        }
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                return BuiltinType(builtin, replace_self_types(arguments, target, interface_symbol))
+            }
+            NamedType(symbol, arguments) => {
+                return NamedType(symbol, replace_self_types(arguments, target, interface_symbol))
+            }
+            ArrayType(element, length) => {
+                loan read element as value {
+                    return ArrayType(Box.new(replace_self(value, target, interface_symbol)), length)
+                }
+            }
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return ScopedFunction(Box.new(replace_self(value, target, interface_symbol)))
+                }
+            }
+            FunctionType(parameters, result) => {
+                let replacement = SelfReplacement {
+                    target: type_copy(target), interface_symbol: interface_symbol
+                }
+                return replace_self_function(parameters, result, replacement)
+            }
+            _ => {
+                return type_copy(value_type)
+            }
+        }
+    }
+
+    fn replace_self_types(values: Vec<Type>, target: Type, interface_symbol: usize) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(replace_self(value, target, interface_symbol))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    struct SelfReplacement {
+        target: Type
+        interface_symbol: usize
+    }
+
+    fn replace_self_function(parameters: Vec<ParameterType>, result: Box<Type>, replacement: SelfReplacement) -> Type {
+        var output = Vec<ParameterType>.with_capacity(parameters.length())
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                output.push(ParameterType {
+                        mode: parameter.mode
+                        value_type: replace_self(parameter.value_type, replacement.target, replacement.interface_symbol)
+                    })
+            }
+            index = index + 1
+        }
+        loan read result as value {
+            let result_type = replace_self(value, replacement.target, replacement.interface_symbol)
+            return FunctionType(move output, Box.new(move result_type))
+        }
+    }
+}

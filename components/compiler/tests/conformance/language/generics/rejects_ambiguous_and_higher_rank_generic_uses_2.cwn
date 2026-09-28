@@ -1,0 +1,7 @@
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+fn main() -> u32 {
+    let action = identity
+    return 0
+}

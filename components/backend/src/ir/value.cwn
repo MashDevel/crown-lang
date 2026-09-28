@@ -1,0 +1,162 @@
+module ir {
+    copy struct WideInteger {
+        low: u64
+        high: u64
+    }
+
+    enum Constant {
+        ConstantInteger(u64)
+        ConstantWideInteger(WideInteger)
+        ConstantFloat32(u32)
+        ConstantFloat64(u64)
+        ConstantNull
+    }
+
+    fn constant_copy(constant: Constant) -> Constant {
+        match read constant {
+            ConstantInteger(value) => {
+                return ConstantInteger(value)
+            }
+            ConstantWideInteger(value) => {
+                return ConstantWideInteger(WideInteger {
+                        low: value.low, high: value.high
+                    })
+            }
+            ConstantFloat32(value) => {
+                return ConstantFloat32(value)
+            }
+            ConstantFloat64(value) => {
+                return ConstantFloat64(value)
+            }
+            ConstantNull => {
+                return ConstantNull()
+            }
+        }
+    }
+
+    fn constant_matches(constant: Constant, value_type: Type) -> bool {
+        match read constant {
+            ConstantInteger(value) => {
+                value;
+                return type_is_integer(value_type)
+            }
+            ConstantWideInteger(value) => {
+                value.low;
+                return type_is_integer(value_type)
+            }
+            ConstantFloat32(value) => {
+                value;
+                return type_is_float32(value_type)
+            }
+            ConstantFloat64(value) => {
+                value;
+                return type_is_float64(value_type)
+            }
+            ConstantNull => {
+                return type_is_pointer(value_type)
+            }
+        }
+    }
+
+    fn type_is_float32(value_type: Type) -> bool {
+        match read value_type {
+            TypeFloat(width) => {
+                return float_width_is_32(width)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_float64(value_type: Type) -> bool {
+        return type_is_float(value_type) && type_is_float32(value_type) == false
+    }
+
+    fn constant_normalized(constant: Constant, value_type: Type) -> Constant {
+        match read constant {
+            ConstantInteger(value) => {
+                return ConstantInteger(value & integer_mask(value_type))
+            }
+            ConstantWideInteger(value) => {
+                return wide_normalized(value, value_type)
+            }
+            ConstantFloat32(value) => {
+                return ConstantFloat32(value)
+            }
+            ConstantFloat64(value) => {
+                return ConstantFloat64(value)
+            }
+            ConstantNull => {
+                return ConstantNull()
+            }
+        }
+    }
+
+    fn integer_mask(value_type: Type) -> u64 {
+        match read value_type {
+            TypeInteger(width) => {
+                let bits = integer_width_bits(width)
+                if bits >= 64 {
+                    return 18446744073709551615
+                }
+                return (u64.from(1) << u64.from(bits)) - 1
+            }
+            _ => {
+                return 18446744073709551615
+            }
+        }
+    }
+
+    fn wide_normalized(value: WideInteger, value_type: Type) -> Constant {
+        match read value_type {
+            TypeVector(lane) => {
+                lane;
+                return ConstantWideInteger(value)
+            }
+            TypeInteger(width) => {
+                if integer_width_bits(width) == 128 {
+                    return ConstantWideInteger(WideInteger {
+                            low: value.low, high: value.high
+                        })
+                }
+                return ConstantWideInteger(WideInteger {
+                        low: value.low & integer_mask(value_type), high: 0
+                    })
+            }
+            TypeVoid => {
+                return ConstantWideInteger(WideInteger {
+                        low: value.low, high: value.high
+                    })
+            }
+            TypeFloat(width) => {
+                width;
+                return ConstantWideInteger(WideInteger {
+                        low: value.low, high: value.high
+                    })
+            }
+            TypePointer => {
+                return ConstantWideInteger(WideInteger {
+                        low: value.low, high: value.high
+                    })
+            }
+            TypeAggregate(size, alignment) => {
+                size;
+                alignment;
+                return ConstantWideInteger(WideInteger {
+                        low: value.low, high: value.high
+                    })
+            }
+        }
+    }
+
+    fn value_present(value: Option<usize>) -> bool {
+        match read value {
+            Some(item) => {
+                item;
+                true
+            }
+            None => false
+        }
+    }
+}

@@ -1,0 +1,6 @@
+extern "c" {
+    fn native_abs(value: read i32) -> i32 = "abs"
+}
+fn main() -> u32 {
+    return u32.from(native_abs(-1))
+}

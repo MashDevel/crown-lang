@@ -1,0 +1,84 @@
+module optimize {
+    struct UnswitchSite {
+        block: usize
+        condition: usize
+        then_block: usize
+        else_block: usize
+    }
+
+    fn unswitch(function: write ir::Function) -> usize {
+        let loops = find_loops(function)
+        for index in 0..loops.length() {
+            if loop_clone_cost_eligible(function, loops[index]) {
+                match unswitch_site(function, loops[index]) {
+                    Some(site) => {
+                        if loop_close_values(function, loops[index]) == false {
+                            continue
+                        }
+                        unswitch_apply(function, loops[index], site)
+                        return 1
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return 0
+    }
+
+    fn unswitch_site(function: ir::Function, natural_loop: NaturalLoop) -> Option<UnswitchSite> {
+        let inside = licm_definitions(function, natural_loop.blocks)
+        for block in 0..function.blocks.length() {
+            if natural_loop.blocks[block] {
+                match read function.blocks[block].terminator {
+                    Some(terminator) => {
+                        match unswitch_terminator(terminator, inside, block) {
+                            Some(site) => {
+                                return Some(move site)
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return None()
+    }
+
+    fn unswitch_terminator(terminator: ir::Terminator, inside: Vec<bool>, block: usize) -> Option<UnswitchSite> {
+        match read terminator {
+            ir::TerminatorConditional(condition, then_block, else_block) => {
+                if inside[condition] || then_block == else_block {
+                    return None()
+                }
+                return Some(UnswitchSite {
+                        block: block, condition: condition, then_block: then_block, else_block: else_block
+                    })
+            }
+            _ => None()
+        }
+    }
+
+    fn unswitch_apply(function: write ir::Function, natural_loop: NaturalLoop, site: UnswitchSite) -> void {
+        let header = memory_loop_header(function, natural_loop.preheader)
+        var mapping = loop_clone_mapping(function, natural_loop.blocks)
+        let left = function.blocks.length()
+        function.blocks.push(ir::basic_block_new())
+        let right = function.blocks.length()
+        function.blocks.push(ir::basic_block_new())
+        mapping.blocks[natural_loop.preheader] = right
+        loop_clone_blocks(function, natural_loop.blocks, mapping)
+        loop_clone_exit_phis(function, natural_loop.blocks, mapping)
+        loop_replace_phi_predecessor(function.blocks[header], natural_loop.preheader, left)
+        function.blocks[left].terminator = Some(ir::TerminatorBranch(header))
+        function.blocks[right].terminator = Some(ir::TerminatorBranch(mapping.blocks[header]))
+        function.blocks[natural_loop.preheader].terminator = Some(ir::TerminatorConditional(site.condition, left, right))
+        function.blocks[site.block].terminator = Some(ir::TerminatorBranch(site.then_block))
+        function.blocks[mapping.blocks[site.block]].terminator = Some(ir::TerminatorBranch(mapping.blocks[site.else_block]))
+        prune_phi_inputs(function)
+        ir::function_prune_unreachable(function)
+    }
+}

@@ -1,0 +1,75 @@
+module x86 {
+    fn codegen_compile_load(program: ir::Program, compiler: write FunctionCompiler, input: take LoadInput) -> Result<void, CodegenError> {
+        return codegen_compile_load_at(program, compiler, LoadAtInput {
+                result: input.result
+                address: input.address
+                offset: 0
+                value_type: input.value_type
+            })
+    }
+
+    fn codegen_compile_load_at(program: ir::Program, compiler: write FunctionCompiler, input: take LoadAtInput) -> Result<void, CodegenError> {
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        var base = Rcx()
+        match codegen_frame_register(compiler.frame, input.address) {
+            Some(register) => {
+                base = register
+            }
+            None => {
+                if register_code(destination) != 11 {
+                    base = R11()
+                }
+                match codegen_load_value(program, compiler, ValueAccess {
+                        value: input.address, register: base
+                    }) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                    }
+                }
+            }
+        }
+        match codegen_width(input.value_type) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(width) => {
+                codegen_emit(compiler, LoadSized(LoadSizedArgs {
+                            destination: destination
+                            base: base
+                            offset: input.offset
+                            width: width
+                            extension: ZeroExtend()
+                        }))
+            }
+        }
+        return codegen_store_normalized_result(program, compiler, ResultStore {
+                result: input.result
+                source: destination
+            })
+    }
+
+    fn codegen_compile_load_indexed(program: ir::Program, compiler: write FunctionCompiler, input: take LoadIndexedInput) -> Result<void, CodegenError> {
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        let address = codegen_load_indexed_address(program, compiler, IndexedValues {
+                base: input.base, index: input.index
+            })?
+        let width = codegen_width(input.value_type)?
+        codegen_emit(compiler, LoadIndexed(LoadIndexedArgs {
+                    destination: destination
+                    base: address.destination
+                    index: address.source
+                    scale: input.scale
+                    width: width
+                    extension: ZeroExtend()
+                }))
+        return codegen_store_normalized_result(program, compiler, ResultStore {
+                result: input.result
+                source: destination
+            })
+    }
+}

@@ -1,0 +1,13 @@
+struct Item {
+    value: u32
+}
+fn combine(first: read Item, second: write Item) -> u32 {
+    second.value = first.value
+    return second.value
+}
+fn main() -> u32 {
+    var item = Item {
+        value: 1
+    }
+    return combine(item, item)
+}

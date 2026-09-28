@@ -1,0 +1,91 @@
+module optimize {
+    fn loop_external_values(function: ir::Function, blocks: Vec<bool>) -> Vec<bool> {
+        let inside = licm_definitions(function, blocks)
+        var needed = false_values(function.values.length())
+        for block in 0..blocks.length() {
+            if blocks[block] {
+                continue
+            }
+            for index in 0..function.blocks[block].instructions.length() {
+                let operands = loop_external_operands(function.blocks[block].instructions[index].kind, blocks)
+                loop_mark_external(operands, inside, needed)
+            }
+            match read function.blocks[block].terminator {
+                Some(terminator) => loop_mark_external(ir::terminator_operands(terminator), inside, needed)
+                None => {
+                }
+            }
+        }
+        return move needed
+    }
+
+    fn loop_external_operands(kind: ir::InstructionKind, blocks: Vec<bool>) -> Vec<usize> {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                var output = Vec<usize>.new()
+                for index in 0..incoming.length() {
+                    if blocks[incoming[index].block] == false {
+                        output.push(incoming[index].value)
+                    }
+                }
+                return move output
+            }
+            _ => ir::instruction_operands(kind)
+        }
+    }
+
+    fn loop_mark_external(values: Vec<usize>, inside: Vec<bool>, needed: write Vec<bool>) -> void {
+        for index in 0..values.length() {
+            if inside[values[index]] {
+                needed[values[index]] = true
+            }
+        }
+    }
+
+    fn loop_replace_external_values(function: write ir::Function, blocks: Vec<bool>, mapping: Vec<Option<usize>>) -> void {
+        loan read mapping as values {
+            let replacement = ir::Replacement {
+                from: 0, to: 0, values: values, direct: false
+            }
+            for block in 0..blocks.length() {
+                if blocks[block] {
+                    continue
+                }
+                for index in 0..function.blocks[block].instructions.length() {
+                    loop_replace_external_instruction(function.blocks[block].instructions[index].kind, blocks, replacement)
+                }
+                match write function.blocks[block].terminator {
+                    Some(terminator) => ir::terminator_replace_mapped_uses(terminator, replacement)
+                    None => {
+                    }
+                }
+            }
+        }
+    }
+
+    fn loop_replace_external_instruction(kind: write ir::InstructionKind, blocks: Vec<bool>, replacement: ir::Replacement) -> void {
+        match write kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                for index in 0..incoming.length() {
+                    if blocks[incoming[index].block] == false {
+                        ir::replace_value(incoming[index].value, replacement)
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                return
+            }
+            _ => {
+            }
+        }
+        ir::instruction_replace_mapped_uses(kind, replacement)
+    }
+}

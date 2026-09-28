@@ -1,0 +1,130 @@
+copy struct ViewExpected {
+    equal: bool, prefix: bool, suffix: bool, contains: bool, count: usize, less: bool
+}
+struct ViewCase {
+    value: Text, needle: Text, expected: ViewExpected
+}
+
+fn test_text_views() -> u32 {
+    let cases = [
+        ViewCase {
+            value: "", needle: "", expected: ViewExpected {
+                equal: true, prefix: true, suffix: true, contains: true, count: 0, less: false
+            }
+        },
+        ViewCase {
+            value: "a", needle: "", expected: ViewExpected {
+                equal: false, prefix: true, suffix: true, contains: true, count: 0, less: false
+            }
+        },
+        ViewCase {
+            value: "", needle: "a", expected: ViewExpected {
+                equal: false, prefix: false, suffix: false, contains: false, count: 0, less: true
+            }
+        },
+        ViewCase {
+            value: "ababa", needle: "aba", expected: ViewExpected {
+                equal: false, prefix: true, suffix: true, contains: true, count: 2, less: false
+            }
+        },
+        ViewCase {
+            value: "ababa", needle: "bab", expected: ViewExpected {
+                equal: false, prefix: false, suffix: false, contains: true, count: 1, less: true
+            }
+        },
+        ViewCase {
+            value: "ababa", needle: "z", expected: ViewExpected {
+                equal: false, prefix: false, suffix: false, contains: false, count: 0, less: true
+            }
+        },
+        ViewCase {
+            value: "é\0λ", needle: "λ", expected: ViewExpected {
+                equal: false, prefix: false, suffix: true, contains: true, count: 1, less: true
+            }
+        },
+        ViewCase {
+            value: "aaaa", needle: "aa", expected: ViewExpected {
+                equal: false, prefix: true, suffix: true, contains: true, count: 3, less: false
+            }
+        },
+        ViewCase {
+            value: "abc", needle: "abd", expected: ViewExpected {
+                equal: false, prefix: false, suffix: false, contains: false, count: 0, less: true
+            }
+        },
+        ViewCase {
+            value: "ab", needle: "ab", expected: ViewExpected {
+                equal: true, prefix: true, suffix: true, contains: true, count: 1, less: false
+            }
+        }
+    ]
+    return text_view_cases(cases)
+}
+
+fn text_view_cases(cases: read Slice<ViewCase>) -> u32 {
+    for index in 0..cases.length() {
+        let status = text_view_case(cases[index]);
+        if status != 0 {
+            return status
+        }
+    }
+    return text_view_boundaries()
+}
+
+fn text_view_case(value: ViewCase) -> u32 {
+    return text_view_expected(value.value, value.needle, value.expected)
+}
+
+fn text_view_expected(value: TextView, needle: TextView, expected: ViewExpected) -> u32 {
+    if std::text::equal(value, needle) != expected.equal {
+        return 1
+    }
+    if std::text::starts(value, needle) != expected.prefix {
+        return 2
+    }
+    if std::text::ends(value, needle) != expected.suffix {
+        return 3
+    }
+    if std::text::contains(value, needle) != expected.contains {
+        return 4
+    }
+    if std::text::occurrences(value, needle) != expected.count {
+        return 5
+    }
+    if std::text::less(value, needle) != expected.less {
+        return 6
+    }
+    return 0
+}
+
+fn text_view_boundaries() -> u32 {
+    let value = "é\0λ"
+    loan read value as bytes {
+        if std::text::equal(std::text::slice(bytes, 2, 3), "\0") == false {
+            return 8
+        }
+        let empty = std::text::slice(bytes, bytes.length(), bytes.length())
+        if empty.length() != 0 {
+            return 9
+        }
+        if std::text::view_at(bytes, bytes, bytes.length() + 1) {
+            return 10
+        }
+        if std::text::hash(bytes) != std::text::hash(value) {
+            return 11
+        }
+        loan read empty as needle {
+            return empty_view_boundary(bytes, needle)
+        }
+    }
+}
+
+fn empty_view_boundary(value: TextView, empty: TextView) -> u32 {
+    if std::text::view_at(value, empty, value.length()) == false {
+        return 12
+    }
+    if std::text::view_at(value, empty, value.length() + 1) {
+        return 13
+    }
+    return 0
+}

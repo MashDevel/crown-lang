@@ -1,0 +1,18 @@
+{
+  "seed": 20260905,
+  "origin": "Independent Python integer, IEEE-width float, and state-machine reference models captured before removal of Python tooling",
+  "tables": {
+    "integers": {
+      "rows": 13425,
+      "sha256": "4372fe81cb7f7d7a8763e41f583beb0a04479414b09103472a5766c51de4884f"
+    },
+    "floats": {
+      "rows": 4788,
+      "sha256": "963382ec68a96f84d553aa6a949ef57fa6df05c1c0b4108996aedbf02d78fecf"
+    },
+    "state": {
+      "rows": 109,
+      "sha256": "6d1626560bc450fcfc62c7a352158ee6466ee178e1723f8f4740845e7f8832cb"
+    }
+  }
+}

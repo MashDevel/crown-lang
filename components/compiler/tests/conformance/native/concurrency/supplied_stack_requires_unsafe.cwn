@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let created = spawn(0, 0) move {}
+    created
+    return 0
+}

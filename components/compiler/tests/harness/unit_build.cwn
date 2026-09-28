@@ -1,0 +1,69 @@
+module harness {
+    fn check_unit_case(cases: Vec<Case>, index: usize, environment: Environment, builds: Text, coverage: Text) -> Result<void, Text> {
+        let members = unit_members(cases, index)
+        if members.length() < 2 {
+            return check_case(cases[index], environment)
+        }
+        var sources = unit_sources(cases, members, environment.root)?
+        append_unit_roots(sources.paths, cases[index], environment.root)?
+        let grouped = unit_environment(environment, builds, coverage, sources.key)
+        let binary = build_unit_program(grouped, sources.paths, cases[index].max_instances)?
+        let output = toolchain::path_join(environment.output, "program")
+        toolchain::copy_file(binary, output)?
+        toolchain::executable(output)?
+        return execute_case(cases[index], environment, output, Some(cases[index].name.clone()))
+    }
+
+    fn unit_environment(environment: Environment, builds: Text, coverage: Text, key: Text) -> Environment {
+        let directory = if coverage.length() == 0 {
+            ""
+        } else {
+            toolchain::path_join(coverage, toolchain::path_join("groups", key))
+        }
+        return Environment {
+            compiler: environment.compiler.clone(), root: environment.root.clone(), output: toolchain::path_join(builds, key), coverage: move directory
+        }
+    }
+
+    fn build_unit_program(environment: Environment, sources: Vec<Text>, budget: u64) -> Result<Text, Text> {
+        let lock = toolchain::lock_file(toolchain::path_join(environment.output, "build.lock"))?
+        let request = test_build(environment, sources, budget)
+        if unit_build_ready(request.output, environment.coverage) {
+            return Ok(request.output.clone())
+        }
+        let input = toolchain::build_fingerprint(request)?
+        let binary = publish_unit_program(environment, request, input)?
+        lock;
+        return Ok(move binary)
+    }
+
+    fn publish_unit_program(environment: Environment, request: toolchain::BuildRequest, input: Text) -> Result<Text, Text> {
+        let binary = if environment.coverage.length() == 0 {
+            build_program(environment, request.project.sources, request.max_instances)?
+        } else {
+            toolchain::build_project(request)?
+        }
+        toolchain::record(binary, input)?
+        if environment.coverage.length() != 0 {
+            toolchain::record(toolchain::path_join(environment.coverage, "map.json"), input)?
+        }
+        toolchain::write_text(std::text::joined(binary, ".ready"), input)?
+        return Ok(move binary)
+    }
+
+    fn unit_build_ready(binary: Text, directory: Text) -> bool {
+        match toolchain::read_text(std::text::joined(binary, ".ready")) {
+            Ok(input) => {
+                return toolchain::fresh(binary, input) && unit_coverage_ready(directory, input)
+            }
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+    }
+
+    fn unit_coverage_ready(directory: Text, input: Text) -> bool {
+        return directory.length() == 0 || toolchain::fresh(toolchain::path_join(directory, "map.json"), input)
+    }
+}

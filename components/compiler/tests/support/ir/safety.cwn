@@ -1,0 +1,74 @@
+fn safety_append(function: write ir::Function, block: usize, kind: take ir::InstructionKind) -> Result<usize, u32> {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    return Ok(id)
+                }
+                None => {
+                    return Ok(0)
+                }
+            }
+        }
+        Err(error) => {
+            error;
+            return Err(90)
+        }
+    }
+}
+
+fn safety_block(function: write ir::Function) -> Result<usize, u32> {
+    match ir::function_add_block(function) {
+        Ok(block) => {
+            return Ok(block)
+        }
+        Err(error) => {
+            error;
+            return Err(91)
+        }
+    }
+}
+
+fn safety_terminate(function: write ir::Function, block: usize, terminator: take ir::Terminator) -> Result<void, u32> {
+    match ir::function_terminate(function, block, move terminator) {
+        Ok(done) => {
+            done;
+            return Ok(())
+        }
+        Err(error) => {
+            error;
+            return Err(92)
+        }
+    }
+}
+
+fn safety_require(condition: bool, error: u32) -> Result<void, u32> {
+    if condition == false {
+        return Err(error)
+    }
+    return Ok(())
+}
+
+fn safety_status(result: take Result<void, u32>) -> u32 {
+    match read result {
+        Ok(done) => {
+            done;
+            return 42
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}
+
+fn safety_integer(function: write ir::Function, width: ir::IntegerWidth, value: u64) -> usize {
+    return ir::function_constant(function, ir::TypeInteger(width), ir::ConstantInteger(value))
+}
+
+fn safety_return_equal(function: write ir::Function, block: usize, value: usize, expected: usize) -> Result<void, u32> {
+    let equal = safety_append(function, block, ir::InstructionCompare(ir::CompareEqual(), value, expected))?
+    let zero = safety_integer(function, ir::IntegerWidth32(), 0)
+    let one = safety_integer(function, ir::IntegerWidth32(), 1)
+    let result = safety_append(function, block, ir::InstructionSelect(equal, zero, one))?
+    return safety_terminate(function, block, ir::TerminatorReturn(Some(result)))
+}

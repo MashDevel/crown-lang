@@ -1,0 +1,11 @@
+fn apply<T, R>(action: fn(read T) -> R, value: T) -> R {
+    return action(value)
+}
+fn action(value: u64) -> u64 {
+    return value
+}
+fn main() -> u32 {
+    let value: u32 = 1;
+    apply(action, value);
+    return 0
+}

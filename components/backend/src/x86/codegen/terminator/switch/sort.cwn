@@ -1,0 +1,85 @@
+module x86 {
+    fn codegen_sort_switch_edges(edges: write Vec<SwitchEdge>) -> void {
+        var index: usize = 0
+        while index < edges.length() {
+            var best = index
+            var candidate = index + 1
+            while candidate < edges.length() {
+                if edges[candidate].value < edges[best].value {
+                    best = candidate
+                }
+                candidate = candidate + 1
+            }
+            if best != index {
+                var left = codegen_switch_edge_at(edges, index)
+                var right = codegen_switch_edge_at(edges, best)
+                edges[index] = move right
+                edges[best] = move left
+            }
+            index = index + 1
+        }
+    }
+
+    fn codegen_dense_switch(edges: Vec<SwitchEdge>, default: LocalLabel) -> Option<DenseSwitch> {
+        if edges.length() < 4 {
+            return None()
+        }
+        let minimum = edges[0].value
+        let maximum = edges[edges.length() - 1].value
+        if maximum < minimum {
+            return None()
+        }
+        let difference = maximum - minimum
+        if difference == u64.from_bits(-1) {
+            return None()
+        }
+        let span = difference + 1
+        if span > 2147483648 {
+            return None()
+        }
+        let length = usize.from(span)
+        if edges.length() > usize.from_bits(-1) / 2 {
+            return None()
+        }
+        if length > edges.length() * 2 {
+            return None()
+        }
+        var targets = Vec<LocalLabel>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            targets.push(local_label_copy(default));
+            index = index + 1
+        }
+        index = 0
+        while index < edges.length() {
+            let target = usize.from(edges[index].value - minimum)
+            let vacant = codegen_switch_target_equal(targets, target, default)
+            if vacant == false {
+                return None()
+            }
+            targets[target] = codegen_switch_edge_label(edges, index)
+            index = index + 1
+        }
+        return Some(DenseSwitch {
+                minimum: minimum, targets: move targets
+            })
+    }
+
+    fn codegen_switch_edge_at(edges: Vec<SwitchEdge>, index: usize) -> SwitchEdge {
+        loan read edges[index] as edge {
+            return codegen_switch_edge_copy(edge)
+        }
+    }
+
+    fn codegen_switch_target_equal(targets: Vec<LocalLabel>, index: usize, target: LocalLabel) -> bool {
+        loan read targets[index] as label {
+            return local_label_equal(label, target)
+        }
+    }
+
+    fn codegen_switch_edge_label(edges: Vec<SwitchEdge>, index: usize) -> LocalLabel {
+        loan read edges[index] as edge {
+            return local_label_copy(edge.label)
+        }
+    }
+}

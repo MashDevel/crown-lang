@@ -1,0 +1,37 @@
+fn isolation(root: Text) -> Result<void, Text> {
+    let repository = toolchain::path_join(root, "repository")
+    let global = toolchain::path_join(root, "global-bootstrap")
+    let sentinel = testing::write_file(global, "crown", "preserved bootstrap")?
+    let wrapper = testing::write_file(repository, "bootstrap/crown", "#!/bin/sh\nset -eu\nmkdir -p \"$CROWN_BOOTSTRAP_DIR\"\nprintf 'reference compiler' > \"$CROWN_BOOTSTRAP_DIR/crown\"\nprintf 'crown 0.1.0\\n'\n")?
+    toolchain::executable(wrapper)?
+    let previous_root = toolchain::environment("CROWN_ROOT")
+    let previous_cache = toolchain::environment("CROWN_BOOTSTRAP_DIR")
+    toolchain::set_environment("CROWN_ROOT", repository)?
+    toolchain::set_environment("CROWN_BOOTSTRAP_DIR", global)?
+    let result: Result<Text, Text> = testing_recovery::current_digest(root)
+    toolchain::set_environment("CROWN_ROOT", previous_root)?
+    toolchain::set_environment("CROWN_BOOTSTRAP_DIR", previous_cache)?
+    let digest = match move result {
+        Ok(value) => move value,
+        Err(error) => {
+            return Err(move error)
+        }
+    }
+    return verify_isolated_cache(root, sentinel, digest)
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    return isolation(toolchain::temporary_path(temporary))
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn verify_isolated_cache(root: Text, sentinel: Text, digest: Text) -> Result<void, Text> {
+    testing::expect(std::text::equal(toolchain::read_text(sentinel)?, "preserved bootstrap"), "reference recovery preserves configured bootstrap")?
+    let reference = toolchain::path_join(root, "reference-bootstrap/crown")
+    testing::expect(std::text::equal(toolchain::read_text(reference)?, "reference compiler"), "reference recovery uses owned temporary cache")?
+    return testing::expect(std::text::equal(digest, toolchain::digest(reference)?), "reference recovery returns isolated compiler digest")
+}

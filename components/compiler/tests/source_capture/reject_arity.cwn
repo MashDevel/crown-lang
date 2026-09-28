@@ -1,0 +1,1 @@
+fn main() -> u32 { source_call(1); return 0 }

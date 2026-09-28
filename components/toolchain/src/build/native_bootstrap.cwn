@@ -1,0 +1,15 @@
+module toolchain {
+    fn native_bootstrap_stage(request: BootstrapRequest, seed: Text, sources: Vec<Text>, directory: Text) -> Result<Text, Text> {
+        let binary = path_join(directory, "compiler")
+        let verified = bootstrap_fingerprint(seed, sources, true)?
+        if request.force == false && fresh(request.compiler, verified) {
+            copy_cached_compiler(request.compiler, binary, verified)?
+            return Ok(move binary)
+        }
+        let build = CompileRequest {
+            compiler: request.compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(sources), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
+        }
+        compile_executable(build, Vec<Text>.new(), Vec<Text>.new())?
+        return Ok(move binary)
+    }
+}

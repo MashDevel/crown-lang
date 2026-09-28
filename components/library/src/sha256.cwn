@@ -1,0 +1,105 @@
+module std::sha256 {
+    const constants: [u32; 64] = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580, 3835390401, 4022224774, 264347078, 604807628, 770255983, 1249150122, 1555081692, 1996064986, 2554220882, 2821834349, 2952996808, 3210313671, 3336571891, 3584528711, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700, 1986661051, 2177026350, 2456956037, 2730485921, 2820302411, 3259730800, 3345764771, 3516065817, 3600352804, 4094571909, 275423344, 430227734, 506948616, 659060556, 883997877, 958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, 2227730452, 2361852424, 2428436474, 2756734187, 3204031479, 3329325298]
+    struct Sha256 {
+        state: [u32; 8], block: [u8; 64], used: usize, length: u64
+    }
+    fn new() -> Sha256 {
+        return Sha256 {
+            state: [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225], block: [0; 64], used: 0, length: 0
+        }
+    }
+    fn rotate(value: u32, bits: u32) -> u32 {
+        return (value >> bits) |(value <<(32 - bits))
+    }
+    fn schedule(block: [u8; 64]) -> [u32; 64] {
+        var words: [u32; 64] = [0; 64]
+        for i in 0..16 {
+            let at = i * 4
+            words[i] = u32.from(block[at]) << 24 | u32.from(block[at + 1]) << 16 | u32.from(block[at + 2]) << 8 | u32.from(block[at + 3])
+        }
+        for i in 16..64 {
+            let a = words[i - 15]
+            let b = words[i - 2]
+            let s = rotate(a, 7) ^ rotate(a, 18) ^(a >> 3)
+            let t = rotate(b, 17) ^ rotate(b, 19) ^(b >> 10)
+            var sum = words[i - 16].wrapping_add(s)
+            sum = sum.wrapping_add(words[i - 7])
+            words[i] = sum.wrapping_add(t)
+        }
+        return words
+    }
+    fn compress(hash: write Sha256) -> void {
+        let words = schedule(hash.block)
+        var s = hash.state
+        for i in 0..64 {
+            let choose = (s[4] & s[5]) ^(~s[4] & s[6])
+            let upper = rotate(s[4], 6) ^ rotate(s[4], 11) ^ rotate(s[4], 25)
+            var first = s[7].wrapping_add(upper)
+            first = first.wrapping_add(choose)
+            first = first.wrapping_add(constants[i])
+            first = first.wrapping_add(words[i])
+            let lower = rotate(s[0], 2) ^ rotate(s[0], 13) ^ rotate(s[0], 22)
+            let majority = (s[0] & s[1]) ^(s[0] & s[2]) ^(s[1] & s[2])
+            let second = lower.wrapping_add(majority)
+            s = [first.wrapping_add(second), s[0], s[1], s[2], s[3].wrapping_add(first), s[4], s[5], s[6]]
+        }
+        for i in 0..8 {
+            hash.state[i] = hash.state[i].wrapping_add(s[i])
+        }
+        hash.used = 0
+    }
+    fn append_byte(hash: write Sha256, byte: u8) -> void {
+        hash.block[hash.used] = byte
+        hash.used = hash.used + 1
+        if hash.used == 64 {
+            compress(hash)
+        }
+    }
+    fn update(hash: write Sha256, bytes: Vec<u8>) -> void {
+        hash.length = hash.length + u64.from(bytes.length())
+        var offset: usize = 0
+        while offset < bytes.length() {
+            offset = offset + update_block(hash, bytes, offset)
+        }
+    }
+    fn update_block(hash: write Sha256, bytes: Vec<u8>, offset: usize) -> usize {
+        let remaining = bytes.length() - offset
+        let available = usize.from(64) - hash.used
+        let count = if remaining < available {
+            remaining
+        } else {
+            available
+        }
+        for index in 0..count {
+            hash.block[hash.used + index] = bytes[offset + index]
+        }
+        hash.used = hash.used + count
+        if hash.used == 64 {
+            compress(hash)
+        }
+        return count
+    }
+    fn finish(hash: write Sha256) -> Vec<u8> {
+        let bits = hash.length * 8
+        append_byte(hash, 128)
+        while hash.used != 56 {
+            append_byte(hash, 0)
+        }
+        for i in 0..8 {
+            append_byte(hash, u8.from((bits >> u64.from((usize.from(7) - i) * 8)) & 255))
+        }
+        var out = Vec<u8>.new()
+        for i in 0..8 {
+            for byte in 0..4 {
+                let shift = 24 - u32.from(byte) * 8
+                out.push(u8.from((hash.state[i] >> shift) & 255))
+            }
+        }
+        return move out
+    }
+    fn digest(data: Vec<u8>) -> Vec<u8> {
+        var hash = new()
+        update(hash, data)
+        return finish(hash)
+    }
+}

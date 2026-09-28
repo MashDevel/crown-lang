@@ -1,0 +1,78 @@
+module x86 {
+    struct AffinityState {
+        eligible: Vec<bool>
+        output: Vec<ir::BitSet>
+    }
+
+    fn codegen_affinities(function: ir::Function, eligible: Vec<bool>) -> Vec<ir::BitSet> {
+        var state = AffinityState {
+            eligible: ir::flags_copy(eligible)
+            output: ir::bitset_graph(function.values.length())
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        if state.eligible[result] {
+                            codegen_instruction_affinity(result, function.blocks[block].instructions[index].kind, state)
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return replace(state.output, Vec<ir::BitSet>.new())
+    }
+
+    fn codegen_instruction_affinity(result: usize, kind: ir::InstructionKind, state: write AffinityState) -> void {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                operator;
+                right;
+                codegen_add_affinity(result, left, state)
+            }
+            ir::InstructionUnary(operator, value) => {
+                operator;
+                codegen_add_affinity(result, value, state)
+            }
+            ir::InstructionCast(operator, value, target) => {
+                operator;
+                target;
+                codegen_add_affinity(result, value, state)
+            }
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryOffset(base, offset) => {
+                        offset;
+                        codegen_add_affinity(result, base, state)
+                    }
+                    _ => {
+                    }
+                }
+            }
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                var index: usize = 0
+                while index < incoming.length() {
+                    codegen_add_affinity(result, incoming[index].value, state)
+                    index = index + 1
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn codegen_add_affinity(left: usize, right: usize, state: write AffinityState) -> void {
+        if left == right || state.eligible[right] == false {
+            return
+        }
+        ir::bitset_insert(state.output[left], right)
+        ir::bitset_insert(state.output[right], left)
+    }
+}

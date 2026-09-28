@@ -1,0 +1,88 @@
+module profile {
+    fn prepare(program: write ir::Program, options: toolchain::OptimizationOptions, source: Text) -> Result<u64, Text> {
+        if options.generate.length() == 0 && options.use_profile.length() == 0 {
+            return Ok(0)
+        }
+        let metadata = layout(program, source)
+        let count = block_count(program)
+        if count == 0 || count > 536870911 {
+            return Err("profile counter count is out of range")
+        }
+        if options.generate.length() != 0 {
+            prepare_directory(options.generate, metadata)?
+            instrument(program)
+            return Ok(u64.from(count) * 8)
+        }
+        let expected = toolchain::read_text(toolchain::path_join(options.use_profile, "profile.json"))?
+        if std::text::equal(expected, metadata) == false {
+            return Err("profile does not match this source and optimized control flow")
+        }
+        let counts = read_counts(options.use_profile, count)?
+        apply_counts(program, counts)
+        return Ok(0)
+    }
+
+    fn prepare_directory(directory: Text, metadata: Text) -> Result<void, Text> {
+        toolchain::make_directory(directory)?
+        let path = toolchain::path_join(directory, "profile.json")
+        if toolchain::exists(path) {
+            if std::text::equal(toolchain::read_text(path)?, metadata) == false {
+                return Err("profile directory belongs to a different build; choose a new directory")
+            }
+            return Ok(())
+        }
+        let entries = toolchain::directory_entries(directory)?
+        if entries.length() != 0 {
+            return Err("profile directory must be empty")
+        }
+        return toolchain::write_text(path, metadata)
+    }
+
+    fn read_counts(directory: Text, count: usize) -> Result<Vec<u64>, Text> {
+        var output = Vec<u64>.with_capacity(count)
+        for index in 0..count {
+            output.push(0)
+        }
+        let entries = toolchain::directory_entries(directory)?
+        var runs: usize = 0
+        for index in 0..entries.length() {
+            if std::text::starts(toolchain::file_name(entries[index]), "run.") {
+                let bytes = toolchain::read_bytes(entries[index])?
+                merge_counts(output, bytes)?
+                runs = runs + 1
+            }
+        }
+        if runs == 0 {
+            return Err("profile directory has no training runs")
+        }
+        return Ok(move output)
+    }
+
+    fn merge_counts(output: write Vec<u64>, bytes: Vec<u8>) -> Result<void, Text> {
+        if bytes.length() != output.length() * 8 {
+            return Err("profile run has an invalid counter size")
+        }
+        for index in 0..output.length() {
+            var value: u64 = 0
+            for byte in 0..8 {
+                value = value |(u64.from(bytes[index * 8 + byte]) << u64.from(byte * 8))
+            }
+            output[index] = if value > 18446744073709551615 - output[index] {
+                18446744073709551615
+            } else {
+                output[index] + value
+            }
+        }
+        return Ok(())
+    }
+
+    fn apply_counts(program: write ir::Program, counts: Vec<u64>) -> void {
+        var cursor: usize = 0
+        for index in 0..program.functions.length() {
+            for block in 0..program.functions[index].blocks.length() {
+                program.functions[index].blocks[block].frequency = counts[cursor]
+                cursor = cursor + 1
+            }
+        }
+    }
+}

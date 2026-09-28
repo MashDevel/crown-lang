@@ -1,0 +1,14 @@
+resource Owner {
+    value: Vec<u8>
+    drop {
+    }
+}
+fn invalid(owner: take Owner) -> void {
+    let {
+        value
+    } = move owner
+    value
+}
+fn main() -> u32 {
+    return 0
+}

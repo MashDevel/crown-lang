@@ -1,0 +1,45 @@
+module native::pipewire {
+    copy struct StreamConnect {
+        stream: RawPtr<u8>
+        direction: u32
+        target: u32
+        flags: u32
+        parameters: RawPtr<RawPtr<u32>>
+        count: u32
+    }
+
+    unsafe fn stream_connect(library: std::dylib::Library, request: StreamConnect) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u32, read u32, read u32, read RawPtr<RawPtr<u32>>, read u32) -> i32>.cast(std::dylib::slot(library, 8)).read()
+            return action(request.stream, request.direction, request.target, request.flags, request.parameters, request.count)
+        }
+    }
+
+    unsafe fn stream_destroy(library: std::dylib::Library, stream: RawPtr<u8>) -> void {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 9)).read()
+            return action(stream)
+        }
+    }
+
+    unsafe fn stream_dequeue(library: std::dylib::Library, stream: RawPtr<u8>) -> RawPtr<Buffer> {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> RawPtr<Buffer>>.cast(std::dylib::slot(library, 10)).read()
+            return action(stream)
+        }
+    }
+
+    unsafe fn stream_queue(library: std::dylib::Library, stream: RawPtr<u8>, buffer: RawPtr<Buffer>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<Buffer>) -> i32>.cast(std::dylib::slot(library, 11)).read()
+            return action(stream, buffer)
+        }
+    }
+
+    unsafe fn stream_state(library: std::dylib::Library, stream: RawPtr<u8>, error: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read RawPtr<u8>) -> i32>.cast(std::dylib::slot(library, 12)).read()
+            return action(stream, error)
+        }
+    }
+}

@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let maximum: u8 = 255
+    let overflowed = maximum + 1
+    return u32.from(overflowed)
+}

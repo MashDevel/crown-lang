@@ -1,0 +1,107 @@
+module sema {
+    fn checker_view_field(checker: write Checker, value: frontend::Expression, expected: Type) -> void {
+        if type_contains_view(checker.symbols, expected) == false {
+            checker_value(checker, value, expected);
+            return
+        }
+        match checker_expression_expected(checker, value, expected) {
+            Some(info) => {
+                if assignable(checker.symbols, expected, info.value_type) == false {
+                    checker_error(checker, "a borrowed view cannot escape its source scope or be reassigned")
+                }
+            }
+            None => {
+            }
+        }
+        match place_path(value) {
+            Some(path) => {
+                checker.place_loans.push(PlaceLoan {
+                        depth: checker.scopes.length(), path: move path, mode: frontend::LoanRead(), origin: value.span, duration: LoanScopeEnd(), requested: frontend::LoanRead()
+                    })
+                return
+            }
+            None => {
+            }
+        }
+        if view_constructor(value) {
+            return
+        }
+        checker_error(checker, "a borrowed view cannot escape its source scope or be reassigned")
+    }
+
+    fn view_path_access(checker: write Checker, path: frontend::Path, usage: PathUse) -> bool {
+        if view_writable_path(usage) == false {
+            return true
+        }
+        var root_type = Invalid()
+        loan read path.segments[0] as root {
+            match checker_find_variable(checker, root) {
+                Some(key) => {
+                    let variable = checker_variable_copy(checker, key);
+                    root_type = type_copy(variable.value_type)
+                }
+                None => {
+                    return true
+                }
+            }
+        }
+        var in_view = type_is_view(checker.symbols, root_type)
+        var index: usize = 1
+        while index < path.segments.length() {
+            var next: Option<Type> = None()
+            loan read path.segments[index] as field {
+                next = checker_field_type(checker, root_type, field)
+            }
+            match move next {
+                Some(value_type) => {
+                    root_type = move value_type
+                }
+                None => {
+                    return false
+                }
+            }
+            let view_value = type_is_view(checker.symbols, root_type)
+            in_view = in_view || view_value
+            if in_view && readonly_view_field(checker.symbols, root_type) {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn view_constructor(value: frontend::Expression) -> bool {
+        return view_constructor_kind(value.kind)
+    }
+
+    fn view_constructor_kind(kind: frontend::ExpressionKind) -> bool {
+        match read kind {
+            frontend::ExpressionStruct(value_type, fields) => {
+                value_type;
+                fields;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn view_writable_path(usage: PathUse) -> bool {
+        match read usage {
+            WritePath => {
+                return true
+            }
+            ReassignPath => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn readonly_view_field(symbols: Symbols, value_type: Type) -> bool {
+        return type_direct_view(symbols, value_type) && type_is_view(symbols, value_type) == false
+    }
+}

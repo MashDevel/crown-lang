@@ -1,0 +1,12 @@
+copy struct Point {
+    x: u32
+}
+fn add(left: take Point, right: take Point) -> u32 {
+    return left.x + right.x
+}
+fn main() -> u32 {
+    let point = Point {
+        x: 14
+    }
+    return add(point, point) + point.x
+}

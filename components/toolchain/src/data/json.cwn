@@ -1,0 +1,166 @@
+module toolchain {
+    enum JsonValue {
+        JsonNull, JsonBool(bool), JsonNumber(Text), JsonString(Text), JsonArray(Vec<usize>), JsonObject(Vec<JsonField>)
+    }
+    struct JsonField {
+        name: Text, value: usize
+    }
+    struct Json {
+        values: Vec<JsonValue>, root: usize
+    }
+
+    copy struct JsonDepth {
+        current: usize, limit: usize
+    }
+
+    fn json(source: take Text) -> Result<Json, Text> {
+        return json_bounded(move source, 64)
+    }
+
+    fn json_bounded(source: take Text, limit: usize) -> Result<Json, Text> {
+        var input = cursor(move source)
+        var result = Json {
+            values: Vec<JsonValue>.new(), root: 0
+        }
+        result.root = json_value(input, result, JsonDepth {
+                current: 0, limit: limit
+            })?
+        whitespace(input)
+        if input.position != input.source.length() {
+            return Err(parse_error(input, "unexpected trailing data"))
+        }
+        return Ok(move result)
+    }
+
+    fn json_value(input: write Cursor, output: write Json, depth: JsonDepth) -> Result<usize, Text> {
+        if depth.current >= depth.limit {
+            return Err(std::text::joined("JSON nesting exceeds ", std::text::decimal(u64.from(depth.limit))))
+        }
+        whitespace(input)
+        let byte = peek(input)
+        if byte == 123 {
+            return json_object(input, output, JsonDepth {
+                    current: depth.current + 1, limit: depth.limit
+                })
+        }
+        if byte == 91 {
+            return json_array(input, output, JsonDepth {
+                    current: depth.current + 1, limit: depth.limit
+                })
+        }
+        let value = json_scalar(input)?
+        return Ok(json_add(output, move value))
+    }
+
+    fn json_scalar(input: write Cursor) -> Result<JsonValue, Text> {
+        let byte = peek(input)
+        if byte == 34 {
+            return Ok(JsonString(quoted(input)?))
+        }
+        if byte == 116 {
+            literal(input, "true")?;
+            return Ok(JsonBool(true))
+        }
+        if byte == 102 {
+            literal(input, "false")?;
+            return Ok(JsonBool(false))
+        }
+        if byte == 110 {
+            literal(input, "null")?;
+            return Ok(JsonNull())
+        }
+        return Ok(JsonNumber(json_number(input)?))
+    }
+
+    fn json_add(output: write Json, value: take JsonValue) -> usize {
+        let index = output.values.length()
+        output.values.push(move value)
+        return index
+    }
+
+    fn json_array(input: write Cursor, output: write Json, depth: JsonDepth) -> Result<usize, Text> {
+        require_byte(input, 91)?
+        var values = Vec<usize>.new()
+        whitespace(input)
+        if consumed(input, 93) {
+            return Ok(json_add(output, JsonArray(move values)))
+        }
+        while true {
+            values.push(json_value(input, output, depth)?)
+            whitespace(input)
+            if consumed(input, 93) {
+                return Ok(json_add(output, JsonArray(move values)))
+            }
+            require_byte(input, 44)?
+        }
+        return Err("unterminated JSON array")
+    }
+
+    fn json_object(input: write Cursor, output: write Json, depth: JsonDepth) -> Result<usize, Text> {
+        require_byte(input, 123)?
+        var fields = Vec<JsonField>.new()
+        whitespace(input)
+        if consumed(input, 125) {
+            return Ok(json_add(output, JsonObject(move fields)))
+        }
+        while true {
+            whitespace(input)
+            let name = quoted(input)?
+            if json_field_exists(fields, name) {
+                return Err(std::text::joined("duplicate JSON key: ", name))
+            }
+            whitespace(input)
+            require_byte(input, 58)?
+            let value = json_value(input, output, depth)?
+            fields.push(JsonField {
+                    name: move name, value: value
+                })
+            whitespace(input)
+            if consumed(input, 125) {
+                return Ok(json_add(output, JsonObject(move fields)))
+            }
+            require_byte(input, 44)?
+        }
+        return Err("unterminated JSON object")
+    }
+
+    fn json_field_exists(fields: Vec<JsonField>, name: Text) -> bool {
+        for index in 0..fields.length() {
+            if std::text::equal(fields[index].name, name) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn json_number(input: write Cursor) -> Result<Text, Text> {
+        let start = input.position
+        consumed(input, 45)
+        if consumed(input, 48) == false {
+            json_digits(input)?
+        }
+        if consumed(input, 46) {
+            json_digits(input)?
+        }
+        let byte = peek(input)
+        if byte == 101 || byte == 69 {
+            input.position = input.position + 1
+            if consumed(input, 43) == false {
+                consumed(input, 45)
+            }
+            json_digits(input)?
+        }
+        return Ok(std::text::slice(input.source, start, input.position))
+    }
+
+    fn json_digits(input: write Cursor) -> Result<void, Text> {
+        let start = input.position
+        while peek(input) >= 48 && peek(input) <= 57 {
+            input.position = input.position + 1
+        }
+        if start == input.position {
+            return Err(parse_error(input, "expected digits"))
+        }
+        return Ok(())
+    }
+}

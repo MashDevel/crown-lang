@@ -1,0 +1,27 @@
+fn signed() -> i8 {
+    return -1
+}
+fn unsigned() -> u16 {
+    return 1
+}
+fn pointer_signed() -> isize {
+    return -1
+}
+fn pointer_unsigned() -> usize {
+    return 1
+}
+fn fraction() -> f32 {
+    return 1.5
+}
+fn flag() -> bool {
+    return true
+}
+fn letter() -> char {
+    return 'm'
+}
+fn nothing() -> void {
+    return
+}
+fn main() -> u32 {
+    return u32.from(unsigned())
+}

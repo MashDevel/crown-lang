@@ -1,0 +1,56 @@
+module sema {
+    fn find_symbol(symbols: Symbols, name: frontend::Name) -> Option<usize> {
+        var index: usize = 0
+        while index < symbols.types.length() {
+            loan read symbols.types[index] as symbol {
+                if names_equal(symbols.source, symbol.name, name) {
+                    return Some(index)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn find_function(symbols: Symbols, name: frontend::Name) -> Option<usize> {
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            match read symbols.functions[index].kind {
+                FreeFunction => {
+                    if names_equal(symbols.source, symbols.functions[index].name, name) {
+                        return Some(index)
+                    }
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn find_constant(symbols: Symbols, name: frontend::Name) -> Option<usize> {
+        var index: usize = 0
+        while index < symbols.constants.length() {
+            loan read symbols.constants[index] as constant {
+                if names_equal(symbols.source, constant.name, name) {
+                    return Some(index)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn names_copy(values: Vec<frontend::Name>) -> Vec<frontend::Name> {
+        var output = Vec<frontend::Name>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(frontend::name_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

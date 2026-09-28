@@ -1,0 +1,32 @@
+module frontend {
+    struct ParsedBinaryOperator {
+        precedence: u32
+        operator: BinaryOperator
+    }
+
+    struct ParsedArguments {
+        values: Vec<Expression>
+        end: Span
+    }
+
+    fn expression(kind: take ExpressionKind, span: take Span) -> Expression {
+        let depth = expression_depth(kind) + 1
+        return Expression {
+            kind: move kind, span: span, depth: depth
+        }
+    }
+
+    fn path_copy(path: Path) -> Path {
+        var segments = Vec<Name>.with_capacity(path.segments.length())
+        var index: usize = 0
+        while index < path.segments.length() {
+            loan read path.segments[index] as segment {
+                segments.push(name_copy(segment))
+            }
+            index = index + 1
+        }
+        return Path {
+            segments: move segments, span: path.span
+        }
+    }
+}

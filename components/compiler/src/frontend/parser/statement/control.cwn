@@ -1,0 +1,79 @@
+module frontend {
+    fn parser_while(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        if parser_consumed(parser, TokenLet()) {
+            return parser_pattern_control(parser, start.span, true)
+        }
+        let condition = parser_condition(parser)
+        let body = parser_block(parser)
+        let end = parser_previous_span(parser)
+        return statement(StatementWhile(move condition, move body), span_through(start.span, end))
+    }
+
+    fn parser_for(parser: write Parser) -> Statement {
+        let first = parser_advance(parser)
+        let name = parser_identifier(parser)
+        parser_expect(parser, TokenIn())
+        let start = parser_expression(parser)
+        parser_expect(parser, TokenRange())
+        let end = parser_condition(parser)
+        let body = parser_block(parser)
+        let last = parser_previous_span(parser)
+        return statement(StatementFor(move name, move start, move end, move body), span_through(first.span, last))
+    }
+
+    fn parser_loop_exit(parser: write Parser) -> Statement {
+        let token = parser_advance(parser)
+        let breaking = token_kind_equal(token.kind, TokenBreak())
+        parser_line_end(parser)
+        if breaking {
+            return statement(StatementBreak(), token.span)
+        }
+        return statement(StatementContinue(), token.span)
+    }
+
+    fn parser_unsafe(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        let body = parser_block(parser)
+        let end = parser_previous_span(parser)
+        return statement(StatementUnsafe(move body), span_through(start.span, end))
+    }
+
+    fn parser_loan(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        let mode = parser_loan_mode(parser)
+        let source = parser_expression(parser)
+        parser_expect(parser, TokenAs())
+        let alias = parser_identifier(parser)
+        let body = parser_block(parser)
+        let end = parser_previous_span(parser)
+        return statement(StatementLoan(mode, move source, move alias, move body), span_through(start.span, end))
+    }
+
+    fn parser_loan_mode(parser: write Parser) -> LoanMode {
+        if parser_consumed(parser, TokenRead()) {
+            return LoanRead()
+        }
+        if parser_consumed(parser, TokenWrite()) {
+            return LoanWrite()
+        }
+        parser_report(parser, MissingToken())
+        return LoanRead()
+    }
+
+    fn parser_if(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        if parser_consumed(parser, TokenLet()) {
+            return parser_pattern_control(parser, start.span, false)
+        }
+        let condition = parser_condition(parser)
+        let then_body = parser_block(parser)
+        parser_skip_breaks(parser)
+        var else_body = Vec<Statement>.new()
+        if parser_consumed(parser, TokenElse()) {
+            else_body = parser_block(parser)
+        }
+        let end = parser_previous_span(parser)
+        return statement(StatementIf(move condition, move then_body, move else_body), span_through(start.span, end))
+    }
+}

@@ -1,0 +1,48 @@
+module x86 {
+    struct PackedIntegerArgs {
+        operator: ir::BinaryOperator
+        width: ir::IntegerWidth
+        destination: FloatRegister
+        source: FloatRegister
+    }
+
+    fn packed_integer_opcode(operator: ir::BinaryOperator, width: ir::IntegerWidth) -> u8 {
+        if operator == ir::BinaryAnd() {
+            return 219
+        }
+        if operator == ir::BinaryOr() {
+            return 235
+        }
+        if operator == ir::BinaryXor() {
+            return 239
+        }
+        if operator == ir::BinaryMultiply() {
+            return 213
+        }
+        let lane = packed_integer_lane(width)
+        if operator == ir::BinarySubtract() {
+            return 248 + lane
+        }
+        if lane == 3 {
+            return 212
+        }
+        return 252 + lane
+    }
+
+    fn packed_integer_lane(width: ir::IntegerWidth) -> u8 {
+        match width {
+            ir::IntegerWidth8 => 0
+            ir::IntegerWidth16 => 1
+            ir::IntegerWidth32 => 2
+            _ => 3
+        }
+    }
+
+    fn emit_packed_registers(output: write Vec<u8>, destination: FloatRegister, source: FloatRegister, opcode: u8) -> void {
+        output.push(102)
+        emit_float_rex(output, false, u16.from(destination.code) |(u16.from(source.code) << 8))
+        output.push(15)
+        output.push(opcode)
+        output.push(modrm(3, destination.code, source.code))
+    }
+}

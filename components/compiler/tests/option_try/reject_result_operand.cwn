@@ -1,0 +1,6 @@
+fn invalid(value: take Result<u32, u32>) -> Option<u32> {
+    return Some(value?)
+}
+fn main() -> u32 {
+    return 0
+}

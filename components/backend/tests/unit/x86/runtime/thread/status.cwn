@@ -1,0 +1,122 @@
+fn status_function(name: take Text, index: usize, failure: usize) -> x86::Function {
+    var instructions = Vec<x86::Instruction>.new()
+    if index == 2 && index != failure {
+        instructions.push(x86::MoveImmediate(x86::Rax(), 42))
+        instructions.push(x86::Store(x86::Rdi(), 0, x86::Rax()))
+    }
+    if index == 3 {
+        instructions.push(x86::LoadSymbolAddress(x86::Rcx(), "destroyed"))
+        instructions.push(x86::Load(x86::Rax(), x86::Rcx(), 0))
+        instructions.push(x86::AddImmediate(x86::Rax(), 1))
+        instructions.push(x86::Store(x86::Rcx(), 0, x86::Rax()))
+    }
+    instructions.push(x86::MoveImmediate(x86::Rax(), if index == failure {
+                -4294967274
+            } else {
+                -4294967296
+            }))
+    instructions.push(x86::Return())
+    return x86::function_new(move name, move instructions)
+}
+
+fn status_entry(failure: usize) -> x86::Function {
+    var instructions = Vec<x86::Instruction>.new()
+    instructions.push(x86::SubtractImmediate(x86::Rsp(), 24))
+    instructions.push(x86::MoveImmediate(x86::Rax(), 91))
+    instructions.push(x86::Store(x86::Rsp(), 0, x86::Rax()))
+    instructions.push(x86::Move(x86::Rdi(), x86::Rsp()))
+    instructions.push(x86::MoveImmediate(x86::Rsi(), 1))
+    instructions.push(x86::MoveImmediate(x86::Rdx(), 0))
+    instructions.push(x86::MoveImmediate(x86::Rcx(), 16))
+    instructions.push(x86::MoveImmediate(x86::R8(), 16384))
+    instructions.push(x86::Call("crown_pthread_create_stack"))
+    instructions.push(x86::MoveSized(x86::MoveSizedArgs {
+                destination: x86::Rax(), source: x86::Rax(), width: x86::Dword(), extension: x86::ZeroExtend()
+            }))
+    instructions.push(x86::CompareImmediate(x86::Rax(), if failure < 3 {
+                22
+            } else {
+                0
+            }))
+    instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(1)))
+    instructions.push(x86::Load(x86::Rax(), x86::Rsp(), 0))
+    instructions.push(x86::CompareImmediate(x86::Rax(), if failure < 3 {
+                91
+            } else {
+                42
+            }))
+    instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(1)))
+    instructions.push(x86::LoadSymbolAddress(x86::Rcx(), "destroyed"))
+    instructions.push(x86::Load(x86::Rax(), x86::Rcx(), 0))
+    instructions.push(x86::CompareImmediate(x86::Rax(), if failure == 0 {
+                0
+            } else {
+                1
+            }))
+    instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(1)))
+    instructions.push(x86::MoveImmediate(x86::Rax(), 0))
+    instructions.push(x86::Jump(x86::InternalLabel(2)))
+    instructions.push(x86::Label(x86::InternalLabel(1)))
+    instructions.push(x86::MoveImmediate(x86::Rax(), 1))
+    instructions.push(x86::Label(x86::InternalLabel(2)))
+    instructions.push(x86::AddImmediate(x86::Rsp(), 24))
+    instructions.push(x86::Return())
+    return x86::function_new("native_stack_entry", move instructions)
+}
+
+fn status_add(program: write x86::Program, function: take x86::Function) -> Result<void, u32> {
+    return match x86::program_add_function(program, move function) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            error;
+            Err(1)
+        }
+    }
+}
+
+fn status_program(failure: usize) -> Result<x86::Program, u32> {
+    var program = x86::program_new("native_stack_entry")
+    var data = x86::data_zero_fill("destroyed", 8)
+    x86::data_align(data, 8)
+    match x86::program_add_data(program, move data) {
+        Ok(value) => {
+            value
+        },
+        Err(error) => {
+            error;
+            return Err(2)
+        }
+    }
+    status_add(program, status_entry(failure))?
+    status_add(program, x86::stack_runtime_function())?
+    let names = std::text::split("pthread_attr_init|pthread_attr_setstack|pthread_create|pthread_attr_destroy", 124)
+    for index in 0..names.length() {
+        status_add(program, status_function(names[index].clone(), index, failure))?
+    }
+    return Ok(move program)
+}
+
+fn run() -> Result<void, u32> {
+    for failure in 0..4 {
+        let program = status_program(failure)?
+        let object = match x86::encode_program(program) {
+            Ok(value) => move value,
+            Err(error) => {
+                error;
+                return Err(3)
+            }
+        }
+        safety_execute_object(move object)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(value) => {
+            value;
+            42
+        },
+        Err(error) => error
+    }
+}

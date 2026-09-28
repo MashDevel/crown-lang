@@ -1,0 +1,21 @@
+resource Probe {
+    pointer: RawPtr<u32>
+    drop { unsafe { pointer.write(pointer.read() + 1) } }
+}
+fn guarded(pointer: RawPtr<u32>) -> u32 {
+    let guard = Probe { pointer }
+    let value: u32 = unsafe { return 13 }
+    return value
+}
+fn bound() -> u32 { let value: u32 = unsafe { return 7 }; return value }
+fn argument(value: u32) -> u32 { return value }
+fn nested() -> u32 { return argument(unsafe { return 9 }) }
+fn arithmetic() -> u32 { return 1 + unsafe { return 11 } }
+fn main() -> u32 {
+    if bound() != 7 || nested() != 9 || arithmetic() != 11 { return 1 }
+    var counts = Vec<u32>.new()
+    counts.push(0)
+    let result = unsafe { guarded(counts.as_raw()) }
+    if result != 13 || counts[0] != 1 { return 2 }
+    return 0
+}

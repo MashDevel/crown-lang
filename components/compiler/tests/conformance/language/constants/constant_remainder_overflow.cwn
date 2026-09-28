@@ -1,0 +1,4 @@
+const BAD: i8 = -128 % -1
+fn main() -> u32 {
+    0
+}

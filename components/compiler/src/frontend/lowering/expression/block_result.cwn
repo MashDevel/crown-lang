@@ -1,0 +1,16 @@
+module lowering {
+    fn block_result(compiler: write FunctionCompiler, analysis: sema::Analysis, destination: usize, value_type: sema::Type) -> Result<Value, u32> {
+        if sema::type_is_unit(value_type) {
+            return Ok(VoidValue())
+        }
+        if type_is_direct(analysis.checker.symbols, value_type)? {
+            let load = Place {
+                address: destination, value_type: sema::type_copy(value_type)
+            }
+            let value = function_load(compiler, analysis.checker.symbols, load)?
+            return Ok(ScalarValue(value, sema::type_copy(value_type)))
+        }
+        return Ok(AddressValue(destination, sema::type_copy(value_type)))
+    }
+
+}

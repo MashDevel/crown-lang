@@ -1,0 +1,14 @@
+module macho {
+    fn arm_relocation_relative(kind: u64) -> bool {
+        match kind {
+            2 | 3 | 5 | 7 => true,
+            _ => false
+        }
+    }
+    fn arm_addend_pair_kind(kind: u64) -> bool {
+        return kind == 2 || kind == 3 || kind == 4
+    }
+    fn arm_got_kind(kind: u64) -> bool {
+        return kind == 5 || kind == 6
+    }
+}

@@ -1,0 +1,124 @@
+fn lexer_positions(tokens: read Vec<frontend::Token>) -> bool {
+    if tokens.length() != 11 {
+        return false
+    }
+    if frontend::token_kind_equal(tokens[0].kind, frontend::TokenLet()) == false {
+        return false
+    }
+    if frontend::token_kind_equal(tokens[1].kind, frontend::TokenIdentifier()) == false {
+        return false
+    }
+    if tokens[3].integer != 12 {
+        return false
+    }
+    if frontend::token_kind_equal(tokens[4].kind, frontend::TokenBangEqual()) == false {
+        return false
+    }
+    if frontend::token_kind_equal(tokens[7].kind, frontend::TokenNewline()) == false {
+        return false
+    }
+    if frontend::token_kind_equal(tokens[8].kind, frontend::TokenMove()) == false {
+        return false
+    }
+    return tokens[8].span.line == 3 && tokens[8].span.column == 1
+}
+
+fn lexer_position_regression() -> bool {
+    let source = frontend_test_source("let value = 12 != 3\n// skip\nmove value")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(tokens) => {
+            return lexer_positions(tokens)
+        }
+    }
+}
+
+fn lexer_radix_regression() -> bool {
+    let source = frontend_test_source("0xff 0b1010 1_000 12.5_0e1_0")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(tokens) => {
+            return lexer_radix_values(tokens)
+        }
+    }
+}
+
+fn lexer_radix_values(tokens: read Vec<frontend::Token>) -> bool {
+    if tokens.length() != 5 {
+        return false
+    }
+    if tokens[0].integer != 255 || tokens[1].integer != 10 {
+        return false
+    }
+    if tokens[2].integer != 1000 {
+        return false
+    }
+    return frontend::token_kind_equal(tokens[3].kind, frontend::TokenFloat())
+}
+
+fn lexer_errors(value: take Text, count: read usize) -> bool {
+    let source = frontend_test_source(move value)
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Ok(tokens) => {
+            tokens;
+            return false
+        }
+        Err(errors) => {
+            return errors.length() == count
+        }
+    }
+}
+
+fn lexer_invalid_radix() -> bool {
+    if lexer_errors("0x", 1) == false {
+        return false
+    }
+    if lexer_errors("0b2", 1) == false {
+        return false
+    }
+    if lexer_errors("0x_f0", 1) == false {
+        return false
+    }
+    if lexer_errors("1__0", 1) == false {
+        return false
+    }
+    return lexer_errors("20_", 1)
+}
+
+fn lexer_punctuation() -> bool {
+    let source = frontend_test_source("(){}:,.; -> = == != < <= > >= << >> + - * / % && || & | ^ ~ !")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(tokens) => {
+            return tokens.length() == 31 && frontend::token_kind_equal(tokens[29].kind, frontend::TokenBang())
+        }
+    }
+}
+
+fn main() -> u32 {
+    if lexer_position_regression() == false {
+        return 1
+    }
+    if lexer_errors("@ 18446744073709551616 !", 2) == false {
+        return 2
+    }
+    if lexer_radix_regression() == false {
+        return 3
+    }
+    if lexer_invalid_radix() == false {
+        return 4
+    }
+    if lexer_punctuation() == false {
+        return 5
+    }
+    return 42
+}

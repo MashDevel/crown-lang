@@ -1,0 +1,47 @@
+const MASK: u32 = 0b0010_0000
+
+copy struct Cpu {
+    value: u32
+}
+
+copy enum State {
+    Idle
+    Active(u32)
+}
+
+struct Memory {
+    value: u32
+}
+
+struct Emulator {
+    cpu: Cpu
+    memory: Memory
+}
+
+fn update(cpu: write Cpu, memory: write Memory) -> u32 {
+    cpu.value = MASK
+    memory.value = 0x0a
+    return cpu.value + memory.value
+}
+
+fn main() -> u32 {
+    var emulator = Emulator {
+        cpu: Cpu {
+            value: 0
+        }
+        memory: Memory {
+            value: 0
+        }
+    }
+    let first = emulator.cpu
+    let second = first
+    let state = Active(second.value)
+    match state {
+        Idle => {
+        }
+        Active(value) => {
+            value
+        }
+    }
+    return update(emulator.cpu, emulator.memory)
+}

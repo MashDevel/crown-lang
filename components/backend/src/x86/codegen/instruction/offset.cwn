@@ -1,0 +1,68 @@
+module x86 {
+    fn codegen_compile_offset(program: ir::Program, compiler: write FunctionCompiler, input: take OffsetInput) -> Result<void, CodegenError> {
+        loan read program.functions[compiler.id] as function {
+            match codegen_constant_offset_value(function, 0, input.offset) {
+                Some(offset) => {
+                    return codegen_constant_offset(program, compiler, ConstantOffsetInput {
+                            result: input.result, base: input.base, offset: offset
+                        })
+                }
+                None => {
+                }
+            }
+        }
+        var output: Option<Register> = None()
+        match read input.result {
+            Some(value) => {
+                output = codegen_frame_register(compiler.frame, value)
+            }
+            None => {
+            }
+        }
+        let base = codegen_frame_register(compiler.frame, input.base)
+        let offset = codegen_frame_register(compiler.frame, input.offset)
+        let destination = codegen_offset_destination(output, base, offset)
+        if codegen_option_register_equal(base, destination) == false {
+            codegen_load_value(program, compiler, ValueAccess {
+                    value: input.base, register: destination
+                })?
+        }
+        let source = codegen_load_offset(program, compiler, input.offset)?
+        codegen_emit(compiler, Add(destination, source))
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: destination
+            })
+    }
+
+    fn codegen_offset_destination(output: Option<Register>, base: Option<Register>, offset: Option<Register>) -> Register {
+        match read output {
+            Some(register) => {
+                if codegen_option_register_equal(base, register) {
+                    return register
+                }
+                if codegen_option_register_equal(offset, register) == false {
+                    return register
+                }
+            }
+            None => {
+            }
+        }
+        return R11()
+    }
+
+    fn codegen_constant_offset(program: ir::Program, compiler: write FunctionCompiler, input: take ConstantOffsetInput) -> Result<void, CodegenError> {
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.base, register: destination
+            })?
+        if input.offset != 0 {
+            codegen_emit(compiler, AddImmediate(destination, input.offset))
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: destination
+            })
+    }
+}

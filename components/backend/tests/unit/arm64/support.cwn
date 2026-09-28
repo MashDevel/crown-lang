@@ -1,0 +1,17 @@
+fn arm_compile(program: take ir::Program) -> Result<object::CompilerObject, u32> {
+    return match arm64::codegen(move program, safety_arm_variant()) {
+        Ok(value) => Ok(move value)
+        Err(error) => {
+            toolchain::failure(error);
+            Err(1)
+        }
+    }
+}
+
+fn arm_execute(program: take ir::Program) -> Result<void, u32> {
+    let object = arm_compile(move program)?
+    if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+        return safety_execute_object(move object)
+    }
+    return Ok(())
+}

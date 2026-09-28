@@ -1,0 +1,246 @@
+module lowering {
+    struct DeclarationRequest {
+        semantic_function: usize
+        arguments: Vec<sema::Type>
+        indirect_receiver: bool
+        name: Text
+    }
+
+    fn declare_program(compiler: write Compiler, analysis: sema::Analysis) -> Result<void, u32> {
+        index_expressions(compiler.tables, analysis.checker.expressions)
+        collect_copy_symbols(compiler, analysis.checker.symbols)
+        collect_drop_types(compiler, analysis)
+        declare_foreign_imports(compiler, analysis.checker.symbols)
+        declare_runtime_imports(compiler)
+        declare_panics(compiler)
+        match declare_plain_functions(compiler, analysis.checker.symbols) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match declare_instances(compiler, analysis) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        declare_implementations(compiler, analysis.checker.symbols)?
+        declare_drop_glue(compiler, analysis.checker.symbols)
+        declare_root_type_tags(compiler)
+        declare_closures(compiler, analysis)?
+        declare_scoped_adapters(compiler, analysis)?
+        declare_spawns(compiler, analysis)
+        declare_globals(compiler, analysis)
+        declare_interface_tables(compiler, analysis.checker.symbols)?
+        return Ok(())
+    }
+
+    fn collect_copy_symbols(compiler: write Compiler, symbols: sema::Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.types.length() {
+            if symbols.types[index].copy_value {
+                compiler.tables.copy_symbols.push(index)
+            }
+            index = index + 1
+        }
+    }
+
+    fn declare_plain_functions(compiler: write Compiler, symbols: sema::Symbols) -> Result<void, u32> {
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as function {
+                if function.foreign == false && function.type_parameters.length() == 0 && function_is_plain(function) {
+                    let request = DeclarationRequest {
+                        semantic_function: index
+                        arguments: Vec<sema::Type>.new()
+                        indirect_receiver: function_is_implementation(function)
+                        name: declared_function_name(symbols, function)
+                    }
+                    match declare_function(compiler, symbols, move request) {
+                        Err(error) => {
+                            return Err(error)
+                        }
+                        Ok(value) => {
+                            value
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn declare_instances(compiler: write Compiler, analysis: sema::Analysis) -> Result<void, u32> {
+        var index: usize = 0
+        while index < analysis.instances.length() {
+            loan read analysis.instances[index] as instance {
+                if instance.function >= analysis.checker.symbols.functions.length() {
+                    return Err(20)
+                }
+                loan read analysis.checker.symbols.functions[instance.function] as function {
+                    let request = DeclarationRequest {
+                        semantic_function: instance.function
+                        arguments: sema::types_copy(instance.arguments)
+                        indirect_receiver: false
+                        name: instance_function_name(analysis.checker.symbols, function, instance.arguments)
+                    }
+                    match declare_function(compiler, analysis.checker.symbols, move request) {
+                        Err(error) => {
+                            return Err(error)
+                        }
+                        Ok(value) => {
+                            value
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn declare_function(compiler: write Compiler, symbols: sema::Symbols, request: take DeclarationRequest) -> Result<void, u32> {
+        var signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        loan read symbols.functions[request.semantic_function] as function {
+            if request.indirect_receiver {
+                match implementation_signature(function, symbols, request.arguments) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value) => {
+                        signature = move value
+                    }
+                }
+            } else {
+                match internal_signature(function, symbols, request.arguments) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(value) => {
+                        signature = move value
+                    }
+                }
+            }
+        }
+        var linkage = ir::LinkageLocal()
+        if semantic_function_is_main(symbols, request.semantic_function) {
+            linkage = ir::LinkageExport()
+        }
+        let function = ir::function_new(request.name.clone(), ir::signature_copy(signature), linkage)
+        let id = ir::program_add_function(compiler.output, move function)
+        compiler.tables.functions.push(FunctionBinding {
+                semantic_function: request.semantic_function
+                arguments: sema::types_copy(request.arguments)
+                function: id
+                signature: move signature
+            })
+        return Ok(())
+    }
+
+    fn declare_panics(compiler: write Compiler) -> void {
+        let definitions = panic_definitions()
+        for index in 0..definitions.length() {
+            declare_panic(compiler, definitions[index].name.clone())
+        }
+    }
+
+    fn declare_panic(compiler: write Compiler, message: take Text) -> void {
+        var name = "crown_panic_"
+        std::text::append(name, message)
+        let signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        let function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+        let id = ir::program_add_function(compiler.output, move function)
+        compiler.tables.generated_functions.push(NamedFunction {
+                name: move name, function: id
+            })
+    }
+
+    fn declare_drop_glue(compiler: write Compiler, symbols: sema::Symbols) -> void {
+        var index: usize = 0
+        while index < compiler.drop_types.length() {
+            var value_type = sema::Invalid()
+            loan read compiler.drop_types[index] as value {
+                value_type = sema::type_copy(value)
+            }
+            let key = drop_function_key(value_type)
+            let name = drop_function_name(value_type, symbols)
+            var parameters = Vec<ir::Type>.new()
+            parameters.push(ir::TypePointer())
+            let signature = ir::signature_new(move parameters, ir::TypeVoid())
+            let function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+            let id = ir::program_add_function(compiler.output, move function)
+            compiler.tables.generated_functions.push(NamedFunction {
+                    name: move key, function: id
+                })
+            index = index + 1
+        }
+    }
+
+    fn declared_function_name(symbols: sema::Symbols, function: sema::Function) -> Text {
+        if function_is_implementation(function) {
+            return implementation_function_name(symbols, function)
+        }
+        return source_function_name(symbols.source, function.name)
+    }
+
+    fn function_has_body(function: sema::Function) -> bool {
+        match read function.kind {
+            sema::FreeFunction => {
+                return true
+            }
+            sema::ImplementationFunction(owner, interface_symbol) => {
+                owner;
+                interface_symbol;
+                return true
+            }
+            sema::InterfaceFunction(interface_symbol) => {
+                interface_symbol;
+                return false
+            }
+        }
+    }
+
+    fn function_is_plain(function: sema::Function) -> bool {
+        match read function.kind {
+            sema::FreeFunction => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn function_is_implementation(function: sema::Function) -> bool {
+        match read function.kind {
+            sema::ImplementationFunction(owner, interface_symbol) => {
+                owner;
+                interface_symbol;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn semantic_function_is_main(symbols: sema::Symbols, index: usize) -> bool {
+        if index >= symbols.functions.length() {
+            return false
+        }
+        match read symbols.functions[index].kind {
+            sema::FreeFunction => {
+                return symbols.functions[index].foreign == false && sema::name_is(symbols.source, symbols.functions[index].name, "main")
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

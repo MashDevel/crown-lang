@@ -1,0 +1,128 @@
+module arm64 {
+    copy struct RegisterInterval {
+        first: usize, last: usize
+    }
+
+    fn register_eligibility(function: ir::Function) -> Vec<bool> {
+        var eligible = ir::flags_new(function.values.length())
+        for index in 0..function.parameters.length() {
+            let value = function.parameters[index]
+            eligible[value] = register_scalar(function.values[value])
+        }
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                match function.blocks[block].instructions[index].result {
+                    Some(value) => {
+                        eligible[value] = register_scalar(function.values[value])
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return move eligible
+    }
+
+    fn register_scalar(value_type: ir::Type) -> bool {
+        if ir::type_is_integer(value_type) || ir::type_is_pointer(value_type) || ir::type_is_float(value_type) {
+            match ir::type_size(value_type) {
+                Some(size) => {
+                    return size <= 8
+                }
+                None => {
+                }
+            }
+        }
+        return false
+    }
+
+    fn register_intervals(function: ir::Function, liveness: ir::ValueLiveness) -> Vec<RegisterInterval> {
+        var intervals = Vec<RegisterInterval>.new()
+        for index in 0..function.values.length() {
+            index;
+            intervals.push(RegisterInterval {
+                    first: usize.from_bits(-1), last: 0
+                })
+        }
+        for index in 0..function.parameters.length() {
+            register_interval_use(intervals, function.parameters[index], 0)
+        }
+        let order = ir::all_reverse_postorder(function)
+        var position: usize = 2
+        for index in 0..order.length() {
+            let block = order[index]
+            register_live_intervals(intervals, liveness.blocks[block].live_in, position)
+            position = register_block_intervals(function.blocks[block], intervals, position)
+            register_live_intervals(intervals, liveness.blocks[block].live_out, position)
+            position = position + 2
+        }
+        register_return_interval(function, intervals, position)
+        return move intervals
+    }
+
+    fn register_return_interval(function: ir::Function, intervals: write Vec<RegisterInterval>, position: usize) -> void {
+        match signature_return(function.signature) {
+            Some(returned) => register_interval_use(intervals, function.parameters[returned.index], position)
+            None => {
+            }
+        }
+    }
+
+    fn register_block_intervals(block: ir::BasicBlock, intervals: write Vec<RegisterInterval>, start: usize) -> usize {
+        var position = start
+        for index in 0..block.instructions.length() {
+            loan read block.instructions[index] as instruction {
+                let phi = frame_is_phi(instruction.kind)
+                if phi == false {
+                    register_operand_intervals(intervals, ir::instruction_operands(instruction.kind), position + 1)
+                }
+                match instruction.result {
+                    Some(value) => register_interval_use(intervals, value, if phi {
+                            start
+                        } else {
+                            position + 2
+                        })
+                    None => {
+                    }
+                }
+            }
+            position = position + 2
+        }
+        match read block.terminator {
+            Some(terminator) => register_operand_intervals(intervals, ir::terminator_operands(terminator), position + 1)
+            None => {
+            }
+        }
+        return position + 2
+    }
+
+    fn register_operand_intervals(intervals: write Vec<RegisterInterval>, operands: Vec<usize>, position: usize) -> void {
+        for index in 0..operands.length() {
+            register_interval_use(intervals, operands[index], position)
+        }
+    }
+
+    fn register_live_intervals(intervals: write Vec<RegisterInterval>, live: ir::BitSet, position: usize) -> void {
+        var cursor: usize = 0
+        while cursor < live.length {
+            match ir::bitset_next(live, cursor) {
+                Some(value) => {
+                    register_interval_use(intervals, value, position)
+                    cursor = value + 1
+                }
+                None => {
+                    return
+                }
+            }
+        }
+    }
+
+    fn register_interval_use(intervals: write Vec<RegisterInterval>, value: usize, position: usize) -> void {
+        if position < intervals[value].first {
+            intervals[value].first = position
+        }
+        if position > intervals[value].last {
+            intervals[value].last = position
+        }
+    }
+}

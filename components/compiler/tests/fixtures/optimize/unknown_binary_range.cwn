@@ -1,0 +1,39 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn test_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) { Ok(value) => { return value } Err(error) => { error; return function.blocks.length() } }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let float_type = ir::TypeFloat(ir::FloatWidth64())
+    let result_type = ir::TypeInteger(ir::IntegerWidth1())
+    var function = ir::function_new("unknown_binary_range", ir::signature_new(Vec<ir::Type>.new(), result_type), ir::LinkageLocal())
+    let entry = test_block(function)
+    let narrowed = test_block(function)
+    let exit = test_block(function)
+    let input_constant = ir::ConstantFloat64(u64.from(0))
+    let zero_constant = ir::ConstantInteger(u64.from(0))
+    let nine_constant = ir::ConstantInteger(u64.from(9))
+    let ten_constant = ir::ConstantInteger(u64.from(10))
+    let input = ir::function_constant(function, float_type, input_constant)
+    let zero = ir::function_constant(function, value_type, zero_constant)
+    let nine = ir::function_constant(function, value_type, nine_constant)
+    let ten = ir::function_constant(function, value_type, ten_constant)
+    let converted = test_append(function, entry, ir::InstructionCast(ir::CastFloatToUnsignedInteger(), input, value_type))
+    let derived = test_append(function, entry, ir::InstructionBinary(ir::BinaryAdd(), converted, zero))
+    let condition = test_append(function, entry, ir::InstructionCompare(ir::CompareUnsignedLess(), derived, ten))
+    let comparison = test_append(function, narrowed, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), derived, nine))
+    match ir::function_terminate(function, entry, ir::TerminatorConditional(condition, narrowed, exit)) { Ok(value) => { value } Err(error) => { error; return 1 } }
+    match ir::function_terminate(function, narrowed, ir::TerminatorReturn(Some(comparison))) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    match ir::function_terminate(function, exit, ir::TerminatorReturn(Some(condition))) { Ok(value) => { value } Err(error) => { error; return 3 } }
+    if optimize::range(function, true) != 0 { return 4 }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    match ir::validate_program(program) { Ok(value) => { value; return 42 } Err(error) => { error; return 5 } }
+}

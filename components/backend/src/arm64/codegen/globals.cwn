@@ -1,0 +1,38 @@
+module arm64 {
+    fn emit_globals(program: ir::Program, output: write object::CompilerObject) -> Result<void, Text> {
+        for index in 0..program.globals.length() {
+            loan read program.globals[index] as global {
+                let section = output.sections.length()
+                output.symbols[program.functions.length() + index].section = Some(section)
+                let kind = match read global.kind {
+                    ir::GlobalReadOnly => object::SectionReadOnlyData()
+                    ir::GlobalWritable => object::SectionData()
+                    ir::GlobalZeroFill => object::SectionZeroFill()
+                }
+                var data = Vec<u8>.new()
+                for byte in 0..global.bytes.length() {
+                    data.push(global.bytes[byte])
+                }
+                output.sections.push(object::Section {
+                        name: global.name.clone(), kind: move kind, alignment: u64.from(global.alignment), data: move data, memory_size: global.size
+                    })
+                emit_global_references(program, output, global, section)
+            }
+        }
+        return Ok(())
+    }
+    fn emit_global_references(program: ir::Program, output: write object::CompilerObject, global: ir::Global, section: usize) -> void {
+        for index in 0..global.references.length() {
+            loan read global.references[index] as reference {
+                let symbol = match read reference.target {
+                    ir::GlobalReferenceFunction(id) => id
+                    ir::GlobalReferenceGlobal(id) => program.functions.length() + id
+                }
+                output.relocations.push(object::Relocation {
+                        section: section, offset: reference.offset, kind: object::RelocationAbsolute64(), symbol: symbol, subtract: None(), addend: reference.addend
+                    })
+            }
+        }
+    }
+
+}

@@ -1,0 +1,28 @@
+module lowering {
+    struct FloatBitcast {
+        value: usize, target: sema::Type
+    }
+    fn float_bitcast(compiler: write FunctionCompiler, symbols: sema::Symbols, request: take FloatBitcast) -> Result<Value, u32> {
+        let output = ir_type(symbols, request.target)?
+        let value = function_append_value(compiler, ir::InstructionCast(ir::CastBitcast(), request.value, output))?
+        return Ok(ScalarValue(value, sema::type_copy(request.target)))
+    }
+    fn float_to_bits(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method;
+                arguments
+                loan read receiver as input {
+                    let value = function_scalar_expression(compiler, analysis, input)?
+                    let target = function_expression_type(compiler, analysis, expression)?
+                    return float_bitcast(compiler, analysis.checker.symbols, FloatBitcast {
+                            value: value, target: move target
+                        })
+                }
+            }
+            _ => {
+                return Err(165)
+            }
+        }
+    }
+}

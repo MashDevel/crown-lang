@@ -1,0 +1,23 @@
+module optimize {
+    fn specialization_name(program: ir::Program, original: Text, id: usize) -> Text {
+        var name = std::text::joined(original, std::text::joined("_specialized_", std::text::decimal(u64.from(id))))
+        while specialization_name_exists(program, name) {
+            name = std::text::joined(name, "_")
+        }
+        return move name
+    }
+
+    fn specialization_name_exists(program: ir::Program, name: Text) -> bool {
+        for index in 0..program.functions.length() {
+            if std::text::equal(program.functions[index].name, name) {
+                return true
+            }
+        }
+        for index in 0..program.globals.length() {
+            if std::text::equal(program.globals[index].name, name) {
+                return true
+            }
+        }
+        return false
+    }
+}

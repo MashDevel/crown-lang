@@ -1,0 +1,68 @@
+fn scoped_parser_map(map: std::map::Map<u32, u32>, input: TextView) -> Result<u32, std::parse::Error> {
+    return std::parse::with_parser(input, fn[read map](parser) {
+            var count: u32 = 0
+            std::map::for_each(map, fn[write parser, write count](key, value) {
+                    key;
+                    value
+                    match std::parse::read_byte(parser) {
+                        Ok(byte) => {
+                            count = count + u32.from(byte)
+                        }
+                        Err(error) => {
+                            error
+                        }
+                    }
+                })
+            return Ok(count)
+        })
+}
+
+fn test_scoped_library() -> u32 {
+    var map: std::map::Map<u32, u32> = std::map::new(map_hash, map_equal)
+    std::map::insert(map, 1, 1)
+    std::map::insert(map, 2, 2)
+    let input = "AB"
+    loan read input as bytes {
+        match scoped_parser_map(map, bytes) {
+            Ok(value) => {
+                if value != 131 {
+                    return 1
+                }
+            }
+            Err(error) => {
+                error;
+                return 2
+            }
+        }
+    }
+    var words: std::map::TextMap<u32> = std::map::new_text()
+    std::map::text_insert(words, "answer", 40)
+    let key = "answer"
+    let amount: u32 = 2
+    loan read key as query {
+        match std::map::with_text_value_mut(words, query, fn[read amount](value) {
+                value = value + amount
+            }) {
+            None => {
+                return 3
+            }
+            Some(value) => {
+                value
+            }
+        }
+        let expected: u32 = 42
+        match std::map::with_text_value(words, query, fn[read expected](value) {
+                value == expected
+            }) {
+            None => {
+                return 4
+            }
+            Some(equal) => {
+                if equal == false {
+                    return 5
+                }
+            }
+        }
+    }
+    return 0
+}

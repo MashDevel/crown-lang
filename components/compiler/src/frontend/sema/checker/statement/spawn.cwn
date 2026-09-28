@@ -1,0 +1,148 @@
+module sema {
+    fn checker_spawn(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionSpawn(configuration, body) => {
+                checker_spawn_configuration(checker, configuration)
+                var scan = capture_scan_new()
+                capture_statements(checker, scan, body)
+                let captures = checker_prepare_captures(checker, scan.captures)
+                let saved = checker_save(checker)
+                checker_begin_spawn(checker, captures)
+                checker_statements(checker, body)
+                checker_restore(checker, saved)
+                checker.spawns.push(SpawnRecord {
+                        function: checker.current_function, resource_owner: checker.current_resource,
+                        span: frontend::Span {
+                            source: 0, start: 0, end: 0, line: 0, column: 0
+                        }, captures: spawn_captures_copy(captures)
+                    })
+                return Some(owned_info(spawn_result_type(configuration.length())))
+            }
+            _ => {
+                checker_error(checker, "spawn requires transferable owned captures and a non-generic context");
+                return None()
+            }
+        }
+    }
+
+    fn checker_prepare_captures(checker: write Checker, names: Vec<frontend::Name>) -> Vec<SpawnCapture> {
+        var output = Vec<SpawnCapture>.with_capacity(names.length())
+        var index: usize = 0
+        while index < names.length() {
+            loan read names[index] as name {
+                match checker_find_variable(checker, name) {
+                    None => {
+                        checker_error(checker, "spawn requires transferable owned captures and a non-generic context")
+                    }
+                    Some(key) => {
+                        output.push(checker_prepare_capture(checker, name, key))
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn checker_prepare_capture(checker: write Checker, name: frontend::Name, key: VariableKey) -> SpawnCapture {
+        let variable = checker_variable_copy(checker, key)
+        if capture_can_move(variable) == false || root_has_loan(checker, name) {
+            checker_error(checker, "spawn requires transferable owned captures and a non-generic context")
+        }
+        var visiting = Vec<usize>.new()
+        if type_is_concrete(variable.value_type) && type_transferable(checker.symbols, variable.value_type, visiting) == false {
+            checker_error(checker, "spawn requires transferable owned captures and a non-generic context")
+        }
+        var kind = CaptureMove()
+        if type_is_copy_with_symbols(checker.symbols, variable.value_type) {
+            kind = CaptureCopy()
+        } else {
+            if type_is_shareable(variable.value_type) {
+                kind = CaptureShare()
+            }
+            else {
+                checker_set_state(checker, key, Moved())
+            }
+        }
+        return SpawnCapture {
+            name: frontend::name_copy(name)
+            value_type: type_copy(variable.value_type)
+            kind: kind
+        }
+    }
+
+    fn type_is_shareable(value_type: Type) -> bool {
+        let kind = type_builtin(value_type)
+        return kind == Shared()
+    }
+
+    fn capture_can_move(variable: Variable) -> bool {
+        match read variable.access {
+            OwnedAccess => {
+            }
+            _ => {
+                return false
+            }
+        }
+        match read variable.state {
+            Available => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn checker_begin_spawn(checker: write Checker, captures: Vec<SpawnCapture>) -> void {
+        checker.scopes = Vec<Scope>.new()
+        checker.place_loans = Vec<PlaceLoan>.new()
+        checker.thread_regions = Vec<ThreadRegion>.new()
+        checker_push_scope(checker)
+        checker.result = builtin_leaf(Unit())
+        checker.unsafe_depth = 0
+        checker.returns_allowed = true
+        checker.continuing = true
+        checker.loop_states = Vec<LoopState>.new()
+        var index: usize = 0
+        while index < captures.length() {
+            loan read captures[index] as capture {
+                let variable = Variable {
+                    name: frontend::name_copy(capture.name)
+                    value_type: type_copy(capture.value_type)
+                    copy_value: type_is_copy_with_symbols(checker.symbols, capture.value_type)
+                    mutable_value: capture.kind == CaptureWrite()
+                    state: Available()
+                    access: spawn_capture_access(capture.kind)
+                    state_span: capture.name.span
+                    span: capture.name.span
+                }
+                checker_add_variable(checker, move variable)
+            }
+            index = index + 1
+        }
+    }
+
+    fn spawn_captures_copy(values: Vec<SpawnCapture>) -> Vec<SpawnCapture> {
+        var output = Vec<SpawnCapture>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(SpawnCapture {
+                        name: frontend::name_copy(value.name)
+                        value_type: type_copy(value.value_type)
+                        kind: value.kind
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn spawn_record_copy(value: SpawnRecord) -> SpawnRecord {
+        return SpawnRecord {
+            function: value.function, resource_owner: value.resource_owner,
+            span: value.span, captures: spawn_captures_copy(value.captures)
+        }
+    }
+}

@@ -1,0 +1,48 @@
+module lowering {
+    fn match_arm_contents(compiler: write FunctionCompiler, analysis: sema::Analysis, body: Vec<frontend::Statement>) -> Result<void, u32> {
+        let flow = compiler.matches.length() - 1
+        let destination = compiler.matches[flow].result
+        match destination {
+            None => {
+                return function_statements(compiler, analysis, body)
+            }
+            Some(address) => {
+                loan read body as statements {
+                    let request = ConditionalBranch {
+                        body: statements, destination: address, merge: compiler.matches[flow].merge
+                    }
+                    return conditional_contents(compiler, analysis, request)
+                }
+            }
+        }
+    }
+
+    fn match_result_value(compiler: write FunctionCompiler, symbols: sema::Symbols, result: Place) -> Result<Value, u32> {
+        if sema::type_is_unit(result.value_type) {
+            return Ok(VoidValue())
+        }
+        if type_is_direct(symbols, result.value_type)? {
+            let value = function_load(compiler, symbols, result)?
+            return Ok(ScalarValue(value, sema::type_copy(result.value_type)))
+        }
+        return Ok(AddressValue(result.address, sema::type_copy(result.value_type)))
+    }
+
+    fn match_drop_source(compiler: write FunctionCompiler, flow: usize) -> Result<void, u32> {
+        if sema::type_builtin(compiler.matches[flow].value_type) != sema::Text() {
+            return Ok(())
+        }
+        match compiler.matches[flow].access {
+            Some(mode) => {
+                mode;
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        let request = Place {
+            address: compiler.matches[flow].address, value_type: sema::type_copy(compiler.matches[flow].value_type)
+        }
+        return drop_value(compiler, request)
+    }
+}

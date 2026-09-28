@@ -1,0 +1,29 @@
+module toolchain {
+    enum FrontendCommand {
+        Parse, Check, Compile(Text)
+    }
+    struct FrontendRequest {
+        command: FrontendCommand, sources: Vec<Text>, max_instances: usize, coverage: Text, optimization: OptimizationOptions, target: Target
+    }
+
+    fn frontend_request(options: Options) -> Result<FrontendRequest, Text> {
+        var start: usize = 0
+        let command = match read options.command {
+            "parse" => FrontendCommand::Parse()
+            "check" => FrontendCommand::Check()
+            "compile" => {
+                if options.paths.length() < 2 {
+                    return Err("compile requires an output assembly path and sources")
+                }
+                start = 1
+                FrontendCommand::Compile(options.paths[0].clone())
+            }
+            _ => {
+                return Err("expected parse, check, or compile")
+            }
+        }
+        return Ok(FrontendRequest {
+                command: move command, sources: frontend_paths(options.paths, start, options.target)?, max_instances: usize.from(options.max_instances), coverage: options.coverage.clone(), optimization: optimization_copy(options.optimization), target: options.target
+            })
+    }
+}

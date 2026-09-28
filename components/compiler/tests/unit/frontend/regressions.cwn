@@ -1,0 +1,229 @@
+fn regression_operator(expression: read frontend::Expression, expected: read frontend::BinaryOperator) -> bool {
+    return regression_kind_operator(expression.kind, expected)
+    return false
+}
+
+fn regression_kind_operator(kind: read frontend::ExpressionKind, expected: read frontend::BinaryOperator) -> bool {
+    match read kind {
+        frontend::ExpressionBinary(left, operator, right) => {
+            left;
+            right;
+            return regression_binary_code(operator) == regression_binary_code(expected)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn regression_binary_code(operator: read frontend::BinaryOperator) -> u32 {
+    match operator {
+        frontend::BinaryAdd => {
+            return 1
+        }
+        frontend::BinaryShiftLeft => {
+            return 2
+        }
+        frontend::BinaryLogicalOr => {
+            return 3
+        }
+        frontend::BinaryLogicalAnd => {
+            return 4
+        }
+        frontend::BinaryEqual => {
+            return 5
+        }
+        _ => {
+            return 0
+        }
+    }
+}
+
+fn regression_shift(expression: read frontend::Expression) -> bool {
+    if regression_operator(expression, frontend::BinaryShiftLeft()) == false {
+        return false
+    }
+    return regression_shift_kind(expression.kind)
+    return false
+}
+
+fn regression_shift_kind(kind: read frontend::ExpressionKind) -> bool {
+    match read kind {
+        frontend::ExpressionBinary(left, operator, right) => {
+            operator;
+            right;
+            loan read left as value {
+                return regression_operator(value, frontend::BinaryAdd())
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn regression_logical(expression: read frontend::Expression) -> bool {
+    if regression_operator(expression, frontend::BinaryLogicalOr()) == false {
+        return false
+    }
+    return regression_logical_kind(expression.kind)
+    return false
+}
+
+fn regression_logical_kind(kind: read frontend::ExpressionKind) -> bool {
+    match read kind {
+        frontend::ExpressionBinary(left, operator, right) => {
+            left;
+            operator;
+            loan read right as value {
+                return regression_logical_inner(value)
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn regression_logical_inner(expression: read frontend::Expression) -> bool {
+    if regression_operator(expression, frontend::BinaryLogicalAnd()) == false {
+        return false
+    }
+    return regression_logical_inner_kind(expression.kind)
+    return false
+}
+
+fn regression_logical_inner_kind(kind: read frontend::ExpressionKind) -> bool {
+    match read kind {
+        frontend::ExpressionBinary(left, operator, right) => {
+            left;
+            operator;
+            loan read right as value {
+                return regression_operator(value, frontend::BinaryEqual())
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn regression_precedence() -> bool {
+    let source = frontend_test_source("fn shift() -> u32 { return 1 + 2 << 3 }\nfn logical() -> bool { return true || false && 1 == 1 }")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(program) => {
+            return regression_program_precedence(program)
+        }
+    }
+}
+
+fn regression_program_precedence(program: read frontend::Program) -> bool {
+    if program.functions.length() != 2 {
+        return false
+    }
+    match read program.functions[0].body[0].kind {
+        frontend::StatementReturn(value, implicit) => {
+            implicit;
+            if regression_shift(value) == false {
+                return false
+            }
+        }
+        _ => {
+            return false
+        }
+    }
+    match read program.functions[1].body[0].kind {
+        frontend::StatementReturn(value, implicit) => {
+            implicit;
+            return regression_logical(value)
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn regression_tokens() -> bool {
+    let source = frontend_test_source("&& & || |")
+    match frontend::lex(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(tokens) => {
+            if tokens.length() != 5 {
+                return false
+            }
+            if frontend::token_kind_equal(tokens[0].kind, frontend::TokenAndAnd()) == false {
+                return false
+            }
+            if frontend::token_kind_equal(tokens[1].kind, frontend::TokenAmpersand()) == false {
+                return false
+            }
+            if frontend::token_kind_equal(tokens[2].kind, frontend::TokenOrOr()) == false {
+                return false
+            }
+            if frontend::token_kind_equal(tokens[3].kind, frontend::TokenPipe()) == false {
+                return false
+            }
+            return frontend::token_kind_equal(tokens[4].kind, frontend::TokenEnd())
+        }
+    }
+}
+
+fn regression_declarations() -> bool {
+    let source = frontend_test_source("extern \"c\" { fn native_abs(value: read i32) -> i32 = \"abs\" }\nopaque resource Handle { value: u32\ndrop {} }\nfn main() -> u32 { return 0 }")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(errors) => {
+            errors;
+            return false
+        }
+        Ok(program) => {
+            return regression_program_declarations(program, source.bytes)
+        }
+    }
+}
+
+fn regression_program_declarations(program: read frontend::Program, source: read Shared<Vec<u8>>) -> bool {
+    if program.foreign_functions.length() != 1 || program.resources.length() != 1 {
+        return false
+    }
+    loan read program.foreign_functions[0] as function {
+        let abi = frontend::Name {
+            text: Text.new(), span: function.abi
+        }
+        let symbol = frontend::Name {
+            text: Text.new(), span: function.symbol
+        }
+        if sema::name_is(source, abi, "\"c\"") == false {
+            return false
+        }
+        if sema::name_is(source, function.name, "native_abs") == false {
+            return false
+        }
+        if sema::name_is(source, symbol, "\"abs\"") == false {
+            return false
+        }
+        if function.parameters.length() != 1 {
+            return false
+        }
+    }
+    return program.resources[0].opaque_value
+}
+
+fn main() -> u32 {
+    if regression_tokens() == false {
+        return 1
+    }
+    if regression_precedence() == false {
+        return 2
+    }
+    if regression_declarations() == false {
+        return 3
+    }
+    return 42
+}

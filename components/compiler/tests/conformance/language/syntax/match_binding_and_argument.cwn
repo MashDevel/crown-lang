@@ -1,0 +1,14 @@
+fn identity(value: u32) -> u32 {
+    value
+}
+fn main() -> u32 {
+    let result = match Some(40) {
+        Some(value) => value,
+        None => 0
+    }
+    let absent: Option<u32> = None()
+    identity(match absent {
+            Some(value) => value,
+            None => result + 2
+        })
+}

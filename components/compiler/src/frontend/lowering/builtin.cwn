@@ -1,0 +1,198 @@
+module lowering {
+    fn builtin_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                method;
+                arguments;
+                return static_builtin(compiler, analysis, expression)
+            }
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method;
+                arguments;
+                return method_builtin(compiler, analysis, expression)
+            }
+            _ => {
+                return Err(132)
+            }
+        }
+    }
+
+    fn static_builtin(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        if is_layout_query(analysis.checker.symbols.source, expression) {
+            return layout_query(compiler, analysis, expression)
+        }
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let kind = sema::type_builtin(value_type)
+        if sema::builtin_is_numeric(kind) || kind == sema::Char() {
+            return numeric_static(compiler, analysis, expression)
+        }
+        if kind == sema::Vec() {
+            return static_vector(compiler, analysis, expression)
+        }
+        if kind == sema::Text() {
+            return static_empty_named(compiler, analysis, expression)
+        }
+        if kind == sema::RawPtr() {
+            return static_raw_pointer(compiler, analysis, expression)
+        }
+        static_allocation(compiler, analysis, expression, kind)
+    }
+
+    fn static_allocation(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, builtin: sema::Builtin) -> Result<Value, u32> {
+        if builtin == sema::Result() {
+            return root_declaration(compiler, analysis, expression)
+        }
+        if sema::native_root_kind(builtin) {
+            return static_native_root(compiler, analysis, expression)
+        }
+        if builtin == sema::Box() || builtin == sema::Shared() {
+            return static_owner(compiler, analysis, expression)
+        }
+        if builtin == sema::Arena() {
+            return static_arena(compiler, analysis, expression)
+        }
+        if builtin == sema::Channel() {
+            return static_channel(compiler, analysis, expression)
+        }
+        if builtin == sema::Mutex() || builtin == sema::RwLock() {
+            return static_lock(compiler, analysis, expression)
+        }
+        return Err(133)
+    }
+
+    fn method_builtin(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var receiver_type = sema::Invalid()
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments
+                if sema::name_is(analysis.checker.symbols.source, method, "get_unchecked") {
+                    return unchecked_index_method(compiler, analysis, expression)
+                }
+                loan read receiver as value {
+                    receiver_type = function_expression_type(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(134)
+            }
+        }
+        match read receiver_type {
+            sema::ArrayType(element, length) => {
+                element;
+                length
+                return array_as_raw(compiler, analysis, expression)
+            }
+            sema::DynamicType(interface_symbol) => {
+                interface_symbol;
+                return dynamic_call(compiler, analysis, expression)
+            }
+            _ => {
+            }
+        }
+        if sema::type_is_integer(receiver_type) {
+            return integer_method(compiler, analysis, expression)
+        }
+        let kind = sema::type_builtin(receiver_type)
+        builtin_value_method(compiler, analysis, expression, kind)
+    }
+
+    fn builtin_value_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, kind: sema::Builtin) -> Result<Value, u32> {
+        if sema::builtin_is_float(kind) {
+            return float_to_bits(compiler, analysis, expression)
+        }
+        if kind == sema::ScopedThread() {
+            return scoped_thread_method(compiler, analysis, expression)
+        }
+        if sema::native_root_kind(kind) {
+            return native_root_method(compiler, analysis, expression)
+        }
+        if sema::builtin_is_sequence(kind) {
+            return builtin_sequence_method(compiler, analysis, expression, kind)
+        }
+        if kind == sema::Shared() {
+            return shared_method(compiler, analysis, expression)
+        }
+        if kind == sema::Option() {
+            return option_method(compiler, analysis, expression)
+        }
+        if kind == sema::Arena() {
+            return arena_method(compiler, analysis, expression)
+        }
+        if kind == sema::Thread() {
+            return thread_method(compiler, analysis, expression)
+        }
+        if kind == sema::Channel() {
+            return channel_method(compiler, analysis, expression)
+        }
+        return Err(136)
+    }
+
+    fn builtin_sequence_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, kind: sema::Builtin) -> Result<Value, u32> {
+        if kind == sema::Vec() {
+            return vector_method(compiler, analysis, expression)
+        }
+        if kind == sema::Text() || kind == sema::TextView() {
+            return text_method(compiler, analysis, expression)
+        }
+        if kind == sema::Arguments() || kind == sema::Slice() {
+            return sequence_length(compiler, analysis, expression)
+        }
+        if kind == sema::RawPtr() {
+            return raw_pointer_method(compiler, analysis, expression)
+        }
+        Err(136)
+    }
+
+    fn static_empty_named(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                arguments
+                if sema::name_is(analysis.checker.symbols.source, method, "new") == false {
+                    return Err(137)
+                }
+                return empty_aggregate(compiler, analysis, expression)
+            }
+            _ => {
+                return Err(138)
+            }
+        }
+    }
+
+    fn empty_aggregate(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let address = function_stack(compiler, analysis.checker.symbols, value_type)?
+        let request = Place {
+            address: address, value_type: sema::type_copy(value_type)
+        }
+        function_zero(compiler, analysis.checker.symbols, request)?
+        return Ok(AddressValue(address, move value_type))
+    }
+
+    fn sequence_length(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments
+                if sema::name_is(analysis.checker.symbols.source, method, "length") == false {
+                    return Err(140)
+                }
+                var address: usize = 0
+                loan read receiver as value {
+                    address = expression_place(compiler, analysis, value)?
+                }
+                let field = function_offset(compiler, address, 8)?
+                let value_type = sema::builtin_leaf(sema::USize())
+                let request = Place {
+                    address: field, value_type: sema::type_copy(value_type)
+                }
+                let value = function_load(compiler, analysis.checker.symbols, request)?
+                return Ok(ScalarValue(value, move value_type))
+            }
+            _ => {
+                return Err(141)
+            }
+        }
+    }
+}

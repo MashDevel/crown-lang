@@ -1,0 +1,20 @@
+module duplication {
+    fn command(paths: Vec<Text>, output: Text) -> Result<u32, Text> {
+        let rules = toolchain::quality_rules(toolchain::quality_root(paths)?)?
+        let sources = toolchain::quality_paths(paths)?
+        let corpus = corpus(sources)?
+        let findings = detect(corpus, rules.duplication)
+        let document = report(corpus, findings, rules.duplication)
+        if output.length() == 0 {
+            toolchain::say(document)
+        } else {
+            toolchain::write_text(output, document)?
+        }
+        let duplicated = count_marked(findings.duplicated, 0, findings.duplicated.length())
+        if duplicated * 100 > corpus.lines * rules.duplication.max_percent {
+            toolchain::failure(std::text::joined(std::text::joined("duplication is ", percentage(duplicated, corpus.lines)), "%; exceeds configured limit"))
+            return Ok(1)
+        }
+        return Ok(0)
+    }
+}

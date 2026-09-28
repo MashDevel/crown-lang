@@ -1,0 +1,59 @@
+fn diagnostic_analysis(text: take Text) -> Result<sema::Analysis, u32> {
+    let source = frontend_test_source(move text)
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Ok(program) => {
+            return Ok(sema::analyze(source.bytes.share(), program))
+        }
+        Err(errors) => {
+            errors;
+            return Err(99)
+        }
+    }
+}
+
+fn diagnostic_contains(analysis: read sema::Analysis, expected: take Text) -> bool {
+    var index: usize = 0
+    while index < analysis.checker.diagnostics.length() {
+        if std::text::equal(analysis.checker.diagnostics[index].message, expected) {
+            return true
+        }
+        index = index + 1
+    }
+    return false
+}
+
+fn diagnostic_test() -> Result<u32, u32> {
+    let wrong_type = diagnostic_analysis("fn main() -> u32 {\n    return true\n}\n")?
+    if wrong_type.errors != 1 {
+        return Ok(1)
+    }
+    if diagnostic_contains(wrong_type, "expected type 'u32' but found 'bool'") == false {
+        return Ok(2)
+    }
+    if wrong_type.checker.diagnostics[0].span.line != 2 {
+        return Ok(3)
+    }
+    if wrong_type.checker.diagnostics[0].span.column != 12 {
+        return Ok(4)
+    }
+    let moved = diagnostic_analysis("fn main() -> u32 {\nlet value = \"owned\"\nlet other = move value\nreturn u32.from(value.length())\n}\n")?
+    if diagnostic_contains(moved, "value was moved; reinitialize it before use") == false {
+        return Ok(5)
+    }
+    let missing_return = diagnostic_analysis("fn main() -> u32 { let value = 1 }\n")?
+    if diagnostic_contains(missing_return, "function does not return a value on every path") == false {
+        return Ok(6)
+    }
+    return Ok(42)
+}
+
+fn main() -> u32 {
+    match diagnostic_test() {
+        Ok(value) => {
+            return value
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}

@@ -1,0 +1,9 @@
+fn fail() -> Result<void, u32> {
+    return Err(7)
+}
+fn main() -> u32 {
+    if true {
+        fail()
+    }
+    return 0
+}

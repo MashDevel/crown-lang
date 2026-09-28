@@ -1,0 +1,133 @@
+module sema {
+    fn type_name(value_type: Type, symbols: Symbols) -> Text {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                let name = builtin_type_name(builtin)
+                if builtin_is_scalar(builtin) {
+                    return move name
+                }
+                return named_type_name(move name, arguments, symbols)
+            }
+            NamedType(symbol, arguments) => {
+                let name = symbol_name(symbols, symbol)
+                return named_type_name(move name, arguments, symbols)
+            }
+            ArrayType(element, length) => {
+                return array_type_name(element, length, symbols)
+            }
+            FunctionType(parameters, result) => {
+                return function_type_name(parameters, result, symbols)
+            }
+            ScopedFunction(inner) => {
+                var output = "scoped "
+                loan read inner as value {
+                    let name = type_name(value, symbols);
+                    std::text::append(output, name)
+                }
+                return move output
+            }
+            DynamicType(symbol) => {
+                var output = "dynamic "
+                let name = symbol_name(symbols, symbol)
+                std::text::append(output, name)
+                return move output
+            }
+            ParameterType(parameter) => {
+                var output = "parameter"
+                frontend::text_push_usize(output, parameter)
+                return move output
+            }
+            _ => {
+                return "_"
+            }
+        }
+    }
+
+    fn named_type_name(name: take Text, arguments: Vec<Type>, symbols: Symbols) -> Text {
+        var output = move name
+        if arguments.length() == 0 {
+            return move output
+        }
+        output.push('<')
+        var index: usize = 0
+        while index < arguments.length() {
+            if index != 0 {
+                output.push(',');
+                output.push(' ')
+            }
+            loan read arguments[index] as argument {
+                let argument_name = type_name(argument, symbols)
+                std::text::append(output, argument_name)
+            }
+            index = index + 1
+        }
+        output.push('>')
+        return move output
+    }
+
+    fn array_type_name(element: Box<Type>, length: usize, symbols: Symbols) -> Text {
+        var output = Text.new()
+        output.push('[')
+        loan read element as value {
+            let element_name = type_name(value, symbols)
+            std::text::append(output, element_name)
+        }
+        output.push(';')
+        output.push(' ')
+        frontend::text_push_usize(output, length)
+        output.push(']')
+        return move output
+    }
+
+    fn function_type_name(parameters: Vec<ParameterType>, result: Box<Type>, symbols: Symbols) -> Text {
+        var output = "fn("
+        var index: usize = 0
+        while index < parameters.length() {
+            if index != 0 {
+                output.push(',');
+                output.push(' ')
+            }
+            loan read parameters[index] as parameter {
+                let mode_name = mode_name(parameter.mode)
+                std::text::append(output, mode_name)
+                output.push(' ')
+                let parameter_name = type_name(parameter.value_type, symbols)
+                std::text::append(output, parameter_name)
+            }
+            index = index + 1
+        }
+        output.push(')')
+        output.push(' ')
+        output.push('-')
+        output.push('>')
+        output.push(' ')
+        loan read result as value {
+            let result_name = type_name(value, symbols)
+            std::text::append(output, result_name)
+        }
+        return move output
+    }
+
+    fn mode_name(mode: frontend::Mode) -> Text {
+        match read mode {
+            frontend::ModeRead => {
+                return "read"
+            }
+            frontend::ModeWrite => {
+                return "write"
+            }
+            frontend::ModeTake => {
+                return "take"
+            }
+        }
+    }
+
+    fn symbol_name(symbols: Symbols, symbol: usize) -> Text {
+        if symbol >= symbols.types.length() {
+            return Text.new()
+        }
+        loan read symbols.types[symbol] as declaration {
+            return name_text(symbols.source, declaration.name)
+        }
+    }
+}

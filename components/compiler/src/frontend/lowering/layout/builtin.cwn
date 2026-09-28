@@ -1,0 +1,109 @@
+module lowering {
+    fn builtin_layout(symbols: sema::Symbols, builtin: sema::Builtin, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        let kind = builtin
+        if kind == sema::Mutex() || kind == sema::RwLock() {
+            return lock_layout(symbols, arguments)
+        }
+        if kind == sema::Option() {
+            return option_layout(symbols, arguments)
+        }
+        if kind == sema::Result() {
+            return result_layout(symbols, arguments)
+        }
+        match fixed_builtin_layout(kind) {
+            Some(layout) => {
+                return Ok(move layout)
+            }
+            None => {
+                return Err(5)
+            }
+        }
+    }
+
+    fn fixed_builtin_layout(builtin: sema::Builtin) -> Option<Layout> {
+        let size: u64 = match builtin {
+            sema::Text | sema::Vec | sema::Handle => 24
+            sema::TextView | sema::Arguments | sema::Thread | sema::Slice | sema::Shared | sema::NativeRoot | sema::RootToken | sema::RootLease => 16
+            sema::RawPtr | sema::Box | sema::Channel | sema::ScopedThread => 8
+            sema::Arena => 48
+            _ => {
+                return None()
+            }
+        }
+        Some(layout_new(size, 8))
+    }
+
+    fn lock_layout(symbols: sema::Symbols, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        if arguments.length() != 1 {
+            return Err(6)
+        }
+        loan read arguments[0] as value {
+            match layout(symbols, value) {
+                Err(error) => {
+                    return Err(error)
+                }
+                Ok(layout) => {
+                    let offset = align_to(8, layout.alignment)
+                    var alignment = layout.alignment
+                    if alignment < 8 {
+                        alignment = 8
+                    }
+                    let size = align_to(offset + layout.size, alignment)
+                    return Ok(layout_new(size, alignment))
+                }
+            }
+        }
+    }
+
+    fn option_layout(symbols: sema::Symbols, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        if arguments.length() != 1 {
+            return Err(7)
+        }
+        loan read arguments[0] as value {
+            match layout(symbols, value) {
+                Err(error) => {
+                    return Err(error)
+                }
+                Ok(payload) => {
+                    return Ok(enum_payload_layout(payload))
+                }
+            }
+        }
+    }
+
+    fn result_layout(symbols: sema::Symbols, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        if arguments.length() != 2 {
+            return Err(8)
+        }
+        var payload = layout_new(0, 1)
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as value {
+                match layout(symbols, value) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        if layout.size > payload.size {
+                            payload.size = layout.size
+                        }
+                        if layout.alignment > payload.alignment {
+                            payload.alignment = layout.alignment
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(enum_payload_layout(payload))
+    }
+
+    fn enum_payload_layout(payload: Layout) -> Layout {
+        var alignment = payload.alignment
+        if alignment < 4 {
+            alignment = 4
+        }
+        let offset = align_to(4, payload.alignment)
+        return layout_new(align_to(offset + payload.size, alignment), alignment)
+    }
+}

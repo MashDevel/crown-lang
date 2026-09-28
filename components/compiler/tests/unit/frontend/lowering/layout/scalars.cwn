@@ -1,0 +1,178 @@
+copy struct TestScalarLayout {
+    builtin: sema::Builtin
+    representation: ir::Type
+    size: u64
+}
+
+fn primitive_layout_matches(expected: TestScalarLayout) -> bool {
+    let value_type = sema::builtin_leaf(expected.builtin)
+    match lowering::scalar_ir_type(value_type) {
+        Some(actual) => {
+            if ir::type_equal(actual, expected.representation) == false {
+                return false
+            }
+        }
+        None => {
+            return false
+        }
+    }
+    match lowering::scalar_layout(value_type) {
+        Some(actual) => actual.size == expected.size && u64.from(actual.alignment) == expected.size
+        None => false
+    }
+}
+
+fn primitive_cases() -> [TestScalarLayout; 15] {
+    return [
+        TestScalarLayout {
+            builtin: sema::I8(), representation: ir::TypeInteger(ir::IntegerWidth8()), size: 1
+        },
+        TestScalarLayout {
+            builtin: sema::I16(), representation: ir::TypeInteger(ir::IntegerWidth16()), size: 2
+        },
+        TestScalarLayout {
+            builtin: sema::I32(), representation: ir::TypeInteger(ir::IntegerWidth32()), size: 4
+        },
+        TestScalarLayout {
+            builtin: sema::I64(), representation: ir::TypeInteger(ir::IntegerWidth64()), size: 8
+        },
+        TestScalarLayout {
+            builtin: sema::ISize(), representation: ir::TypeInteger(ir::IntegerWidth64()), size: 8
+        },
+        TestScalarLayout {
+            builtin: sema::U8(), representation: ir::TypeInteger(ir::IntegerWidth8()), size: 1
+        },
+        TestScalarLayout {
+            builtin: sema::U16(), representation: ir::TypeInteger(ir::IntegerWidth16()), size: 2
+        },
+        TestScalarLayout {
+            builtin: sema::U32(), representation: ir::TypeInteger(ir::IntegerWidth32()), size: 4
+        },
+        TestScalarLayout {
+            builtin: sema::U64(), representation: ir::TypeInteger(ir::IntegerWidth64()), size: 8
+        },
+        TestScalarLayout {
+            builtin: sema::USize(), representation: ir::TypeInteger(ir::IntegerWidth64()), size: 8
+        },
+        TestScalarLayout {
+            builtin: sema::F32(), representation: ir::TypeFloat(ir::FloatWidth32()), size: 4
+        },
+        TestScalarLayout {
+            builtin: sema::F64(), representation: ir::TypeFloat(ir::FloatWidth64()), size: 8
+        },
+        TestScalarLayout {
+            builtin: sema::Bool(), representation: ir::TypeInteger(ir::IntegerWidth1()), size: 1
+        },
+        TestScalarLayout {
+            builtin: sema::Char(), representation: ir::TypeInteger(ir::IntegerWidth32()), size: 4
+        },
+        TestScalarLayout {
+            builtin: sema::Unit(), representation: ir::TypeVoid(), size: 1
+        }
+    ]
+}
+
+fn primitive_layouts() -> bool {
+    let cases = primitive_cases()
+    loan read cases as values {
+        var index: usize = 0
+        while index < values.length() {
+            if primitive_layout_matches(values[index]) == false {
+                return false
+            }
+            match lowering::builtin_ir_type(values[index].builtin, 1) {
+                Some(value) => {
+                    value;
+                    return false
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+    }
+    true
+}
+
+fn pointer_layouts() -> bool {
+    match lowering::builtin_ir_type(sema::RawPtr(), 1) {
+        Some(value) => {
+            if ir::type_is_pointer(value) == false {
+                return false
+            }
+        }
+        None => {
+            return false
+        }
+    }
+    match lowering::builtin_ir_type(sema::RawPtr(), 0) {
+        Some(value) => {
+            value;
+            return false
+        }
+        None => {
+        }
+    }
+    match lowering::builtin_ir_type(sema::RawPtr(), 2) {
+        Some(value) => {
+            value;
+            return false
+        }
+        None => {
+        }
+    }
+    match lowering::builtin_ir_type(sema::NotBuiltin(), 0) {
+        Some(value) => {
+            value;
+            return false
+        }
+        None => {
+        }
+    }
+    true
+}
+
+fn fixed_layout_matches(builtin: sema::Builtin, expected: u64) -> bool {
+    match lowering::fixed_builtin_layout(builtin) {
+        Some(layout) => layout.size == expected && layout.alignment == 8
+        None => expected == 0
+    }
+}
+
+fn fixed_layouts() -> bool {
+    if fixed_layout_matches(sema::Text(), 24) == false {
+        return false
+    }
+    if fixed_layout_matches(sema::RawPtr(), 8) == false {
+        return false
+    }
+    if fixed_layout_matches(sema::Arena(), 48) == false {
+        return false
+    }
+    if fixed_layout_matches(sema::Channel(), 8) == false {
+        return false
+    }
+    if fixed_layout_matches(sema::Mutex(), 0) == false {
+        return false
+    }
+    if fixed_layout_matches(sema::Unit(), 0) == false {
+        return false
+    }
+    if fixed_layout_matches(sema::Option(), 0) == false {
+        return false
+    }
+    fixed_layout_matches(sema::NotBuiltin(), 0)
+}
+
+fn main() -> u32 {
+    if primitive_layouts() == false {
+        return 1
+    }
+    if pointer_layouts() == false {
+        return 2
+    }
+    if fixed_layouts() == false {
+        return 3
+    }
+    42
+}

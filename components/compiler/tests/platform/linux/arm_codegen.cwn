@@ -1,0 +1,18 @@
+fn combine(a: u64, b: u64, c: u64, d: u64, e: u64) -> u64 {
+    return a + b * c + d - e
+}
+
+fn calculate(value: u64) -> u64 {
+    var result: u64 = 0
+    for index in 0..usize.from(value) {
+        result = combine(result, u64.from(index), 3, 2, 1)
+    }
+    return result
+}
+
+fn main() -> u32 {
+    if calculate(6) != 51 {
+        return 1
+    }
+    return 42
+}

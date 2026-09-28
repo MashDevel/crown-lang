@@ -1,0 +1,6 @@
+struct Pair<T, T> {
+    value: T
+}
+fn main() -> u32 {
+    return 0
+}

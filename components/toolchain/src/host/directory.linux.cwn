@@ -1,0 +1,10 @@
+module toolchain {
+    extern "c" {
+        fn raw_opendir(path: RawPtr<u8>) -> RawPtr<u8> = "opendir"
+        fn raw_readdir(directory: RawPtr<u8>) -> RawPtr<u8> = "readdir"
+        fn raw_closedir(directory: RawPtr<u8>) -> i32 = "closedir"
+        fn raw_errno() -> RawPtr<i32> = "__errno_location"
+    }
+
+    const DIRECTORY_NAME_OFFSET: usize = 19
+}

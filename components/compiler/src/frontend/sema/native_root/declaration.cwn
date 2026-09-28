@@ -1,0 +1,32 @@
+module sema {
+    fn root_declaration_result(element: Type) -> Type {
+        var arguments = Vec<Type>.new()
+        arguments.push(root_wrapper(RootToken(), element))
+        arguments.push(builtin_leaf(U32()))
+        return BuiltinType(Result(), move arguments)
+    }
+    fn checker_root_declaration(checker: write Checker, reference: frontend::TypeRef, arguments: Vec<frontend::Expression>) -> Option<ExpressionInfo> {
+        if arguments.length() != 1 {
+            checker_error(checker, "root declarations require one zero-argument factory")
+            return None()
+        }
+        let element = match static_type_argument(checker, reference) {
+            None => {
+                return None()
+            },
+            Some(value) => move value
+        }
+        var visiting = Vec<usize>.new()
+        if type_is_concrete(element) && type_transferable(checker.symbols, element, visiting) == false {
+            checker_error(checker, "root declarations require transferable owned payloads")
+            return None()
+        }
+        let expected = FunctionType(Vec<ParameterType>.new(), Box.new(type_copy(element)))
+        checker_value(checker, arguments[0], expected)
+        checker.root_declarations.push(ExpressionRecord {
+                function: checker.current_function, resource_owner: checker.current_resource,
+                span: checker.current_span, value_type: type_copy(element), value: OwnedValue()
+            })
+        return Some(copy_info(root_declaration_result(element)))
+    }
+}

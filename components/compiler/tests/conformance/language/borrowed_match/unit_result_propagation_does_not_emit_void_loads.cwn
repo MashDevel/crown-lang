@@ -1,0 +1,17 @@
+fn step() -> Result<void, u32> {
+    return Ok(())
+}
+fn finish() -> Result<u32, u32> {
+    step()?
+    return Ok(42)
+}
+fn main() -> u32 {
+    match finish() {
+        Ok(value) => {
+            return value
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}

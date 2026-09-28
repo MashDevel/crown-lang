@@ -1,0 +1,9 @@
+fn both(a: write Slice<u8>, b: write Slice<u8>) -> void {
+    a;
+    b;
+}
+fn main() -> u32 {
+    var bytes: [u8; 2] = [1, 2];
+    both(bytes, bytes);
+    return 0
+}

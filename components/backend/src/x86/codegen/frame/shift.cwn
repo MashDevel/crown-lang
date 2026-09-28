@@ -1,0 +1,37 @@
+module x86 {
+    fn codegen_shift_locations(locations: write Vec<Option<ValueLocation>>, saved_registers: usize) -> Result<void, CodegenError> {
+        let slots = saved_registers + saved_registers % 2
+        if slots > 268435455 {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        let bytes = i32.from(slots * 8)
+        var index: usize = 0
+        while index < locations.length() {
+            match write locations[index] {
+                Some(location) => {
+                    match write location {
+                        ValueSlot(offset) => {
+                            offset = codegen_shift_offset(offset, bytes)?
+                        }
+                        ValueStackAddress(offset) => {
+                            offset = codegen_shift_offset(offset, bytes)?
+                        }
+                        _ => {
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_shift_offset(offset: i32, bytes: i32) -> Result<i32, CodegenError> {
+        if offset < -2147483648 + bytes {
+            return Err(codegen_error(CodegenNumericOverflow()))
+        }
+        return Ok(offset - bytes)
+    }
+}

@@ -1,0 +1,145 @@
+module x86 {
+    fn add_data_sections(program: Program, object: write object::CompilerObject, state: write ObjectState) -> Result<void, EncodeError> {
+        state.selected_data_kind = 0
+        match add_initialized_data(program, object, state) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        state.selected_data_kind = 1
+        match add_initialized_data(program, object, state) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        match add_zero_fill_data(program, object, state) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return add_data_relocations(program, object, state)
+    }
+
+    fn add_initialized_data(program: Program, object: write object::CompilerObject, state: write ObjectState) -> Result<void, EncodeError> {
+        state.pending_first = state.pending.length()
+        var bytes = Vec<u8>.new()
+        var index: usize = 0
+        while index < program.data.length() {
+            loan read program.data[index] as data {
+                if data_kind_code(data.kind) == state.selected_data_kind {
+                    match align_data_bytes(bytes, data.alignment, data.name) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(value) => {
+                            value
+                        }
+                    }
+                    state.pending.push(PendingDataPlacement {
+                            data: index, offset: u64.from(bytes.length())
+                        })
+                    var byte_index: usize = 0
+                    while byte_index < data.bytes.length() {
+                        bytes.push(data.bytes[byte_index])
+                        byte_index = byte_index + 1
+                    }
+                }
+            }
+            index = index + 1
+        }
+        if state.pending_first == state.pending.length() {
+            return Ok(())
+        }
+        var name = ".rodata"
+        var kind = object::SectionReadOnlyData()
+        if state.selected_data_kind == 1 {
+            name = ".data";
+            kind = object::SectionData()
+        }
+        let memory_size = u64.from(bytes.length())
+        match object::add_section(object, object::Section {
+                name: move name
+                kind: move kind
+                alignment: 16
+                data: move bytes
+                memory_size: memory_size
+            }) {
+            Ok(section) => {
+                state.active_section = section
+            }
+            Err(error) => {
+                return Err(object_error(move error))
+            }
+        }
+        return commit_data_symbols(program, object, state)
+    }
+
+    fn add_zero_fill_data(program: Program, object: write object::CompilerObject, state: write ObjectState) -> Result<void, EncodeError> {
+        state.pending_first = state.pending.length()
+        var size: u64 = 0
+        var index: usize = 0
+        while index < program.data.length() {
+            loan read program.data[index] as data {
+                if data_kind_code(data.kind) == 2 {
+                    match align_data_size(size, data.alignment, data.name) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(value) => {
+                            size = value
+                        }
+                    }
+                    state.pending.push(PendingDataPlacement {
+                            data: index, offset: size
+                        })
+                    if size > 18446744073709551615 - data.memory_size {
+                        return Err(named_error(InvalidDataAlignment(), data.name.clone()))
+                    }
+                    size = size + data.memory_size
+                }
+            }
+            index = index + 1
+        }
+        if state.pending_first == state.pending.length() {
+            return Ok(())
+        }
+        match object::add_section(object, object::Section {
+                name: ".bss"
+                kind: object::SectionZeroFill()
+                alignment: 16
+                data: Vec<u8>.new()
+                memory_size: size
+            }) {
+            Ok(section) => {
+                state.active_section = section
+            }
+            Err(error) => {
+                return Err(object_error(move error))
+            }
+        }
+        return commit_data_symbols(program, object, state)
+    }
+
+    fn data_kind_code(kind: DataKind) -> u8 {
+        match read kind {
+            DataReadOnly => {
+                return 0
+            }
+            DataWritable => {
+                return 1
+            }
+            DataZeroFill => {
+                return 2
+            }
+        }
+    }
+}

@@ -1,0 +1,16 @@
+fn advance(count: write u32) -> u32 { count = count + 1; return 7 }
+fn observe(site: SourceSite, value: u32) -> u32 {
+    let expected = "advance(count) + 2"
+    loan read site.expression as text { loan read expected as bytes {
+        if text.length() != bytes.length() { return 999 }; for index in 0..text.length() { if text[index] != bytes[index] { return 999 } }
+    } }
+    return value
+}
+fn borrowed(site: SourceSite, value: Text) -> usize { site; return value.length() }
+fn main() -> u32 {
+    var count: u32 = 0
+    let number = source_call(observe, advance(count) + 2)
+    let text = "borrowed"
+    let length = source_call(borrowed, text)
+    return if count == 1 && number == 9 && length == text.length() { 0 } else { 1 }
+}

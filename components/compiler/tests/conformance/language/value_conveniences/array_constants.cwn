@@ -1,0 +1,31 @@
+const COUNT: usize = 3
+const VALUES: [u32; COUNT] = [BASE, BASE + 1, BASE * 2]
+const BASE: u32 = 7
+const ZEROES: [u8; COUNT] = [0; COUNT]
+const EMPTY: [u64; 0] = []
+const FLAGS: [bool; 2] = [true, false]
+const CHARS: [char; 2] = ['a', 'λ']
+const FLOATS: [f64; 2] = [1.5, -2.0]
+fn sum(values: Slice<u32>) -> u32 {
+    return values[0] + values[1] + values[2]
+}
+fn length(values: Slice<u64>) -> usize {
+    return values.length()
+}
+fn main() -> u32 {
+    if sum(VALUES) != 29 || ZEROES[2] != 0 {
+        return 1
+    }
+    var local = VALUES
+    local[0] = 99
+    if VALUES[0] != 7 || local[0] != 99 {
+        return 2
+    }
+    if length(EMPTY) != 0 || FLAGS[0] == false || FLAGS[1] {
+        return 3
+    }
+    if CHARS[1] != 'λ' || FLOATS[1] != -2.0 {
+        return 4
+    }
+    return 0
+}

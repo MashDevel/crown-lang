@@ -1,0 +1,17 @@
+resource Item {
+    value: u32
+    drop {
+        value
+    }
+}
+fn consume(item: take Item) -> bool {
+    return item.value == 1
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    }
+    let result = false && consume(move item)
+    result
+    return 0
+}

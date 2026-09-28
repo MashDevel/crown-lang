@@ -1,0 +1,108 @@
+module optimize {
+    fn load_disjoint(function: ir::Function, scan: LoadScan, first: LoadAccess, second: LoadAccess) -> bool {
+        let first_root = load_allocation(scan, first.address)
+        let second_root = load_allocation(scan, second.address)
+        if memory_roots_disjoint(first_root, second_root) {
+            return true
+        }
+        let left = match load_region(function, scan, first.address, first.size) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        let right = match load_region(function, scan, second.address, second.size) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        return left.root == right.root && left.term == right.term &&(left.end <= right.start || right.end <= left.start)
+    }
+
+    fn load_allocation(scan: LoadScan, address: usize) -> MemoryRoot {
+        let root = load_root(scan.offsets, scan.replacements, address)
+        if root >= scan.roots.length() {
+            return MemoryUnknown()
+        }
+        return scan.roots[root]
+    }
+
+    fn load_root(offsets: Vec<Option<ir::AddressOffset>>, replacements: Vec<Option<usize>>, address: usize) -> usize {
+        var current = load_resolve(address, replacements)
+        for index in 0..offsets.length() {
+            if current >= offsets.length() {
+                return offsets.length()
+            }
+            match read offsets[current] {
+                Some(offset) => {
+                    current = load_resolve(offset.base, replacements)
+                }
+                None => {
+                    return current
+                }
+            }
+        }
+        return offsets.length()
+    }
+
+    fn load_region(function: ir::Function, scan: LoadScan, input_address: usize, size: u64) -> Option<LoadRegion> {
+        if size > 9223372036854775807 {
+            return None()
+        }
+        var address = load_resolve(input_address, scan.replacements)
+        var offset = SymbolicOffset {
+            term: None(), offset: 0
+        }
+        for index in 0..scan.offsets.length() {
+            if address >= scan.offsets.length() {
+                return None()
+            }
+            match scan.offsets[address] {
+                None => {
+                    return load_region_end(address, offset, size)
+                }
+                Some(definition) => {
+                    let part = match load_symbolic(function, scan, definition.offset, 0) {
+                        Some(value) => value
+                        None => {
+                            return None()
+                        }
+                    }
+                    offset = match load_symbolic_sum(offset, part) {
+                        Some(value) => value
+                        None => {
+                            return None()
+                        }
+                    }
+                    address = load_resolve(definition.base, scan.replacements)
+                }
+            }
+        }
+        return None()
+    }
+
+    fn load_region_end(address: usize, offset: SymbolicOffset, size: u64) -> Option<LoadRegion> {
+        match load_checked_add(offset.offset, i64.from(size)) {
+            Some(end) => Some(LoadRegion {
+                    root: address, term: offset.term, start: offset.offset, end: end
+                })
+            None => None()
+        }
+    }
+
+    fn load_checked_add(left: i64, right: i64) -> Option<i64> {
+        if right > 0 && left > 9223372036854775807 - right {
+            return None()
+        }
+        if right < 0 && left < -9223372036854775808 - right {
+            return None()
+        }
+        return Some(left + right)
+    }
+
+    copy struct LoadAccess {
+        address: usize
+        size: u64
+    }
+}

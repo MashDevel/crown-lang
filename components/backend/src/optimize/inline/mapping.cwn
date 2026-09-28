@@ -1,0 +1,130 @@
+module optimize {
+    fn prepare_inline_mapping(caller: write ir::Function, site: InlineCallSite, callee: ir::Function) -> InlineMapping {
+        var blocks = Vec<usize>.with_capacity(callee.blocks.length())
+        var index: usize = 0
+        while index < callee.blocks.length() {
+            match ir::function_add_block(caller) {
+                Ok(block) => {
+                    blocks.push(block)
+                }
+                Err(error) => {
+                    error
+                }
+            }
+            index = index + 1
+        }
+        var values = none_usize(callee.values.length())
+        index = 0
+        while index < callee.parameters.length() {
+            values[callee.parameters[index]] = Some(site.arguments[index])
+            index = index + 1
+        }
+        map_inline_constants(caller, callee, values)
+        map_inline_results(caller, callee, values)
+        return InlineMapping {
+            values: move values, blocks: move blocks
+        }
+    }
+
+    fn map_inline_constants(caller: write ir::Function, callee: ir::Function, values: write Vec<Option<usize>>) -> void {
+        var index: usize = 0
+        while index < callee.constants.length() {
+            loan read callee.constants[index] as entry {
+                let value = ir::function_constant(caller, entry.value_type, entry.value)
+                values[entry.id] = Some(value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn map_inline_results(caller: write ir::Function, callee: ir::Function, values: write Vec<Option<usize>>) -> void {
+        var block: usize = 0
+        while block < callee.blocks.length() {
+            var index: usize = 0
+            while index < callee.blocks[block].instructions.length() {
+                match read callee.blocks[block].instructions[index].result {
+                    Some(result) => {
+                        match ir::function_value_type(callee, result) {
+                            Some(value_type) => {
+                                values[result] = Some(ir::function_new_value(caller, value_type))
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn clone_inline_blocks(caller: write ir::Function, callee: ir::Function, mapping: InlineMapping, continuation: usize) -> Vec<InlineReturn> {
+        var returns = Vec<InlineReturn>.new()
+        var index: usize = 0
+        while index < callee.blocks.length() {
+            let target = mapping.blocks[index]
+            loan read callee.blocks[index] as source {
+                loan write caller.blocks[target] as target_block {
+                    clone_inline_instructions(target_block, source, mapping)
+                }
+                match read source.terminator {
+                    Some(terminator) => {
+                        let remapped = inline_remap_terminator(terminator, mapping)
+                        caller.blocks[target].terminator = inline_return(move remapped, target, continuation, returns)
+                    }
+                    None => {
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return move returns
+    }
+
+    fn clone_inline_instructions(target: write ir::BasicBlock, source: ir::BasicBlock, mapping: InlineMapping) -> void {
+        var index: usize = 0
+        while index < source.instructions.length() {
+            loan read source.instructions[index] as instruction {
+                var result: Option<usize> = None()
+                match read instruction.result {
+                    Some(value) => {
+                        result = Some(inline_mapped_value(mapping, value))
+                    }
+                    None => {
+                    }
+                }
+                target.instructions.push(ir::Instruction {
+                        result: result
+                        kind: inline_remap_instruction(instruction.kind, mapping)
+                    })
+            }
+            index = index + 1
+        }
+    }
+
+    fn inline_return(terminator: take ir::Terminator, source: usize, continuation: usize, returns: write Vec<InlineReturn>) -> Option<ir::Terminator> {
+        match move terminator {
+            ir::TerminatorReturn(value) => {
+                returns.push(InlineReturn {
+                        block: source, value: option_usize_value(value)
+                    })
+                return Some(ir::TerminatorBranch(continuation))
+            }
+            ir::TerminatorBranch(target) => {
+                return Some(ir::TerminatorBranch(target))
+            }
+            ir::TerminatorConditional(condition, then_block, else_block) => {
+                return Some(ir::TerminatorConditional(condition, then_block, else_block))
+            }
+            ir::TerminatorSwitch(value, cases, default) => {
+                return Some(ir::TerminatorSwitch(value, move cases, default))
+            }
+            ir::TerminatorUnreachable => {
+                return Some(ir::TerminatorUnreachable())
+            }
+        }
+    }
+}

@@ -1,0 +1,67 @@
+extern "c" {
+    fn test_environment(name: read RawPtr<u8>, value: read RawPtr<u8>, overwrite: read i32) -> i32 = "setenv"
+}
+
+fn test_program(broken: read bool) -> ir::Program {
+    var program = ir::program_new()
+    var names = Vec<Text>.new()
+    names.push("first")
+    names.push("second")
+    names.push("third")
+    var index: usize = 0
+    while index < names.length() {
+        let value_type = ir::TypePointer()
+        var function = ir::function_new(names[index].clone(), ir::signature_new(Vec<ir::Type>.new(), value_type), ir::LinkageExport())
+        let null = ir::ConstantNull()
+        let result = ir::function_constant(function, value_type, null)
+        var returned = result
+        match ir::function_add_block(function) { Ok(block) => { block } Err(error) => { error } }
+        if broken {
+            match ir::function_append(function, 0, ir::InstructionFunctionAddress(100000)) {
+                Ok(value) => { match value { Some(id) => { returned = id } None => {} } }
+                Err(error) => { error }
+            }
+        }
+        match ir::function_terminate(function, 0, ir::TerminatorReturn(Some(returned))) { Ok(value) => { value } Err(error) => { error } }
+        ir::program_add_function(program, move function)
+        index = index + 1
+    }
+    ir::program_set_entry(program, 0)
+    return move program
+}
+
+fn test_assembly() -> Text {
+    match x86::codegen(test_program(false)) {
+        Ok(object) => { match x86::assembly(object, x86::AssemblyFormat::MachO()) { Ok(value) => { return move value } Err(error) => { error } } }
+        Err(error) => { error }
+    }
+    return ""
+}
+
+fn test_failure() -> bool {
+    match x86::codegen_validated(test_program(true)) {
+        Ok(object) => { object; return false }
+        Err(error) => {
+            match read error.function { Some(id) => { return id == 0 } None => { return false } }
+        }
+    }
+}
+
+fn main() -> u32 {
+    unsafe { test_environment("CROWN_JOBS\0".as_raw(), "1\0".as_raw(), 1) }
+    let serial = test_assembly()
+    if serial.length() == 0 || test_failure() == false { return 1 }
+    unsafe { test_environment("CROWN_JOBS\0".as_raw(), "4\0".as_raw(), 1) }
+    let parallel = test_assembly()
+    if parallel.length() != serial.length() || test_failure() == false { return 2 }
+    loan read serial as left {
+        loan read parallel as right {
+            var index: usize = 0
+            while index < left.length() {
+                if left[index] != right[index] { return 3 }
+                index = index + 1
+            }
+        }
+    }
+    return 42
+}

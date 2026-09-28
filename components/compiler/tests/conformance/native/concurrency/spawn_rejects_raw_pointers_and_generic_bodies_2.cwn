@@ -1,0 +1,11 @@
+enum Link {
+    End,
+    Next(RawPtr<u8>, Box<Link>)
+}
+fn main() -> u32 {
+    let link = End()
+    let thread = spawn move {
+        link
+    }
+    return 0
+}

@@ -1,0 +1,130 @@
+module x86 {
+    struct WideConditions {
+        high: Condition
+        low: Condition
+    }
+
+    fn codegen_wide_compare(program: ir::Program, compiler: write FunctionCompiler, input: take CompareInput) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.left, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.right, registers: WideRegisters {
+                    low: Rcx(), high: R8()
+                }
+            })?
+        match read input.operator {
+            ir::CompareEqual => {
+                codegen_emit_wide_equality(compiler, input.operator)
+            }
+            ir::CompareNotEqual => {
+                codegen_emit_wide_equality(compiler, input.operator)
+            }
+            _ => {
+                codegen_emit_wide_ordering(compiler, input.operator)?
+            }
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result, source: Rax()
+            })
+    }
+
+    fn codegen_emit_wide_equality(compiler: write FunctionCompiler, operator: ir::CompareOperator) -> void {
+        let different = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, Compare(Rdx(), R8()))
+        codegen_emit(compiler, JumpIf(NotEqual(), local_label_copy(different)))
+        codegen_emit(compiler, Compare(Rax(), Rcx()))
+        if codegen_wide_not_equal(operator) {
+            codegen_emit(compiler, Set(NotEqual(), Rax()))
+        }
+        else {
+            codegen_emit(compiler, Set(Equal(), Rax()))
+        }
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move different))
+        if codegen_wide_not_equal(operator) {
+            codegen_emit(compiler, MoveImmediate(Rax(), 1))
+        }
+        else {
+            codegen_emit(compiler, MoveImmediate(Rax(), 0))
+        }
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_emit_wide_ordering(compiler: write FunctionCompiler, operator: ir::CompareOperator) -> Result<void, CodegenError> {
+        let conditions = codegen_wide_conditions(compiler, operator)?
+        let equal_high = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, Compare(Rdx(), R8()))
+        codegen_emit(compiler, JumpIf(Equal(), local_label_copy(equal_high)))
+        codegen_emit(compiler, Set(conditions.high, Rax()))
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move equal_high))
+        codegen_emit(compiler, Compare(Rax(), Rcx()))
+        codegen_emit(compiler, Set(conditions.low, Rax()))
+        codegen_emit(compiler, Label(move done))
+        return Ok(())
+    }
+
+    fn codegen_wide_conditions(compiler: FunctionCompiler, operator: ir::CompareOperator) -> Result<WideConditions, CodegenError> {
+        match read operator {
+            ir::CompareSignedLess => {
+                return Ok(WideConditions {
+                        high: Less(), low: Below()
+                    })
+            }
+            ir::CompareSignedLessEqual => {
+                return Ok(WideConditions {
+                        high: Less(), low: BelowOrEqual()
+                    })
+            }
+            ir::CompareSignedGreater => {
+                return Ok(WideConditions {
+                        high: Greater(), low: Above()
+                    })
+            }
+            ir::CompareSignedGreaterEqual => {
+                return Ok(WideConditions {
+                        high: Greater(), low: AboveOrEqual()
+                    })
+            }
+            ir::CompareUnsignedLess => {
+                return Ok(WideConditions {
+                        high: Below(), low: Below()
+                    })
+            }
+            ir::CompareUnsignedLessEqual => {
+                return Ok(WideConditions {
+                        high: Below(), low: BelowOrEqual()
+                    })
+            }
+            ir::CompareUnsignedGreater => {
+                return Ok(WideConditions {
+                        high: Above(), low: Above()
+                    })
+            }
+            ir::CompareUnsignedGreaterEqual => {
+                return Ok(WideConditions {
+                        high: Above(), low: AboveOrEqual()
+                    })
+            }
+            _ => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_wide_not_equal(operator: ir::CompareOperator) -> bool {
+        match read operator {
+            ir::CompareNotEqual => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

@@ -1,0 +1,7 @@
+fn mutate(value: u32) -> u32 {
+    value = 2
+    value
+}
+fn main() -> u32 {
+    mutate(1)
+}

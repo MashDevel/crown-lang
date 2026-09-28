@@ -1,0 +1,75 @@
+module x86 {
+    fn codegen_vector_instruction(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Option<Result<void, CodegenError>> {
+        match read instruction.kind {
+            ir::InstructionVectorSplat(value, target) => {
+                target;
+                return Some(codegen_vector_splat(program, compiler, value, instruction.result))
+            }
+            ir::InstructionBinary(operator, left, right) => {
+                if codegen_value_is_vector(program, compiler, left) {
+                    return Some(codegen_vector_binary(program, compiler, BinaryInput {
+                                result: instruction.result, operator: operator, left: left, right: right
+                            }))
+                }
+            }
+            ir::InstructionMemory(memory) => {
+                return codegen_vector_memory(program, compiler, instruction.result, memory)
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn codegen_value_is_vector(program: ir::Program, compiler: FunctionCompiler, value: usize) -> bool {
+        return ir::type_is_vector(program.functions[compiler.id].values[value])
+    }
+
+    fn codegen_vector_memory(program: ir::Program, compiler: write FunctionCompiler, result: Option<usize>, memory: ir::MemoryInstruction) -> Option<Result<void, CodegenError>> {
+        match read memory {
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                alignment;
+                volatile;
+                if ir::type_is_vector(value_type) {
+                    return Some(codegen_vector_memory_load(program, compiler, address, result))
+                }
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                alignment;
+                volatile;
+                if codegen_value_is_vector(program, compiler, value) {
+                    return Some(codegen_vector_memory_store(program, compiler, address, value))
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn codegen_vector_memory_load(program: ir::Program, compiler: write FunctionCompiler, address: usize, result: Option<usize>) -> Result<void, CodegenError> {
+        let value = match result {
+            Some(found) => found
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        codegen_packed_load(program, compiler, address, Xmm0())?
+        return codegen_store_vector(compiler, FloatValueAccess {
+                value: value, register: Xmm0()
+            })
+    }
+
+    fn codegen_vector_memory_store(program: ir::Program, compiler: write FunctionCompiler, address: usize, value: usize) -> Result<void, CodegenError> {
+        codegen_load_vector(compiler, FloatValueAccess {
+                value: value, register: Xmm0()
+            })?
+        codegen_load_value(program, compiler, ValueAccess {
+                value: address, register: Rax()
+            })?
+        codegen_emit(compiler, StorePackedFloat(StoreFloatMemoryArgs {
+                    width: Float64(), source: Xmm0(), base: Rax(), offset: 0
+                }))
+        return Ok(())
+    }
+}

@@ -1,0 +1,28 @@
+fn payload(seed: read u8) -> [u8; 23] {
+    var bytes: [u8; 23] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    var index: usize = 0
+    while index < 23 {
+        bytes[index] = seed + u8.from(index)
+        index = index + 1
+    }
+    return bytes
+}
+
+fn copy_payload(destination: write [u8; 23], source: read [u8; 23]) -> void {
+    destination = source
+}
+
+fn main() -> u32 {
+    var buffers: [[u8; 23]; 3] = [payload(17), payload(34), payload(51)]
+    let source = payload(165)
+    let action = copy_payload
+    action(buffers[1], source)
+    var index: usize = 0
+    while index < 23 {
+        if buffers[0][index] != 17 + u8.from(index) { return 1 }
+        if buffers[1][index] != 165 + u8.from(index) { return 2 }
+        if buffers[2][index] != 51 + u8.from(index) { return 3 }
+        index = index + 1
+    }
+    return 42
+}

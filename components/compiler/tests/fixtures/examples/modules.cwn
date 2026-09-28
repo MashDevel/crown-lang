@@ -1,0 +1,12 @@
+module left {
+    struct Value { private number: u32 }
+    fn make(number: take u32) -> Value { return Value { number: number } }
+    fn get(value: read Value) -> u32 { return value.number }
+    fn answer() -> u32 { let value = make(20)
+        return get(value) }
+}
+module right {
+    struct Value { number: u32 }
+    fn answer() -> u32 { return 22 }
+}
+fn main() -> u32 { return left::answer() + right::answer() }

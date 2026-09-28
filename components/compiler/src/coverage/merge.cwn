@@ -1,0 +1,56 @@
+module coverage {
+    fn combined_profile(directories: Vec<Text>) -> Result<Profile, Text> {
+        var output = Profile {
+            files: Vec<SourceProfile>.new(), runs: 0
+        }
+        let paths = profile_directories(directories)?
+        for index in 0..paths.length() {
+            let profile = load_profile(paths[index])?
+            merge_profile(output, profile)?
+        }
+        return Ok(move output)
+    }
+
+    fn merge_profile(output: write Profile, profile: Profile) -> Result<void, Text> {
+        for index in 0..profile.files.length() {
+            merge_source(output.files, profile.files[index])?
+        }
+        output.runs = output.runs + profile.runs
+        return Ok(())
+    }
+
+    fn merge_source(files: write Vec<SourceProfile>, source: SourceProfile) -> Result<void, Text> {
+        let index = profile_index(files, source.path)
+        if index == files.length() {
+            var points = Vec<ProfilePoint>.with_capacity(source.points.length())
+            for point in 0..source.points.length() {
+                points.push(source.points[point])
+            }
+            files.push(SourceProfile {
+                    path: source.path.clone(), checksum: source.checksum.clone(), points: move points
+                })
+            return Ok(())
+        }
+        loan write files[index] as destination {
+            if std::text::equal(destination.checksum, source.checksum) == false {
+                return Err(std::text::joined("coverage sources differ: ", source.path))
+            }
+            return merge_points(destination.points, source.points)
+        }
+    }
+
+    fn merge_points(destination: write Vec<ProfilePoint>, source: Vec<ProfilePoint>) -> Result<void, Text> {
+        if destination.length() != source.length() {
+            return Err("coverage point layouts differ")
+        }
+        for index in 0..source.length() {
+            let expected = destination[index]
+            let actual = source[index]
+            if expected.line != actual.line || expected.column != actual.column || expected.kind != actual.kind {
+                return Err("coverage point layouts differ")
+            }
+            destination[index].hit = expected.hit || actual.hit
+        }
+        return Ok(())
+    }
+}

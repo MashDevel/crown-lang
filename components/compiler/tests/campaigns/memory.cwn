@@ -1,0 +1,30 @@
+module campaign {
+    fn memory(environment: harness::Environment) -> Result<void, Text> {
+        let source = toolchain::path_join(environment.root, "components/compiler/tests/generative/allocations.cwn")
+        let binary = toolchain::path_join(environment.output, "allocations")
+        allocator_build(environment, source, binary)?
+        var execute = Vec<Text>.new()
+        execute.push(binary.clone())
+        harness::verify_clean(harness::invoke(move execute, environment.output)?)?
+        let row = harness::Outcome {
+            name: "allocation_balance", error: ""
+        }
+        let report = std::text::joined(std::text::joined("[", harness::outcome_json(row)), "]\n")
+        toolchain::write_text(toolchain::path_join(environment.output, "results.json"), report)?
+        toolchain::say("Allocation balance: 1 passed, 0 failed")
+        return Ok(())
+    }
+
+    fn allocator_build(environment: harness::Environment, source: Text, binary: Text) -> Result<void, Text> {
+        var command = Vec<Text>.new()
+        command.push(environment.compiler.clone())
+        command.push("run")
+        command.push(toolchain::path_join(environment.root, "components/compiler/tests/allocator"))
+        command.push("-o")
+        command.push(toolchain::path_join(environment.root, "target/toolchain/crown-allocation-auditor"))
+        command.push("--")
+        command.push(source.clone())
+        command.push(binary.clone())
+        return toolchain::require_compiler(move command)
+    }
+}

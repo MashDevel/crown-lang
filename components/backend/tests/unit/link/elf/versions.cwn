@@ -1,0 +1,123 @@
+fn version_fixture() -> elf::LibraryReader {
+    var symbols = std::bytes::filled(96, 0)
+    for index in 1..4 {
+        link_binary::put(symbols, index * 24, 1, 4)
+        symbols[index * 24 + 4] = 18
+        link_binary::put(symbols, index * 24 + 6, 1, 2)
+    }
+    var versions = std::bytes::filled(8, 0)
+    link_binary::put(versions, 2, 32770, 2)
+    link_binary::put(versions, 4, 3, 2)
+    link_binary::put(versions, 6, 1, 2)
+    link_binary::put(symbols, 72, 7, 4)
+    var definitions = std::bytes::filled(28, 0)
+    link_binary::put(definitions, 0, 1, 2)
+    link_binary::put(definitions, 4, 3, 2)
+    link_binary::put(definitions, 6, 1, 2)
+    link_binary::put(definitions, 12, 20, 4)
+    link_binary::put(definitions, 20, 12, 4)
+    return elf::LibraryReader {
+        bytes: Vec<u8>.new(), headers: Vec<elf::ObjectSection>.new(), strings: toolchain::text_bytes("\0alpha\0beta\0VER_2\0"),
+        symbols: move symbols, versions: move versions, definitions: move definitions
+    }
+}
+
+fn default_exports() -> Result<void, Text> {
+    let exports = elf::library_exports(version_fixture(), "libfixture.so")?
+    testing::expect(exports.length() == 2, "hidden compatibility version is excluded")?
+    let alpha = elf::resolve_version(exports, "alpha")?
+    testing::expect(std::text::equal(alpha.version, "VER_2"), "default version is selected")?
+    let beta = elf::resolve_version(exports, "beta")?
+    testing::expect(beta.version.length() == 0, "unversioned export is retained")?
+    return testing::error(elf::resolve_version(exports, "missing"))
+}
+
+fn invalid_versions() -> Result<void, Text> {
+    var reader = version_fixture()
+    testing::error(elf::library_version(reader, 9))?
+    link_binary::put(reader.definitions, 12, 4294967295, 4)
+    testing::error(elf::library_version(reader, 3))?
+    link_binary::put(reader.definitions, 12, 20, 4)
+    link_binary::put(reader.definitions, 0, 2, 2)
+    testing::error(elf::library_version(reader, 3))?
+    return testing::error(elf::library_reader(Vec<u8>.new(), object::ArchitectureX86_64()))
+}
+
+fn requirement_records() -> Result<void, Text> {
+    let exports = elf::library_exports(version_fixture(), "libfixture.so")?
+    let records = elf::version_records(exports)?
+    testing::expect(records.length() == 1, "unversioned imports do not create requirements")?
+    var libraries = Vec<Text>.new()
+    libraries.push("libunused.so")
+    libraries.push("libfixture.so")
+    var strings = std::bytes::filled(1, 0)
+    let requirements = elf::version_requirements(records, libraries, strings)?
+    testing::expect(requirements.length() == 32, "one version requirement and auxiliary")?
+    return requirement_fields(requirements)
+}
+
+fn requirement_fields(requirements: Vec<u8>) -> Result<void, Text> {
+    testing::expect(link_binary::number(requirements, 2, 2)? == 1, "version requirement count")?
+    testing::expect(link_binary::number(requirements, 12, 4)? == 0, "last library terminates")?
+    testing::expect(link_binary::number(requirements, 22, 2)? == 2, "version indices start at two")?
+    return testing::expect(link_binary::number(requirements, 16, 4)? == elf::version_hash("VER_2"), "version hash")
+}
+
+fn run() -> Result<void, Text> {
+    default_exports()?
+    invalid_versions()?
+    definition_bounds()?
+    auxiliary_bounds()?
+    definition_chain()?
+    return requirement_records()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn definition_bounds() -> Result<void, Text> {
+    for length in 0..20 {
+        testing::error(elf::next_version_definition(std::bytes::filled(length, 0), 0))?
+    }
+    var bytes = std::bytes::filled(20, 0)
+    let invalid: [u64; 3] = [1, 19, 21]
+    for index in 0..3 {
+        link_binary::put(bytes, 16, invalid[index], 4)
+        testing::error(elf::next_version_definition(bytes, 0))?
+    }
+    link_binary::put(bytes, 16, 20, 4)
+    testing::expect(elf::next_version_definition(bytes, 0)? == 20, "definition ending at section boundary")?
+    link_binary::put(bytes, 16, 0, 4)
+    return testing::expect(elf::next_version_definition(bytes, 0)? == 20, "zero offset terminates definitions")
+}
+
+fn auxiliary_bounds() -> Result<void, Text> {
+    var reader = version_fixture()
+    let invalid: [u64; 4] = [0, 19, 28, 29]
+    for index in 0..4 {
+        link_binary::put(reader.definitions, 12, invalid[index], 4)
+        testing::error(elf::library_version_name(reader, 0))?
+    }
+    link_binary::put(reader.definitions, 12, 20, 4)
+    link_binary::put(reader.definitions, 20, 4294967295, 4)
+    testing::error(elf::library_version_name(reader, 0))?
+    reader.definitions = std::bytes::filled(15, 0)
+    testing::error(elf::library_version_name(reader, 0))?
+    return testing::error(elf::library_exports(reader, "fixture.so"))
+}
+
+fn definition_chain() -> Result<void, Text> {
+    var reader = version_fixture()
+    let second = version_fixture()
+    link_binary::put(reader.definitions, 4, 2, 2)
+    link_binary::put(reader.definitions, 16, 28, 4)
+    link_binary::append(reader.definitions, second.definitions)
+    testing::expect(std::text::equal(elf::library_version(reader, 3)?, "VER_2"), "walk to later version definition")?
+    testing::error(elf::library_version(reader, 4))?
+    reader.definitions = std::bytes::filled(1, 0)
+    testing::error(elf::library_version(reader, 3))?
+    reader.definitions = std::bytes::filled(4, 0)
+    link_binary::put(reader.definitions, 0, 1, 2)
+    return testing::error(elf::library_version(reader, 3))
+}

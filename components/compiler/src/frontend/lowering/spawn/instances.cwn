@@ -1,0 +1,76 @@
+module lowering {
+    fn concrete_spawn_record(compiler: FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<sema::SpawnRecord, u32> {
+        var record = spawn_record(analysis, expression)?
+        for index in 0..record.captures.length() {
+            loan write record.captures[index] as capture {
+                capture.value_type = sema::substitute(capture.value_type, compiler.substitutions)
+            }
+        }
+        return Ok(move record)
+    }
+    fn declare_spawns(compiler: write Compiler, analysis: sema::Analysis) -> void {
+        for index in 0..analysis.checker.spawns.length() {
+            loan read analysis.checker.spawns[index] as record {
+                declare_spawn_record(compiler, analysis, record)
+            }
+        }
+    }
+    fn declare_spawn_record(compiler: write Compiler, analysis: sema::Analysis, record: sema::SpawnRecord) -> void {
+        if sema::root_resource_call(analysis.checker.symbols, record.resource_owner) == false {
+            declare_resource_spawns(compiler, analysis, record);
+            return
+        }
+        match record.function {
+            Some(owner) => {
+                if analysis.checker.symbols.functions[owner].type_parameters.length() != 0 {
+                    declare_function_spawns(compiler, analysis, record);
+                    return
+                }
+            }
+            None => {
+            }
+        }
+        declare_spawn_instance(compiler, record.span, Vec<sema::Type>.new())
+    }
+    fn declare_function_spawns(compiler: write Compiler, analysis: sema::Analysis, record: sema::SpawnRecord) -> void {
+        for index in 0..analysis.instances.length() {
+            loan read analysis.instances[index] as instance {
+                if sema::resource_owner_matches(record.function, instance.function) {
+                    declare_spawn_instance(compiler, record.span, instance.arguments)
+                }
+            }
+        }
+    }
+    fn declare_resource_spawns(compiler: write Compiler, analysis: sema::Analysis, record: sema::SpawnRecord) -> void {
+        for index in 0..analysis.checker.resource_instances.length() {
+            match read analysis.checker.resource_instances[index] {
+                sema::NamedType(symbol, arguments) => {
+                    if sema::resource_owner_matches(record.resource_owner, symbol) {
+                        declare_spawn_instance(compiler, record.span, arguments)
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+    }
+    fn declare_spawn_instance(compiler: write Compiler, span: frontend::Span, arguments: Vec<sema::Type>) -> void {
+        let name = spawn_function_name(span, arguments)
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                value;
+                return
+            },
+            None => {
+            }
+        }
+        var parameters = Vec<ir::Type>.new();
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypePointer())
+        let function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+        let id = ir::program_add_function(compiler.output, move function)
+        compiler.tables.generated_functions.push(NamedFunction {
+                name: move name, function: id
+            })
+    }
+}

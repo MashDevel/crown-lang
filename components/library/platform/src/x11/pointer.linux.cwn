@@ -1,0 +1,70 @@
+module native::x11 {
+    copy struct Grab {
+        display: RawPtr<u8>, window: u64, cursor: u64
+    }
+
+    unsafe fn next_request(library: std::dylib::Library, display: RawPtr<u8>) -> u64 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>) -> u64>.cast(std::dylib::slot(library, 34)).read()
+            return action(display)
+        }
+    }
+
+    unsafe fn grab_pointer(library: std::dylib::Library, request: Grab) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read i32, read u32, read i32, read i32, read u64, read u64, read u64) -> i32>.cast(std::dylib::slot(library, 25)).read()
+            return action(request.display, request.window, 0, 4 | 8 | 64, 1, 1, request.window, request.cursor, 0)
+        }
+    }
+
+    unsafe fn ungrab_pointer(library: std::dylib::Library, display: RawPtr<u8>) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 26)).read()
+            return action(display, 0)
+        }
+    }
+
+    unsafe fn warp_pointer(library: std::dylib::Library, display: RawPtr<u8>, window: u64, point: [i32; 2]) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read u64, read i32, read i32, read u32, read u32, read i32, read i32) -> i32>.cast(std::dylib::slot(library, 27)).read()
+            return action(display, 0, window, 0, 0, 0, 0, point[0], point[1])
+        }
+    }
+
+    unsafe fn invisible_cursor(library: std::dylib::Library, display: RawPtr<u8>, window: u64) -> u64 {
+        unsafe {
+            let bitmap = RawPtr<fn(read RawPtr<u8>, read u64, read RawPtr<u8>, read u32, read u32) -> u64>.cast(std::dylib::slot(library, 28)).read()
+            let create = RawPtr<fn(read RawPtr<u8>, read u64, read u64, read RawPtr<u8>, read RawPtr<u8>, read u32, read u32) -> u64>.cast(std::dylib::slot(library, 29)).read()
+            let release = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 30)).read()
+            let pixmap = bitmap(display, window, "\0".as_raw(), 1, 1)
+            if pixmap == 0 {
+                return 0
+            }
+            let color = std::bytes::filled(16, 0)
+            let cursor = create(display, pixmap, pixmap, color.as_raw(), color.as_raw(), 0, 0)
+            release(display, pixmap)
+            return cursor
+        }
+    }
+
+    unsafe fn free_cursor(library: std::dylib::Library, display: RawPtr<u8>, cursor: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 31)).read()
+            return action(display, cursor)
+        }
+    }
+
+    unsafe fn define_cursor(library: std::dylib::Library, display: RawPtr<u8>, window: u64, cursor: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64, read u64) -> i32>.cast(std::dylib::slot(library, 32)).read()
+            return action(display, window, cursor)
+        }
+    }
+
+    unsafe fn undefine_cursor(library: std::dylib::Library, display: RawPtr<u8>, window: u64) -> i32 {
+        unsafe {
+            let action = RawPtr<fn(read RawPtr<u8>, read u64) -> i32>.cast(std::dylib::slot(library, 33)).read()
+            return action(display, window)
+        }
+    }
+}

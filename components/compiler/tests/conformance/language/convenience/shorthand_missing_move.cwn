@@ -1,0 +1,2 @@
+struct Item { text: Text }
+fn main() -> u32 { let text = "hello"; let item = Item { text }; return 0 }

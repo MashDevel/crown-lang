@@ -1,0 +1,113 @@
+module auditor {
+    fn arm_runtime_object() -> Result<object::CompilerObject, Text> {
+        var output = object::new()
+        output.architecture = object::ArchitectureArm64()
+        arm64::runtime_zero(output, "crown_test_counters", 24)
+        arm_begin(output)?
+        arm_acquired(output)?
+        arm_allocate(output, "malloc")?
+        arm_allocate(output, "calloc")?
+        arm_reallocate(output)?
+        arm_release(output)?
+        arm_counter(output, "crown_test_live", 0)?
+        arm_counter(output, "crown_test_allocated", 8)?
+        return Ok(move output)
+    }
+
+    fn arm_begin(output: write object::CompilerObject) -> Result<void, Text> {
+        var compiler = arm64::runtime_compiler(0)
+        arm64::symbol_address(compiler, "crown_test_counters", 9)
+        for index in 0..3 {
+            arm64::atomic_publish(compiler, if index == 2 {
+                    1
+                } else {
+                    0
+                })
+            arm64::emit_encoding(compiler, arm64::add_immediate(9, 9, 8, false))
+        }
+        arm64::emit(compiler, 3596551104)
+        return arm64::runtime_export(output, compiler, "crown_test_begin")
+    }
+
+    fn arm_load_acquire(compiler: write arm64::Compiler, destination: u32, address: u32) -> void {
+        arm64::emit(compiler, 3370122240 |(address << 5) | destination)
+        return
+    }
+
+    fn arm_enabled(compiler: write arm64::Compiler) -> void {
+        arm64::runtime_compare(compiler, 0, 0)
+        arm64::runtime_condition(compiler, 0, 0)
+        arm64::symbol_address(compiler, "crown_test_counters", 9)
+        arm64::emit_encoding(compiler, arm64::add_immediate(10, 9, 16, false))
+        arm_load_acquire(compiler, 10, 10)
+        arm64::runtime_compare(compiler, 10, 0)
+        return arm64::runtime_condition(compiler, 0, 0)
+    }
+
+    fn arm_update(compiler: write arm64::Compiler, subtract: bool, label: usize) -> void {
+        arm64::runtime_label(compiler, label)
+        arm_load_acquire(compiler, 12, 9)
+        arm64::runtime_move(compiler, 10, 12)
+        arm64::emit_encoding(compiler, arm64::add_immediate(11, 12, 1, subtract))
+        arm64::atomic_compare(compiler)
+        return arm64::runtime_condition(compiler, 1, label)
+    }
+
+    fn arm_acquired(output: write object::CompilerObject) -> Result<void, Text> {
+        var compiler = arm64::runtime_compiler(0)
+        arm_enabled(compiler)
+        arm_update(compiler, false, 1)
+        arm64::emit_encoding(compiler, arm64::add_immediate(9, 9, 8, false))
+        arm_update(compiler, false, 2)
+        arm64::runtime_label(compiler, 0)
+        arm64::emit(compiler, 3596551104)
+        return arm64::runtime_export(output, compiler, "crown_test_acquired")
+    }
+
+    fn arm_allocate(output: write object::CompilerObject, name: Text) -> Result<void, Text> {
+        var compiler = arm64::runtime_compiler(16)
+        arm64::prologue(compiler)
+        arm64::call_symbol(compiler, name)
+        arm64::frame_access(compiler, 0, 0, 8, false)
+        arm64::call_symbol(compiler, "crown_test_acquired")
+        arm64::frame_access(compiler, 0, 0, 8, true)
+        arm64::epilogue(compiler)
+        return arm64::runtime_export(output, compiler, std::text::joined("crown_test_", name))
+    }
+
+    fn arm_reallocate(output: write object::CompilerObject) -> Result<void, Text> {
+        var compiler = arm64::runtime_compiler(16)
+        arm64::prologue(compiler)
+        arm64::frame_access(compiler, 0, 0, 8, false)
+        arm64::call_symbol(compiler, "realloc")
+        arm64::frame_access(compiler, 0, 8, 8, false)
+        arm64::frame_access(compiler, 9, 0, 8, true)
+        arm64::runtime_compare(compiler, 9, 0)
+        arm64::runtime_condition(compiler, 1, 0)
+        arm64::call_symbol(compiler, "crown_test_acquired")
+        arm64::runtime_label(compiler, 0)
+        arm64::frame_access(compiler, 0, 8, 8, true)
+        arm64::epilogue(compiler)
+        return arm64::runtime_export(output, compiler, "crown_test_realloc")
+    }
+
+    fn arm_release(output: write object::CompilerObject) -> Result<void, Text> {
+        var compiler = arm64::runtime_compiler(0)
+        arm64::prologue(compiler)
+        arm_enabled(compiler)
+        arm_update(compiler, true, 1)
+        arm64::runtime_label(compiler, 0)
+        arm64::call_symbol(compiler, "free")
+        arm64::epilogue(compiler)
+        return arm64::runtime_export(output, compiler, "crown_test_free")
+    }
+
+    fn arm_counter(output: write object::CompilerObject, name: Text, offset: u32) -> Result<void, Text> {
+        var compiler = arm64::runtime_compiler(0)
+        arm64::symbol_address(compiler, "crown_test_counters", 9)
+        arm64::emit_encoding(compiler, arm64::add_immediate(9, 9, offset, false))
+        arm_load_acquire(compiler, 0, 9)
+        arm64::emit(compiler, 3596551104)
+        return arm64::runtime_export(output, compiler, name)
+    }
+}

@@ -1,0 +1,6 @@
+interface Read {
+    fn bad(self: read Self, value: read Option<Self>) -> void
+}
+fn main() -> u32 {
+    return 0
+}

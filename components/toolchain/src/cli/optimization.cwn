@@ -1,0 +1,45 @@
+module toolchain {
+    struct OptimizationOptions {
+        generate: Text
+        use_profile: Text
+        report: Text
+    }
+
+    fn optimization_options() -> OptimizationOptions {
+        return OptimizationOptions {
+            generate: "", use_profile: "", report: ""
+        }
+    }
+
+    fn optimization_copy(value: OptimizationOptions) -> OptimizationOptions {
+        return OptimizationOptions {
+            generate: value.generate.clone(), use_profile: value.use_profile.clone(), report: value.report.clone()
+        }
+    }
+
+    fn optimization_arguments(arguments: write Vec<Text>, options: OptimizationOptions) -> void {
+        optimization_argument(arguments, "--profile-generate", options.generate)
+        optimization_argument(arguments, "--profile-use", options.use_profile)
+        optimization_argument(arguments, "--optimization-report", options.report)
+    }
+
+    fn optimization_argument(arguments: write Vec<Text>, key: Text, value: Text) -> void {
+        if value.length() != 0 {
+            arguments.push(key.clone());
+            arguments.push(value.clone())
+        }
+    }
+
+    fn validate_optimization(options: Options) -> Result<void, Text> {
+        if options.optimization.generate.length() != 0 && options.optimization.use_profile.length() != 0 {
+            return Err("profile generation and use require separate builds")
+        }
+        if options.coverage.length() != 0 &&(options.optimization.generate.length() != 0 || options.optimization.use_profile.length() != 0) {
+            return Err("coverage and profiling require separate builds")
+        }
+        if options.target == target(Architecture::X86_64(), Platform::Bedrock()) &&(options.optimization.generate.length() != 0 || options.optimization.use_profile.length() != 0) {
+            return Err("profiling requires a hosted target")
+        }
+        return Ok(())
+    }
+}

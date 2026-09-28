@@ -1,0 +1,11 @@
+fn command(value: TextView) -> u32 {
+    match value {
+        "parse" => 1,
+        "check" => 2,
+        "compile" => 3,
+        _ => 0
+    }
+}
+fn main(arguments: Arguments) -> u32 {
+    command(arguments[1]) + command(arguments[2]) + command(arguments[3]) + command(arguments[4]) + 36
+}

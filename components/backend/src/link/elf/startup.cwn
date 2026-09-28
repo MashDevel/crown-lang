@@ -1,0 +1,55 @@
+module elf {
+    fn startup_size(architecture: object::Architecture) -> usize {
+        return if architecture == object::ArchitectureArm64() {
+            56
+        } else {
+            37
+        }
+    }
+
+    fn startup_import(object: write object::CompilerObject) -> Result<usize, Text> {
+        for index in 0..object.symbols.length() {
+            if std::text::equal(object.symbols[index].name, "__libc_start_main") {
+                if object::symbol_is_function(object.symbols[index].kind) == false {
+                    return Err("ELF startup symbol must be a function")
+                }
+                return Ok(index)
+            }
+        }
+        let symbol = object::Symbol {
+            name: "__libc_start_main", kind: object::SymbolFunction(), binding: object::SymbolImport(),
+            section: None(), offset: 0, size: 0
+        }
+        match object::add_symbol(object, move symbol) {
+            Ok(index) => Ok(index)
+            Err(error) => {
+                error;
+                Err("could not add ELF startup symbol")
+            }
+        }
+    }
+
+    fn write_startup(image: write Image, object: object::CompilerObject, startup: usize) -> Result<void, Text> {
+        let entry = match read object.entry {
+            Some(value) => value
+            None => {
+                return Err("ELF executable requires an entry function")
+            }
+        }
+        if image.architecture == object::ArchitectureArm64() {
+            return write_arm_startup(image, entry, startup)
+        }
+        let bytes: [u8; 22] = [49, 237, 73, 137, 209, 94, 72, 137, 226, 72, 131, 228, 240, 80, 84, 69, 49, 192, 49, 201, 72, 191]
+        let offset = image.entry_offset
+        for index in 0..22 {
+            image.bytes[offset + index] = bytes[index]
+        }
+        link_binary::put(image.bytes, offset + 22, image.symbols[entry], 8)
+        image.bytes[offset + 30] = 255
+        image.bytes[offset + 31] = 21
+        let delta = relative(image.slots[startup], IMAGE_BASE + u64.from(offset + 36))?
+        link_binary::put(image.bytes, offset + 32, u64.from_bits(delta), 4)
+        image.bytes[offset + 36] = 244
+        return Ok(())
+    }
+}

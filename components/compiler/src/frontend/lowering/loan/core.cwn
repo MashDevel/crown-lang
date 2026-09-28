@@ -1,0 +1,144 @@
+module lowering {
+    struct LoanValue {
+        address: usize
+        value_type: sema::Type
+    }
+
+    fn loan_scope(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                mode
+                let value = loan_value(compiler, analysis, source)?
+                function_push_scope(compiler)
+                function_add_binding(compiler, Binding {
+                        name: frontend::name_copy(alias)
+                        value_type: sema::type_copy(value.value_type)
+                        address: value.address
+                        owned: false
+                        available: true
+                        depth: compiler.scope_depth
+                    })
+                function_statements(compiler, analysis, body)?
+                return function_pop_scope(compiler)
+            }
+            _ => {
+                return Err(218)
+            }
+        }
+    }
+
+    fn loan_value(compiler: write FunctionCompiler, analysis: sema::Analysis, source: frontend::Expression) -> Result<LoanValue, u32> {
+        match read source.kind {
+            frontend::ExpressionSlice(target, start, end) => {
+                target;
+                start;
+                end;
+                return slice_loan(compiler, analysis, source)
+            }
+            _ => {
+            }
+        }
+        let place = expression_place_info(compiler, analysis, source)?
+        return loan_place(compiler, analysis.checker.symbols, place)
+    }
+
+    fn loan_place(compiler: write FunctionCompiler, symbols: sema::Symbols, place: Place) -> Result<LoanValue, u32> {
+        if sema::type_builtin(place.value_type) == sema::RootLease() {
+            return root_loan(compiler, place)
+        }
+        let address = place.address
+        let value_type = sema::type_copy(place.value_type)
+        match read value_type {
+            sema::ArrayType(element, length) => {
+                let count_type = ir::TypeInteger(ir::IntegerWidth64())
+                let count = function_integer(compiler, count_type, u64.from(length))
+                var arguments = Vec<sema::Type>.new()
+                loan read element as value {
+                    arguments.push(sema::type_copy(value))
+                }
+                let view_type = sema::BuiltinType(sema::Slice(), move arguments)
+                let view = View {
+                    data: address, length: count, value_type: move view_type
+                }
+                return make_view(compiler, symbols, view)
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                let kind = builtin
+                if kind == sema::Text() {
+                    return loan_text(compiler, symbols, address)
+                }
+                if kind == sema::Vec() {
+                    let container = LoanContainer {
+                        address: address, arguments: sema::types_copy(arguments)
+                    }
+                    return loan_vector(compiler, symbols, container)
+                }
+                if (kind == sema::Box() || kind == sema::Shared()) && arguments.length() == 1 {
+                    let pointer = function_load_pointer(compiler, address)?
+                    loan read arguments[0] as element {
+                        return Ok(LoanValue {
+                                address: pointer, value_type: sema::type_copy(element)
+                            })
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return Ok(LoanValue {
+                address: address, value_type: move value_type
+            })
+    }
+
+    struct View {
+        data: usize
+        length: usize
+        value_type: sema::Type
+    }
+
+    struct LoanContainer {
+        address: usize
+        arguments: Vec<sema::Type>
+    }
+
+    fn loan_text(compiler: write FunctionCompiler, symbols: sema::Symbols, address: usize) -> Result<LoanValue, u32> {
+        let data = function_load_pointer(compiler, address)?
+        let length_address = function_offset(compiler, address, 8)?
+        let load = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, load)?
+        let value_type = sema::builtin_leaf(sema::TextView())
+        let view = View {
+            data: data, length: length, value_type: move value_type
+        }
+        return make_view(compiler, symbols, view)
+    }
+
+    fn loan_vector(compiler: write FunctionCompiler, symbols: sema::Symbols, container: LoanContainer) -> Result<LoanValue, u32> {
+        let data = function_load_pointer(compiler, container.address)?
+        let length_address = function_offset(compiler, container.address, 8)?
+        let load = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, load)?
+        let value_type = sema::BuiltinType(sema::Slice(), sema::types_copy(container.arguments))
+        let view = View {
+            data: data, length: length, value_type: move value_type
+        }
+        return make_view(compiler, symbols, view)
+    }
+
+    fn make_view(compiler: write FunctionCompiler, symbols: sema::Symbols, view: View) -> Result<LoanValue, u32> {
+        let address = function_stack(compiler, symbols, view.value_type)?
+        function_store_pointer(compiler, address, view.data)?
+        let length_address = function_offset(compiler, address, 8)?
+        let store = StoreRequest {
+            address: length_address, value: view.length, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        return Ok(LoanValue {
+                address: address, value_type: sema::type_copy(view.value_type)
+            })
+    }
+}

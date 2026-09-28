@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let small: u8 = 42
+    return small
+}

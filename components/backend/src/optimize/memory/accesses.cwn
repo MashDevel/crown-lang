@@ -1,0 +1,40 @@
+module optimize {
+    fn memory_accesses_copy(values: Vec<LoadAccess>) -> Vec<LoadAccess> {
+        var output = Vec<LoadAccess>.with_capacity(values.length())
+        for index in 0..values.length() {
+            output.push(values[index])
+        }
+        return move output
+    }
+
+    fn memory_access_contains(values: Vec<LoadAccess>, access: LoadAccess) -> bool {
+        for index in 0..values.length() {
+            if values[index].address == access.address && values[index].size == access.size {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn memory_access_intersection(left: Vec<LoadAccess>, right: Vec<LoadAccess>) -> Vec<LoadAccess> {
+        var output = Vec<LoadAccess>.new()
+        for index in 0..left.length() {
+            if memory_access_contains(right, left[index]) {
+                output.push(left[index])
+            }
+        }
+        return move output
+    }
+
+    fn memory_access_sets_equal(left: Vec<LoadAccess>, right: Vec<LoadAccess>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        for index in 0..left.length() {
+            if memory_access_contains(right, left[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+}

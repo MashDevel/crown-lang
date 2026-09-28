@@ -1,0 +1,16 @@
+enum State {
+    Ready, Waiting
+}
+fn ready(state: read State) -> u32 {
+    match read state {
+        Ready => {
+            return 1
+        }
+        Waiting => {
+            return 0
+        }
+    }
+}
+fn main() -> u32 {
+    return 0
+}

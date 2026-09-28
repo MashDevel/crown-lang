@@ -1,0 +1,143 @@
+module sema {
+    fn checker_loan(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                match expression_root(source) {
+                    None => {
+                        checker_error(checker, "invalid loan: the place must be available and support the requested access")
+                    }
+                    Some(root) => {
+                        checker_loan_root(checker, statement, move root)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid loan: the place must be available and support the requested access")
+            }
+        }
+    }
+
+    fn checker_loan_root(checker: write Checker, statement: frontend::Statement, root: take frontend::Name) -> void {
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                match checker_find_variable(checker, root) {
+                    None => {
+                        checker_error(checker, "invalid loan: the place must be available and support the requested access")
+                    }
+                    Some(key) => {
+                        let variable = checker_variable_copy(checker, key)
+                        if can_reborrow(variable.access, mode) == false {
+                            checker_error(checker, "invalid loan: the place must be available and support the requested access");
+                            return
+                        }
+                        let usage = loan_usage(mode)
+                        match checker_loan_source(checker, source, usage) {
+                            None => {
+                            }
+                            Some(value_type) => {
+                                let request = LoanOpen {
+                                    root: frontend::name_copy(root), key: key, value_type: move value_type
+                                }
+                                checker_apply_loan(checker, statement, move request)
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid loan: the place must be available and support the requested access")
+            }
+        }
+    }
+
+    struct LoanOpen {
+        root: frontend::Name
+        key: VariableKey
+        value_type: Type
+    }
+
+    fn checker_apply_loan(checker: write Checker, statement: frontend::Statement, request: take LoanOpen) -> void {
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                source
+                if loan_is_write(mode) && type_builtin(request.value_type) == Shared() {
+                    checker_error(checker, "invalid loan: the place must be available and support the requested access")
+                    return
+                }
+                begin_place_loan(checker, source, mode)
+                checker_push_scope(checker)
+                let view_type = loan_view(request.value_type)
+                let alias_variable = Variable {
+                    name: frontend::name_copy(alias)
+                    copy_value: type_is_copy_with_symbols(checker.symbols, view_type)
+                    value_type: move view_type
+                    mutable_value: loan_is_write(mode)
+                    state: Available()
+                    access: loan_access(mode)
+                    state_span: statement.span
+                    span: statement.span
+                }
+                checker_add_variable(checker, move alias_variable)
+                checker_statements(checker, body)
+                checker_pop_scope(checker)
+                checker.place_loans.pop()
+            }
+            _ => {
+                checker_error(checker, "invalid loan: the place must be available and support the requested access")
+            }
+        }
+    }
+
+    fn checker_loan_source(checker: write Checker, source: frontend::Expression, usage: PathUse) -> Option<Type> {
+        match read source.kind {
+            frontend::ExpressionSlice(target, start, end) => {
+                return checker_slice_loan(checker, source.kind, usage)
+            }
+            _ => {
+            }
+        }
+        match checker_place(checker, source, usage) {
+            None => {
+                return None()
+            }
+            Some(info) => {
+                return Some(type_copy(info.value_type))
+            }
+        }
+    }
+
+    fn checker_slice_loan(checker: write Checker, kind: frontend::ExpressionKind, usage: PathUse) -> Option<Type> {
+        match read kind {
+            frontend::ExpressionSlice(target, start, end) => {
+                var container: Option<ExpressionInfo> = None()
+                loan read target as value {
+                    container = checker_place(checker, value, usage)
+                }
+                match move container {
+                    None => {
+                        return None()
+                    }
+                    Some(info) => {
+                        check_boxed_index(checker, target, start)
+                        check_boxed_index(checker, target, end)
+                        match indexed_element(info.value_type) {
+                            None => {
+                                checker_error(checker, "invalid loan: the place must be available and support the requested access");
+                                return None()
+                            }
+                            Some(element) => {
+                                var types = Vec<Type>.new()
+                                types.push(move element)
+                                return Some(BuiltinType(Slice(), move types))
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid loan: the place must be available and support the requested access");
+                return None()
+            }
+        }
+    }
+}

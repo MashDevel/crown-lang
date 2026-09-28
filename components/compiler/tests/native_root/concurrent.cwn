@@ -1,0 +1,96 @@
+fn counter_factory() -> Mutex<u32> {
+    return Mutex.new(u32.from(0))
+}
+
+fn factory() -> u64 {
+    let token = match RootToken<Mutex<u32>>.declare(counter_factory) {
+        Ok(value) => value,
+        Err(error) => {
+            error;
+            return 0
+        }
+    }
+    let lease = match token.acquire() {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return 0
+        }
+    }
+    loan read lease as mutex {
+        mutex.lock write as count {
+            count = count + 1
+        }
+    }
+    return 42
+}
+
+fn declare_value() -> Result<RootToken<u64>, u32> {
+    while true {
+        match RootToken<u64>.declare(factory) {
+            Ok(value) => {
+                return Ok(value)
+            },
+            Err(error) => {
+                if error != 2 {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    return Err(14)
+}
+
+fn declared_pair() -> Result<RootToken<u64>, u32> {
+    var first: Result<RootToken<u64>, u32> = Err(99)
+    var second: Result<RootToken<u64>, u32> = Err(99)
+    thread_scope {
+        let a = spawn[write first] {
+            first = declare_value()
+        }
+        let b = spawn[write second] {
+            second = declare_value()
+        }
+        if a.started() == false || b.started() == false {
+            return Err(10)
+        }
+        a.join()
+        b.join()
+    }
+    let left = first?
+    let right = second?
+    if left.slot() != right.slot() || left.generation() != right.generation() {
+        return Err(11)
+    }
+    return Ok(left)
+}
+
+fn run() -> Result<void, u32> {
+    let counter = RootToken<Mutex<u32>>.declare(counter_factory)?
+    let left = declared_pair()?
+    let value = left.acquire()?
+    loan read value as number {
+        if number != 42 {
+            return Err(12)
+        }
+    }
+    let lease = counter.acquire()?
+    loan read lease as mutex {
+        mutex.lock write as count {
+            if count != 1 {
+                return Err(13)
+            }
+        }
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(value) => {
+            value;
+            0
+        },
+        Err(error) => error
+    }
+}

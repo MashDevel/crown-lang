@@ -1,0 +1,34 @@
+module sema {
+    fn resolve_array_length(symbols: write Symbols, length: frontend::ArrayLength) -> usize {
+        match read length {
+            frontend::LiteralLength(value) => {
+                return value
+            }
+            frontend::NamedLength(name) => {
+                match find_constant(symbols, name) {
+                    Some(index) => {
+                        return constant_array_length(symbols, index)
+                    }
+                    None => {
+                        symbols_error(symbols, "array length requires a nonnegative integer constant");
+                        return 0
+                    }
+                }
+            }
+        }
+    }
+
+    fn constant_array_length(symbols: write Symbols, index: usize) -> usize {
+        match symbols.constants[index].value {
+            ConstantResolved(value) => {
+                if builtin_is_integer(value.builtin) && constant_magnitude(value).negative == false {
+                    return usize.from(value.bits)
+                }
+            }
+            _ => {
+            }
+        }
+        symbols_error(symbols, "array length requires a nonnegative integer constant")
+        return 0
+    }
+}

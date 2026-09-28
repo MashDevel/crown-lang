@@ -1,0 +1,27 @@
+module lowering {
+    struct PanicDefinition {
+        name: Text
+        message: Text
+    }
+
+    fn panic_definitions() -> Vec<PanicDefinition> {
+        var definitions = Vec<PanicDefinition>.new()
+        panic_definition(definitions, "integer_overflow", "integer overflow\n")
+        panic_definition(definitions, "index_out_of_bounds", "index out of bounds\n")
+        panic_definition(definitions, "allocation_failed", "allocation failed\n")
+        panic_definition(definitions, "thread_creation_failed", "thread creation failed\n")
+        panic_definition(definitions, "thread_join_failed", "thread join failed\n")
+        panic_definition(definitions, "synchronization_failed", "synchronization failed\n")
+        panic_definition(definitions, "invalid_enum_tag", "invalid enum tag\n")
+        panic_definition(definitions, "numeric_conversion", "numeric conversion out of range\n")
+        panic_definition(definitions, "invalid_shift", "shift amount out of range\n")
+        panic_definition(definitions, "invalid_arena_handle", "invalid arena handle\n")
+        return move definitions
+    }
+
+    fn panic_definition(definitions: write Vec<PanicDefinition>, name: take Text, message: take Text) -> void {
+        definitions.push(PanicDefinition {
+                name: move name, message: move message
+            })
+    }
+}

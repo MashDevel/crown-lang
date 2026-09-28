@@ -1,0 +1,79 @@
+fn slot_program(size: u64, alignment: u32) -> Result<ir::Program, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    safety_append(function, block, ir::InstructionStackSlot(3, 1))?
+    let slot = safety_append(function, block, ir::InstructionStackSlot(size, alignment))?
+    let address = safety_append(function, block, ir::InstructionCast(ir::CastPointerToInteger(), slot, ir::TypeInteger(ir::IntegerWidth64())))?
+    let mask = safety_integer(function, ir::IntegerWidth64(), u64.from(alignment - 1))
+    let remainder = safety_append(function, block, ir::InstructionBinary(ir::BinaryAnd(), address, mask))?
+    let zero = safety_integer(function, ir::IntegerWidth64(), 0)
+    safety_return_equal(function, block, remainder, zero)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn slot_boundaries() -> Result<void, u32> {
+    let sizes: [u64; 6] = [1, 3, 5, 7, 12, 15]
+    let alignments: [u32; 5] = [1, 2, 4, 8, 16]
+    for index in 0..6 {
+        for alignment in 0..5 {
+            let program = slot_program(sizes[index], alignments[alignment])?
+            safety_execute(move program)?
+        }
+    }
+    let oversized = slot_program(1, 32)?
+    match x86::codegen_build_frame(oversized.functions[0]) {
+        Err(error) => {
+            error
+        }
+        Ok(frame) => {
+            frame;
+            return Err(1)
+        }
+    }
+    match x86::codegen_align_i32(2147483647, 16) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            return Err(2)
+        }
+    }
+    match x86::codegen_align_i32(1, 3) {
+        Err(error) => {
+            error
+        }
+        Ok(value) => {
+            value;
+            return Err(3)
+        }
+    }
+    return slot_shift_overflow()
+}
+
+fn slot_shift_overflow() -> Result<void, u32> {
+    for address in 0..2 {
+        var locations = Vec<Option<x86::ValueLocation>>.new()
+        if address == 1 {
+            locations.push(Some(x86::ValueStackAddress(-2147483640)))
+        } else {
+            locations.push(Some(x86::ValueSlot(-2147483640)))
+        }
+        match x86::codegen_shift_locations(locations, 1) {
+            Err(error) => {
+                error
+            }
+            Ok(value) => {
+                value;
+                return Err(4)
+            }
+        }
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(slot_boundaries())
+}

@@ -1,0 +1,53 @@
+module x86 {
+    fn codegen_load_indexed_address(program: ir::Program, compiler: write FunctionCompiler, input: take IndexedValues) -> Result<RegisterPair, CodegenError> {
+        var base = R11()
+        match codegen_frame_register(compiler.frame, input.base) {
+            Some(register) => {
+                base = register
+            }
+            None => {
+                codegen_load_value(program, compiler, ValueAccess {
+                        value: input.base, register: base
+                    })?
+            }
+        }
+        let value_type = codegen_value_type(program, compiler, input.index)?
+        let narrow = match ir::type_size(value_type) {
+            Some(size) => size < 8
+            None => true
+        }
+        return codegen_load_address_index(program, compiler, input, base, narrow)
+    }
+
+    fn codegen_load_address_index(program: ir::Program, compiler: write FunctionCompiler, input: IndexedValues, base: Register, narrow: bool) -> Result<RegisterPair, CodegenError> {
+        var index = Rcx()
+        var allocated = false
+        match codegen_frame_register(compiler.frame, input.index) {
+            Some(register) => {
+                index = register;
+                allocated = true
+            }
+            None => {
+            }
+        }
+        if narrow || allocated == false {
+            if register_code(base) == 1 {
+                index = Rdx()
+            } else {
+                index = Rcx()
+            }
+            codegen_load_signed(program, compiler, ValueAccess {
+                    value: input.index, register: index
+                })?
+        }
+        if register_code(base) & 7 == 4 && register_code(index) & 7 == 4 {
+            index = Rcx()
+            codegen_load_signed(program, compiler, ValueAccess {
+                    value: input.index, register: index
+                })?
+        }
+        return Ok(RegisterPair {
+                destination: base, source: index
+            })
+    }
+}

@@ -1,0 +1,10 @@
+fn call(action: scoped fn() -> void) -> void {
+    action()
+}
+fn main() -> u32 {
+    let value = 1;
+    call(fn[write value]() {
+            value = 2
+        });
+    return 0
+}

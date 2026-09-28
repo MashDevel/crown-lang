@@ -1,0 +1,26 @@
+module lowering {
+    fn lower_bound_ast_function(compiler: write Compiler, input: ProgramInput, binding: FunctionBinding) -> Result<void, u32> {
+        let span = input.analysis.checker.symbols.functions[binding.semantic_function].name.span
+        for index in 0..input.program.functions.length() {
+            loan read input.program.functions[index] as function {
+                if spans_equal(span, function.name.span) {
+                    return lower_function_binding(compiler, input.analysis, function, binding)
+                }
+            }
+        }
+        return lower_bound_method(compiler, input, binding, span)
+    }
+
+    fn lower_bound_method(compiler: write Compiler, input: ProgramInput, binding: FunctionBinding, span: frontend::Span) -> Result<void, u32> {
+        for index in 0..input.program.implementations.length() {
+            for method in 0..input.program.implementations[index].methods.length() {
+                loan read input.program.implementations[index].methods[method] as function {
+                    if spans_equal(span, function.name.span) {
+                        return lower_function_binding(compiler, input.analysis, function, binding)
+                    }
+                }
+            }
+        }
+        return Err(79)
+    }
+}

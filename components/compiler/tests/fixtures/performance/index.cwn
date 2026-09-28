@@ -1,0 +1,42 @@
+fn index_case(length: read usize) -> bool {
+    var entries = Vec<ir::IndexEntry>.new()
+    var index: usize = 0
+    while index < length {
+        let value = length - index - 1
+        entries.push(ir::IndexEntry { group: u64.from(value % 3), key: u64.from(value % 5), value: value })
+        index = index + 1
+    }
+    ir::index_sort(entries)
+    var seen = Vec<bool>.new()
+    index = 0
+    while index < length { seen.push(false); index = index + 1 }
+    index = 0
+    while index < length {
+        if seen[entries[index].value] { return false }
+        seen[entries[index].value] = true
+        if index != 0 && ir::index_before(entries[index], entries[index - 1]) { return false }
+        index = index + 1
+    }
+    loan read entries as values {
+        var group: u64 = 0
+        while group < 5 {
+            var key: u64 = 0
+            while key < 7 {
+                var expected: usize = 0
+                while expected < length && (entries[expected].group < group || (entries[expected].group == group && entries[expected].key < key)) { expected = expected + 1 }
+                if ir::index_lower_bound(values, group, key) != expected { return false }
+                key = key + 1
+            }
+            group = group + 1
+        }
+    }
+    return true
+}
+fn main() -> u32 {
+    var length: usize = 0
+    while length < 65 {
+        if index_case(length) == false { return 1 }
+        length = length + 1
+    }
+    return 42
+}

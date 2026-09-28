@@ -1,0 +1,198 @@
+module optimize {
+    fn fold_binary(function: ir::Function, kind: ir::InstructionKind, value_type: ir::Type) -> Option<ir::Constant> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let left_constant = integer_constant(function, left)
+                let right_constant = integer_constant(function, right)
+                match read left_constant {
+                    Some(left_value) => {
+                        match read right_constant {
+                            Some(right_value) => {
+                                let input = binary_input(operator, left_value, right_value)
+                                return fold_integer_binary(input, value_type)
+                            }
+                            None => {
+                                return None()
+                            }
+                        }
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn fold_integer_binary(input: BinaryInput, value_type: ir::Type) -> Option<ir::Constant> {
+        if ir::type_is_integer(value_type) == false {
+            return None()
+        }
+        match integer_binary_value(input, value_type) {
+            Some(value) => {
+                let constant = ir::ConstantInteger(value)
+                return Some(ir::constant_normalized(constant, value_type))
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn integer_binary_value(input: BinaryInput, value_type: ir::Type) -> Option<u64> {
+        match read input.operator {
+            ir::BinaryAdd => {
+                return Some(input.left.wrapping_add(input.right))
+            }
+            ir::BinarySubtract => {
+                return Some(input.left.wrapping_sub(input.right))
+            }
+            ir::BinaryMultiply => {
+                return Some(input.left.wrapping_mul(input.right))
+            }
+            ir::BinaryUnsignedDivide => {
+                if input.right != 0 {
+                    return Some(input.left / input.right)
+                };
+                return None()
+            }
+            ir::BinaryUnsignedRemainder => {
+                if input.right != 0 {
+                    return Some(input.left % input.right)
+                };
+                return None()
+            }
+            ir::BinarySignedDivide => {
+                return signed_division(input.left, input.right, value_type, false)
+            }
+            ir::BinarySignedRemainder => {
+                return signed_division(input.left, input.right, value_type, true)
+            }
+            _ => {
+                return integer_bitwise(input, value_type)
+            }
+        }
+    }
+
+    fn integer_bitwise(input: BinaryInput, value_type: ir::Type) -> Option<u64> {
+        let shift = input.right & 63
+        match read input.operator {
+            ir::BinaryAnd => {
+                return Some(input.left & input.right)
+            }
+            ir::BinaryOr => {
+                return Some(input.left | input.right)
+            }
+            ir::BinaryXor => {
+                return Some(input.left ^ input.right)
+            }
+            ir::BinaryShiftLeft => {
+                return Some(input.left << shift)
+            }
+            ir::BinaryShiftRightUnsigned => {
+                return Some(input.left >> shift)
+            }
+            ir::BinaryShiftRightSigned => {
+                return Some(signed_shift_right(input.left, shift, value_type))
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn signed_division(left: u64, right: u64, value_type: ir::Type, remainder: bool) -> Option<u64> {
+        let mask = ir::integer_mask(value_type)
+        let sign = sign_bit(value_type)
+        let normalized_left = left & mask
+        let normalized_right = right & mask
+        if normalized_right == 0 {
+            return None()
+        }
+        if normalized_left == sign && normalized_right == mask {
+            return None()
+        }
+        let left_negative = (normalized_left & sign) != 0
+        let right_negative = (normalized_right & sign) != 0
+        let left_magnitude = integer_magnitude(normalized_left, mask, left_negative)
+        let right_magnitude = integer_magnitude(normalized_right, mask, right_negative)
+        var value = left_magnitude / right_magnitude
+        var negative = left_negative != right_negative
+        if remainder {
+            value = left_magnitude % right_magnitude;
+            negative = left_negative
+        }
+        if negative {
+            value = wrapping_neg(value)
+        }
+        return Some(value & mask)
+    }
+
+    fn integer_magnitude(value: u64, mask: u64, negative: bool) -> u64 {
+        if negative {
+            return wrapping_neg(value) & mask
+        }
+        return value
+    }
+
+    fn signed_shift_right(value: u64, shift: u64, value_type: ir::Type) -> u64 {
+        let mask = ir::integer_mask(value_type)
+        let normalized = value & mask
+        if shift == 0 ||(normalized & sign_bit(value_type)) == 0 {
+            return normalized >> shift
+        }
+        let bits = u64.from(integer_bits(value_type))
+        if shift >= bits {
+            return mask
+        }
+        let high = mask ^((u64.from(1) <<(bits - shift)) - 1)
+        return (normalized >> shift) | high
+    }
+
+    fn sign_bit(value_type: ir::Type) -> u64 {
+        let bits = integer_bits(value_type)
+        if bits == 0 {
+            return 0
+        }
+        return u64.from(1) << u64.from(bits - 1)
+    }
+
+    fn fold_unary(function: ir::Function, kind: ir::InstructionKind, value_type: ir::Type) -> Option<ir::Constant> {
+        match read kind {
+            ir::InstructionUnary(operator, value) => {
+                match integer_constant(function, value) {
+                    Some(constant) => {
+                        var output: u64 = 0
+                        match read operator {
+                            ir::UnaryNegate => {
+                                output = wrapping_neg(constant)
+                            }
+                            ir::UnaryNot => {
+                                output = ~constant
+                            }
+                            ir::UnaryFloatNegate => {
+                                return None()
+                            }
+                        }
+                        let folded = ir::ConstantInteger(output)
+                        return Some(ir::constant_normalized(folded, value_type))
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn wrapping_neg(value: u64) -> u64 {
+        let zero: u64 = 0
+        return zero.wrapping_sub(value)
+    }
+}

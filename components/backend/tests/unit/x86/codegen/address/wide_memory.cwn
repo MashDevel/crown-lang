@@ -1,0 +1,36 @@
+fn wide_memory_program(offset: bool) -> Result<ir::Program, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let slot = safety_append(function, block, ir::InstructionStackSlot(32, 16))?
+    let value_type = ir::TypeInteger(ir::IntegerWidth128())
+    let expected = ir::function_constant(function, value_type, ir::ConstantWideInteger(ir::WideInteger {
+                low: 81985529216486895, high: 18364758544493064720
+            }))
+    let eight = safety_integer(function, ir::IntegerWidth64(), 8)
+    var destination = slot
+    if offset {
+        destination = safety_append(function, block, ir::InstructionOffset(slot, eight))?
+    }
+    safety_append(function, block, ir::InstructionStore(destination, expected, 8, false))?
+    var source = slot
+    if offset {
+        source = safety_append(function, block, ir::InstructionOffset(slot, eight))?
+    }
+    let value = safety_append(function, block, ir::InstructionLoad(source, value_type, 8, false))?
+    safety_return_equal(function, block, value, expected)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn wide_memory() -> Result<void, u32> {
+    for offset in 0..2 {
+        let program = wide_memory_program(offset == 1)?
+        safety_execute(move program)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(wide_memory())
+}

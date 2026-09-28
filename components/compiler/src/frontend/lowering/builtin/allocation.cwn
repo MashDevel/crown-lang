@@ -1,0 +1,69 @@
+module lowering {
+    fn function_allocate(compiler: write FunctionCompiler, size: usize) -> Result<usize, u32> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let signature = ir::signature_new(move parameters, ir::TypePointer())
+        var arguments = Vec<usize>.new()
+        arguments.push(size)
+        let request = ImportedCall {
+            name: "malloc", signature: move signature, arguments: move arguments
+        }
+        var pointer: usize = 0
+        match function_imported_call(compiler, request) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                match result {
+                    Some(value) => {
+                        pointer = value
+                    }
+                    None => {
+                        return Err(95)
+                    }
+                }
+            }
+        }
+        function_guard_allocation(compiler, pointer)?
+        return Ok(pointer)
+    }
+
+    fn function_resize(compiler: write FunctionCompiler, pointer: usize, size: usize) -> Result<usize, u32> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let signature = ir::signature_new(move parameters, ir::TypePointer())
+        var arguments = Vec<usize>.new()
+        arguments.push(pointer)
+        arguments.push(size)
+        let request = ImportedCall {
+            name: "realloc", signature: move signature, arguments: move arguments
+        }
+        var resized: usize = 0
+        match function_imported_call(compiler, request) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(result) => {
+                match result {
+                    Some(value) => {
+                        resized = value
+                    }
+                    None => {
+                        return Err(96)
+                    }
+                }
+            }
+        }
+        function_guard_allocation(compiler, resized)?
+        return Ok(resized)
+    }
+
+    fn function_guard_allocation(compiler: write FunctionCompiler, pointer: usize) -> Result<void, u32> {
+        let null_value = ir::ConstantNull()
+        let pointer_type = ir::TypePointer()
+        let null = ir::function_constant(compiler.ir, pointer_type, null_value)
+        let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), pointer, null))?
+        return function_guard_with(compiler, valid, "allocation_failed")
+    }
+}

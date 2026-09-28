@@ -1,0 +1,67 @@
+module frontend {
+    struct SourceBundle {
+        source: Shared<Vec<u8>>
+        length: usize
+        files: Vec<SourceBundleFile>
+        errors: u32
+    }
+
+    struct SourceBundleFile {
+        path: Text
+        start: usize
+        end: usize
+    }
+
+    struct SourceBundleInput {
+        bytes: Vec<u8>
+        files: Vec<SourceBundleFile>
+        errors: u32
+    }
+
+    fn source_bundle_from_paths(paths: Vec<Text>) -> SourceBundle {
+        var input = SourceBundleInput {
+            bytes: Vec<u8>.new(), files: Vec<SourceBundleFile>.new(), errors: 0
+        }
+        for index in 0..paths.length() {
+            loan read paths[index] as path {
+                source_bundle_load(input, path)
+            }
+        }
+        let length = input.bytes.length()
+        let bytes = replace(input.bytes, Vec<u8>.new())
+        let files = replace(input.files, Vec<SourceBundleFile>.new())
+        return SourceBundle {
+            source: Shared.new(move bytes), length: length, files: move files, errors: input.errors
+        }
+    }
+
+    fn source_bundle_load(input: write SourceBundleInput, path: TextView) -> void {
+        match std::io::read_file(path) {
+            Err(error) => {
+                input.errors = input.errors + 1
+                file_error(path, error, "could not read source file: ")
+            }
+            Ok(source) => {
+                let start = input.bytes.length()
+                loan read source as bytes {
+                    std::bytes::append(input.bytes, bytes)
+                }
+                input.files.push(SourceBundleFile {
+                        path: path.clone(), start: start, end: input.bytes.length()
+                    })
+                input.bytes.push(10)
+            }
+        }
+    }
+
+    fn file_error(path: TextView, error: std::io::Error, context: take Text) -> void {
+        diagnostic_literal("error: ")
+        diagnostic_write(context)
+        let name = path.clone()
+        diagnostic_write(name)
+        diagnostic_literal(" (")
+        let message = std::io::error_message(error)
+        diagnostic_write(message)
+        diagnostic_literal(")\n")
+    }
+}

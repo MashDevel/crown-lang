@@ -1,0 +1,42 @@
+fn big_endian(bytes: Vec<u8>, offset: usize) -> u64 {
+    var value: u64 = 0
+    for index in 0..4 {
+        value = (value << 8) | u64.from(bytes[offset + index])
+    }
+    return value
+}
+fn signature_boundary(size: usize, slots: usize) -> Result<void, Text> {
+    let input = std::bytes::filled(size, 42)
+    let signature = macho::code_signature(input, u64.from(size))?
+    testing::expect(big_endian(signature, 0) == 4208856256, "signature superblob")?
+    testing::expect(big_endian(signature, 20) == 4208856066, "code directory")?
+    testing::expect(big_endian(signature, 48) == u64.from(slots), "signature page count")?
+    testing::expect(big_endian(signature, 52) == u64.from(size), "signature code limit")?
+    testing::expect(signature[56] == 32 && signature[57] == 2 && signature[59] == 12, "SHA-256 page hashing")?
+    return testing::expect(signature.length() % 16 == 0, "signature padding")
+}
+fn run() -> Result<void, Text> {
+    signature_boundary(0, 0)?
+    signature_boundary(4095, 1)?
+    signature_boundary(4096, 1)?
+    signature_boundary(4097, 2)?
+    testing::error(macho::code_signature(Vec<u8>.new(), 1))?
+    let signature = macho::code_signature(std::bytes::filled(1, 42), 1)?
+    let expected: [u8; 32] = [104, 72, 136, 192, 235, 177, 127, 55, 66, 152, 182, 94, 226, 128, 117, 38, 192, 102, 9, 76, 112, 27, 204, 126, 187, 225, 193, 9, 95, 73, 79, 193]
+    for index in 0..32 {
+        testing::expect(signature[114 + index] == expected[index], "known SHA-256 page hash")?
+    }
+    return Ok(())
+}
+fn main() -> u32 {
+    match run() {
+        Ok(value) => {
+            value;
+            42
+        },
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

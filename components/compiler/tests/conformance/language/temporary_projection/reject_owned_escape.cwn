@@ -1,0 +1,12 @@
+struct Payload {
+    text: Text
+}
+fn payload() -> Payload {
+    return Payload {
+        text: "owned"
+    }
+}
+fn main() -> u32 {
+    let escaped = payload().text
+    return 0
+}

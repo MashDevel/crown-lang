@@ -1,0 +1,23 @@
+fn acquire(path: Text) -> Result<void, Text> {
+    let lock = toolchain::lock_file(path)?
+    lock;
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let path = toolchain::path_join(root, "nested/compiler.lock")
+    acquire(path)?
+    testing::expect(toolchain::exists(path), "lock creates a missing file")?
+    toolchain::write_text(path, "preserved")?
+    acquire(path)?
+    testing::expect(std::text::equal(toolchain::read_text(path)?, "preserved"), "lock does not truncate an existing file")?
+    acquire(path)?
+    testing::error(toolchain::lock_file(root))?
+    return testing::error(toolchain::lock_file(toolchain::path_join(path, "invalid")))
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

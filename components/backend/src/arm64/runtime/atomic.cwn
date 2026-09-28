@@ -1,0 +1,25 @@
+module arm64 {
+    fn atomic_compare(compiler: write Compiler) -> void {
+        let retry = compiler.bytes.length()
+        emit(compiler, 3361733932)
+        emit_encoding(compiler, compare_word(12, 10))
+        emit_encoding(compiler, conditional_branch(20, 1))
+        emit(compiler, 3356425515)
+        emit_encoding(compiler, compare_word(14, 31))
+        emit_encoding(compiler, conditional_branch(i64.from(retry) - i64.from(compiler.bytes.length()), 1))
+        emit_encoding(compiler, compare_word(12, 10))
+        emit(compiler, 3573759839)
+        return
+    }
+    fn atomic_values(compiler: write Compiler, expected: u64, desired: u64) -> void {
+        immediate(compiler, 10, expected)
+        immediate(compiler, 11, desired)
+        return atomic_compare(compiler)
+    }
+    fn atomic_publish(compiler: write Compiler, state: u64) -> void {
+        immediate(compiler, 10, state)
+        emit(compiler, 3365928234)
+        return
+    }
+
+}

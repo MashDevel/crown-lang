@@ -1,0 +1,12 @@
+struct Item {
+    value: u32
+}
+fn consume(item: take Item) -> u32 {
+    return item.value
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    }
+    return consume(item)
+}

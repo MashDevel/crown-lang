@@ -1,0 +1,212 @@
+module optimize {
+    fn thread_create_plan(function: ir::Function, edge: ThreadEdge, terminator: take ir::Terminator) -> Option<ThreadPlan> {
+        match thread_incoming_values(function, edge.through, edge.source) {
+            None => {
+                return None()
+            }
+            Some(values) => {
+                let targets = ir::terminator_targets(terminator)
+                if thread_supported_uses(function, edge, values) == false {
+                    return None()
+                }
+                var successors = Vec<ThreadSuccessor>.new()
+                var index: usize = 0
+                while index < targets.length() {
+                    let target = targets[index]
+                    if target == edge.through || thread_successor_exists(successors, target) {
+                        return None()
+                    }
+                    match thread_successor_values(function, target, edge.through, values) {
+                        Some(output) => {
+                            successors.push(ThreadSuccessor {
+                                    block: target, values: move output
+                                })
+                        }
+                        None => {
+                            return None()
+                        }
+                    }
+                    index = index + 1
+                }
+                return Some(ThreadPlan {
+                        source: edge.source, through: edge.through, terminator: move terminator, successors: move successors
+                    })
+            }
+        }
+    }
+
+    fn thread_incoming_values(function: ir::Function, through: usize, source: usize) -> Option<Vec<Option<usize>>> {
+        var output = none_usize(function.values.length())
+        var index: usize = 0
+        while index < function.blocks[through].instructions.length() {
+            loan read function.blocks[through].instructions[index] as instruction {
+                var result: usize = 0
+                match read instruction.result {
+                    Some(value) => {
+                        result = value
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+                match read instruction.kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        value_type
+                        match select_incoming(incoming, source) {
+                            Some(value) => {
+                                output[result] = Some(value)
+                            }
+                            None => {
+                                return None()
+                            }
+                        }
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Some(move output)
+    }
+
+    fn thread_supported_uses(function: ir::Function, edge: ThreadEdge, values: Vec<Option<usize>>) -> bool {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            if thread_supported_block(function, block, edge, values) == false {
+                return false
+            }
+            block = block + 1
+        }
+        return true
+    }
+
+    fn thread_supported_instruction(instruction: ir::Instruction, current: usize, edge: ThreadEdge, values: Vec<Option<usize>>) -> bool {
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                return thread_supported_phi(current, edge, incoming, values)
+            }
+            _ => {
+                return thread_has_tracked(ir::instruction_operands(instruction.kind), values) == false
+            }
+        }
+    }
+
+    fn thread_has_tracked(operands: take Vec<usize>, values: Vec<Option<usize>>) -> bool {
+        var index: usize = 0
+        while index < operands.length() {
+            if thread_value_tracked(values, operands[index]) {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn thread_value_tracked(values: Vec<Option<usize>>, value: usize) -> bool {
+        if value >= values.length() {
+            return false
+        }
+        match read values[value] {
+            Some(replacement) => {
+                replacement;
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn thread_successor_exists(values: Vec<ThreadSuccessor>, block: usize) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index].block == block {
+                return true
+            };
+            index = index + 1
+        }
+        return false
+    }
+
+    fn thread_successor_values(function: ir::Function, target: usize, through: usize, values: Vec<Option<usize>>) -> Option<Vec<usize>> {
+        if target >= function.blocks.length() {
+            return None()
+        }
+        var output = Vec<usize>.new()
+        var index: usize = 0
+        while index < function.blocks[target].instructions.length() {
+            match read function.blocks[target].instructions[index].kind {
+                ir::InstructionPhi(value_type, incoming) => {
+                    value_type
+                    match select_incoming(incoming, through) {
+                        None => {
+                            return None()
+                        }
+                        Some(value) => {
+                            output.push(thread_replacement(values, value))
+                        }
+                    }
+                }
+                _ => {
+                    return Some(move output)
+                }
+            }
+            index = index + 1
+        }
+        return Some(move output)
+    }
+
+    fn thread_replacement(values: Vec<Option<usize>>, value: usize) -> usize {
+        if value < values.length() {
+            match read values[value] {
+                Some(replacement) => {
+                    return replacement
+                }
+                None => {
+                }
+            }
+        }
+        return value
+    }
+    fn thread_supported_block(function: ir::Function, block: usize, edge: ThreadEdge, values: Vec<Option<usize>>) -> bool {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            loan read function.blocks[block].instructions[index] as instruction {
+                if thread_supported_instruction(instruction, block, edge, values) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        if block != edge.through {
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    if thread_has_tracked(ir::terminator_operands(terminator), values) {
+                        return false
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return true
+    }
+
+    fn thread_supported_phi(current: usize, edge: ThreadEdge, incoming: Vec<ir::PhiIncoming>, values: Vec<Option<usize>>) -> bool {
+        var index: usize = 0
+        while index < incoming.length() {
+            if thread_value_tracked(values, incoming[index].value) {
+                let target = current == edge.then_block || current == edge.else_block
+                if incoming[index].block != edge.through || target == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+}

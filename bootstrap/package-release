@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+host=$(sh "$root/bootstrap/host")
+output=${1:?expected output directory}
+mkdir -p "$output"
+output=$(CDPATH= cd -- "$output" && pwd)
+cd "$root"
+git diff --exit-code HEAD -- .
+test -z "$(git ls-files 'bootstrap/*/compiler.s' 'bootstrap/*/manifest.json')"
+stage=$(mktemp -d "$output/package-XXXXXX")
+trap 'rm -rf "$stage"' EXIT HUP INT TERM
+package="$stage/crown-$host"
+mkdir "$package"
+git archive --format=tar HEAD > "$stage/source.tar"
+tar -xf "$stage/source.tar" -C "$package"
+mkdir -p "$package/bootstrap/$host"
+cp "bootstrap/$host/compiler.s" "bootstrap/$host/manifest.json" "$package/bootstrap/$host/"
+cp target/bootstrap/crown "$package/crown"
+chmod +x "$package/crown"
+sh bootstrap/package-seed "$host" "$stage"
+CROWN_ROOT="$package" CC=/unavailable "$package/crown" build "$package/bootstrap/tests/fixtures/hello.cwn" -o "$stage/hello"
+test "$("$stage/hello")" = 42
+git rev-parse HEAD > "$package/REVISION"
+git ls-tree -rz --name-only HEAD > "$stage/files"
+printf '%s\0' crown REVISION "bootstrap/$host/compiler.s" "bootstrap/$host/manifest.json" >> "$stage/files"
+case "$host" in
+    *-macos) COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname root --no-acls --no-xattrs --no-fflags -s ",^,crown-$host/," -czf "$stage/crown-$host.tar.gz" -C "$package" --null -T "$stage/files" ;;
+    *-linux) tar --owner=0 --group=0 --numeric-owner --no-acls --no-xattrs --transform="s,^,crown-$host/," -czf "$stage/crown-$host.tar.gz" -C "$package" --null -T "$stage/files" ;;
+esac
+record=$(cat "$stage/crown-bootstrap-$host.lock.json")
+compiler_digest=$(sh bootstrap/checksum "$package/crown")
+archive_digest=$(sh bootstrap/checksum "$stage/crown-$host.tar.gz")
+printf '%s,"compiler_sha256":"%s","compiler_archive_sha256":"%s"}\n' "${record%?}" "$compiler_digest" "$archive_digest" > "$stage/crown-bootstrap-$host.lock.json"
+for file in "crown-$host.tar.gz" "crown-bootstrap-$host.s.gz" "crown-bootstrap-$host.json" "crown-bootstrap-$host.lock.json"; do
+    printf '%s  %s\n' "$(sh bootstrap/checksum "$stage/$file")" "$file" >> "$stage/SHA256SUMS-$host"
+    mv "$stage/$file" "$output/$file"
+done
+mv "$stage/SHA256SUMS-$host" "$output/"

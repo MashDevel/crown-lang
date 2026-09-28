@@ -1,0 +1,119 @@
+module frontend {
+    fn capture_statements(context: write SourceCapture, statements: write Vec<Statement>) -> void {
+        for index in 0..statements.length() {
+            capture_statement(context, statements[index].kind)
+        }
+    }
+    fn capture_statement(context: write SourceCapture, kind: write StatementKind) -> void {
+        match write kind {
+            StatementBind(name, mutable_value, annotation, value) => {
+                name;
+                mutable_value;
+                annotation;
+                capture_expression(context, value);
+                return
+            },
+            StatementDestructure(mutable, fields, value) => {
+                mutable;
+                fields;
+                capture_expression(context, value);
+                return
+            }
+            StatementUpdate(target, operator, value) => {
+                operator;
+                capture_expression(context, target);
+                capture_expression(context, value);
+                return
+            }
+            StatementAssign(target, value) => {
+                capture_expression(context, target);
+                capture_expression(context, value);
+                return
+            },
+            StatementReturn(value, explicit_value) => {
+                explicit_value;
+                capture_expression(context, value);
+                return
+            },
+            StatementPrint(value) => {
+                capture_expression(context, value);
+                return
+            },
+            StatementExpression(value) => {
+                capture_expression(context, value);
+                return
+            },
+            StatementLoan(mode, target, name, body) => {
+                mode;
+                name;
+                capture_expression(context, target);
+                capture_statements(context, body);
+                return
+            },
+            StatementLock(mode, target, name, body) => {
+                mode;
+                target;
+                name;
+                capture_statements(context, body);
+                return
+            },
+            _ => {
+            }
+        }
+        capture_statement_control(context, kind)
+    }
+    fn capture_statement_control(context: write SourceCapture, kind: write StatementKind) -> void {
+        match write kind {
+            StatementArenaAccess(mode, owner, key, name, body) => {
+                mode;
+                name;
+                capture_box(context, owner);
+                capture_box(context, key);
+                capture_statements(context, body)
+            },
+            StatementIf(condition, yes, no) => {
+                capture_expression(context, condition);
+                capture_statements(context, yes);
+                capture_statements(context, no)
+            },
+            StatementMatch(value) => {
+                capture_match(context, value)
+            },
+            StatementUnsafe(body) => {
+                capture_statements(context, body)
+            },
+            StatementThreadScope(body) => {
+                capture_statements(context, body)
+            },
+            StatementWhile(condition, body) => {
+                capture_expression(context, condition);
+                capture_statements(context, body)
+            },
+            StatementFor(name, start, end, body) => {
+                name;
+                capture_expression(context, start);
+                capture_expression(context, end);
+                capture_statements(context, body)
+            },
+            _ => {
+            }
+        }
+    }
+    fn capture_program(context: write SourceCapture, program: write Program) -> void {
+        for index in 0..program.constants.length() {
+            capture_expression(context, program.constants[index].value)
+        }
+        for index in 0..program.functions.length() {
+            capture_statements(context, program.functions[index].body)
+        }
+        for index in 0..program.resources.length() {
+            capture_statements(context, program.resources[index].drop_body)
+        }
+        for index in 0..program.implementations.length() {
+            let length = program.implementations[index].methods.length()
+            for method in 0..length {
+                capture_statements(context, program.implementations[index].methods[method].body)
+            }
+        }
+    }
+}

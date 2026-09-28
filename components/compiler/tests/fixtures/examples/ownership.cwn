@@ -1,0 +1,30 @@
+struct Packet {
+    value: u32
+}
+
+fn inspect(packet: read Packet) -> u32 {
+    print(packet.value)
+    return packet.value
+}
+
+fn increment(packet: write Packet) -> void {
+    packet.value = packet.value + 1
+}
+
+fn consume(packet: take Packet) -> u32 {
+    return packet.value
+}
+
+fn main() -> u32 {
+    var packet = Packet {
+        value: 41
+    }
+    loan read packet as view {
+        print(view.value)
+    }
+    increment(packet)
+    let result = inspect(packet)
+    let consumed = consume(move packet)
+    print(consumed)
+    return result
+}

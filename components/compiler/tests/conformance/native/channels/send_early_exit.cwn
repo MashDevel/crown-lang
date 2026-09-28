@@ -1,0 +1,38 @@
+fn absent() -> Option<u32> {
+    return None()
+}
+
+fn send_absent(queue: Channel<u32>) -> Option<void> {
+    queue.send(absent()?)
+    return Some(())
+}
+
+fn send_return(queue: Channel<u32>, stop: bool) -> void {
+    queue.send(if stop {
+            return
+        } else {
+            42
+        })
+}
+
+fn main() -> u32 {
+    let queue = Channel<u32>.new()
+    match send_absent(queue) {
+        Some(value) => {
+            value;
+            return 1
+        }
+        None => {
+        }
+    }
+    send_return(queue, true)
+    send_return(queue, false)
+    match queue.try_receive() {
+        Some(value) => {
+            return value
+        }
+        None => {
+            return 2
+        }
+    }
+}

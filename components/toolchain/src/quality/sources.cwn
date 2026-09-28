@@ -1,0 +1,73 @@
+module toolchain {
+    fn quality_paths(paths: Vec<Text>) -> Result<Vec<Text>, Text> {
+        var pending = std::text::clone_list(paths)
+        if pending.length() == 0 {
+            pending.push(current_directory()?)
+        }
+        var output = WalkOutput {
+            directories: Vec<Text>.new(), files: Vec<Text>.new()
+        }
+        while pending.length() != 0 {
+            match pending.pop() {
+                Some(path) => {
+                    quality_path(path, pending, output)?
+                }
+                None => {
+                }
+            }
+        }
+        std::text::sort_list(output.files)
+        return Ok(replace(output.files, Vec<Text>.new()))
+    }
+
+    fn quality_path(path: Text, pending: write Vec<Text>, output: write WalkOutput) -> Result<void, Text> {
+        let resolved = absolute(path)?
+        if exists(resolved) == false {
+            return Err(std::text::joined("quality path does not exist: ", resolved))
+        }
+        if std::text::equal(file_name(resolved), "Crown.toml") {
+            pending.push(parent_path(resolved));
+            return Ok(())
+        }
+        if is_directory(resolved) == false {
+            quality_file(resolved, output.files)
+            return Ok(())
+        }
+        if quality_generated(file_name(resolved)) || std::text::list_contains(output.directories, resolved) {
+            return Ok(())
+        }
+        output.directories.push(resolved.clone())
+        let entries = directory_entries(resolved)?
+        for index in 0..entries.length() {
+            pending.push(entries[index].clone())
+        }
+        return Ok(())
+    }
+
+    fn quality_file(path: Text, output: write Vec<Text>) -> void {
+        if included_source(path, Vec<Text>.new()) && std::text::list_contains(output, path) == false {
+            output.push(path.clone())
+        }
+    }
+
+    fn quality_generated(name: Text) -> bool {
+        return std::text::contains("|target|.git|.vcs|node_modules|vendor|vendored|generated|experimental|fixtures|__pycache__|", std::text::joined(std::text::joined("|", name), "|"))
+    }
+
+    fn quality_root(paths: Vec<Text>) -> Result<Text, Text> {
+        if paths.length() == 0 {
+            return current_directory()
+        }
+        var root = absolute(paths[0])?
+        if is_directory(root) == false {
+            root = parent_path(root)
+        }
+        for index in 1..paths.length() {
+            let path = absolute(paths[index])?
+            while below(path, root) == false {
+                root = parent_path(root)
+            }
+        }
+        return Ok(move root)
+    }
+}

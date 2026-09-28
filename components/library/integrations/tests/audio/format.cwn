@@ -1,0 +1,31 @@
+fn test_audio_formats() -> u32 {
+    let requested: [u64; 5] = [0, 0, 100, 4097, 5]
+    let capacity: [u32; 5] = [8192, 0, 8000, 40000, 15]
+    let expected: [u32; 5] = [1024, 0, 100, 4096, 1]
+    for index in 0..5 {
+        if integration::audio::buffer_frames(requested[index], capacity[index]) != expected[index] {
+            return 41
+        }
+    }
+    let rates: [u32; 3] = [0, 48000, 192000]
+    for index in 0..3 {
+        if audio_format_matches(rates[index]) == false {
+            return 42
+        }
+    }
+    return 0
+}
+
+fn audio_format_matches(rate: u32) -> bool {
+    let expected: [u32; 34] = [128, 15, 262147, 3, 1, 0, 4, 3, 1, 0, 2, 0, 4, 3, 1, 0, 65537, 0, 4, 3, 283, 0, 65539, 0, 4, 4, rate, 0, 65540, 0, 4, 4, 2, 0]
+    let actual = integration::audio::audio_format(rate)
+    if actual.length() != 34 {
+        return false
+    }
+    for index in 0..34 {
+        if actual[index] != expected[index] {
+            return false
+        }
+    }
+    return true
+}

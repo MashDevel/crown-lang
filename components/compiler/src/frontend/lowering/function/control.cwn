@@ -1,0 +1,15 @@
+module lowering {
+    fn function_begin_guarded_block(compiler: write FunctionCompiler, condition: usize) -> Result<usize, u32> {
+        let body = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(condition, body, ready))?
+        function_select_block(compiler, body)
+        return Ok(ready)
+    }
+
+    fn function_end_guarded_block(compiler: write FunctionCompiler, ready: usize) -> Result<void, u32> {
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, ready)
+        return Ok(())
+    }
+}

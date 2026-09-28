@@ -1,0 +1,83 @@
+fn test_append(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => { match value { Some(result) => { return result } None => { return function.values.length() } } }
+        Err(error) => { error; return function.values.length() }
+    }
+}
+
+fn test_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) { Ok(value) => { return value } Err(error) => { error; return function.blocks.length() } }
+}
+
+fn test_callee(value_type: read ir::Type) -> ir::Function {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("increment", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    let block = test_block(function)
+    let one_value = ir::ConstantInteger(u64.from(1))
+    let one = ir::function_constant(function, value_type, one_value)
+    var result = function.parameters[0]
+    var index: usize = 0
+    while index < 60 {
+        result = test_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), result, one))
+        index = index + 1
+    }
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) { Ok(value) => { value } Err(error) => { error } }
+    return move function
+}
+
+fn test_caller(value_type: read ir::Type) -> ir::Function {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("caller", ir::signature_new(move parameters, value_type), ir::LinkageExport())
+    let entry = test_block(function)
+    let body = test_block(function)
+    let exit = test_block(function)
+    match ir::function_terminate(function, entry, ir::TerminatorBranch(body)) { Ok(value) => { value } Err(error) => { error } }
+    var incoming = Vec<ir::PhiIncoming>.new()
+    incoming.push(ir::PhiIncoming { block: entry, value: function.parameters[0] })
+    let current = test_append(function, body, ir::InstructionPhi(value_type, move incoming))
+    var arguments = Vec<usize>.new()
+    arguments.push(current)
+    let result = test_append(function, body, ir::InstructionCall(0, move arguments, value_type))
+    let limit_value = ir::ConstantInteger(u64.from(1000))
+    let limit = ir::function_constant(function, value_type, limit_value)
+    let condition = test_append(function, body, ir::InstructionCompare(ir::CompareUnsignedLess(), result, limit))
+    match write function.blocks[body].instructions[0].kind {
+        ir::InstructionPhi(phi_type, values) => { phi_type; values.push(ir::PhiIncoming { block: body, value: result }) }
+        _ => {}
+    }
+    match ir::function_terminate(function, body, ir::TerminatorConditional(condition, body, exit)) { Ok(value) => { value } Err(error) => { error } }
+    match ir::function_terminate(function, exit, ir::TerminatorReturn(Some(result))) { Ok(value) => { value } Err(error) => { error } }
+    return move function
+}
+
+fn test_has_call(function: read ir::Function) -> bool {
+    var block: usize = 0
+    while block < function.blocks.length() {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            match read function.blocks[block].instructions[index].kind {
+                ir::InstructionCall(target, arguments, result) => { target; arguments; result; return true }
+                _ => {}
+            }
+            index = index + 1
+        }
+        block = block + 1
+    }
+    return false
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var program = ir::program_new()
+    ir::program_add_function(program, test_callee(value_type))
+    let caller = ir::program_add_function(program, test_caller(value_type))
+    ir::program_set_entry(program, caller)
+    optimize::generated(program)
+    loan read program.functions[caller] as function {
+        if test_has_call(function) { return 1 }
+    }
+    match ir::validate_program(program) { Ok(value) => { value } Err(error) => { error; return 2 } }
+    return 42
+}

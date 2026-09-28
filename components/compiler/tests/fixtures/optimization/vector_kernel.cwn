@@ -1,0 +1,28 @@
+fn transform(source: RawPtr<f64>, destination: RawPtr<f64>, count: usize) -> void {
+    var index: usize = 0
+    while index < count {
+        unsafe {
+            destination.offset(index).write(source.offset(index).read() + 1.0)
+        }
+        index = index.wrapping_add(1)
+    }
+}
+
+fn main() -> u32 {
+    var source = Vec<f64>.new()
+    var destination = Vec<f64>.new()
+    for index in 0..33 {
+        index;
+        source.push(1.0);
+        destination.push(0.0)
+    }
+    unsafe {
+        transform(source.as_raw(), destination.as_raw(), source.length())
+    }
+    for index in 0..33 {
+        if destination[index] != 2.0 {
+            return 1
+        }
+    }
+    return 0
+}

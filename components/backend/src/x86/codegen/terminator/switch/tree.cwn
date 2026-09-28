@@ -1,0 +1,38 @@
+module x86 {
+    fn codegen_emit_switch_tree(compiler: write FunctionCompiler, tree: SwitchTree, range: take SwitchRange) -> void {
+        if range.start >= range.end {
+            codegen_emit(compiler, Jump(local_label_copy(tree.default)))
+            return
+        }
+        let middle = range.start +(range.end - range.start) / 2
+        loan read tree.edges[middle] as edge {
+            codegen_compare_switch_case(compiler, edge.value)
+            codegen_emit(compiler, JumpIf(Equal(), local_label_copy(edge.label)))
+        }
+        if middle == range.start {
+            codegen_emit_switch_tree(compiler, tree, SwitchRange {
+                    start: middle + 1, end: range.end
+                })
+            return
+        }
+        let lower = codegen_internal_label(compiler)
+        codegen_emit(compiler, JumpIf(Below(), local_label_copy(lower)))
+        codegen_emit_switch_tree(compiler, tree, SwitchRange {
+                start: middle + 1, end: range.end
+            })
+        codegen_emit(compiler, Label(move lower))
+        codegen_emit_switch_tree(compiler, tree, SwitchRange {
+                start: range.start, end: middle
+            })
+    }
+
+    fn codegen_compare_switch_case(compiler: write FunctionCompiler, value: u64) -> void {
+        let signed = i64.from_bits(value)
+        if signed >= -2147483648 && signed <= 2147483647 {
+            codegen_emit(compiler, CompareImmediate(Rax(), i32.from(signed)))
+        } else {
+            codegen_emit(compiler, MoveImmediate(R10(), signed))
+            codegen_emit(compiler, Compare(Rax(), R10()))
+        }
+    }
+}

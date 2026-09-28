@@ -1,0 +1,14 @@
+module frontend {
+    fn write_output(path: TextView, output: Text) -> bool {
+        match std::io::write_text(path, output) {
+            Ok(value) => {
+                value;
+                return true
+            }
+            Err(error) => {
+                file_error(path, error, "could not write assembly file: ");
+                return false
+            }
+        }
+    }
+}

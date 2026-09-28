@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let value = if true {
+        1
+    } else {
+        false
+    }
+    return 0
+}

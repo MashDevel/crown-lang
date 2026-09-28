@@ -1,0 +1,86 @@
+module frontend {
+    fn parser_expression_statement(parser: write Parser) -> Statement {
+        let value = parser_expression(parser)
+        if parser_is_update(parser) {
+            return parser_update(parser, move value)
+        }
+        if parser_at(parser, TokenRead()) || parser_at(parser, TokenWrite()) {
+            return parser_finish_lock(parser, move value)
+        }
+        if parser_at(parser, TokenAs()) {
+            return parser_finish_arena_access(parser, move value)
+        }
+        if parser_consumed(parser, TokenEqual()) {
+            return parser_finish_assignment(parser, move value)
+        }
+        let span = value.span
+        parser_line_end(parser)
+        return statement(StatementExpression(move value), span)
+    }
+
+    fn parser_finish_assignment(parser: write Parser, target: take Expression) -> Statement {
+        var valid = false
+        match read target.kind {
+            ExpressionPath(value) => {
+                value;
+                valid = true
+            }
+            ExpressionIndex(value, index) => {
+                value;
+                index;
+                valid = true
+            }
+            ExpressionField(value, name) => {
+                value;
+                name;
+                valid = true
+            }
+            _ => {
+            }
+        }
+        if valid == false {
+            parser_report(parser, UnexpectedToken())
+        }
+        let value = parser_expression(parser)
+        let span = span_through(target.span, value.span)
+        parser_line_end(parser)
+        return statement(StatementAssign(move target, move value), span)
+    }
+
+    fn parser_finish_lock(parser: write Parser, value: take Expression) -> Statement {
+        let start = value.span
+        let {
+            kind, span, depth
+        } = move value
+        match move kind {
+            ExpressionPath(path) => {
+                return parser_lock_path(parser, move path, start)
+            }
+            _ => {
+            }
+        }
+        parser_report(parser, UnexpectedToken())
+        return statement(StatementBreak(), start)
+    }
+
+    fn parser_lock_path(parser: write Parser, path: take Path, start: take Span) -> Statement {
+        var source = move path
+        var lock = false
+        match source.segments.pop() {
+            Some(name) => {
+                lock = parser_name_is(parser, name, "lock")
+            }
+            None => {
+            }
+        }
+        if lock == false {
+            parser_report(parser, UnexpectedToken())
+        }
+        let mode = parser_loan_mode(parser)
+        parser_expect(parser, TokenAs())
+        let alias = parser_identifier(parser)
+        let body = parser_block(parser)
+        let end = parser_previous_span(parser)
+        return statement(StatementLock(mode, move source, move alias, move body), span_through(start, end))
+    }
+}

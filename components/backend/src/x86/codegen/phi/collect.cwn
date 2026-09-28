@@ -1,0 +1,64 @@
+module x86 {
+    fn codegen_phi_copies(program: ir::Program, compiler: FunctionCompiler, target: usize) -> Result<Vec<PhiCopy>, CodegenError> {
+        var source: usize = 0
+        match read compiler.block {
+            Some(value) => {
+                source = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        if target >= program.functions[compiler.id].blocks.length() {
+            return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+        }
+        var output = Vec<PhiCopy>.new()
+        loan read program.functions[compiler.id].blocks[target] as block {
+            var index: usize = 0
+            while index < block.instructions.length() {
+                loan read block.instructions[index] as instruction {
+                    let transfer = codegen_phi_copy(compiler, instruction, source)?
+                    match move transfer {
+                        Some(value) => {
+                            output.push(move value)
+                        }
+                        None => {
+                        }
+                    }
+                }
+                index = index + 1
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn codegen_phi_copy(compiler: FunctionCompiler, instruction: ir::Instruction, source: usize) -> Result<Option<PhiCopy>, CodegenError> {
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                var result: usize = 0
+                match read instruction.result {
+                    Some(value) => {
+                        result = value
+                    }
+                    None => {
+                        return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+                    }
+                }
+                var index: usize = 0
+                while index < incoming.length() {
+                    if incoming[index].block == source {
+                        return Ok(Some(PhiCopy {
+                                    result: result, source: incoming[index].value
+                                }))
+                    }
+                    index = index + 1
+                }
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+            _ => {
+                return Ok(None())
+            }
+        }
+    }
+}

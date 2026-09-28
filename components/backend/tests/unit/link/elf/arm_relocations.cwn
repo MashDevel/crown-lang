@@ -1,0 +1,61 @@
+fn branch_relocations() -> Result<void, Text> {
+    testing::expect(arm64::arm_branch_relocation(2483027968, 4112, 4096)? == 2483027972, "ARM64 call relocation")?
+    testing::expect(arm64::arm_branch_relocation(335544320, 4096, 4112)? == 402653180, "ARM64 backward branch")?
+    testing::error(arm64::arm_branch_relocation(0, 0, 0))?
+    testing::error(arm64::arm_branch_relocation(335544320, 3, 0))?
+    return testing::error(arm64::arm_branch_relocation(335544320, 134217728, 0))
+}
+
+fn address_relocations() -> Result<void, Text> {
+    testing::expect(arm64::arm_page_relocation(2415919113, 8199, 4099)? == arm64::page_address(9, 4096)?, "ADRP uses page addresses")?
+    testing::expect(arm64::arm_add_relocation(2432696617, 8199)? == arm64::add_immediate(9, 9, 7, false)?, "ADD preserves registers")?
+    testing::expect(arm64::arm_load_relocation(4181721385, 8208, 3)? == arm64::memory_word(9, 9, 16, 8, true)?, "scaled load offset")?
+    return invalid_address_relocations()
+}
+
+fn invalid_address_relocations() -> Result<void, Text> {
+    testing::error(arm64::arm_page_relocation(0, 0, 0))?
+    testing::error(arm64::arm_add_relocation(0, 0))?
+    testing::error(arm64::arm_load_relocation(4181721385, 3, 3))?
+    testing::error(arm64::arm_load_relocation(4181721385, 16, 2))?
+    return testing::error(arm64::arm_load_relocation(0, 0, 5))
+}
+
+fn relocation_mapping() -> Result<void, Text> {
+    testing::expect(elf::arm_relocation_kind(283)? == object::RelocationArmBranch26(), "ELF ARM64 call type")?
+    testing::expect(elf::arm_relocation_kind(311)? == object::RelocationArmGotPage21(), "ELF ARM64 GOT page type")?
+    testing::expect(elf::arm_relocation_kind(299)? == object::RelocationArmLoadPageOffset12(4), "ELF ARM64 vector load type")?
+    return testing::error(elf::arm_relocation_kind(999))
+}
+
+fn external_executable(source: Text, interpreter: Text) -> Result<Vec<u8>, Text> {
+    var object = elf::read_object(toolchain::read_bytes(source)?)?
+    arm64::append_process_runtime(object)?
+    for index in 0..object.symbols.length() {
+        if std::text::equal(object.symbols[index].name, "main") {
+            object.entry = Some(index)
+        }
+    }
+    elf::startup_import(object)?;
+    var options = elf::Options {
+        interpreter: interpreter.clone(), libraries: elf::libraries(Vec<Text>.new())?, versions: Vec<elf::SymbolVersion>.new()
+    }
+    options.versions = elf::resolve_versions(object, options)?
+    return elf::executable(move object, options)
+}
+
+fn run(arguments: Arguments) -> Result<void, Text> {
+    branch_relocations()?
+    address_relocations()?
+    relocation_mapping()?
+    if arguments.length() == 4 {
+        let path = arguments[1].clone()
+        toolchain::write_bytes(path, external_executable(arguments[2].clone(), arguments[3].clone())?)?
+        toolchain::executable(path)?
+    }
+    return Ok(())
+}
+
+fn main(arguments: Arguments) -> u32 {
+    return testing::done(run(arguments))
+}

@@ -1,0 +1,71 @@
+module frontend {
+    fn namespace_type(resolver: NamespaceResolver, value: write TypeRef) -> void {
+        match write value.kind {
+            TypeNamed(name, arguments) => {
+                namespace_type_name(resolver, name);
+                namespace_types(resolver, arguments)
+            }
+            TypeScoped(scoped) => {
+                loan write scoped as inner {
+                    namespace_type(resolver, inner)
+                }
+            }
+            TypeDynamic(name) => {
+                namespace_type_name(resolver, name)
+            }
+            TypeArray(element, length) => {
+                namespace_array_length(resolver, length)
+                loan write element as inner {
+                    namespace_type(resolver, inner)
+                }
+            }
+            TypeFunction(parameters, result) => {
+                namespace_function_type(resolver, parameters, result)
+            }
+        }
+    }
+
+    fn namespace_types(resolver: NamespaceResolver, items: write Vec<TypeRef>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_type(resolver, item)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_fields(resolver: NamespaceResolver, items: write Vec<Field>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_type(resolver, item.value_type)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_parameters(resolver: write NamespaceResolver, items: write Vec<Parameter>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_type(resolver, item.value_type);
+                resolver.locals.push(name_copy(item.name))
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_function_type(resolver: NamespaceResolver, parameters: write Vec<FunctionTypeParameter>, result: write Box<TypeRef>) -> void {
+        var index: usize = 0
+        while index < parameters.length() {
+            loan write parameters[index] as parameter {
+                namespace_type(resolver, parameter.value_type)
+            }
+            index = index + 1
+        }
+        loan write result as inner {
+            namespace_type(resolver, inner)
+        }
+    }
+}

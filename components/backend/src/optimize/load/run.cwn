@@ -1,0 +1,28 @@
+module optimize {
+    fn load(function: write ir::Function) -> usize {
+        return load_with_effects(function, Shared.new(Vec<MemoryEffect>.new()))
+    }
+
+    fn load_with_effects(function: write ir::Function, effects: Shared<Vec<MemoryEffect>>) -> usize {
+        let offsets = load_offsets(function)
+        let entries = load_available_entries(function, offsets, effects)
+        var scan = load_scan_state(function, offsets, true, effects)
+        var block: usize = 0
+        while block < function.blocks.length() {
+            loan read entries[block].available as available {
+                scan.available = load_entry_slice_copy(available)
+            }
+            loan read function.blocks[block] as value {
+                load_scan_block(function, value, scan)
+            }
+            block = block + 1
+        }
+        let count = count_true(scan.removed)
+        if count == 0 {
+            return 0
+        }
+        ir::function_replace_uses_many(function, scan.replacements)
+        remove_results(function, scan.removed, result_marked)
+        return count
+    }
+}

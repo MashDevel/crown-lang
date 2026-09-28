@@ -1,0 +1,139 @@
+fn word(actual: take Result<u32, Text>, expected: u32) -> bool {
+    match move actual {
+        Ok(value) => value == expected
+        Err(error) => {
+            error;
+            false
+        }
+    }
+}
+
+fn rejected(actual: take Result<u32, Text>) -> bool {
+    match move actual {
+        Ok(value) => {
+            value;
+            false
+        }
+        Err(error) => {
+            error;
+            true
+        }
+    }
+}
+
+fn integer(operation: arm64::IntegerOperation, destination: u32, left: u32, right: u32) -> Result<u32, Text> {
+    return arm64::integer_word(operation, arm64::Registers {
+            destination: destination, left: left, right: right
+        })
+}
+
+fn shift(operation: arm64::ShiftOperation, destination: u32, left: u32, right: u32) -> Result<u32, Text> {
+    return arm64::shift_word(operation, arm64::Registers {
+            destination: destination, left: left, right: right
+        })
+}
+
+fn integer_tests() -> bool {
+    return word(integer(arm64::IntegerOperation::Add(), 0, 1, 2), 2332164128) && word(integer(arm64::IntegerOperation::Subtract(), 3, 4, 5), 3406102659) && word(integer(arm64::IntegerOperation::Multiply(), 6, 7, 8), 2601024742) && word(integer(arm64::IntegerOperation::UnsignedDivide(), 9, 10, 11), 2596997449) && word(integer(arm64::IntegerOperation::SignedDivide(), 12, 13, 14), 2597195180) && word(integer(arm64::IntegerOperation::And(), 15, 16, 17), 2316370447) && word(integer(arm64::IntegerOperation::Or(), 19, 20, 21), 2853503635) && word(integer(arm64::IntegerOperation::Xor(), 22, 23, 24), 3390571254)
+}
+
+fn shift_tests() -> bool {
+    return word(shift(arm64::ShiftOperation::Left(), 0, 1, 2), 2596413472) && word(shift(arm64::ShiftOperation::LogicalRight(), 3, 4, 5), 2596611203) && word(shift(arm64::ShiftOperation::ArithmeticRight(), 6, 7, 8), 2596808934) && word(shift(arm64::ShiftOperation::RotateRight(), 9, 10, 11), 2597006665)
+}
+
+fn immediate_tests() -> bool {
+    return word(arm64::add_immediate(0, 31, 4095, false), 2436890592) && word(arm64::add_immediate(31, 31, 16, true), 3506455551) && word(arm64::move_wide(3, 65535, 3, false), 3539992547) && word(arm64::move_wide(4, 4660, 1, true), 4070721156) && rejected(arm64::add_immediate(0, 0, 4096, false)) && rejected(arm64::move_wide(31, 0, 0, false)) && rejected(arm64::move_wide(0, 0, 4, false))
+}
+
+fn memory_tests() -> bool {
+    return word(arm64::memory_word(0, 31, 32760, 8, true), 4185915360) && word(arm64::memory_word(1, 2, 8, 8, false), 4177527873) && word(arm64::memory_word(3, 4, 4095, 1, true), 964689027) && word(arm64::memory_word(5, 6, 8190, 2, false), 2034236613) && word(arm64::memory_word(7, 8, 16380, 4, true), 3112172807)
+}
+
+fn branch_tests() -> bool {
+    return word(arm64::branch_word(4, false), 335544321) && word(arm64::branch_word(-4, true), 2550136831) && word(arm64::conditional_branch(4, 0), 1409286176) && word(arm64::conditional_branch(-4, 1), 1426063329) && word(arm64::indirect_branch(17, false), 3592356384) && word(arm64::indirect_branch(16, true), 3594453504)
+}
+
+fn invalid_memory() -> bool {
+    return rejected(arm64::memory_word(32, 0, 0, 8, true)) && rejected(arm64::memory_word(0, 32, 0, 8, true)) && rejected(arm64::memory_word(0, 0, 0, 0, true)) && rejected(arm64::memory_word(0, 0, 1, 8, true)) && rejected(arm64::memory_word(0, 0, 32768, 8, true))
+}
+
+fn branch_boundaries() -> bool {
+    return word(arm64::branch_word(-134217728, false), 369098752) && word(arm64::branch_word(134217724, false), 369098751) && rejected(arm64::branch_word(-134217732, false)) && rejected(arm64::branch_word(134217728, false)) && rejected(arm64::branch_word(2, false)) && rejected(arm64::conditional_branch(1048576, 0)) && rejected(arm64::conditional_branch(-1048580, 0)) && rejected(arm64::conditional_branch(2, 0))
+}
+
+fn invalid_registers() -> bool {
+    return rejected(integer(arm64::IntegerOperation::Add(), 32, 0, 0)) && rejected(integer(arm64::IntegerOperation::Add(), 0, 32, 0)) && rejected(integer(arm64::IntegerOperation::Add(), 0, 0, 32)) && rejected(arm64::add_immediate(32, 0, 0, false)) && rejected(arm64::add_immediate(0, 32, 0, false)) && rejected(arm64::indirect_branch(31, false)) && rejected(arm64::conditional_branch(0, 16))
+}
+
+fn emitted_bytes() -> bool {
+    var bytes = Vec<u8>.new()
+    arm64::append_word(bytes, 2332164128)
+    return bytes.length() == 4 && bytes[0] == 32 && bytes[1] == 0 && bytes[2] == 2 && bytes[3] == 139
+}
+
+fn main() -> u32 {
+    if integer_tests() == false || shift_tests() == false {
+        return 1
+    }
+    if immediate_tests() == false || memory_tests() == false {
+        return 2
+    }
+    if branch_tests() == false || invalid_memory() == false {
+        return 3
+    }
+    if branch_boundaries() == false || invalid_registers() == false {
+        return 4
+    }
+    if emitted_bytes() == false {
+        return 5
+    }
+    return extended_encoding_tests()
+}
+
+fn working_registers() -> arm64::Registers {
+    return arm64::Registers {
+        destination: 9, left: 10, right: 11
+    }
+}
+
+fn condition_tests() -> bool {
+    return word(arm64::compare_word(9, 10), 3943301439) && word(arm64::select_word(working_registers(), 11), 2592846153) && word(arm64::extend_word(9, 10, 8, false), 3544194377) && word(arm64::extend_word(9, 10, 32, true), 2470477129) && rejected(arm64::extend_word(0, 0, 0, false)) && rejected(arm64::extend_word(0, 0, 65, true)) && rejected(arm64::select_word(working_registers(), 16))
+}
+
+fn address_tests() -> bool {
+    let frame = arm64::Registers {
+        destination: 29, left: 31, right: 30
+    }
+    return word(arm64::pc_address(9, 64, false), 268435977) && word(arm64::page_address(9, 4096), 2952790025) && word(arm64::pair_word(frame, -16, arm64::PairIndex::Pre(), false), 2847898621) && word(arm64::pair_word(frame, 16, arm64::PairIndex::Post(), true), 2831252477) && rejected(arm64::pair_word(frame, -512, arm64::PairIndex::Offset(), false)) == false && rejected(arm64::pair_word(frame, 504, arm64::PairIndex::Offset(), true)) == false
+}
+
+fn address_boundaries() -> bool {
+    return rejected(arm64::page_address(0, 1)) && rejected(arm64::page_address(31, 0)) && rejected(arm64::page_address(0, 4294967296)) && rejected(arm64::page_address(0, -4294971392)) && rejected(arm64::page_address(0, -4294967296)) == false && rejected(arm64::page_address(0, 4294963200)) == false
+}
+
+fn pair_boundaries() -> bool {
+    return rejected(arm64::pair_word(working_registers(), -520, arm64::PairIndex::Pre(), false)) && rejected(arm64::pair_word(working_registers(), 512, arm64::PairIndex::Post(), true)) && rejected(arm64::pair_word(working_registers(), 7, arm64::PairIndex::Offset(), false)) && rejected(arm64::pair_word(arm64::Registers {
+                destination: 0, left: 31, right: 32
+            }, 0, arm64::PairIndex::Offset(), true))
+}
+
+fn floating_tests() -> bool {
+    return word(arm64::float_word(arm64::FloatOperation::Add(), working_registers(), false), 506145097) && word(arm64::float_word(arm64::FloatOperation::Subtract(), working_registers(), true), 510343497) && word(arm64::float_word(arm64::FloatOperation::Multiply(), working_registers(), true), 510331209) && word(arm64::float_word(arm64::FloatOperation::Divide(), working_registers(), false), 506141001) && word(arm64::float_compare(9, 10, true), 510271776) && word(arm64::float_negate(9, 10, false), 505495881)
+}
+
+fn floating_conversions() -> bool {
+    return word(arm64::float_move_bits(9, 10, false, true), 2657485129) && word(arm64::float_move_bits(9, 10, true, false), 505872713) && word(arm64::float_convert(9, 10, true), 505594185) && word(arm64::float_convert(9, 10, false), 509755721) && rejected(arm64::float_convert(32, 0, true)) && rejected(arm64::float_move_bits(0, 32, true, true))
+}
+
+fn extended_encoding_tests() -> u32 {
+    if condition_tests() == false || address_tests() == false {
+        return 6
+    }
+    if address_boundaries() == false || pair_boundaries() == false {
+        return 7
+    }
+    if floating_tests() == false || floating_conversions() == false {
+        return 8
+    }
+    return 42
+}

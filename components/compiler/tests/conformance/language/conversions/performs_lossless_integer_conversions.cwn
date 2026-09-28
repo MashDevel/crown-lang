@@ -1,0 +1,14 @@
+fn main() -> u32 {
+    let unsigned: u8 = 255
+    let signed: i8 = -1
+    if u64.from(unsigned) != 255 {
+        return 1
+    }
+    if i16.from(unsigned) != 255 {
+        return 2
+    }
+    if i64.from(signed) != -1 {
+        return 3
+    }
+    return u32.from(unsigned)
+}

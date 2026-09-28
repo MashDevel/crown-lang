@@ -1,0 +1,237 @@
+module optimize {
+    fn scalar_inspect_set(function: ir::Function, analysis: write ScalarAnalysis, memory: take ScalarMemory) -> void {
+        let address = match scalar_address(analysis, memory.destination) {
+            Some(value) => move value
+            None => {
+                return
+            }
+        }
+        var valid = address.offset == 0
+        match scalar_integer(function, memory.size) {
+            Some(size) => {
+                valid = valid && size == analysis.roots[address.root].size
+            }
+            None => {
+                valid = false
+            }
+        }
+        match scalar_integer(function, memory.source) {
+            Some(value) => {
+                valid = valid && value <= 255
+                if valid {
+                    loan write analysis.roots[address.root] as root {
+                        scalar_add_fill(root, u8.from(value))
+                    }
+                }
+            }
+            None => {
+                valid = false
+            }
+        }
+        if valid == false {
+            analysis.roots[address.root].valid = false
+        }
+
+    }
+
+    fn scalar_inspect_copy(function: ir::Function, analysis: write ScalarAnalysis, memory: take ScalarMemory) -> void {
+        let destination = scalar_address(analysis, memory.destination)
+        let source = scalar_address(analysis, memory.source)
+        match move destination {
+            None => {
+                match move source {
+                    Some(value) => {
+                        analysis.roots[value.root].valid = false
+                    }
+                    None => {
+                    }
+                }
+            }
+            Some(destination_address) => {
+                match move source {
+                    None => {
+                        analysis.roots[destination_address.root].valid = false
+                    }
+                    Some(source_address) => {
+                        match scalar_integer(function, memory.size) {
+                            None => {
+                                scalar_invalidate_pair(analysis, destination_address.root, source_address.root)
+                            }
+                            Some(size) => {
+                                let valid = scalar_copy_fits(analysis, destination_address, source_address, size)
+                                if valid {
+                                    analysis.copies.push(ScalarCopy {
+                                            destination: scalar_address_copy(destination_address)
+                                            source: scalar_address_copy(source_address)
+                                            size: size
+                                        })
+                                }
+                                else {
+                                    scalar_invalidate_pair(analysis, destination_address.root, source_address.root)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_copy_fits(analysis: ScalarAnalysis, destination: ScalarAddress, source: ScalarAddress, size: u64) -> bool {
+        if size == 0 {
+            return false
+        }
+        if scalar_field_fits(analysis, destination, size) == false {
+            return false
+        }
+        if scalar_field_fits(analysis, source, size) == false {
+            return false
+        }
+        return destination.root != source.root || destination.offset == source.offset
+    }
+
+    fn scalar_field_fits(analysis: ScalarAnalysis, address: ScalarAddress, size: u64) -> bool {
+        let root_size = analysis.roots[address.root].size
+        if address.offset > root_size {
+            return false
+        }
+        return size <= root_size - address.offset
+    }
+
+    fn scalar_invalidate_pair(analysis: write ScalarAnalysis, first: usize, second: usize) -> void {
+        analysis.roots[first].valid = false
+        analysis.roots[second].valid = false
+    }
+
+    fn scalar_add_fill(root: write ScalarRoot, value: u8) -> bool {
+        var index: usize = 0
+        while index < root.fills.length() {
+            if root.fills[index] == value {
+                return false
+            }
+            index = index + 1
+        }
+        root.fills.push(value)
+        scalar_validate_root(root)
+        return true
+    }
+
+    fn scalar_insert_field(analysis: write ScalarAnalysis, root: usize, field: take ScalarField) -> bool {
+        var supported = false
+        loan read analysis.roots[root] as value {
+            supported = scalar_field_supported(value, field)
+        }
+        if supported == false {
+            analysis.roots[root].valid = false
+            return true
+        }
+        var index: usize = 0
+        while index < analysis.roots[root].fields.length() {
+            var same = false
+            var alignment: u32 = 0
+            loan read analysis.roots[root].fields[index] as existing {
+                same = existing.offset == field.offset && scalar_type_sizes_equal(existing.value_type, field.value_type)
+                alignment = existing.alignment
+            }
+            if same && field.alignment > alignment {
+                analysis.roots[root].fields[index].alignment = field.alignment;
+                return true
+            }
+            if same {
+                return false
+            }
+            index = index + 1
+        }
+        analysis.roots[root].fields.push(move field)
+        return true
+    }
+
+    fn scalar_field_supported(root: ScalarRoot, field: ScalarField) -> bool {
+        if ir::type_is_pointer(field.value_type) {
+            var fill: usize = 0
+            while fill < root.fills.length() {
+                if root.fills[fill] != 0 {
+                    return false
+                }
+                fill = fill + 1
+            }
+        }
+        var index: usize = 0
+        while index < root.fields.length() {
+            loan read root.fields[index] as existing {
+                if scalar_fields_compatible(existing, field) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn scalar_validate_roots(analysis: write ScalarAnalysis) -> void {
+        for index in 0..analysis.roots.length() {
+            loan write analysis.roots[index] as root {
+                scalar_validate_root(root)
+            }
+        }
+    }
+
+    fn scalar_validate_root(root: write ScalarRoot) -> void {
+        for field in 0..root.fields.length() {
+            if scalar_field_supported(root, root.fields[field]) == false {
+                root.valid = false
+            }
+        }
+    }
+
+    fn scalar_fields_overlap(left: ScalarField, right: ScalarField) -> bool {
+        match ir::type_size(left.value_type) {
+            None => {
+                return true
+            }
+            Some(left_size) => {
+                match ir::type_size(right.value_type) {
+                    None => {
+                        return true
+                    }
+                    Some(right_size) => {
+                        return left.offset < right.offset + right_size && right.offset < left.offset + left_size
+                    }
+                }
+            }
+        }
+    }
+
+    fn scalar_types_compatible(left: ir::Type, right: ir::Type) -> bool {
+        if ir::type_equal(left, right) {
+            return true
+        }
+        return ir::type_is_integer(left) && ir::type_is_integer(right) && scalar_type_sizes_equal(left, right)
+    }
+
+    fn scalar_type_sizes_equal(left: ir::Type, right: ir::Type) -> bool {
+        match ir::type_size(left) {
+            None => {
+                return false
+            }
+            Some(left_size) => {
+                match ir::type_size(right) {
+                    Some(right_size) => {
+                        return left_size == right_size
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+    fn scalar_fields_compatible(existing: ScalarField, field: ScalarField) -> bool {
+        let same = existing.offset == field.offset && scalar_type_sizes_equal(existing.value_type, field.value_type)
+        if same {
+            return scalar_types_compatible(existing.value_type, field.value_type)
+        }
+        return scalar_fields_overlap(existing, field) == false
+    }
+
+}

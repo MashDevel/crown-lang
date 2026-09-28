@@ -1,0 +1,70 @@
+module harness {
+    fn load_cases(path: Text, root: Text) -> Result<Vec<Case>, Text> {
+        let document = toolchain::json(toolchain::read_text(path)?)?
+        let output = read_cases(document, root)?
+        validate_registration(output, root)?
+        return Ok(move output)
+    }
+
+    fn read_cases(document: toolchain::Json, root: Text) -> Result<Vec<Case>, Text> {
+        let entries = toolchain::json_array_values(document, document.root)?
+        if entries.length() == 0 {
+            return Err("compiler test registry must be a nonempty list")
+        }
+        var output = Vec<Case>.new()
+        var names = Vec<Text>.new()
+        for index in 0..entries.length() {
+            let value = case(document, entries[index], root)?
+            if std::text::list_contains(names, value.name) {
+                return Err(std::text::joined("duplicate compiler test name: ", value.name))
+            }
+            names.push(value.name.clone())
+            output.push(move value)
+        }
+        return Ok(move output)
+    }
+
+    fn case_sources(value: Case, root: Text) -> Result<Vec<Text>, Text> {
+        return case_target_sources(value, root, toolchain::host_target())
+    }
+
+    fn case_target_sources(value: Case, root: Text, target: toolchain::Target) -> Result<Vec<Text>, Text> {
+        var entries = Vec<Text>.new()
+        entries.push(toolchain::path_join(root, value.source))
+        for index in 0..value.roots.length() {
+            entries.push(toolchain::path_join(root, value.roots[index]))
+        }
+        let sources = toolchain::frontend_paths(entries, 0, target)?
+        return toolchain::require_sources(toolchain::SourcePaths {
+                entries: move sources, excluded: Vec<Text>.new(), target: target
+            })
+    }
+
+    fn validate_registration(cases: Vec<Case>, root: Text) -> Result<void, Text> {
+        var audit = registration_audit()
+        for index in 0..cases.length() {
+            register_case(cases[index], root, audit)?
+        }
+        let folders = std::text::split("components/backend/tests/unit|components/compiler/tests/unit|components/compiler/tests/conformance|components/compiler/tests/accepted|components/compiler/tests/rejected|components/toolchain/tests", 124)
+        for index in 0..folders.length() {
+            validate_folder(toolchain::path_join(root, folders[index]), audit.covered)?
+        }
+        return Ok(())
+    }
+
+    fn validate_folder(path: Text, covered: std::map::TextMap<bool>) -> Result<void, Text> {
+        if toolchain::exists(path) == false {
+            return Ok(())
+        }
+        let files = toolchain::walk_files(path)?
+        for index in 0..files.length() {
+            if toolchain::below(files[index], toolchain::path_join(path, "fixtures")) {
+                continue
+            }
+            if std::text::ends(files[index], ".cwn") && std::map::text_contains(covered, files[index]) == false {
+                return Err(std::text::joined("unregistered compiler test: ", files[index]))
+            }
+        }
+        return Ok(())
+    }
+}

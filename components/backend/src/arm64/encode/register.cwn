@@ -1,0 +1,30 @@
+module arm64 {
+    copy struct Registers {
+        destination: u32
+        left: u32
+        right: u32
+    }
+
+    fn register_word(opcode: u32, registers: Registers) -> Result<u32, Text> {
+        if registers.destination > 31 || registers.left > 31 || registers.right > 31 {
+            return Err("ARM64 register index exceeds 31")
+        }
+        return Ok(opcode | registers.destination |(registers.left << 5) |(registers.right << 16))
+    }
+
+    fn immediate_word(opcode: u32, destination: u32, source: u32, immediate: u32) -> Result<u32, Text> {
+        if destination > 31 || source > 31 {
+            return Err("ARM64 register index exceeds 31")
+        }
+        if immediate > 4095 {
+            return Err("ARM64 immediate exceeds 12 bits")
+        }
+        return Ok(opcode | destination |(source << 5) |(immediate << 10))
+    }
+
+    fn append_word(bytes: write Vec<u8>, word: u32) -> void {
+        for index in 0..4 {
+            bytes.push(u8.from((word >> u32.from(index * 8)) & 255))
+        }
+    }
+}

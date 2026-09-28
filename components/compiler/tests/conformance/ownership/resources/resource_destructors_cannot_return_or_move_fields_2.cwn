@@ -1,0 +1,9 @@
+resource Guard {
+    text: Text
+    drop {
+        let value = move text
+    }
+}
+fn main() -> u32 {
+    return 0
+}

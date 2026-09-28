@@ -1,0 +1,37 @@
+module x86 {
+    fn finish_object(program: Program, object: take object::CompilerObject, state: ObjectState) -> Result<object::CompilerObject, EncodeError> {
+        var result = move object
+        match read program.entry {
+            Some(entry) => {
+                var symbol: usize = 0
+                match object_symbol(state, entry) {
+                    Some(value) => {
+                        symbol = value
+                    }
+                    None => {
+                        return Err(named_error(InvalidEntry(), entry.clone()))
+                    }
+                }
+                object::set_entry(result, symbol)
+                match object::finish(move result) {
+                    Ok(value) => {
+                        return Ok(move value)
+                    }
+                    Err(error) => {
+                        return Err(object_error(move error))
+                    }
+                }
+            }
+            None => {
+                match object::finish_relocatable(move result) {
+                    Ok(value) => {
+                        return Ok(move value)
+                    }
+                    Err(error) => {
+                        return Err(object_error(move error))
+                    }
+                }
+            }
+        }
+    }
+}

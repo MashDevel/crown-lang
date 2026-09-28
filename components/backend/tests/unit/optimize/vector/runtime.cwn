@@ -1,0 +1,95 @@
+fn vector_runtime(scalar: ir::Type, count: u64, overlap: u64, broadcast: bool) -> Result<void, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, vector_loop("scalar_loop", scalar, broadcast)?)
+    var vector = vector_loop("vector_loop", scalar, broadcast)?
+    safety_require(optimize::vectorize(vector) == 1, 1)?
+    ir::program_add_function(program, move vector)
+    let entry = vector_test_entry(scalar, count, overlap)?
+    let id = ir::program_add_function(program, move entry)
+    ir::program_set_entry(program, id)
+    match ir::validate_program(program) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err(3)
+        }
+    }
+    return safety_execute(move program)
+}
+
+fn vector_test_entry(scalar: ir::Type, count: u64, overlap: u64) -> Result<ir::Function, u32> {
+    var entry = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    safety_block(entry)?
+    let first = vector_test_buffer(entry, scalar)?
+    let second = vector_test_buffer(entry, scalar)?
+    let size = vector_test_size(scalar)?
+    let delta = safety_integer(entry, ir::IntegerWidth64(), overlap * size)
+    let first_output = safety_append(entry, 0, ir::InstructionOffset(first, delta))?
+    let second_output = safety_append(entry, 0, ir::InstructionOffset(second, delta))?
+    var buffers = Vec<usize>.new()
+    buffers.push(first);
+    buffers.push(first_output)
+    vector_test_call(entry, 0, buffers, count)?
+    buffers[0] = second;
+    buffers[1] = second_output
+    vector_test_call(entry, 1, buffers, count)?
+    vector_compare_buffers(entry, scalar, first, second)?
+    return Ok(move entry)
+}
+
+fn vector_compare_buffers(entry: write ir::Function, scalar: ir::Type, first: usize, second: usize) -> Result<void, u32> {
+    let size = vector_test_size(scalar)?
+    let integer = vector_test_integer_type(scalar)
+    let mut_equal = safety_integer(entry, ir::IntegerWidth1(), 1)
+    var equal = mut_equal
+    for index in 0..64 {
+        let offset = safety_integer(entry, ir::IntegerWidth64(), u64.from(index) * size)
+        let left = vector_load_at(entry, first, offset, integer)?
+        let right = vector_load_at(entry, second, offset, integer)?
+        let same = safety_append(entry, 0, ir::InstructionCompare(ir::CompareEqual(), left, right))?
+        equal = safety_append(entry, 0, ir::InstructionBinary(ir::BinaryAnd(), equal, same))?
+    }
+    safety_return_equal(entry, 0, equal, mut_equal)?
+    return Ok(())
+}
+
+fn vector_test_integer_type(scalar: ir::Type) -> ir::Type {
+    match scalar {
+        ir::TypeFloat(width) => if width == ir::FloatWidth32() {
+            ir::TypeInteger(ir::IntegerWidth32())
+        } else {
+            ir::TypeInteger(ir::IntegerWidth64())
+        }
+        _ => scalar
+    }
+}
+
+fn vector_load_at(function: write ir::Function, base: usize, offset: usize, value_type: ir::Type) -> Result<usize, u32> {
+    let address = safety_append(function, 0, ir::InstructionOffset(base, offset))?
+    return safety_append(function, 0, ir::InstructionLoad(address, value_type, 1, false))
+}
+
+fn vector_cases() -> Result<void, u32> {
+    var types = Vec<ir::Type>.new()
+    types.push(ir::TypeInteger(ir::IntegerWidth8()))
+    types.push(ir::TypeInteger(ir::IntegerWidth16()))
+    types.push(ir::TypeInteger(ir::IntegerWidth32()))
+    types.push(ir::TypeInteger(ir::IntegerWidth64()))
+    types.push(ir::TypeFloat(ir::FloatWidth32()))
+    types.push(ir::TypeFloat(ir::FloatWidth64()))
+    for index in 0..types.length() {
+        for count in 0..19 {
+            vector_runtime(types[index], u64.from(count), 32, false)?
+        }
+        vector_runtime(types[index], 19, 0, false)?
+        vector_runtime(types[index], 19, 1, false)?
+        vector_runtime(types[index], 19, 32, true)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(vector_cases())
+}

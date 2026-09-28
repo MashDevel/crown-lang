@@ -1,0 +1,24 @@
+fn permission_calls(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "permissions")
+    let encoded = toolchain::cstring(path)?
+    let initial: u32 = 448
+    let changed: u32 = 493
+    unsafe {
+        testing::expect(toolchain::raw_mkdir(std::cstr::as_raw(encoded), initial) == 0, "Linux mkdir accepts mode_t")?
+        testing::expect(toolchain::raw_chmod(std::cstr::as_raw(encoded), changed) == 0, "Linux chmod accepts mode_t")?
+        testing::expect(toolchain::raw_mkdir(std::cstr::as_raw(encoded), initial) != 0, "mkdir rejects an existing directory")?
+    }
+    toolchain::remove_tree(path)
+    unsafe {
+        return testing::expect(toolchain::raw_chmod(std::cstr::as_raw(encoded), changed) != 0, "chmod rejects a missing path")
+    }
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    return permission_calls(toolchain::temporary_path(temporary))
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

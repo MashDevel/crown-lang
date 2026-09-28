@@ -1,0 +1,29 @@
+copy struct Counter { index: usize, calls: u32 }
+fn right(counter: write Counter) -> u32 { counter.calls += 1; counter.index = 1; return 7 }
+fn position(counter: write Counter) -> usize { counter.calls += 10; return counter.index }
+fn main() -> u32 {
+    var value: u32 = 20
+    value += 2
+    value -= 4
+    value *= 3
+    value /= 2
+    value %= 10
+    value <<= 2
+    value >>= 1
+    value |= 1
+    value &= 7
+    value ^= 2
+    if value != 5 { return 1 }
+    var real: f64 = 1.5
+    real += 2.5
+    real *= 2.0
+    real /= 4.0
+    real -= 0.5
+    if real != 1.5 { return 2 }
+    var values = [1, 2]
+    var counter = Counter { index: 0, calls: 0 }
+    values[position(counter)] += right(counter)
+    if values[0] != 1 || values[1] != 9 || counter.calls != 11 { return 3 }
+    if !true || !!false || !(value == 5) { return 4 }
+    return 0
+}

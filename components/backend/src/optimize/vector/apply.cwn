@@ -1,0 +1,74 @@
+module optimize {
+    fn vector_apply(function: write ir::Function, natural_loop: NaturalLoop, plan: VectorPlan) -> void {
+        let entry = function.blocks.length()
+        function.blocks.push(ir::basic_block_new())
+        let tail = function.blocks.length()
+        function.blocks.push(ir::basic_block_new())
+        var mapping = loop_clone_mapping(function, natural_loop.blocks)
+        mapping.blocks[natural_loop.preheader] = entry
+        loop_clone_blocks(function, natural_loop.blocks, mapping)
+        vector_widen_body(function, plan, mapping, entry)
+        let valid = vector_guard(function, entry, plan)
+        let header = mapping.blocks[plan.evolution.induction.header]
+        function.blocks[entry].terminator = Some(ir::TerminatorConditional(valid, header, tail))
+        vector_header_condition(function, plan, mapping, tail)
+        vector_tail_phis(function, plan, mapping, tail)
+        function.blocks[tail].terminator = Some(ir::TerminatorBranch(plan.evolution.induction.header))
+        function.blocks[natural_loop.preheader].terminator = Some(ir::TerminatorBranch(entry))
+    }
+
+    fn vector_header_condition(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, tail: usize) -> void {
+        let header = mapping.blocks[plan.evolution.induction.header]
+        let value_type = plan.evolution.induction.value_type
+        let index = inline_mapped_value(mapping, plan.evolution.induction.value)
+        let lanes = ir::function_constant(function, value_type, ir::ConstantInteger(u64.from(plan.lanes)))
+        let remaining = induction_emit(function, header, value_type, ir::InstructionBinary(ir::BinarySubtract(), plan.evolution.bound, index))
+        let ordered = vector_compare(function, header, ir::CompareUnsignedLessEqual(), index, plan.evolution.bound)
+        let available = vector_compare(function, header, ir::CompareUnsignedGreaterEqual(), remaining, lanes)
+        let condition = vector_and(function, header, ordered, available)
+        function.blocks[header].terminator = Some(ir::TerminatorConditional(condition, mapping.blocks[plan.evolution.body], tail))
+    }
+
+    fn vector_tail_phis(function: write ir::Function, plan: VectorPlan, mapping: InlineMapping, tail: usize) -> void {
+        let original_header = plan.evolution.induction.header
+        let entry = mapping.blocks[plan.evolution.induction.preheader]
+        for index in 0..plan.inductions.length() {
+            loan read plan.inductions[index] as induction {
+                var incoming = Vec<ir::PhiIncoming>.new()
+                incoming.push(ir::PhiIncoming {
+                        block: entry, value: induction.start
+                    })
+                incoming.push(ir::PhiIncoming {
+                        block: mapping.blocks[original_header], value: inline_mapped_value(mapping, induction.value)
+                    })
+                let value = induction_emit(function, tail, induction.value_type, ir::InstructionPhi(induction.value_type, move incoming))
+                vector_replace_entry(function.blocks[original_header], induction, tail, value)
+            }
+        }
+    }
+
+    fn vector_replace_entry(block: write ir::BasicBlock, induction: Induction, predecessor: usize, value: usize) -> void {
+        for index in 0..block.instructions.length() {
+            if block.instructions[index].result == Some(induction.value) {
+                vector_replace_phi_entry(block.instructions[index].kind, induction.preheader, ir::PhiIncoming {
+                        block: predecessor, value: value
+                    })
+            }
+        }
+    }
+    fn vector_replace_phi_entry(kind: write ir::InstructionKind, preheader: usize, replacement: ir::PhiIncoming) -> void {
+        match write kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                for cursor in 0..incoming.length() {
+                    if incoming[cursor].block == preheader {
+                        incoming[cursor] = replacement
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+}

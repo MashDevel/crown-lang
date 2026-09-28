@@ -1,0 +1,92 @@
+module arm64 {
+    copy struct FrameLifetime {
+        block: usize, first: usize, last: usize, local: bool
+    }
+
+    copy struct FramePosition {
+        block: usize, instruction: usize
+    }
+
+    fn frame_lifetimes(function: ir::Function) -> Result<Vec<FrameLifetime>, Text> {
+        var lifetimes = Vec<FrameLifetime>.new()
+        for index in 0..function.values.length() {
+            index;
+            lifetimes.push(FrameLifetime {
+                    block: 0, first: 0, last: 0, local: false
+                })
+        }
+        for block in 0..function.blocks.length() {
+            frame_definitions(function.blocks[block], block, lifetimes)?
+        }
+        for block in 0..function.blocks.length() {
+            frame_uses(function.blocks[block], block, lifetimes)?
+        }
+        return Ok(move lifetimes)
+    }
+
+    fn frame_definitions(block: ir::BasicBlock, id: usize, lifetimes: write Vec<FrameLifetime>) -> Result<void, Text> {
+        for index in 0..block.instructions.length() {
+            match block.instructions[index].result {
+                Some(value) => {
+                    if value >= lifetimes.length() {
+                        return Err("ARM64 instruction result is outside its frame")
+                    }
+                    lifetimes[value] = FrameLifetime {
+                        block: id, first: index, last: index, local: frame_is_phi(block.instructions[index].kind) == false
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_uses(block: ir::BasicBlock, id: usize, lifetimes: write Vec<FrameLifetime>) -> Result<void, Text> {
+        for index in 0..block.instructions.length() {
+            let position = FramePosition {
+                block: id, instruction: index
+            }
+            let operands = ir::instruction_operands(block.instructions[index].kind)
+            frame_record_uses(lifetimes, operands, position, frame_is_phi(block.instructions[index].kind))?
+        }
+        match read block.terminator {
+            Some(terminator) => {
+                frame_record_uses(lifetimes, ir::terminator_operands(terminator), FramePosition {
+                        block: id, instruction: block.instructions.length()
+                    }, false)?
+            }
+            None => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_record_uses(lifetimes: write Vec<FrameLifetime>, operands: Vec<usize>, position: FramePosition, edge: bool) -> Result<void, Text> {
+        for index in 0..operands.length() {
+            let value = operands[index]
+            if value >= lifetimes.length() {
+                return Err("ARM64 instruction operand is outside its frame")
+            }
+            let lifetime = lifetimes[value]
+            if edge || lifetime.block != position.block || position.instruction < lifetime.first {
+                lifetimes[value].local = false
+            }
+            if position.instruction > lifetime.last {
+                lifetimes[value].last = position.instruction
+            }
+        }
+        return Ok(())
+    }
+
+    fn frame_is_phi(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                true
+            }
+            _ => false
+        }
+    }
+}

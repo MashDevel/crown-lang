@@ -1,0 +1,20 @@
+struct Pair<A, B> {
+    first: A
+    second: B
+}
+
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+
+fn main() -> u32 {
+    let pair: Pair<u32, bool> = Pair<u32, bool> {
+        first: 38
+        second: true
+    }
+    let text = identity("crown")
+    if pair.second {
+        return pair.first + u32.from(text.length())
+    }
+    return 0
+}

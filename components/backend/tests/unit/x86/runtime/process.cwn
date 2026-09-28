@@ -1,0 +1,88 @@
+fn environment_runtime() -> Result<void, u32> {
+    var program = x86::program_relocatable()
+    backend_test::checked(x86::program_add_import(program, "crown_process_environment"), 1)?
+    backend_test::checked(x86::program_add_import(program, "malloc"), 2)?
+    backend_test::checked(x86::codegen_add_process_runtime(program), 3)?
+    backend_test::checked(x86::codegen_add_process_runtime(program), 4)?
+    environment_imports(program)?
+    let object = backend_test::checked(x86::encode_program(program), 7)?
+    environment_symbol(object)?
+    return environment_reference(object)
+}
+
+fn environment_imports(program: x86::Program) -> Result<void, u32> {
+    if program.functions.length() != 1 || program.imports.length() != 2 {
+        return Err(5)
+    }
+    if x86::program_has_import(program, "crown_process_environment") || x86::program_has_import(program, "malloc") == false {
+        return Err(6)
+    }
+    return Ok(())
+}
+
+fn environment_reference(object: object::CompilerObject) -> Result<void, u32> {
+    loan read object.relocations[0] as relocation {
+        if relocation.kind != object::RelocationGotLoadPcRelative32() {
+            return Err(16)
+        }
+        if relocation.offset < 3 {
+            return Err(17)
+        }
+        let opcode = object.sections[relocation.section].data[usize.from(relocation.offset) - 2]
+        if opcode != 139 {
+            return Err(18)
+        }
+    }
+    return Ok(())
+}
+
+fn environment_symbol(object: object::CompilerObject) -> Result<void, u32> {
+    for index in 0..object.symbols.length() {
+        loan read object.symbols[index] as symbol {
+            if std::text::equal(symbol.name, "environ") {
+                return check_environment_symbol(symbol, object.relocations.length())
+            }
+        }
+    }
+    return Err(10)
+}
+
+fn import_conflicts() -> Result<void, u32> {
+    var program = x86::program_relocatable()
+    backend_test::checked(x86::program_add_typed_import(program, "value", object::SymbolData()), 11)?
+    backend_test::checked(x86::program_add_typed_import(program, "value", object::SymbolData()), 12)?
+    match x86::program_add_import(program, "value") {
+        Ok(value) => {
+            value;
+            return Err(13)
+        }
+        Err(error) => {
+            error;
+        }
+    }
+    backend_test::checked(x86::codegen_add_process_runtime(program), 14)?
+    if program.functions.length() != 0 || program.imports.length() != 1 {
+        return Err(15)
+    }
+    return Ok(())
+}
+
+fn run() -> Result<u32, u32> {
+    environment_runtime()?
+    import_conflicts()?
+    return Ok(42)
+}
+
+fn main() -> u32 {
+    return backend_test::finished(run())
+}
+
+fn check_environment_symbol(symbol: object::Symbol, relocations: usize) -> Result<void, u32> {
+    if symbol.kind != object::SymbolData() || object::symbol_is_import(symbol.binding) == false {
+        return Err(8)
+    }
+    if relocations != 1 {
+        return Err(9)
+    }
+    return Ok(())
+}

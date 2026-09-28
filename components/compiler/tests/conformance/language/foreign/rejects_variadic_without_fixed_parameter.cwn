@@ -1,0 +1,4 @@
+extern "c" {
+    fn invalid(...value: i32) -> i32
+}
+fn main() -> u32 { return 0 }

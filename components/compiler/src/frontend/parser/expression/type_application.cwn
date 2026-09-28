@@ -1,0 +1,69 @@
+module frontend {
+    fn parser_named_type_suffix(parser: Parser, structs: bool) -> bool {
+        if structs && parser_at(parser, TokenLeftBrace()) {
+            return true
+        }
+        if parser_at(parser, TokenDot()) {
+            return true
+        }
+        parser_at(parser, TokenLess()) && parser_type_application_ahead(parser, structs)
+    }
+
+    fn parser_type_application_ahead(parser: Parser, structs: bool) -> bool {
+        let end = match parser_type_arguments_end(parser) {
+            Some(index) => index
+            None => {
+                return false
+            }
+        }
+        let next = parser_token_at(parser, end)
+        next.kind == TokenDot() ||(structs && next.kind == TokenLeftBrace())
+    }
+
+    fn parser_type_arguments_end(parser: Parser) -> Option<usize> {
+        var depth: i64 = 0
+        var index = parser.offset
+        while index < parser.tokens.length() {
+            let token = parser_token_at(parser, index)
+            let change = match parser_type_nesting(token.kind) {
+                Some(value) => value
+                None => {
+                    return None()
+                }
+            }
+            depth = depth + change
+            if depth < 0 {
+                return None()
+            }
+            if depth == 0 {
+                return Some(index + 1)
+            }
+            index = index + 1
+        }
+        None()
+    }
+
+    fn parser_type_nesting(kind: TokenKind) -> Option<i64> {
+        match kind {
+            TokenLess => Some(1)
+            TokenGreater => Some(-1)
+            TokenShiftRight => Some(-2)
+            _ => {
+                if parser_type_argument_token(kind) {
+                    return Some(0)
+                };
+                None()
+            }
+        }
+    }
+
+    fn parser_type_argument_token(kind: TokenKind) -> bool {
+        match kind {
+            TokenIdentifier | TokenComma | TokenNewline => true
+            TokenLeftBracket | TokenRightBracket | TokenInteger | TokenSemicolon => true
+            TokenFn | TokenLeftParen | TokenRightParen | TokenArrow => true
+            TokenRead | TokenWrite | TokenTake | TokenDynamic => true
+            _ => false
+        }
+    }
+}

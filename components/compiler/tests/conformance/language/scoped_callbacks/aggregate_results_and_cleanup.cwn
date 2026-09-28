@@ -1,0 +1,75 @@
+struct Large {
+    first: u64, second: u64, third: u64
+}
+resource Guard {
+    id: u32
+    drop {
+        print(id)
+    }
+}
+
+fn make(action: scoped fn() -> Large) -> Large {
+    return action()
+}
+fn produce() -> Large {
+    return Large {
+        first: 10, second: 11, third: 21
+    }
+}
+fn text(action: scoped fn() -> Text) -> Text {
+    return action()
+}
+fn recover(action: scoped fn() -> Result<Text, u32>) -> Result<Text, u32> {
+    return action()
+}
+fn reject() -> Result<Text, u32> {
+    return Err(7)
+}
+
+fn main() -> u32 {
+    let amount: u64 = 21
+    let value = make(fn[read amount]() {
+            return Large {
+                first: 10, second: 11, third: amount
+            }
+        })
+    if value.first + value.second + value.third != 42 {
+        return 1
+    }
+    let ordinary = produce
+    let other = make(ordinary)
+    if other.third != 21 {
+        return 2
+    }
+    let guard = Guard {
+        id: 9
+    }
+    let result = text(fn[read guard]() {
+            if guard.id == 9 {
+                return "hello"
+            };
+            return "bad"
+        })
+    if result.length() != 5 {
+        return 3
+    }
+    let failure: Result<Text, u32> = recover(fn() {
+            let temporary = Guard {
+                id: 7
+            };
+            temporary;
+            return Ok(reject()?)
+        })
+    match move failure {
+        Ok(success) => {
+            success;
+            return 4
+        }
+        Err(error) => {
+            if error != 7 {
+                return 5
+            }
+        }
+    }
+    return 0
+}

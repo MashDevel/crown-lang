@@ -1,0 +1,115 @@
+module lowering {
+    struct Equality {
+        left: usize
+        right: usize
+        value_type: sema::Type
+    }
+
+    fn aggregate_comparison(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                var left_address: usize = 0
+                var right_address: usize = 0
+                var value_type = sema::Invalid()
+                loan read left as value {
+                    left_address = equality_address(compiler, analysis, value)?
+                    value_type = function_expression_type(compiler, analysis, value)?
+                }
+                loan read right as value {
+                    right_address = equality_address(compiler, analysis, value)?
+                }
+                let request = Equality {
+                    left: left_address, right: right_address, value_type: move value_type
+                }
+                let compared = equality_value(compiler, analysis.checker.symbols, request)?
+                let equal = equality_result(compiler, compared, operator)?
+                return Ok(ScalarValue(equal, sema::builtin_leaf(sema::Bool())))
+            }
+            _ => {
+                return Err(100)
+            }
+        }
+    }
+
+    fn equality_address(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<usize, u32> {
+        let value = function_expression(compiler, analysis, expression)?
+        return argument_address(compiler, analysis.checker.symbols, move value)
+    }
+
+    fn equality_value(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality) -> Result<usize, u32> {
+        if sema::type_is_fieldless_enum(symbols, request.value_type) {
+            let tags = Equality {
+                left: request.left, right: request.right, value_type: sema::builtin_leaf(sema::U32())
+            }
+            return equality_value(compiler, symbols, tags)
+        }
+        if sema::type_is_unit(request.value_type) {
+            return Ok(function_integer(compiler, ir::TypeInteger(ir::IntegerWidth1()), 1))
+        }
+        if type_is_direct(symbols, request.value_type)? {
+            let left_request = Place {
+                address: request.left, value_type: sema::type_copy(request.value_type)
+            }
+            let right_request = Place {
+                address: request.right, value_type: sema::type_copy(request.value_type)
+            }
+            let left = function_load(compiler, symbols, left_request)?
+            let right = function_load(compiler, symbols, right_request)?
+            var operator = ir::CompareEqual()
+            if sema::type_is_float(request.value_type) {
+                operator = ir::CompareFloatOrderedEqual()
+            }
+            return function_append_value(compiler, ir::InstructionCompare(operator, left, right))
+        }
+        match read request.value_type {
+            sema::ArrayType(element, length) => {
+                element;
+                length;
+                return array_equality(compiler, symbols, request)
+            }
+            _ => {
+                return structured_equality(compiler, symbols, request)
+            }
+        }
+    }
+
+    fn builtin_equality(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Equality) -> Result<usize, u32> {
+        let kind = sema::type_builtin(request.value_type)
+        let count = builtin_equality_words(kind)?
+        var equal = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth1()), 1)
+        var index: usize = 0
+        while index < count {
+            let left = function_offset(compiler, request.left, u64.from(index) * 8)?
+            let right = function_offset(compiler, request.right, u64.from(index) * 8)?
+            let part = Equality {
+                left: left, right: right, value_type: sema::builtin_leaf(sema::USize())
+            }
+            let current = equality_value(compiler, symbols, part)?
+            equal = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), equal, current))?
+            index = index + 1
+        }
+        return Ok(equal)
+    }
+
+    fn equality_result(compiler: write FunctionCompiler, equal: usize, operator: frontend::BinaryOperator) -> Result<usize, u32> {
+        match operator {
+            frontend::BinaryNotEqual => {
+                let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth1()), 0)
+                return function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), equal, zero))
+            }
+            _ => {
+                return Ok(equal)
+            }
+        }
+    }
+    fn builtin_equality_words(kind: sema::Builtin) -> Result<usize, u32> {
+        if kind == sema::Handle() {
+            return Ok(3)
+        }
+        if kind == sema::TextView() || kind == sema::Arguments() || kind == sema::Slice() {
+            return Ok(2)
+        }
+        return Err(101)
+    }
+
+}

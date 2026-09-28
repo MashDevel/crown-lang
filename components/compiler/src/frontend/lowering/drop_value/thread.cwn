@@ -1,0 +1,27 @@
+module lowering {
+    fn drop_thread(compiler: write FunctionCompiler, symbols: sema::Symbols, address: usize) -> Result<void, u32> {
+        let joined = function_offset(compiler, address, 8)?
+        let request = Place {
+            address: joined, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        let joinable = function_load(compiler, symbols, request)?
+        let join = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(joinable, join, ready))?
+        function_select_block(compiler, join)
+        let handle_request = Place {
+            address: address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let handle = function_load(compiler, symbols, handle_request)?
+        join_native_thread(compiler, handle)?
+        let boolean_type = ir::TypeInteger(ir::IntegerWidth1())
+        let false_value = function_integer(compiler, boolean_type, 0)
+        let store = StoreRequest {
+            address: joined, value: false_value, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        function_store(compiler, symbols, store)?
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, ready)
+        return Ok(())
+    }
+}

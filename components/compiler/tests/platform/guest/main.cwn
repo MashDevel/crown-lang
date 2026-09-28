@@ -1,0 +1,43 @@
+fn run(options: guest::Options) -> Result<u32, Text> {
+    var connection = guest::connect(options.socket)
+    match move connection {
+        Err(error) => {
+            return Err(move error)
+        }
+        Ok(agent) => {
+            var socket = move agent
+            return guest::run(options, fn[write socket](request) {
+                    return guest::exchange(socket, request)
+                })
+        }
+    }
+}
+
+fn main(arguments: Arguments) -> u32 {
+    let values = toolchain::arguments(arguments)
+    if values.length() == 2 && std::text::equal(values[1], "--help") {
+        toolchain::say("usage: crown-guest --socket PATH [--execute COMMAND | --wait-pid PID] [--upload FILE --destination PATH] [--timeout SECONDS]")
+        return 0
+    }
+    match guest::options(values) {
+        Err(error) => {
+            toolchain::failure(error);
+            return 2
+        }
+        Ok(options) => {
+            return execute(options)
+        }
+    }
+}
+
+fn execute(options: guest::Options) -> u32 {
+    match run(options) {
+        Ok(status) => {
+            return status
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
+}

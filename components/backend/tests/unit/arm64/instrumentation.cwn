@@ -1,0 +1,39 @@
+fn runtime_imports(hit: Text) -> object::CompilerObject {
+    var output = object::new()
+    output.architecture = object::ArchitectureArm64()
+    arm64::symbol_index(output, "crown_cov_init", object::SymbolFunction());
+    arm64::symbol_index(output, hit, object::SymbolFunction());
+    return move output
+}
+
+fn runtime_exports(profiling: bool) -> Result<void, Text> {
+    let hit = if profiling {
+        "crown_profile_hit"
+    } else {
+        "crown_cov_hit"
+    }
+    var output = runtime_imports(hit)
+    let runtime = arm64::instrumentation_object(8, "/tmp/crown-test.XXXXXX", profiling)?
+    link_object::merge(output, move runtime)?
+    for index in 0..2 {
+        testing::expect(object::symbol_is_import(output.symbols[index].binding) == false, "instrumentation resolves program imports")?
+        let defined = match output.symbols[index].section {
+            Some(section) => {
+                section;
+                true
+            },
+            None => false
+        }
+        testing::expect(defined, "instrumentation exports have definitions")?
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    runtime_exports(false)?
+    return runtime_exports(true)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

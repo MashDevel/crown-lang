@@ -1,0 +1,61 @@
+module frontend {
+    fn write_optimization_report(program: ir::Program, report: optimize::Report, path: Text) -> Result<void, Text> {
+        if path.length() == 0 {
+            return Ok(())
+        }
+        var output = "{\"version\":1,\"transforms\":{"
+        report_number(output, "constants_folded", report.constants_folded, false)
+        report_number(output, "calls_inlined", report.calls_inlined, true)
+        report_number(output, "interprocedural_changes", report.interprocedural_changes, true)
+        report_number(output, "functions_specialized", report.functions_specialized, true)
+        report_number(output, "loops_vectorized", report.loops_vectorized, true)
+        report_number(output, "loads_eliminated", report.loads_eliminated, true)
+        report_number(output, "instructions_removed", report.instructions_removed, true)
+        report_number(output, "comparisons_proven", report.comparisons_proven, true)
+        report_number(output, "instructions_hoisted", report.instructions_hoisted, true)
+        report_number(output, "branches_simplified", report.branches_simplified, true)
+        std::text::append(output, "},\"remaining_loops\":[")
+        var first = true
+        for index in 0..program.functions.length() {
+            report_function_loops(output, program.functions[index], first)
+        }
+        std::text::append(output, "]}\n")
+        toolchain::make_directory(toolchain::parent_path(path))?
+        return toolchain::write_text(path, output)
+    }
+
+    fn report_number(output: write Text, name: Text, value: usize, comma: bool) -> void {
+        if comma {
+            output.push(',')
+        }
+        std::text::append(output, toolchain::json_quoted(name))
+        output.push(':')
+        std::text::append(output, std::text::decimal(u64.from(value)))
+    }
+
+    fn report_function_loops(output: write Text, function: ir::Function, first: write bool) -> void {
+        let loops = optimize::find_loops(function)
+        for index in 0..loops.length() {
+            if first == false {
+                output.push(',')
+            }
+            first = false
+            std::text::append(output, "{\"function\":")
+            std::text::append(output, toolchain::json_quoted(function.name))
+            report_number(output, "header", optimize::memory_loop_header(function, loops[index].preheader), true)
+            std::text::append(output, ",\"reason\":")
+            std::text::append(output, toolchain::json_quoted(vector_reason(function, loops[index])))
+            output.push('}')
+        }
+    }
+
+    fn vector_reason(function: ir::Function, natural_loop: optimize::NaturalLoop) -> Text {
+        match optimize::vector_plan(function, natural_loop) {
+            Ok(plan) => {
+                plan;
+                return "eligible loop remains after the optimization budget"
+            }
+            Err(reason) => move reason
+        }
+    }
+}

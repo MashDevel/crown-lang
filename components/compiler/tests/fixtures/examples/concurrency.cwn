@@ -1,0 +1,12 @@
+fn main() -> u32 {
+    let channel = Channel<u32>.new()
+    let worker = channel.share()
+    var thread = spawn move {
+        worker.send(42)
+    }
+    thread.join()
+    match channel.try_receive() {
+        Some(value) => { return value }
+        None => { return 0 }
+    }
+}

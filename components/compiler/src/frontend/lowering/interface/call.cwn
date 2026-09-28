@@ -1,0 +1,139 @@
+module lowering {
+    struct DynamicCallState {
+        function: usize
+        data: usize
+        declaration: usize
+    }
+
+    struct DynamicMethod {
+        function: usize
+        index: usize
+    }
+
+    fn dynamic_call(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let state = dynamic_call_state(compiler, analysis, expression)?
+        var result = sema::Invalid()
+        loan read analysis.checker.symbols.functions[state.declaration] as declaration {
+            result = sema::type_copy(declaration.result)
+        }
+        var values = Vec<usize>.new()
+        let result_address = prepare_call_result(compiler, analysis.checker.symbols, result, values)?
+        values.push(state.data)
+        append_dynamic_arguments(compiler, analysis, state.declaration, expression.kind, values)?
+        var signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        loan read analysis.checker.symbols.functions[state.declaration] as declaration {
+            signature = dynamic_signature(declaration, analysis.checker.symbols)?
+        }
+        let call = function_append(compiler, ir::InstructionCallIndirect(state.function, move signature, move values))?
+        return call_value(call, result_address, result)
+    }
+
+    fn dynamic_signature(function: sema::Function, symbols: sema::Symbols) -> Result<ir::Signature, u32> {
+        var parameters = Vec<sema::ParameterType>.with_capacity(function.parameters.length())
+        var index: usize = 0
+        while index < function.parameters.length() {
+            loan read function.parameters[index] as parameter {
+                var mode = parameter.mode
+                if index == 0 {
+                    mode = frontend::ModeWrite()
+                }
+                parameters.push(sema::ParameterType {
+                        mode: mode, value_type: sema::type_copy(parameter.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        let request = SignatureRequest {
+            parameters: move parameters, result: sema::type_copy(function.result), indirect_receiver: false
+        }
+        return configured_signature(request, symbols)
+    }
+
+    fn dynamic_call_state(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<DynamicCallState, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments
+                var interface_symbol: usize = 0
+                loan read receiver as value {
+                    let value_type = function_expression_type(compiler, analysis, value)?
+                    match read value_type {
+                        sema::DynamicType(symbol) => {
+                            interface_symbol = symbol
+                        }
+                        _ => {
+                            return Err(344)
+                        }
+                    }
+                }
+                let selected = dynamic_method(analysis.checker.symbols, interface_symbol, method)?
+                var object: usize = 0
+                loan read receiver as value {
+                    object = expression_place(compiler, analysis, value)?
+                }
+                return load_dynamic_method(compiler, object, selected)
+            }
+            _ => {
+                return Err(345)
+            }
+        }
+    }
+
+    fn load_dynamic_method(compiler: write FunctionCompiler, object: usize, selected: DynamicMethod) -> Result<DynamicCallState, u32> {
+        let data = function_load_pointer(compiler, object)?
+        let table = function_load_pointer_field(compiler, object, 16)?
+        let function = function_load_pointer_field(compiler, table, u64.from(selected.index * 8))?
+        return Ok(DynamicCallState {
+                function: function, data: data, declaration: selected.function
+            })
+    }
+
+    fn dynamic_method(symbols: sema::Symbols, interface_symbol: usize, name: frontend::Name) -> Result<DynamicMethod, u32> {
+        var index: usize = 0
+        var method_index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as function {
+                var declared = false
+                match read function.kind {
+                    sema::InterfaceFunction(owner) => {
+                        declared = owner == interface_symbol
+                    }
+                    _ => {
+                    }
+                }
+                if declared {
+                    if sema::names_equal(symbols.source, function.name, name) {
+                        return Ok(DynamicMethod {
+                                function: index, index: method_index
+                            })
+                    }
+                    method_index = method_index + 1
+                }
+            }
+            index = index + 1
+        }
+        return Err(347)
+    }
+    fn append_dynamic_arguments(compiler: write FunctionCompiler, analysis: sema::Analysis, declaration_index: usize, kind: frontend::ExpressionKind, values: write Vec<usize>) -> Result<void, u32> {
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                receiver;
+                method
+                loan read analysis.checker.symbols.functions[declaration_index] as declaration {
+                    if declaration.parameters.length() != arguments.length() + 1 {
+                        return Err(341)
+                    }
+                    var index: usize = 0
+                    while index < arguments.length() {
+                        values.push(pass_argument(compiler, analysis, declaration.parameters[index + 1].mode, declaration.parameters[index + 1].value_type, arguments[index])?)
+                        index = index + 1
+                    }
+                }
+            }
+            _ => {
+                return Err(342)
+            }
+        }
+        return Ok(())
+    }
+
+}

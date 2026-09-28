@@ -1,0 +1,76 @@
+resource Token {
+    counter: Shared<Mutex<u32>>, weight: u32
+    drop {
+        counter.lock write as value {
+            value = value + weight
+        }
+    }
+}
+fn propagate<T>(value: take Option<T>) -> Option<T> {
+    let result = (move value)?
+    return Some(move result)
+}
+fn attempt(counter: Shared<Mutex<u32>>, present: bool) -> Option<u32> {
+    let guard = Token {
+        counter: counter.share(), weight: 1
+    }
+    let input: Option<Token> = if present {
+        Some(Token {
+                counter: counter.share(), weight: 2
+            })
+    } else {
+        None()
+    }
+    let token = propagate(move input)?
+    token;
+    guard
+    return Some(7)
+}
+fn convert(value: take Option<u8>) -> Option<Vec<u8>> {
+    let byte = value?
+    var bytes = Vec<u8>.new()
+    bytes.push(byte)
+    return Some(move bytes)
+}
+fn main() -> u32 {
+    let counter = Shared.new(Mutex.new(0))
+    match attempt(counter, false) {
+        None => {
+        },
+        Some(value) => {
+            value;
+            return 1
+        }
+    }
+    counter.lock write as value {
+        if value != 1 {
+            return 2
+        }
+    }
+    match attempt(counter, true) {
+        Some(value) => {
+            if value != 7 {
+                return 3
+            }
+        },
+        None => {
+            return 4
+        }
+    }
+    counter.lock write as value {
+        if value != 4 {
+            return 5
+        }
+    }
+    match convert(Some(u8.from(9))) {
+        Some(bytes) => {
+            if bytes.length() != 1 || bytes[0] != 9 {
+                return 6
+            }
+        },
+        None => {
+            return 7
+        }
+    }
+    return 0
+}

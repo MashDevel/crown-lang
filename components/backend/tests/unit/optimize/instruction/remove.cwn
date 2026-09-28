@@ -1,0 +1,99 @@
+fn removal_function() -> ir::Function {
+    var function = ir::function_new("test", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    var block = ir::basic_block_new()
+    block.instructions.push(ir::Instruction {
+            result: Some(0), kind: ir::InstructionStackSlot(8, 8)
+        })
+    block.instructions.push(ir::Instruction {
+            result: Some(1), kind: ir::InstructionLoad(0, ir::TypePointer(), 8, false)
+        })
+    block.instructions.push(ir::Instruction {
+            result: Some(2), kind: ir::InstructionLoad(0, ir::TypePointer(), 8, false)
+        })
+    block.instructions.push(ir::Instruction {
+            result: None(), kind: ir::InstructionStore(0, 2, 8, false)
+        })
+    function.blocks.push(move block)
+    function.blocks.push(ir::basic_block_new())
+    move function
+}
+
+fn retained_results(function: ir::Function) -> bool {
+    if function.blocks.length() != 2 || function.blocks[1].instructions.length() != 0 {
+        return false
+    }
+    if function.blocks[0].instructions.length() != 3 {
+        return false
+    }
+    match read function.blocks[0].instructions[0].result {
+        Some(value) => {
+            if value != 0 {
+                return false
+            }
+        }
+        None => {
+            return false
+        }
+    }
+    match read function.blocks[0].instructions[1].result {
+        Some(value) => {
+            if value != 2 {
+                return false
+            }
+        }
+        None => {
+            return false
+        }
+    }
+    match read function.blocks[0].instructions[2].result {
+        Some(value) => {
+            value;
+            false
+        }
+        None => true
+    }
+}
+
+fn boolean_removal() -> bool {
+    var function = removal_function()
+    var selected = Vec<bool>.new()
+    selected.push(false)
+    selected.push(true)
+    selected.push(false)
+    optimize::remove_results(function, selected, optimize::result_marked)
+    if retained_results(function) == false {
+        return false
+    }
+    optimize::remove_results(function, selected, optimize::result_marked)
+    retained_results(function)
+}
+
+fn replacement_removal() -> bool {
+    var function = removal_function()
+    var selected = Vec<Option<usize>>.new()
+    selected.push(None())
+    selected.push(Some(2))
+    selected.push(None())
+    optimize::remove_results(function, selected, ir::value_present)
+    retained_results(function)
+}
+
+fn empty_removal() -> bool {
+    var function = ir::function_new("empty", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal())
+    let selected = Vec<bool>.new()
+    optimize::remove_results(function, selected, optimize::result_marked)
+    function.blocks.length() == 0
+}
+
+fn main() -> u32 {
+    if boolean_removal() == false {
+        return 1
+    }
+    if replacement_removal() == false {
+        return 2
+    }
+    if empty_removal() == false {
+        return 3
+    }
+    42
+}

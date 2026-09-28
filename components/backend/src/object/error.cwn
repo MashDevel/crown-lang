@@ -1,0 +1,29 @@
+module object {
+    enum ErrorKind {
+        ErrorDataExceedsMemory
+        ErrorDuplicateSection
+        ErrorDuplicateSymbol
+        ErrorEntryImported
+        ErrorEntryNotExecutable
+        ErrorEntryNotFunction
+        ErrorEntryUnset
+        ErrorInvalidAlignment
+        ErrorRelocationOutOfBounds
+        ErrorRelocationUsesZeroFill
+        ErrorSymbolOutOfBounds
+        ErrorUnknownSection
+        ErrorUnknownSymbol
+        ErrorZeroFillContainsData
+    }
+
+    struct Error {
+        kind: ErrorKind
+        index: usize
+    }
+
+    fn error(kind: take ErrorKind, index: usize) -> Error {
+        return Error {
+            kind: move kind, index: index
+        }
+    }
+}

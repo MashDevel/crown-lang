@@ -1,0 +1,6 @@
+fn value() -> i8 {
+    return -128
+}
+fn main() -> u32 {
+    return 0
+}

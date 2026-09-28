@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    if 1 == true {
+        return 1
+    } else {
+        return 0
+    }
+}

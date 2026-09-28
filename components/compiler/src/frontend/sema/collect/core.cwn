@@ -1,0 +1,50 @@
+module sema {
+    fn collect_symbols(source: take Shared<Vec<u8>>, program: frontend::Program) -> Symbols {
+        var symbols = symbols_new(move source)
+        symbols.modules = frontend::namespace_modules_copy(program.modules)
+        collect_type_names(symbols, program)
+        collect_constants(symbols, program)
+        symbols = resolve_scalar_constants(move symbols, program)
+        collect_array_constants(symbols, program)
+        collect_type_bodies(symbols, program)
+        collect_functions(symbols, program)
+        validate_symbols(symbols)
+        validate_cycles(symbols)
+        validate_type_rules(symbols)
+        validate_function_rules(symbols)
+        validate_variant_names(symbols)
+        validate_main(symbols)
+        validate_interfaces(symbols)
+        return move symbols
+    }
+
+    fn validate_symbols(symbols: write Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.types.length() {
+            var valid = true
+            loan read symbols.types[index] as symbol {
+                let parameters = names_unique(symbols.source, symbol.type_parameters)
+                let fields = field_names_unique(symbols.source, symbol.fields)
+                let variants = variant_names_unique(symbols.source, symbol.variants)
+                valid = parameters && fields && variants
+            }
+            if valid == false {
+                symbols_error(symbols, "duplicate parameter, field, or variant name")
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < symbols.functions.length() {
+            var valid = true
+            loan read symbols.functions[index] as function {
+                let types = names_unique(symbols.source, function.type_parameters)
+                let parameters = parameter_names_unique(symbols.source, function.parameters)
+                valid = types && parameters
+            }
+            if valid == false {
+                symbols_error(symbols, "duplicate parameter, field, or variant name")
+            }
+            index = index + 1
+        }
+    }
+}

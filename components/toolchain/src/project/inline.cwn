@@ -1,0 +1,53 @@
+module toolchain {
+    fn toml_inline(input: write Cursor, document: write Json, depth: usize) -> Result<usize, Text> {
+        var fields = Vec<JsonField>.new()
+        horizontal_space(input)
+        if consumed(input, 125) {
+            return Ok(json_add(document, JsonObject(move fields)))
+        }
+        while true {
+            let name = toml_key(input)?
+            require_byte(input, 61)?
+            horizontal_space(input)
+            let value = toml_value(input, document, depth)?
+            flatten_field(document, fields, JsonField {
+                    name: move name, value: value
+                })?
+            horizontal_space(input)
+            if consumed(input, 125) {
+                return Ok(json_add(document, JsonObject(move fields)))
+            }
+            require_byte(input, 44)?
+            horizontal_space(input)
+        }
+        return Err("unterminated inline table")
+    }
+
+    fn flatten_field(document: Json, fields: write Vec<JsonField>, field: take JsonField) -> Result<void, Text> {
+        match read document.values[field.value] {
+            JsonObject(nested) => {
+                if nested.length() == 0 {
+                    return insert_field(fields, move field)
+                }
+                for index in 0..nested.length() {
+                    let name = std::text::joined(std::text::joined(field.name, "."), nested[index].name)
+                    flatten_field(document, fields, JsonField {
+                            name: move name, value: nested[index].value
+                        })?
+                }
+            }
+            _ => {
+                return insert_field(fields, move field)
+            }
+        }
+        return Ok(())
+    }
+
+    fn insert_field(fields: write Vec<JsonField>, field: take JsonField) -> Result<void, Text> {
+        if json_field_exists(fields, field.name) {
+            return Err(std::text::joined("duplicate TOML key: ", field.name))
+        }
+        fields.push(move field)
+        return Ok(())
+    }
+}

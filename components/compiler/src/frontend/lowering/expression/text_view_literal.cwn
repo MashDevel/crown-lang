@@ -1,0 +1,25 @@
+module lowering {
+    fn text_literal_pointer(compiler: write FunctionCompiler, span: frontend::Span) -> Result<usize, u32> {
+        var key = "text_"
+        frontend::text_push_usize(key, span.start)
+        match function_global_id(compiler, key) {
+            Some(global) => {
+                return function_append_value(compiler, ir::InstructionGlobalAddress(global))
+            }
+            None => {
+                return Err(97)
+            }
+        }
+    }
+
+    fn borrowed_text_literal(compiler: write FunctionCompiler, analysis: sema::Analysis, span: frontend::Span) -> Result<Value, u32> {
+        let bytes = frontend::text_literal_bytes(analysis.checker.symbols.source, span)
+        let pointer = text_literal_pointer(compiler, span)?
+        let length = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), u64.from(bytes.length()))
+        let view = View {
+            data: pointer, length: length, value_type: sema::builtin_leaf(sema::TextView())
+        }
+        let result = make_view(compiler, analysis.checker.symbols, view)?
+        return Ok(AddressValue(result.address, sema::type_copy(result.value_type)))
+    }
+}

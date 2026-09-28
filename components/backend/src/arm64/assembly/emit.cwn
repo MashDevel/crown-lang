@@ -1,0 +1,58 @@
+module arm64 {
+    fn elf_assembly(object: object::CompilerObject, prefix: Text) -> Result<Text, Text> {
+        if object.architecture != object::ArchitectureArm64() {
+            return Err("ARM64 assembly requires an ARM64 object")
+        }
+        var output = Text.new()
+        for index in 0..object.sections.length() {
+            assembly_section(object, output, prefix, index)?
+        }
+        assembly_symbols(object, output, prefix)?
+        assembly_relocations(object, output, prefix)?
+        std::text::append(output, ".section .note.GNU-stack,\"\",%progbits\n")
+        return Ok(move output)
+    }
+    fn assembly_base(prefix: Text, section: usize) -> Text {
+        var name = std::text::joined(".Lcrown_", prefix)
+        std::text::append(name, "_")
+        std::text::append(name, std::text::decimal(u64.from(section)))
+        return move name
+    }
+    fn assembly_section(object: object::CompilerObject, output: write Text, prefix: Text, index: usize) -> Result<void, Text> {
+        loan read object.sections[index] as section {
+            let header = match read section.kind {
+                object::SectionText => ".text\n"
+                object::SectionReadOnlyData => ".section .data.rel.ro,\"aw\",%progbits\n"
+                object::SectionData => ".data\n"
+                object::SectionZeroFill => ".bss\n"
+            }
+            std::text::append(output, header)
+            std::text::append(output, ".balign ")
+            std::text::append(output, std::text::decimal(section.alignment))
+            output.push('\n')
+            std::text::append(output, assembly_base(prefix, index))
+            std::text::append(output, ":\n")
+            if object::section_is_zero_fill(section.kind) {
+                std::text::append(output, ".zero ")
+                std::text::append(output, std::text::decimal(section.memory_size))
+                output.push('\n')
+            } else {
+                assembly_bytes(output, section.data)
+            }
+        }
+        return Ok(())
+    }
+    fn assembly_bytes(output: write Text, bytes: Vec<u8>) -> void {
+        var offset: usize = 0
+        while offset < bytes.length() {
+            std::text::append(output, ".ascii \"")
+            var count: usize = 0
+            while count < 256 && offset < bytes.length() {
+                object::assembly_byte(output, bytes[offset])
+                offset = offset + 1
+                count = count + 1
+            }
+            std::text::append(output, "\"\n")
+        }
+    }
+}

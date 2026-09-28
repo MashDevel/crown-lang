@@ -1,0 +1,23 @@
+module arm64 {
+    fn append_arena_runtime(output: write object::CompilerObject) -> Result<void, Text> {
+        if runtime_required(output, "crown_arena_identity") == false {
+            return Ok(())
+        }
+        runtime_zero(output, "__compiler_arena_identity_counter", 8)
+        var compiler = runtime_compiler(0)
+        symbol_address(compiler, "__compiler_arena_identity_counter", 9)
+        runtime_label(compiler, 0)
+        runtime_memory(compiler, 10, 9, 0, true)
+        runtime_compare(compiler, 10, 18446744073709551615)
+        runtime_condition(compiler, 0, 1)
+        emit_encoding(compiler, add_immediate(11, 10, 1, false))
+        atomic_compare(compiler)
+        runtime_condition(compiler, 1, 0)
+        runtime_move(compiler, 0, 11)
+        emit(compiler, 3596551104)
+        runtime_label(compiler, 1)
+        immediate(compiler, 0, 0)
+        emit(compiler, 3596551104)
+        return runtime_finish(output, compiler, "crown_arena_identity")
+    }
+}

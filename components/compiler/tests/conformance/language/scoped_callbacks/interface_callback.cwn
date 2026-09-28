@@ -1,0 +1,28 @@
+interface Values {
+    fn visit(self: read Self, action: scoped fn(u32) -> void) -> void
+}
+
+struct Pair {
+    first: u32, second: u32
+}
+
+impl Values for Pair {
+    fn visit(self: read Pair, action: scoped fn(u32) -> void) -> void {
+        action(self.first)
+        action(self.second)
+    }
+}
+
+fn main() -> u32 {
+    let values: dynamic Values = Pair {
+        first: 12, second: 30
+    }
+    var total: u32 = 0
+    values.visit(fn[write total](value) {
+            total = total + value
+        })
+    if total != 42 {
+        return 1
+    }
+    return 0
+}

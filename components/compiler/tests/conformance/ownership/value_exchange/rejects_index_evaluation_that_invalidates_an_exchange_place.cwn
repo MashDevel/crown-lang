@@ -1,0 +1,10 @@
+fn grow(values: write Vec<u32>) -> usize {
+    values.push(9)
+    return 0
+}
+fn main() -> u32 {
+    var values = Vec<u32>.new()
+    values.push(1)
+    swap(values[0], values[grow(values)])
+    return 0
+}

@@ -1,0 +1,6 @@
+unsafe fn danger() -> void {
+}
+fn main() -> u32 {
+    danger()
+    return 0
+}

@@ -1,0 +1,34 @@
+fn darwin_echo_object() -> Result<object::CompilerObject, Text> {
+    let byte = ir::TypeInteger(ir::IntegerWidth8())
+    var parameters = Vec<ir::Type>.new()
+    for index in 0..10 {
+        index;
+        parameters.push(byte)
+    }
+    var signature = ir::signature_new(move parameters, byte)
+    for index in 0..10 {
+        signature.signed_parameters.push(index)
+    }
+    signature.result_signed = true
+    var function = ir::function_new("crown_darwin_echo", move signature, ir::LinkageExport())
+    let block = match ir::function_add_block(function) {
+        Ok(value) => value
+        Err(error) => {
+            error;
+            return Err("could not create ABI probe block")
+        }
+    }
+    let result = function.parameters[9]
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err("could not terminate ABI probe")
+        }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return arm64::codegen(move program, arm64::AbiVariant::Darwin())
+}

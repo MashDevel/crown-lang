@@ -1,0 +1,61 @@
+module toolchain {
+    struct SourcePaths {
+        entries: Vec<Text>, excluded: Vec<Text>, target: Target
+    }
+
+    fn source_paths(request: SourcePaths) -> Result<Vec<Text>, Text> {
+        var output = Vec<Text>.new()
+        for index in 0..request.entries.length() {
+            let files = walk_files(request.entries[index])?
+            for offset in 0..files.length() {
+                if included_source(files[offset], request.excluded) && target_source(files[offset], request.target) && std::text::list_contains(output, files[offset]) == false {
+                    output.push(files[offset].clone())
+                }
+            }
+        }
+        std::text::sort_list(output)
+        return Ok(move output)
+    }
+
+    fn require_sources(request: SourcePaths) -> Result<Vec<Text>, Text> {
+        let output = source_paths(request)?
+        if output.length() == 0 {
+            return Err("no Crown source files found")
+        }
+        return Ok(move output)
+    }
+
+    fn included_source(path: Text, excluded: Vec<Text>) -> bool {
+        if std::text::ends(path, ".cwn") == false {
+            return false
+        }
+        for index in 0..excluded.length() {
+            if below(path, excluded[index]) {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn relative_paths(root: Text, values: Vec<Text>) -> Result<Vec<Text>, Text> {
+        var output = Vec<Text>.new()
+        for index in 0..values.length() {
+            if std::text::starts(values[index], "/") {
+                return Err("package source paths must be relative to the project")
+            }
+            if values[index].length() == 0 || std::text::contains(values[index], "\0") {
+                return Err("source paths must be nonempty and contain no NUL bytes")
+            }
+            output.push(absolute(path_join(root, values[index]))?)
+        }
+        return Ok(move output)
+    }
+
+    fn single_source(path: Text, target: Target) -> SourcePaths {
+        var entries = Vec<Text>.new()
+        entries.push(path.clone())
+        return SourcePaths {
+            entries: move entries, excluded: Vec<Text>.new(), target: target
+        }
+    }
+}

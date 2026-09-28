@@ -1,0 +1,253 @@
+module x86 {
+    fn encode_memory_instruction(instruction: Instruction, output: write Vec<u8>) -> bool {
+        if encode_load_store(instruction, output) {
+            return true
+        }
+        if encode_atomic_memory(instruction, output) {
+            return true
+        }
+        if encode_stack_transfer(instruction, output) {
+            return true
+        }
+        match read instruction {
+            Move(destination, source) => {
+                emit_binary(output, 137, pack_registers(destination, source));
+                return true
+            }
+            MoveBytes => {
+                output.push(243);
+                output.push(164);
+                return true
+            }
+            SetBytes => {
+                output.push(243);
+                output.push(170);
+                return true
+            }
+            MoveImmediate(destination, value) => {
+                encode_move_immediate(destination, value, output);
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn encode_load_store(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            Load(destination, base, offset) => {
+                encode_memory_access(output, 139, MemoryAccess {
+                        register: register_code(destination), base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            LoadAddress(destination, base, offset) => {
+                encode_memory_access(output, 141, MemoryAccess {
+                        register: register_code(destination), base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            LoadSized(values) => {
+                encode_load_sized(values, output);
+                return true
+            }
+            LoadIndexed(values) => {
+                encode_load_indexed(values, output);
+                return true
+            }
+            Store(base, offset, source) => {
+                encode_memory_access(output, 137, MemoryAccess {
+                        register: register_code(source), base: register_code(base), offset: offset
+                    });
+                return true
+            }
+            StoreSized(values) => {
+                encode_store_sized(values, output);
+                return true
+            }
+            StoreIndexed(values) => {
+                encode_store_indexed(values, output);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_atomic_memory(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ExchangeMemory(values) => {
+                encode_exchange(values, output, false);
+                return true
+            }
+            CompareExchangeMemory(values) => {
+                encode_exchange(values, output, true);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_stack_transfer(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            Pop(register) => {
+                encode_stack_register(output, 88, register);
+                return true
+            }
+            Push(register) => {
+                encode_stack_register(output, 80, register);
+                return true
+            }
+            PushImmediate(value) => {
+                output.push(104);
+                emit_i32(output, value);
+                return true
+            }
+            PushMemory(base, offset) => {
+                encode_push_memory(base, offset, output);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn encode_memory_access(output: write Vec<u8>, opcode: u8, registers: take MemoryAccess) -> void {
+        emit_memory(output, RawMemoryEncoding {
+                prefix: None()
+                wide: true
+                first_opcode: opcode
+                second_opcode: None()
+                register: registers.register
+                base: registers.base
+                offset: registers.offset
+            })
+    }
+
+    struct MemoryAccess {
+        register: u8
+        base: u8
+        offset: i32
+    }
+
+    fn encode_load_sized(values: LoadSizedArgs, output: write Vec<u8>) -> void {
+        var wide = true
+        var first: u8 = 15
+        var second: Option<u8> = Some(190)
+        match read values.width {
+            Byte => {
+                if extension_is_zero(values.extension) {
+                    second = Some(182)
+                }
+            }
+            Word => {
+                second = Some(191);
+                if extension_is_zero(values.extension) {
+                    second = Some(183)
+                }
+            }
+            Dword => {
+                first = 99;
+                second = None();
+                if extension_is_zero(values.extension) {
+                    wide = false;
+                    first = 139
+                }
+            }
+            Qword => {
+                first = 139;
+                second = None()
+            }
+        }
+        emit_memory(output, RawMemoryEncoding {
+                prefix: None()
+                wide: wide
+                first_opcode: first
+                second_opcode: second
+                register: register_code(values.destination)
+                base: register_code(values.base)
+                offset: values.offset
+            })
+    }
+
+    fn encode_store_sized(values: StoreSizedArgs, output: write Vec<u8>) -> void {
+        let width = width_code(values.width)
+        var prefix: Option<u8> = None()
+        var opcode: u8 = 137
+        if width == 0 {
+            opcode = 136
+        }
+        if width == 1 {
+            prefix = Some(102)
+        }
+        emit_memory(output, RawMemoryEncoding {
+                prefix: prefix
+                wide: width == 3
+                first_opcode: opcode
+                second_opcode: None()
+                register: register_code(values.source)
+                base: register_code(values.base)
+                offset: values.offset
+            })
+    }
+
+    fn encode_exchange(values: CompareExchangeMemoryArgs, output: write Vec<u8>, compare: bool) -> void {
+        let width = width_code(values.width)
+        var prefix: Option<u8> = None()
+        var opcode: u8 = 135
+        if width == 0 {
+            opcode = 134
+        }
+        if width == 1 {
+            prefix = Some(102)
+        }
+        var first = opcode
+        var second: Option<u8> = None()
+        if compare {
+            output.push(240);
+            first = 15;
+            second = Some(opcode + 42)
+        }
+        emit_memory(output, RawMemoryEncoding {
+                prefix: prefix
+                wide: width == 3
+                first_opcode: first
+                second_opcode: second
+                register: register_code(values.value)
+                base: register_code(values.address)
+                offset: 0
+            })
+    }
+
+    fn encode_move_immediate(destination: Register, value: i64, output: write Vec<u8>) -> void {
+        let register = register_code(destination)
+        output.push(rex(0, 0, register))
+        if value >= -2147483648 && value <= 2147483647 {
+            output.push(199)
+            output.push(modrm(3, 0, register))
+            emit_i32(output, i32.from(value))
+            return
+        }
+        output.push(184 +(register & 7))
+        emit_i64(output, value)
+    }
+
+    fn encode_stack_register(output: write Vec<u8>, opcode: u8, register: Register) -> void {
+        let code = register_code(register)
+        if code >= 8 {
+            output.push(65)
+        }
+        output.push(opcode +(code & 7))
+    }
+
+    fn encode_push_memory(base: Register, offset: i32, output: write Vec<u8>) -> void {
+        emit_memory(output, RawMemoryEncoding {
+                prefix: None()
+                wide: false
+                first_opcode: 255
+                second_opcode: None()
+                register: 6
+                base: register_code(base)
+                offset: offset
+            })
+    }
+}

@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let value = "owned"
+    while true {
+        let taken = move value
+        break
+    }
+    return u32.from(value.length())
+}

@@ -1,0 +1,110 @@
+module lowering {
+    fn declare_interface_tables(compiler: write Compiler, symbols: sema::Symbols) -> Result<void, u32> {
+        var index: usize = 0
+        while index < symbols.implementations.length() {
+            loan read symbols.implementations[index] as implementation {
+                let references = interface_table_references(compiler, symbols, implementation)?
+                let key = implementation_table_key(implementation.interface_symbol, implementation.target)
+                let name = implementation_table_name(symbols, implementation.interface_symbol, implementation.target)
+                var bytes = Vec<u8>.new()
+                var byte: usize = 0
+                while byte < references.length() * 8 {
+                    bytes.push(0);
+                    byte = byte + 1
+                }
+                let global = ir::Global {
+                    name: prefixed_symbol(name)
+                    bytes: move bytes
+                    size: u64.from(references.length() * 8)
+                    alignment: 8
+                    kind: ir::GlobalReadOnly()
+                    exported: false
+                    references: move references
+                }
+                let id = ir::program_add_global(compiler.output, move global)
+                compiler.tables.globals.push(NamedGlobal {
+                        name: move key, global: id
+                    })
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn prefixed_symbol(name: Text) -> Text {
+        var output = "crown_"
+        std::text::append(output, name)
+        return move output
+    }
+
+    fn interface_table_references(compiler: Compiler, symbols: sema::Symbols, implementation: sema::Implementation) -> Result<Vec<ir::GlobalReference>, u32> {
+        var output = Vec<ir::GlobalReference>.new()
+        var method: usize = 0
+        while method < symbols.functions.length() {
+            loan read symbols.functions[method] as function {
+                var declared = false
+                match read function.kind {
+                    sema::InterfaceFunction(owner) => {
+                        declared = owner == implementation.interface_symbol
+                    }
+                    _ => {
+                    }
+                }
+                if declared {
+                    let query = ImplementationMethod {
+                        implementation: semantic_implementation_copy(implementation), name: frontend::name_copy(function.name)
+                    }
+                    let target = implementation_method(compiler, symbols, move query)?
+                    output.push(ir::GlobalReference {
+                            offset: u64.from(output.length() * 8), target: ir::GlobalReferenceFunction(target), addend: 0
+                        })
+                }
+            }
+            method = method + 1
+        }
+        return Ok(move output)
+    }
+
+    struct ImplementationMethod {
+        implementation: sema::Implementation
+        name: frontend::Name
+    }
+
+    fn implementation_method(compiler: Compiler, symbols: sema::Symbols, request: take ImplementationMethod) -> Result<usize, u32> {
+        let owner = match sema::implementation_owner(symbols, request.implementation.target) {
+            Some(symbol) => symbol
+            None => {
+                return Err(331)
+            }
+        }
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as function {
+                if implementation_method_matches(symbols, function, owner, request) {
+                    let arguments = Vec<sema::Type>.new()
+                    match find_function(compiler, index, arguments) {
+                        Some(binding) => {
+                            return Ok(binding.function)
+                        }
+                        None => {
+                            return Err(330)
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Err(331)
+    }
+
+    fn semantic_implementation_copy(value: sema::Implementation) -> sema::Implementation {
+        return sema::Implementation {
+            interface_symbol: value.interface_symbol, target: sema::type_copy(value.target)
+        }
+    }
+    fn implementation_method_matches(symbols: sema::Symbols, function: sema::Function, owner: usize, request: ImplementationMethod) -> bool {
+        let matching = implementation_member(function, owner, request.implementation.interface_symbol)
+        return matching && sema::names_equal(symbols.source, function.name, request.name)
+    }
+
+}

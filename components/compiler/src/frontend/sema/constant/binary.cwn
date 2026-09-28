@@ -1,0 +1,142 @@
+module sema {
+    fn constant_binary_expression(symbols: write Symbols, context: ConstantContext, expression: frontend::Expression) -> Result<ConstantScalar, Text> {
+        match read expression.kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                var first = constant_boolean(false)
+                loan read left as value {
+                    first = constant_expression(symbols, context, value)?
+                }
+                match operator {
+                    frontend::BinaryLogicalAnd => {
+                        if first.bits == 0 {
+                            return Ok(first)
+                        }
+                    }
+                    frontend::BinaryLogicalOr => {
+                        if first.bits != 0 {
+                            return Ok(first)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+                loan read right as value {
+                    let second = constant_expression(symbols, context, value)?
+                    return constant_binary(ConstantBinary {
+                            operator: operator, left: first, right: second
+                        })
+                }
+            }
+            _ => {
+            }
+        }
+        return Err("invalid constant binary expression")
+    }
+
+    fn constant_binary(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let kind = input.left.builtin
+        if kind == F32() || kind == F64() {
+            return constant_float_binary(input)
+        }
+        if binary_returns_bool(input.operator, builtin_leaf(input.left.builtin)) {
+            return Ok(constant_boolean(constant_compare(input)))
+        }
+        if binary_is_logical(input.operator) {
+            return Ok(constant_boolean(input.right.bits != 0))
+        }
+        if binary_is_arithmetic(input.operator) {
+            return constant_arithmetic(input)
+        }
+        match input.operator {
+            frontend::BinaryRemainder => {
+                return constant_arithmetic(input)
+            }
+            _ => {
+                return constant_bitwise(input)
+            }
+        }
+    }
+
+    fn constant_compare(input: ConstantBinary) -> bool {
+        let left = constant_magnitude(input.left)
+        let right = constant_magnitude(input.right)
+        var less = left.value < right.value
+        if left.negative && right.negative {
+            less = left.value > right.value
+        }
+        if left.negative != right.negative {
+            less = left.negative
+        }
+        let equal = input.left.bits == input.right.bits
+        return constant_ordering(input.operator, ConstantOrdering {
+                equal: equal, less: less, greater: less == false && equal == false
+            })
+    }
+
+    fn constant_bitwise(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let left = input.left.bits
+        let right = input.right.bits
+        var result: u64 = 0
+        match input.operator {
+            frontend::BinaryBitwiseAnd => {
+                result = left & right
+            }
+            frontend::BinaryBitwiseOr => {
+                result = left | right
+            }
+            frontend::BinaryBitwiseXor => {
+                result = left ^ right
+            }
+            _ => {
+                return constant_shift(input)
+            }
+        }
+        return Ok(ConstantScalar {
+                builtin: input.left.builtin, bits: result
+            })
+    }
+
+    fn constant_shift(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let width = u64.from(builtin_width(input.left.builtin))
+        let shift = input.right.bits
+        if shift >= width {
+            return Err("constant shift amount out of range")
+        }
+        let mask = constant_mask(input.left.builtin)
+        let magnitude = constant_magnitude(input.left)
+        var result = input.left.bits >> shift
+        match input.operator {
+            frontend::BinaryShiftLeft => {
+                result = input.left.bits << shift & mask
+            }
+            frontend::BinaryShiftRight => {
+                if shift != 0 && magnitude.negative {
+                    result = result |(mask ^(mask >> shift))
+                }
+            }
+            _ => {
+                return Err("invalid constant operator")
+            }
+        }
+        return Ok(ConstantScalar {
+                builtin: input.left.builtin, bits: result
+            })
+    }
+
+    copy struct ConstantOrdering {
+        equal: bool, less: bool, greater: bool
+    }
+
+    fn constant_ordering(operator: frontend::BinaryOperator, ordering: ConstantOrdering) -> bool {
+        match operator {
+            frontend::BinaryEqual => ordering.equal
+            frontend::BinaryNotEqual => ordering.equal == false
+            frontend::BinaryLess => ordering.less
+            frontend::BinaryLessEqual => ordering.less || ordering.equal
+            frontend::BinaryGreater => ordering.greater
+            frontend::BinaryGreaterEqual => ordering.greater || ordering.equal
+            _ => false
+        }
+    }
+
+}

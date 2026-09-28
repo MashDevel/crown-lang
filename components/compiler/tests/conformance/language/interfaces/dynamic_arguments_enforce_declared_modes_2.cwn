@@ -1,0 +1,18 @@
+interface Update {
+    fn update(self: read Self, output: write u32) -> void
+}
+struct Value {
+    item: u32
+}
+impl Update for Value {
+    fn update(self: read Value, output: write u32) -> void {
+        output = self.item
+    }
+}
+fn main() -> u32 {
+    let value: dynamic Update = Value {
+        item: 1
+    }
+    value.update(0)
+    return 0
+}

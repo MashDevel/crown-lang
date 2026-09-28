@@ -1,0 +1,19 @@
+fn crown_platform_command(arguments: Vec<Text>) -> Result<u32, Text> {
+    return crown_command(arguments)
+}
+
+fn crown_platform_options(arguments: Vec<Text>, options: toolchain::Options) -> Result<u32, Text> {
+    arguments;
+    if options.target != toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock()) {
+        return Err("the Bedrock host supports only x86_64-bedrock")
+    }
+    match read options.command {
+        "check" => {
+            let request = toolchain::frontend_request(options)?
+            frontend::checked_sources(request.sources, request.max_instances)?;
+            return Ok(0)
+        }
+        "build" => frontend::build_executable(options)
+        _ => Err("this command is not available on the Bedrock host")
+    }
+}

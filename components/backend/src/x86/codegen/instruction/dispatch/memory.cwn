@@ -1,0 +1,58 @@
+module x86 {
+    fn codegen_memory_instruction(program: ir::Program, compiler: write FunctionCompiler, instruction: ir::Instruction) -> Option<Result<void, CodegenError>> {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        return Some(codegen_compile_load(program, compiler, LoadInput {
+                                    result: instruction.result
+                                    address: address
+                                    value_type: value_type
+                                }))
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        return Some(codegen_compile_store(program, compiler, StoreInput {
+                                    address: address, value: value
+                                }))
+                    }
+                    ir::MemoryOffset(base, offset) => {
+                        return Some(codegen_compile_offset(program, compiler, OffsetInput {
+                                    result: instruction.result
+                                    base: base
+                                    offset: offset
+                                }))
+                    }
+                    ir::MemoryCopy(destination, source, size) => {
+                        return Some(codegen_memory_copy(program, compiler, MemoryTriple {
+                                    first: destination, second: source, third: size
+                                }))
+                    }
+                    ir::MemorySet(destination, value, size) => {
+                        return Some(codegen_memory_set(program, compiler, MemoryTriple {
+                                    first: destination, second: value, third: size
+                                }))
+                    }
+                    ir::MemoryRepeat(destination, source, element_size, count) => {
+                        return Some(codegen_memory_repeat(program, compiler, MemoryRepeatInput {
+                                    destination: destination
+                                    source: source
+                                    element_size: element_size
+                                    count: count
+                                }))
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+
+            _ => {
+                return None()
+            }
+        }
+    }
+}

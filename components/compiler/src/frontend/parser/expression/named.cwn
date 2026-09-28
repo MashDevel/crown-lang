@@ -1,0 +1,93 @@
+module frontend {
+    fn parser_named_expression(parser: write Parser, name: take Name, structs: bool) -> Expression {
+        let start = name.span
+        if parser_at(parser, TokenLeftParen()) {
+            let arguments = parser_arguments(parser)
+            let span = span_through(start, arguments.end)
+            let {
+                values, end
+            } = move arguments
+            return expression(ExpressionCall(move name, move values), span)
+        }
+        let type_name = parser_type_name(parser, name)
+        if type_name && parser_named_type_suffix(parser, structs) {
+            let value_type = parser_finish_named_type(parser, move name)
+            if structs && parser_at(parser, TokenLeftBrace()) {
+                return parser_struct_value(parser, move value_type)
+            }
+            if parser_consumed(parser, TokenDot()) {
+                return parser_static_call(parser, move value_type)
+            }
+            parser_report(parser, UnexpectedToken())
+            return expression(ExpressionUnit(), start)
+        }
+        var segments = Vec<Name>.new()
+        segments.push(move name)
+        let path = Path {
+            segments: move segments, span: start
+        }
+        return expression(ExpressionPath(move path), start)
+    }
+
+    fn parser_arguments(parser: write Parser) -> ParsedArguments {
+        parser_expect(parser, TokenLeftParen())
+        var values = Vec<Expression>.new()
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightParen()) == false && parser_at(parser, TokenEnd()) == false {
+            values.push(parser_expression(parser))
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        let end = parser_expect(parser, TokenRightParen())
+        return ParsedArguments {
+            values: move values, end: end.span
+        }
+    }
+
+    fn parser_static_call(parser: write Parser, value_type: take TypeRef) -> Expression {
+        let start = value_type.span
+        let method = parser_member_name(parser)
+        let arguments = parser_arguments(parser)
+        let span = span_through(start, arguments.end)
+        let {
+            values, end
+        } = move arguments
+        return expression(ExpressionStaticCall(move value_type, move method, move values), span)
+    }
+
+    fn parser_struct_value(parser: write Parser, value_type: take TypeRef) -> Expression {
+        let start = value_type.span
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var fields = Vec<FieldValue>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            fields.push(parser_field_value(parser))
+            parser_field_value_end(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        return expression(ExpressionStruct(move value_type, move fields), span_through(start, end.span))
+    }
+
+    fn parser_field_value(parser: write Parser) -> FieldValue {
+        let moving = parser_consumed(parser, TokenMove())
+        let name = parser_identifier(parser)
+        let start = name.span
+        let value = parser_field_expression(parser, name, moving)
+        let span = span_through(start, value.span)
+        return FieldValue {
+            name: move name, value: move value, span: span
+        }
+    }
+
+    fn parser_field_value_end(parser: write Parser) -> void {
+        if parser_consumed(parser, TokenComma()) == false {
+            if parser_at(parser, TokenNewline()) == false && parser_at(parser, TokenRightBrace()) == false {
+                parser_report(parser, MissingToken())
+            }
+        }
+        parser_skip_breaks(parser)
+    }
+}

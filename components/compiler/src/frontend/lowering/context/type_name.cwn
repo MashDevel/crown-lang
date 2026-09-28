@@ -1,0 +1,20 @@
+module lowering {
+    fn encoded_text(value: Text) -> Text {
+        var output = Text.new()
+        frontend::text_push_usize(output, value.length())
+        output.push('_')
+        loan read value as bytes {
+            var index: usize = 0
+            while index < bytes.length() {
+                text_push_hex_byte(output, bytes[index])
+                index = index + 1
+            }
+        }
+        return move output
+    }
+
+    fn text_append_encoded(output: write Text, value: take Text) -> void {
+        let encoded = encoded_text(value)
+        std::text::append(output, encoded)
+    }
+}

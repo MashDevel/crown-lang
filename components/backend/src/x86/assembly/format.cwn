@@ -1,0 +1,26 @@
+module x86 {
+    copy enum AssemblyFormat {
+        MachO, Elf
+    }
+
+    struct AssemblyOutput {
+        text: Text, format: AssemblyFormat
+    }
+
+    fn assembly_header(output: write AssemblyOutput, entry: bool) -> void {
+        if output.format == AssemblyFormat::MachO() {
+            assembly_append(output, ".subsections_via_symbols\n")
+        }
+        if entry {
+            assembly_append(output, ".globl ")
+            assembly_append_symbol(output, "main")
+            assembly_append(output, "\n")
+        }
+    }
+
+    fn assembly_footer(output: write AssemblyOutput) -> void {
+        if output.format == AssemblyFormat::Elf() {
+            assembly_append(output, ".section .note.GNU-stack,\"\",@progbits\n")
+        }
+    }
+}

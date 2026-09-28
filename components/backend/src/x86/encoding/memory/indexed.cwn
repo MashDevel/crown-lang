@@ -1,0 +1,90 @@
+module x86 {
+    fn encode_load_indexed(values: LoadIndexedArgs, output: write Vec<u8>) -> void {
+        var wide: u8 = 1
+        var opcode: u8 = 190
+        match read values.width {
+            Byte => {
+                if extension_is_zero(values.extension) {
+                    opcode = 182
+                }
+            }
+            Word => {
+                opcode = 191;
+                if extension_is_zero(values.extension) {
+                    opcode = 183
+                }
+            }
+            Dword => {
+                opcode = 99;
+                if extension_is_zero(values.extension) {
+                    wide = 0;
+                    opcode = 139
+                }
+            }
+            Qword => {
+                opcode = 139
+            }
+        }
+        emit_indexed_load(output, values, u16.from(opcode) |(u16.from(wide) << 8))
+    }
+
+    fn emit_indexed_load(output: write Vec<u8>, values: LoadIndexedArgs, encoding: u16) -> void {
+        let opcode = u8.from(encoding & 255)
+        let wide = u8.from(encoding >> 8)
+        if opcode != 99 && opcode != 139 {
+            output.push(indexed_load_rex(values));
+            output.push(15);
+            output.push(opcode);
+            emit_indexed_tail(output, values);
+            return
+        }
+        emit_indexed(output, RawIndexedEncoding {
+                prefix: None()
+                wide: wide != 0
+                opcode: opcode
+                register: register_code(values.destination)
+                base: register_code(values.base)
+                index: register_code(values.index)
+                scale: values.scale
+            })
+    }
+
+    fn indexed_load_rex(values: LoadIndexedArgs) -> u8 {
+        let registers = normalize_index(register_code(values.base), register_code(values.index), values.scale)
+        let base = u8.from(registers & 255)
+        let index = u8.from((registers >> 8) & 255)
+        return rex(register_code(values.destination), index, base)
+    }
+
+    fn emit_indexed_tail(output: write Vec<u8>, values: LoadIndexedArgs) -> void {
+        let registers = normalize_index(register_code(values.base), register_code(values.index), values.scale)
+        let base = u8.from(registers & 255)
+        let index = u8.from((registers >> 8) & 255)
+        let scale = u8.from((registers >> 16) & 255)
+        let mode = displacement_mode(base, 0)
+        output.push(modrm(mode, register_code(values.destination), 4))
+        output.push((scale_bits(scale) << 6) |((index & 7) << 3) |(base & 7))
+        emit_displacement(output, base, 0)
+    }
+
+    fn encode_store_indexed(values: StoreIndexedArgs, output: write Vec<u8>) -> void {
+        let width = width_code(values.width)
+        var prefix: Option<u8> = None()
+        var opcode: u8 = 137
+        if width == 0 {
+            opcode = 136
+        }
+        if width == 1 {
+            prefix = Some(102)
+        }
+        emit_indexed(output, RawIndexedEncoding {
+                prefix: prefix
+                wide: width == 3
+                opcode: opcode
+                register: register_code(values.source)
+                base: register_code(values.base)
+                index: register_code(values.index)
+                scale: values.scale
+            })
+    }
+}

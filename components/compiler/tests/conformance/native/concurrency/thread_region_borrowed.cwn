@@ -1,0 +1,20 @@
+fn main() -> u32 {
+    let input = "borrowed"
+    var left: usize = 0
+    var right: usize = 0
+    thread_scope {
+        let first = spawn[read input, write left] {
+            left = input.length()
+        }
+        let second = spawn[read input, write right] {
+            right = input.length() + 1
+        }
+        first
+        second
+    }
+    return if left == 8 && right == 9 {
+        0
+    } else {
+        1
+    }
+}

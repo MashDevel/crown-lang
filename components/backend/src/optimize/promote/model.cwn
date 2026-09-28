@@ -1,0 +1,124 @@
+module optimize {
+    enum PromotionState {
+        PromotionEmpty
+        PromotionValue(usize)
+    }
+
+    struct PromotionCandidate {
+        slot: usize
+        value_type: Option<ir::Type>
+        valid: bool
+        stores: Vec<ir::Type>
+        loads: Vec<ir::Type>
+        accesses: Vec<usize>
+    }
+
+    struct PromotionFacts {
+        used_before_definition: Vec<bool>
+        defines: Vec<bool>
+        live_in: Vec<bool>
+        live_out: Vec<bool>
+    }
+
+    struct Conversion {
+        result: usize
+        value: usize
+        operator: ir::CastOperator
+        target: ir::Type
+    }
+
+    struct PromotionRewrite {
+        replacements: Vec<ir::ValueRewrite>
+        conversions: Vec<Conversion>
+    }
+
+    struct Promotion {
+        slot: usize
+        rewrite: PromotionRewrite
+    }
+
+    fn promotion_rewrite_new() -> PromotionRewrite {
+        return PromotionRewrite {
+            replacements: Vec<ir::ValueRewrite>.new()
+            conversions: Vec<Conversion>.new()
+        }
+    }
+
+    fn promotion_state_copy(state: PromotionState) -> PromotionState {
+        match read state {
+            PromotionEmpty => {
+                return PromotionEmpty()
+            }
+            PromotionValue(value) => {
+                return PromotionValue(value)
+            }
+        }
+    }
+
+    fn option_promotion_state_copy(state: Option<PromotionState>) -> Option<PromotionState> {
+        match read state {
+            Some(value) => {
+                return Some(promotion_state_copy(value))
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn promotion_record_load(function: ir::Function, rewrite: write PromotionRewrite, pair: ir::ValueRewrite) -> bool {
+        var source: Option<ir::Type> = ir::function_value_type(function, pair.replacement)
+        var target: Option<ir::Type> = ir::function_value_type(function, pair.result)
+        match read source {
+            Some(source_type) => {
+                match read target {
+                    Some(target_type) => {
+                        if ir::type_equal(source_type, target_type) {
+                            rewrite.replacements.push(ir::ValueRewrite {
+                                    result: pair.result, replacement: pair.replacement
+                                })
+                            return true
+                        }
+                        return promotion_record_conversion(rewrite, pair, source_type, target_type)
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn promotion_record_conversion(rewrite: write PromotionRewrite, pair: ir::ValueRewrite, source: ir::Type, target: ir::Type) -> bool {
+        if ir::type_is_integer(source) == false || ir::type_is_integer(target) == false {
+            return false
+        }
+        let source_bits = integer_bits(source)
+        let target_bits = integer_bits(target)
+        var operator = ir::CastTruncate()
+        if source_bits < target_bits {
+            operator = ir::CastZeroExtend()
+        }
+        rewrite.conversions.push(Conversion {
+                result: pair.result
+                value: pair.replacement
+                operator: operator
+                target: target
+            })
+        return true
+    }
+
+    fn integer_bits(value_type: ir::Type) -> u32 {
+        match read value_type {
+            ir::TypeInteger(width) => {
+                return ir::integer_width_bits(width)
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+}

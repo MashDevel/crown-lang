@@ -1,0 +1,73 @@
+module elf {
+    const IMAGE_BASE: u64 = 4194304
+    const PAGE_SIZE: usize = 65536
+    const IMAGE_LIMIT: usize = 1073741824
+
+    struct Options {
+        interpreter: Text
+        libraries: Vec<Text>
+        versions: Vec<SymbolVersion>
+    }
+
+    struct SymbolVersion {
+        symbol: Text, library: Text, version: Text
+    }
+
+    struct Image {
+        architecture: object::Architecture
+        bytes: Vec<u8>
+        sections: Vec<u64>
+        symbols: Vec<u64>
+        slots: Vec<u64>
+        imports: Vec<usize>
+        dynamic_indices: Vec<u64>
+        dynamic_entries: Vec<u8>
+        relocations: Vec<u8>
+        data_offset: usize
+        entry_offset: usize
+        dynamic_offset: usize
+        interpreter_offset: usize
+        interpreter_size: usize
+    }
+
+    fn image_new() -> Image {
+        return Image {
+            architecture: object::ArchitectureX86_64(),
+            bytes: std::bytes::filled(4096, 0), sections: Vec<u64>.new(),
+            symbols: Vec<u64>.new(), slots: Vec<u64>.new(), imports: Vec<usize>.new(),
+            dynamic_indices: Vec<u64>.new(), dynamic_entries: Vec<u8>.new(), relocations: Vec<u8>.new(),
+            data_offset: 0, entry_offset: 0, dynamic_offset: 0,
+            interpreter_offset: 400, interpreter_size: 0
+        }
+    }
+
+    fn reserve(image: write Image, alignment: usize, size: usize) -> Result<usize, Text> {
+        if alignment == 0 || alignment > PAGE_SIZE ||(alignment &(alignment - 1)) != 0 {
+            return Err("invalid ELF alignment")
+        }
+        if image.bytes.length() > IMAGE_LIMIT || size > IMAGE_LIMIT {
+            return Err("ELF image exceeds supported size")
+        }
+        let offset = link_binary::aligned(image.bytes.length(), alignment)
+        if offset > IMAGE_LIMIT || size > IMAGE_LIMIT - offset {
+            return Err("ELF image exceeds supported size")
+        }
+        link_binary::pad(image.bytes, offset + size)
+        return Ok(offset)
+    }
+
+    fn append(image: write Image, bytes: Vec<u8>, alignment: usize) -> Result<usize, Text> {
+        let offset = reserve(image, alignment, bytes.length())?
+        for index in 0..bytes.length() {
+            image.bytes[offset + index] = bytes[index]
+        }
+        return Ok(offset)
+    }
+
+    fn writable(section: object::Section) -> bool {
+        match read section.kind {
+            object::SectionData | object::SectionZeroFill => true
+            _ => false
+        }
+    }
+}

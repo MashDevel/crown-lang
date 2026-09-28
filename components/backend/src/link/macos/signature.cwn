@@ -1,0 +1,80 @@
+module macho {
+    fn signature_offset(image: Image) -> usize {
+        let metadata = image.rebases.length() + image.bindings.length() + image.exports.length()
+        return image.text.length() + image.data.length() + link_binary::aligned(link_binary::aligned(metadata, 8) + 1, 16)
+    }
+    fn signature_size(limit: usize) -> usize {
+        return link_binary::aligned(114 +((limit + 4095) / 4096) * 32, 16)
+    }
+    fn linkedit_size(image: Image, metadata: usize) -> u64 {
+        if image.architecture == object::ArchitectureArm64() {
+            let offset = signature_offset(image)
+            return u64.from(offset + signature_size(offset) - image.text.length() - image.data.length())
+        }
+        return u64.from(link_binary::aligned(metadata, 8) + 1)
+    }
+    fn signature_command(output: write Commands, image: Image) -> void {
+        if image.architecture == object::ArchitectureArm64() {
+            let offset = signature_offset(image)
+            let command = command(output, 29, 16)
+            link_binary::put(output.bytes, command + 8, u64.from(offset), 4)
+            link_binary::put(output.bytes, command + 12, u64.from(signature_size(offset)), 4)
+        }
+    }
+    fn sign_executable(image: write Image) -> Result<void, Text> {
+        if image.architecture != object::ArchitectureArm64() {
+            return Ok(())
+        }
+        let text_size = image.data_base - 4294967296
+        link_binary::pad(image.text, link_binary::aligned(image.text.length(), 16))
+        let signature = code_signature(image.text, text_size)?
+        link_binary::append(image.text, signature)
+        return Ok(())
+    }
+    fn code_signature(bytes: Vec<u8>, text_size: u64) -> Result<Vec<u8>, Text> {
+        if bytes.length() > 4294967295 || text_size > u64.from(bytes.length()) {
+            return Err("Mach-O code signature exceeds its supported range")
+        }
+        let slots = (bytes.length() + 4095) / 4096
+        var output = std::bytes::filled(signature_size(bytes.length()), 0)
+        signature_number(output, 0, 4208856256, 4)
+        signature_number(output, 4, 114 + u64.from(slots) * 32, 4)
+        signature_number(output, 8, 1, 4)
+        signature_number(output, 16, 20, 4)
+        signature_directory(output, bytes.length(), text_size)
+        for index in 0..slots {
+            let offset = index * 4096
+            let size = if bytes.length() - offset < 4096 {
+                bytes.length() - offset
+            } else {
+                4096
+            }
+            let hash = std::sha256::digest(link_binary::part(bytes, offset, size)?)
+            for byte in 0..32 {
+                output[114 + index * 32 + byte] = hash[byte]
+            }
+        }
+        return Ok(move output)
+    }
+    fn signature_directory(output: write Vec<u8>, limit: usize, text_size: u64) -> void {
+        signature_number(output, 20, 4208856066, 4)
+        signature_number(output, 24, 94 + u64.from((limit + 4095) / 4096) * 32, 4)
+        signature_number(output, 28, 132096, 4)
+        signature_number(output, 32, 131074, 4)
+        signature_number(output, 36, 94, 4)
+        signature_number(output, 40, 88, 4)
+        signature_number(output, 48, u64.from((limit + 4095) / 4096), 4)
+        signature_number(output, 52, u64.from(limit), 4)
+        output[56] = 32
+        output[57] = 2
+        output[59] = 12
+        signature_number(output, 92, text_size, 8)
+        signature_number(output, 100, 1, 8)
+        name(output, 108, "Crown")
+    }
+    fn signature_number(bytes: write Vec<u8>, offset: usize, value: u64, width: usize) -> void {
+        for byte in 0..width {
+            bytes[offset + byte] = u8.from((value >> u64.from((width - byte - 1) * 8)) & 255)
+        }
+    }
+}

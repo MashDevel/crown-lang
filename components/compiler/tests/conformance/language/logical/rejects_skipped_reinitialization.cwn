@@ -1,0 +1,16 @@
+fn consume(value: take Text) -> bool {
+    return value.length() == 1
+}
+fn main() -> u32 {
+    var value = "old"
+    consume(move value)
+    let result = true || if true {
+        value = "new"
+        true
+    } else {
+        value = "other"
+        false
+    }
+    result
+    return 0
+}

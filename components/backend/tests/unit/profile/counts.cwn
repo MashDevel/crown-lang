@@ -1,0 +1,73 @@
+fn profile_counts() -> Result<void, u32> {
+    var counts = Vec<u64>.new();
+    counts.push(18446744073709551614);
+    counts.push(0)
+    var bytes = std::bytes::filled(16, 0);
+    bytes[0] = 7;
+    bytes[8] = 23
+    match profile::merge_counts(counts, bytes) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err(1)
+        }
+    }
+    safety_require(counts[0] == 18446744073709551615 && counts[1] == 23, 2)?
+    match profile::merge_counts(counts, Vec<u8>.new()) {
+        Ok(value) => {
+            value;
+            return Err(3)
+        }
+        Err(error) => {
+            error;
+        }
+    }
+    return Ok(())
+}
+
+fn profile_order() -> Result<void, u32> {
+    var parameters = Vec<ir::Type>.new();
+    parameters.push(ir::TypeInteger(ir::IntegerWidth1()))
+    var function = ir::function_new("ordered", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    safety_blocks(function, 3)?
+    safety_terminate(function, 0, ir::TerminatorConditional(0, 1, 2))?
+    safety_terminate(function, 1, ir::TerminatorReturn(None()))?
+    safety_terminate(function, 2, ir::TerminatorReturn(None()))?
+    let before = x86::codegen_block_order(function)
+    safety_require(before[1] == 1, 4)?
+    function.blocks[2].frequency = 100
+    let after = x86::codegen_block_order(function)
+    safety_require(after[0] == 0 && after[1] == 2 && after[2] == 1, 5)?
+    return Ok(())
+}
+
+fn profile_instrumentation() -> Result<void, u32> {
+    var program = ir::program_new()
+    var fixture = counted_loop(4)?
+    ir::program_add_function(program, ir::function_take(fixture.function))
+    let count = profile::block_count(program)
+    profile::instrument(program)
+    safety_require(profile::block_count(program) == count && program.functions.length() == 2, 6)?
+    match ir::validate_program(program) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err(7)
+        }
+    }
+    return Ok(())
+}
+
+fn profile_cases() -> Result<void, u32> {
+    profile_counts()?
+    profile_order()?
+    return profile_instrumentation()
+}
+
+fn main() -> u32 {
+    return safety_status(profile_cases())
+}

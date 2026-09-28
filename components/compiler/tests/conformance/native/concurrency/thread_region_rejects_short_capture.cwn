@@ -1,0 +1,12 @@
+fn main() -> u32 {
+    thread_scope {
+        if true {
+            let short = "temporary"
+            let started = spawn[read short] {
+                short
+            }
+            started
+        }
+    }
+    return 0
+}

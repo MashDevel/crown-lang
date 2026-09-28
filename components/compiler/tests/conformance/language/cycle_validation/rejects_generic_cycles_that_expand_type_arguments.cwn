@@ -1,0 +1,6 @@
+struct Recursive<T> {
+    next: Recursive<Vec<T>>
+}
+fn main() -> u32 {
+    return 0
+}

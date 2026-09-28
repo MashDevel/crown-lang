@@ -1,0 +1,22 @@
+module arm64 {
+    fn float_integer_convert(destination: u32, source: u32, wide: bool, unsigned: bool, to_float: bool) -> Result<u32, Text> {
+        let opcode: u32 = if to_float {
+            2653028352
+        } else {
+            2654470144
+        }
+        let width: u32 = if wide {
+            4194304
+        } else {
+            0
+        }
+        let sign: u32 = if unsigned {
+            65536
+        } else {
+            0
+        }
+        return register_word(opcode | width | sign, Registers {
+                destination: destination, left: source, right: 0
+            })
+    }
+}

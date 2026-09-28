@@ -1,0 +1,13 @@
+copy struct Point {
+    x: u32, y: u32
+}
+fn inspect(before: take Point, after: write Point) -> u32 {
+    after.x = 0
+    return before.x + before.y
+}
+fn main() -> u32 {
+    var point = Point {
+        x: 20, y: 22
+    }
+    return inspect(point, point)
+}

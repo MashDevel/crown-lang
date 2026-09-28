@@ -1,0 +1,167 @@
+module lowering {
+    struct ClosureSignature {
+        parameters: Vec<sema::ParameterType>
+        result: sema::Type
+    }
+
+    struct ClosureBindings {
+        names: Vec<frontend::Name>
+        parameters: Vec<sema::ParameterType>
+        scoped: bool
+    }
+
+    fn lower_closure_function(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let name = closure_function_name(expression.span, compiler.substitutions)
+        var function: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(323)
+            }
+        }
+        if generated_is_lowered(compiler.lowered_generated, function) {
+            return Ok(())
+        }
+        let closure = closure_signature(compiler, analysis, expression)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let signature = closure_call_signature(closure, value_type, analysis.checker.symbols)?
+        let input = ClosureCompilerInput {
+            name: name.clone(), signature: move signature, result: sema::type_copy(closure.result)
+        }
+        var nested = closure_function_compiler(compiler, move input)
+        let status = lower_closure_body(nested, analysis, expression)
+        swap(compiler.tables, nested.tables)
+        match status {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        append_lowered_functions(compiler.lowered_generated, nested.lowered_generated)
+        compiler.lowered_generated.push(LoweredFunction {
+                function: function, lowered: take_function_ir(nested)
+            })
+        return Ok(())
+    }
+
+    fn closure_signature(compiler: FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<ClosureSignature, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let callable = sema::callable_type(value_type)
+        match read callable {
+            sema::FunctionType(parameters, result) => {
+                loan read result as value {
+                    return Ok(ClosureSignature {
+                            parameters: sema::parameter_types_copy(parameters), result: sema::type_copy(value)
+                        })
+                }
+            }
+            _ => {
+                return Err(326)
+            }
+        }
+    }
+
+    fn bind_closure_parameters(compiler: write FunctionCompiler, symbols: sema::Symbols, bindings: take ClosureBindings) -> Result<void, u32> {
+        if bindings.names.length() != bindings.parameters.length() {
+            return Err(327)
+        }
+        var parameter_value: usize = 0
+        if type_is_direct(symbols, compiler.result)? == false {
+            if compiler.ir.parameters.length() == 0 {
+                return Err(328)
+            }
+            compiler.result_address = Some(compiler.ir.parameters[0])
+            parameter_value = 1
+        }
+        if bindings.scoped {
+            parameter_value = parameter_value + 1
+        }
+        var index: usize = 0
+        while index < bindings.names.length() {
+            if parameter_value >= compiler.ir.parameters.length() {
+                return Err(329)
+            }
+            bind_closure_parameter(compiler, symbols, bindings.names[index], bindings.parameters[index], compiler.ir.parameters[parameter_value])?
+            parameter_value = parameter_value + 1
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn names_copy(values: Vec<frontend::Name>) -> Vec<frontend::Name> {
+        var output = Vec<frontend::Name>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(frontend::name_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn lower_closure_body(nested: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<void, u32> {
+        let closure = closure_signature(nested, analysis, expression)?
+        let value_type = function_expression_type(nested, analysis, expression)?
+        let bindings = ClosureBindings {
+            names: closure_names(expression)?, parameters: sema::parameter_types_copy(closure.parameters), scoped: sema::type_is_scoped_function(value_type)
+        }
+        function_source_start(nested, expression.span)?
+        bind_closure_parameters(nested, analysis.checker.symbols, move bindings)?
+        if sema::type_is_scoped_function(value_type) {
+            bind_closure_captures(nested, analysis, expression)?
+        }
+        lower_closure_statements(nested, analysis, expression.kind)?
+        return finish_void_body(nested)
+    }
+
+    fn closure_names(expression: frontend::Expression) -> Result<Vec<frontend::Name>, u32> {
+        return closure_kind_names(expression.kind)
+    }
+
+    fn closure_kind_names(kind: frontend::ExpressionKind) -> Result<Vec<frontend::Name>, u32> {
+        match read kind {
+            frontend::ExpressionClosure(captures, names, body) => {
+                captures;
+                body;
+                return Ok(names_copy(names))
+            }
+            _ => {
+                return Err(324)
+            }
+        }
+    }
+
+    fn lower_closure_statements(nested: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind) -> Result<void, u32> {
+        match read kind {
+            frontend::ExpressionClosure(captures, names, body) => {
+                captures;
+                names;
+                return function_statements(nested, analysis, body)
+            }
+            _ => {
+                return Err(324)
+            }
+        }
+    }
+    fn bind_closure_parameter(compiler: write FunctionCompiler, symbols: sema::Symbols, name: frontend::Name, parameter: sema::ParameterType, value: usize) -> Result<void, u32> {
+        var direct = false
+        if sema::mode_is_read(parameter.mode) {
+            direct = type_is_direct(symbols, parameter.value_type)?
+        }
+        let request = ParameterAddressRequest {
+            value: value, value_type: sema::type_copy(parameter.value_type), direct: direct
+        }
+        let address = parameter_address(compiler, symbols, request)?
+        function_add_binding(compiler, Binding {
+                name: frontend::name_copy(name), value_type: sema::type_copy(parameter.value_type), address: address,
+                owned: sema::mode_is_take(parameter.mode), available: true, depth: compiler.scope_depth
+            })
+        return Ok(())
+    }
+
+}

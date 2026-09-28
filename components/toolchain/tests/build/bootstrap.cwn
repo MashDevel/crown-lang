@@ -1,0 +1,162 @@
+fn seed_integrity(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, toolchain::seed_relative("compiler.s"), "assembly")?
+    let manifest = std::text::joined(std::text::joined("{\"assembly_sha256\":", toolchain::json_quoted(toolchain::digest(path)?)), "}")
+    testing::write_file(root, toolchain::seed_relative("manifest.json"), manifest)?
+    testing::expect(std::text::equal(toolchain::verify_seed(root)?, path), "verified seed")?
+    toolchain::write_text(path, "corrupted")?
+    testing::error(toolchain::verify_seed(root))?
+    toolchain::remove_file(path)?
+    testing::error(toolchain::verify_seed(root))?
+    return Ok(())
+}
+
+fn stage_integrity() -> Result<void, Text> {
+    let expected = toolchain::Stage {
+        assembly: "same assembly", binary: "same binary"
+    }
+    toolchain::verify_stage(expected, expected)?
+    testing::error(toolchain::verify_stage(expected, toolchain::Stage {
+                assembly: "different", binary: "same binary"
+            }))?
+    testing::error(toolchain::verify_stage(expected, toolchain::Stage {
+                assembly: "same assembly", binary: "different"
+            }))?
+    return Ok(())
+}
+
+fn saved_stage(root: Text) -> Result<void, Text> {
+    let source = testing::write_file(root, "stage-source", "#!/bin/sh\nexit 23\n")?
+    let output = toolchain::path_join(root, "stage-output")
+    let stage = toolchain::Stage {
+        assembly: "unused", binary: source.clone()
+    }
+    toolchain::save_stage(stage, output)?
+    testing::expect(std::text::equal(toolchain::read_text(output)?, toolchain::read_text(source)?), "saved stage preserves executable bytes")?
+    let result = toolchain::capture(toolchain::command(testing::list(output)), root)?
+    testing::expect(result.status == 23, "saved stage is executable")?
+    return rejected_stage(root)
+}
+
+fn rejected_stage(root: Text) -> Result<void, Text> {
+    let output = toolchain::path_join(root, "absent-stage")
+    let stage = toolchain::Stage {
+        assembly: "unused", binary: toolchain::path_join(root, "missing-stage")
+    }
+    testing::error(toolchain::save_stage(stage, output))?
+    return testing::expect(toolchain::exists(output) == false, "failed stage copy leaves no executable")
+}
+
+fn cached_bootstrap(root: Text) -> Result<void, Text> {
+    let binary = testing_launcher::cached_project(root)?
+    let seed = toolchain::verify_seed(root)?
+    let input = toolchain::bootstrap_fingerprint(seed, toolchain::compiler_sources(root)?, true)?
+    toolchain::record(binary, input)?
+    let output = toolchain::bootstrap(toolchain::BootstrapRequest {
+            root: root.clone(), compiler: "unused", directory: toolchain::parent_path(binary), force: false, verify: true
+        })?
+    testing::expect(std::text::equal(output, binary), "cached bootstrap returns verified executable")?
+    verify_record(binary, seed)?
+    toolchain::verify_bootstrap_inputs(root, seed, input, true)?
+    return testing::error(toolchain::verify_bootstrap_inputs(root, seed, "changed sources", true))
+}
+
+fn verify_record(binary: Text, seed: Text) -> Result<void, Text> {
+    let document = toolchain::json(toolchain::read_text(std::text::joined(binary, ".crown-build"))?)?
+    let recorded = toolchain::json_text(document, toolchain::json_required(document, document.root, "seed")?)?
+    testing::expect(std::text::equal(recorded, toolchain::digest(seed)?), "cached bootstrap records seed provenance")?
+    testing::expect(toolchain::exists(std::text::joined(binary, ".cksum")) == false, "bootstrap has no checksum sidecar")?
+    return testing::expect(toolchain::exists(std::text::joined(binary, ".seed.cksum")) == false, "bootstrap has no lineage sidecar")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    seed_integrity(toolchain::temporary_path(temporary))?;
+    stage_integrity()?
+    bootstrap_targets()?
+    saved_stage(toolchain::temporary_path(temporary))?
+    cached_bootstrap(toolchain::temporary_path(temporary))?
+    return matching_seed_bootstrap(toolchain::temporary_path(temporary))
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn seed_request(root: Text, directory: Text, force: bool) -> toolchain::BootstrapRequest {
+    return toolchain::BootstrapRequest {
+        root: root.clone(), compiler: toolchain::path_join(root, "unavailable-compiler"), directory: toolchain::path_join(root, directory), force: force, verify: true
+    }
+}
+
+fn matching_seed_bootstrap(root: Text) -> Result<void, Text> {
+    testing_launcher::matching_seed_manifest(root)?
+    let binary = toolchain::bootstrap(seed_request(root, "seed-reuse", false))?
+    let result = toolchain::capture(toolchain::command(testing::list(binary)), root)?
+    testing::expect(result.status == 23, "matching seed is assembled without rebuilding sources")?
+    verify_record(binary, toolchain::verify_seed(root)?)?
+    testing::error(toolchain::bootstrap(seed_request(root, "seed-reuse", true)))?
+    return changed_seed_sources(root)
+}
+
+fn changed_seed_sources(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "components/compiler/src/main.cwn")
+    let original = toolchain::read_text(path)?
+    toolchain::write_text(path, "fn main() -> u32 { 19 }")?
+    testing::error(toolchain::bootstrap(seed_request(root, "seed-changed", false)))?
+    toolchain::write_text(path, original)?
+    return changed_seed_files(root)
+}
+
+fn changed_seed_files(root: Text) -> Result<void, Text> {
+    let added = testing::write_file(root, "components/compiler/src/extra.cwn", "fn extra() -> u32 { 2 }")?
+    testing::error(toolchain::bootstrap(seed_request(root, "seed-added", false)))?
+    testing::write_file(root, "components/compiler/src/remaining.cwn", "fn remaining() -> u32 { 3 }")?
+    testing_launcher::matching_seed_manifest(root)?
+    toolchain::remove_file(added)?
+    testing::error(toolchain::bootstrap(seed_request(root, "seed-removed", false)))?
+    return missing_seed_provenance(root)
+}
+
+fn missing_seed_provenance(root: Text) -> Result<void, Text> {
+    backend_seed_sources(root)?
+    let seed = toolchain::verify_seed(root)?
+    toolchain::write_text(seed, std::text::joined(toolchain::read_text(seed)?, "\n"))?
+    let manifest = std::text::joined(std::text::joined("{\"assembly_sha256\":", toolchain::json_quoted(toolchain::digest(seed)?)), "}")
+    testing::write_file(root, toolchain::seed_relative("manifest.json"), manifest)?
+    testing::error(toolchain::bootstrap(seed_request(root, "seed-unrecorded", false)))?
+    return Ok(())
+}
+
+fn backend_seed_sources(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "components/backend/src/value.cwn", "fn backend_value() -> u32 { 1 }")?
+    testing_launcher::matching_seed_manifest(root)?
+    testing::expect(toolchain::seed_matches_sources(root, toolchain::compiler_sources(root)?)?, "backend source recorded")?
+    toolchain::write_text(path, "fn backend_value() -> u32 { 2 }")?
+    testing::expect(toolchain::seed_matches_sources(root, toolchain::compiler_sources(root)?)? == false, "backend edit invalidates seed")?
+    return backend_seed_removal(root, path)
+}
+
+fn backend_seed_removal(root: Text, path: Text) -> Result<void, Text> {
+    testing_launcher::matching_seed_manifest(root)?
+    toolchain::remove_file(path)?
+    return testing::expect(toolchain::seed_matches_sources(root, toolchain::compiler_sources(root)?)? == false, "backend removal invalidates seed")
+}
+
+fn bootstrap_targets() -> Result<void, Text> {
+    let targets = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux")
+    for index in 0..targets.length() {
+        bootstrap_target_flags(toolchain::parse_target(targets[index])?)?
+    }
+    testing::error(toolchain::bootstrap_flags(toolchain::parse_target("x86_64-bedrock")?))?
+    let expected = std::text::joined("bootstrap/", std::text::joined(toolchain::target_name(toolchain::host_target()), "/compiler.s"))
+    return testing::expect(std::text::equal(toolchain::seed_relative("compiler.s"), expected), "bootstrap seed follows the host ABI")
+}
+
+fn bootstrap_target_flags(target: toolchain::Target) -> Result<void, Text> {
+    let flags = toolchain::bootstrap_flags(target)?
+    if target.platform == toolchain::Platform::Macos() {
+        return testing::expect(std::text::list_contains(flags, toolchain::architecture_name(target.architecture)), "bootstrap selects the requested macOS architecture")
+    }
+    testing::expect(std::text::list_contains(flags, "-no-pie"), "Linux bootstrap supports absolute assembly references")?
+    testing::expect(std::text::list_contains(flags, "-Wl,--discard-all"), "Linux bootstrap excludes temporary object filenames")?
+    return testing::expect(std::text::list_contains(flags, "-arch") == false, "Linux bootstrap uses the host compiler ABI")
+}

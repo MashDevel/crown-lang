@@ -1,0 +1,98 @@
+module inspect {
+    fn command(paths: Vec<Text>, output: Text, max_instances: usize) -> Result<u32, Text> {
+        let bundle = frontend::source_bundle_from_paths(paths)
+        if bundle.errors != 0 {
+            return Ok(1)
+        }
+        let parsed = match frontend::parse(bundle.source.share(), bundle.length, 0) {
+            Ok(value) => move value
+            Err(errors) => {
+                frontend::print_parse_errors(bundle, errors);
+                return Ok(1)
+            }
+        }
+        let analysis = sema::analyze_with_limit(bundle.source.share(), parsed, max_instances)
+        if analysis.errors != 0 {
+            frontend::print_semantic_errors(bundle, analysis);
+            return Ok(1)
+        }
+        let nodes = program(parsed)
+        let values = metrics(bundle, nodes)
+        let errors = report(bundle, values, output)?
+        if errors != 0 {
+            return Ok(1)
+        }
+        return Ok(0)
+    }
+
+    fn report(bundle: frontend::SourceBundle, values: Vec<Metrics>, output: Text) -> Result<usize, Text> {
+        var document = "{\"files\":["
+        var rules = Vec<toolchain::QualityRules>.new()
+        var errors = report_files(bundle, rules, document)?
+        std::text::append(document, "],\"functions\":[")
+        for index in 0..values.length() {
+            if index != 0 {
+                document.push(',')
+            }
+            std::text::append(document, metrics_json(bundle, values[index]))
+            let location = frontend::diagnostic_location(bundle, values[index].span)
+            let count = violations(values[index], rules[location.file].limits)
+            errors = errors + count
+            if count != 0 {
+                frontend::print_diagnostic(bundle, values[index].span, "function exceeds structural limits; see lint JSON metrics")
+            }
+        }
+        std::text::append(document, std::text::joined("],\"errors\":", std::text::decimal(u64.from(errors))))
+        std::text::append(document, ",\"warnings\":0}\n")
+        if output.length() == 0 {
+            toolchain::say(document)
+        } else {
+            toolchain::write_text(output, document)?
+        }
+        return Ok(errors)
+    }
+
+    fn report_files(bundle: frontend::SourceBundle, rules: write Vec<toolchain::QualityRules>, document: write Text) -> Result<usize, Text> {
+        var errors: usize = 0
+        for index in 0..bundle.files.length() {
+            if index != 0 {
+                document.push(',')
+            }
+            loan read bundle.files[index] as file {
+                let limits = toolchain::quality_rules(file.path)?
+                rules.push(limits)
+                let lines = code_lines(bundle.source, file.start, file.end)
+                std::text::append(document, file_json(file.path, lines))
+                if lines > limits.limits.file_lines {
+                    errors = errors + 1;
+                    toolchain::failure(std::text::joined(file.path, ": file exceeds configured code line limit"))
+                }
+            }
+        }
+        return Ok(errors)
+    }
+
+    fn file_json(path: Text, lines: usize) -> Text {
+        return std::text::joined(std::text::joined("{\"path\":", toolchain::json_quoted(path)), std::text::joined(std::text::joined(",\"lines\":", std::text::decimal(u64.from(lines))), "}"))
+    }
+
+    fn metrics_json(bundle: frontend::SourceBundle, value: Metrics) -> Text {
+        let location = frontend::diagnostic_location(bundle, value.span)
+        var output = std::text::joined("{\"path\":", toolchain::json_quoted(bundle.files[location.file].path))
+        number_field(output, "line", location.line)
+        number_field(output, "lines", value.lines)
+        number_field(output, "parameters", value.parameters)
+        number_field(output, "cyclomatic", value.cyclomatic)
+        number_field(output, "cognitive", value.cognitive)
+        number_field(output, "nesting", value.nesting)
+        output.push('}')
+        return move output
+    }
+
+    fn number_field(output: write Text, name: Text, value: usize) -> void {
+        output.push(',')
+        std::text::append(output, toolchain::json_quoted(name))
+        output.push(':')
+        std::text::append(output, std::text::decimal(u64.from(value)))
+    }
+}

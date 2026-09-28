@@ -1,0 +1,78 @@
+module x86 {
+    fn codegen_load_value(program: ir::Program, compiler: write FunctionCompiler, access: take ValueAccess) -> Result<void, CodegenError> {
+        return codegen_load_extended(program, compiler, ExtendedLoad {
+                value: access.value
+                destination: access.register
+                extension: ZeroExtend()
+            })
+    }
+
+    fn codegen_load_signed(program: ir::Program, compiler: write FunctionCompiler, access: take ValueAccess) -> Result<void, CodegenError> {
+        return codegen_load_extended(program, compiler, ExtendedLoad {
+                value: access.value
+                destination: access.register
+                extension: SignExtend()
+            })
+    }
+
+    fn codegen_load_extended(program: ir::Program, compiler: write FunctionCompiler, input: take ExtendedLoad) -> Result<void, CodegenError> {
+        let access = ValueAccess {
+            value: input.value, register: input.destination
+        }
+        match codegen_reuse_cached(program, compiler, access) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(reused) => {
+                if reused {
+                    return Ok(())
+                }
+            }
+        }
+        codegen_invalidate_register(compiler, input.destination)
+        loan read program.functions[compiler.id] as function {
+            match ir::function_constant_value(function, input.value) {
+                Some(constant) => {
+                    let request = ConstantLoad {
+                        input: move input, constant: move constant
+                    }
+                    return codegen_load_constant(program, compiler, move request)
+                }
+                None => {
+                }
+            }
+        }
+        match codegen_frame_location(compiler.frame, input.value) {
+            Some(location) => {
+                return codegen_load_location(program, compiler, LocationLoad {
+                        value: input.value
+                        destination: input.destination
+                        extension: input.extension
+                        location: move location
+                    })
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+    }
+
+    fn codegen_load_constant(program: ir::Program, compiler: write FunctionCompiler, request: take ConstantLoad) -> Result<void, CodegenError> {
+        match codegen_value_type(program, compiler, request.input.value) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                match codegen_immediate(request.constant, value_type, request.input.extension) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        codegen_emit(compiler, MoveImmediate(request.input.destination, value))
+                        return Ok(())
+                    }
+                }
+            }
+        }
+    }
+}

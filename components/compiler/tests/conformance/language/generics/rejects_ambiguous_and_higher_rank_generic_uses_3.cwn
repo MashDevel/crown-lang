@@ -1,0 +1,6 @@
+fn identity<T, T>(value: take T) -> T {
+    return move value
+}
+fn main() -> u32 {
+    return identity(1)
+}

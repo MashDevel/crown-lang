@@ -1,0 +1,19 @@
+interface EqualPointer {
+    fn equal(self: read Self, other: read RawPtr<u32>) -> bool
+}
+impl EqualPointer for RawPtr<u32> {
+    fn equal(self: read RawPtr<u32>, other: read RawPtr<u32>) -> bool {
+        return self == other
+    }
+}
+fn main() -> u32 {
+    unsafe {
+        let pointer = RawPtr<u32>.from_address(4096)
+        let value: dynamic EqualPointer = pointer
+        if value.equal(pointer) {
+            return 7
+        } else {
+            return 1
+        }
+    }
+}

@@ -1,0 +1,74 @@
+module x86 {
+    fn encode_label_address(encoder: write EncodedFunction, register: Register, name: LocalLabel) -> Result<void, EncodeError> {
+        let offset = u64.from(encoder.bytes.length())
+        let code = register_code(register)
+        encoder.bytes.push(72 |((code >> 3) << 2))
+        encoder.bytes.push(141)
+        encoder.bytes.push(((code & 7) << 3) | 5)
+        match relative(encoder.labels, name, offset + 7) {
+            Ok(value) => {
+                emit_i32(encoder.bytes, value);
+                return Ok(())
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+    }
+
+    fn encode_jump(encoder: write EncodedFunction, name: LocalLabel) -> Result<void, EncodeError> {
+        let offset = u64.from(encoder.bytes.length())
+        encoder.bytes.push(233)
+        match relative(encoder.labels, name, offset + 5) {
+            Ok(value) => {
+                emit_i32(encoder.bytes, value);
+                return Ok(())
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+    }
+
+    fn encode_conditional(encoder: write EncodedFunction, condition: Condition, name: LocalLabel) -> Result<void, EncodeError> {
+        let offset = u64.from(encoder.bytes.length())
+        encoder.bytes.push(15)
+        encoder.bytes.push(128 | condition_code(condition))
+        match relative(encoder.labels, name, offset + 6) {
+            Ok(value) => {
+                emit_i32(encoder.bytes, value);
+                return Ok(())
+            }
+            Err(error) => {
+                return Err(move error)
+            }
+        }
+    }
+
+    fn relative(labels: Vec<LabelOffset>, name: LocalLabel, next: u64) -> Result<i32, EncodeError> {
+        var target: u64 = 0
+        match label_offset(labels, name) {
+            Some(value) => {
+                target = value
+            }
+            None => {
+                return Err(encode_error(UnknownLabel()))
+            }
+        }
+        if target >= next {
+            let value = target - next
+            if value > 2147483647 {
+                return Err(encode_error(BranchOutOfRange()))
+            }
+            return Ok(i32.from(value))
+        }
+        let value = next - target
+        if value > 2147483648 {
+            return Err(encode_error(BranchOutOfRange()))
+        }
+        if value == 2147483648 {
+            return Ok(-2147483648)
+        }
+        return Ok(-i32.from(value))
+    }
+}

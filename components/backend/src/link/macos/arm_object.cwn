@@ -1,0 +1,70 @@
+module macho {
+    fn arm_object_relocation(output: write ObjectOutput, relocation: object::Relocation) -> Result<void, Text> {
+        let code = arm_object_relocation_code(relocation.kind)?
+        let width = usize.from(object::relocation_width(relocation.kind))
+        let length: u64 = if width == 8 {
+            3
+        } else {
+            2
+        }
+        let relative: u64 = if arm_relocation_relative(code) {
+            16777216
+        } else {
+            0
+        }
+        let prefix: u64 = 134217728 |(length << 25) | relative
+        match relocation.subtract {
+            Some(symbol) => {
+                if code != 0 {
+                    return Err("invalid ARM64 subtractor relocation")
+                }
+                relocation_record(output.bytes, relocation.offset, prefix | 268435456 | u64.from(symbol))
+            }
+            None => {
+            }
+        }
+        let offset = output.offsets[relocation.section] + usize.from(relocation.offset)
+        if arm64::arm_instruction_relocation(relocation.kind) {
+            arm_object_instruction(output, relocation, offset, code)?
+        } else {
+            link_binary::put(output.bytes, offset, u64.from_bits(relocation.addend), width)
+        }
+        relocation_record(output.bytes, relocation.offset, prefix |(code << 28) | u64.from(relocation.symbol))
+        return Ok(())
+    }
+    fn arm_object_instruction(output: write ObjectOutput, relocation: object::Relocation, offset: usize, code: u64) -> Result<void, Text> {
+        let word = u32.from(link_binary::number(output.bytes, offset, 4)?)
+        var addend = relocation.addend
+        if arm_addend_pair_kind(code) {
+            if addend < -8388608 || addend > 8388607 {
+                return Err("ARM64 Mach-O addend exceeds 24 bits")
+            }
+            if addend != 0 {
+                relocation_record(output.bytes, relocation.offset, 2751463424 |(u64.from_bits(addend) & 16777215))
+            }
+            addend = 0
+        }
+        if arm_got_kind(code) && addend != 0 {
+            return Err("ARM64 GOT relocation cannot have an addend")
+        }
+        let encoded = arm64::arm_relocated_word(relocation.kind, word, addend, 0)?
+        link_binary::put(output.bytes, offset, u64.from(encoded), 4)
+        return Ok(())
+    }
+    fn arm_object_relocation_code(kind: object::RelocationKind) -> Result<u64, Text> {
+        match kind {
+            object::RelocationAbsolute32 | object::RelocationAbsolute64 | object::RelocationDifference32 | object::RelocationDifference64 => Ok(0)
+            object::RelocationArmBranch26 => Ok(2)
+            object::RelocationArmPage21 => Ok(3)
+            object::RelocationArmPageOffset12 => Ok(4)
+            object::RelocationArmLoadPageOffset12(scale) => {
+                scale;
+                Ok(4)
+            }
+            object::RelocationArmGotPage21 => Ok(5)
+            object::RelocationArmGotLoadPageOffset12 => Ok(6)
+            object::RelocationGotPcRelative32 => Ok(7)
+            _ => Err("unsupported ARM64 Mach-O object relocation")
+        }
+    }
+}

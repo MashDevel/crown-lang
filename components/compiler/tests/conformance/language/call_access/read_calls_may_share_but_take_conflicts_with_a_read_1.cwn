@@ -1,0 +1,12 @@
+struct Item {
+    value: u32
+}
+fn shared(first: read Item, second: read Item) -> u32 {
+    return first.value + second.value
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    }
+    return shared(item, item)
+}

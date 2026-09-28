@@ -1,0 +1,14 @@
+fn main() -> u32 {
+    var bytes = Vec<u8>.new()
+    test_encode(x86::Privileged(x86::ReadControl(x86::Cr3(), x86::R8())), bytes)
+    test_encode(x86::Privileged(x86::InvalidatePage(x86::Rsp())), bytes)
+    test_encode(x86::Privileged(x86::InputPort(x86::PortWord())), bytes)
+    test_encode(x86::Privileged(x86::ReadFlags(x86::R10())), bytes)
+    let expected: [u8; 17] = [73, 15, 32, 216, 15, 1, 188, 36, 0, 0, 0, 0, 102, 237, 156, 65, 90]
+    loan read expected as values {
+        if test_bytes_equal(bytes, values) == false {
+            return 1
+        }
+    }
+    return 42
+}

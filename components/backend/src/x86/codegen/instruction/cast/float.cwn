@@ -1,0 +1,180 @@
+module x86 {
+    fn codegen_compile_float_cast(program: ir::Program, compiler: write FunctionCompiler, input: take CastInput) -> Result<void, CodegenError> {
+        var result: usize = 0
+        match read input.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+            }
+        }
+        let source_type = codegen_value_type(program, compiler, input.value)?
+        let target_type = codegen_value_type(program, compiler, result)?
+        let fallback = R11()
+        let destination = codegen_result_register(compiler, input.result, fallback)
+        let conversion = FloatConversion {
+            source_type: source_type, target_type: target_type, destination: destination
+        }
+        if ir::type_is_float(source_type) {
+            codegen_cast_from_float(program, compiler, input, conversion)?
+        }
+        else {
+            codegen_cast_to_float(program, compiler, input, conversion)?
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: Some(result), source: destination
+            })
+    }
+
+    fn codegen_u64_to_float(compiler: write FunctionCompiler, width: FloatWidth) -> void {
+        let direct = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        codegen_emit(compiler, Test(Rax(), Rax()))
+        codegen_emit(compiler, JumpIf(GreaterOrEqual(), local_label_copy(direct)))
+        codegen_emit(compiler, Move(Rdx(), Rax()))
+        codegen_emit(compiler, MoveImmediate(Rcx(), 1))
+        codegen_emit(compiler, And(Rdx(), Rcx()))
+        codegen_emit(compiler, ShiftRightLogical(Rax()))
+        codegen_emit(compiler, Or(Rax(), Rdx()))
+        codegen_signed_float(compiler, width)
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: FloatAdd(), width: width, destination: Xmm0(), source: Xmm0()
+                }))
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move direct))
+        codegen_signed_float(compiler, width)
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_signed_float(compiler: write FunctionCompiler, width: FloatWidth) -> void {
+        codegen_emit(compiler, SignedToFloat(SignedToFloatArgs {
+                    width: width, destination: Xmm0(), source: Rax(), source_64: true
+                }))
+    }
+
+    fn codegen_float_to_u64(compiler: write FunctionCompiler, input: take FloatUnsignedCast) -> void {
+        let direct = codegen_internal_label(compiler)
+        let done = codegen_internal_label(compiler)
+        let half = codegen_u64_float_half(input.width)
+        codegen_emit(compiler, MoveImmediate(Rcx(), half))
+        codegen_emit(compiler, MoveToFloat(input.width, Xmm0(), Rcx()))
+        codegen_emit(compiler, FloatCompare(input.width, Xmm1(), Xmm0()))
+        codegen_emit(compiler, JumpIf(Below(), local_label_copy(direct)))
+        codegen_emit(compiler, FloatBinary(FloatBinaryArgs {
+                    operator: FloatSubtract(), width: input.width, destination: Xmm1(), source: Xmm0()
+                }))
+        codegen_float_to_register(compiler, input)
+        codegen_emit(compiler, MoveImmediate(Rcx(), -9223372036854775808))
+        codegen_emit(compiler, Add(input.destination, Rcx()))
+        codegen_emit(compiler, Jump(local_label_copy(done)))
+        codegen_emit(compiler, Label(move direct))
+        codegen_float_to_register(compiler, input)
+        codegen_emit(compiler, Label(move done))
+    }
+
+    fn codegen_float_to_register(compiler: write FunctionCompiler, input: FloatUnsignedCast) -> void {
+        codegen_emit(compiler, FloatToSigned(FloatToSignedArgs {
+                    width: input.width, destination: input.destination, source: Xmm1(), destination_64: true
+                }))
+    }
+
+    fn codegen_u64_float_half(width: FloatWidth) -> i64 {
+        match read width {
+            Float32 => {
+                return i64.from(1593835520)
+            }
+            Float64 => {
+                return i64.from(1138753536) << 32
+            }
+        }
+    }
+
+    fn codegen_float_cast_is_unsigned(operator: ir::CastOperator) -> bool {
+        match read operator {
+            ir::CastFloatToUnsignedInteger => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_type_size(compiler: FunctionCompiler, value_type: ir::Type) -> Result<u64, CodegenError> {
+        match ir::type_size(value_type) {
+            Some(value) => {
+                return Ok(value)
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedCast()))
+            }
+        }
+    }
+
+    struct FloatConversion {
+        source_type: ir::Type, target_type: ir::Type, destination: Register
+    }
+
+    fn codegen_cast_from_float(program: ir::Program, compiler: write FunctionCompiler, input: CastInput, conversion: FloatConversion) -> Result<void, CodegenError> {
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.value, register: Rax()
+            })?
+        let source_width = codegen_float_width(conversion.source_type)?
+        codegen_emit(compiler, MoveToFloat(source_width, Xmm1(), Rax()))
+        if ir::type_is_float(conversion.target_type) {
+            let target_width = codegen_float_width(conversion.target_type)?
+            codegen_emit(compiler, ConvertFloat(ConvertFloatArgs {
+                        source_width: source_width, destination: Xmm0(), source: Xmm1()
+                    }))
+            codegen_emit(compiler, MoveFromFloat(target_width, conversion.destination, Xmm0()))
+        } else {
+            let target_size = codegen_type_size(compiler, conversion.target_type)?
+            let unsigned = codegen_float_cast_is_unsigned(input.operator)
+            if unsigned && target_size == 8 {
+                let cast = FloatUnsignedCast {
+                    width: source_width, destination: conversion.destination
+                }
+                codegen_float_to_u64(compiler, move cast)
+            } else {
+                let wide = target_size == 8 || unsigned
+                codegen_emit(compiler, FloatToSigned(FloatToSignedArgs {
+                            width: source_width, destination: conversion.destination, source: Xmm1(), destination_64: wide
+                        }))
+            }
+        }
+        Ok(())
+    }
+
+    fn codegen_cast_to_float(program: ir::Program, compiler: write FunctionCompiler, input: CastInput, conversion: FloatConversion) -> Result<void, CodegenError> {
+        var signed = false
+        match read input.operator {
+            ir::CastSignedIntegerToFloat => {
+                signed = true
+            }
+            _ => {
+            }
+        }
+        if signed {
+            codegen_load_signed(program, compiler, ValueAccess {
+                    value: input.value, register: Rax()
+                })?
+        } else {
+            codegen_load_value(program, compiler, ValueAccess {
+                    value: input.value, register: Rax()
+                })?
+        }
+        let source_size = codegen_type_size(compiler, conversion.source_type)?
+        let target_width = codegen_float_width(conversion.target_type)?
+        if signed == false && source_size == 8 {
+            codegen_u64_to_float(compiler, target_width)
+        } else {
+            let source_64 = source_size == 8 || signed == false
+            codegen_emit(compiler, SignedToFloat(SignedToFloatArgs {
+                        width: target_width, destination: Xmm0(), source: Rax(), source_64: source_64
+                    }))
+        }
+        codegen_emit(compiler, MoveFromFloat(target_width, conversion.destination, Xmm0()))
+        Ok(())
+    }
+}

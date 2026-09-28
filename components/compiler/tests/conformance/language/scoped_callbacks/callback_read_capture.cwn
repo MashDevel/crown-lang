@@ -1,0 +1,8 @@
+fn invoke(action: scoped fn() -> void) -> void {
+    invoke(fn[read action]() {
+            action()
+        })
+}
+fn main() -> u32 {
+    return 0
+}

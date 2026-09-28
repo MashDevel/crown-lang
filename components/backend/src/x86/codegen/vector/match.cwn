@@ -1,0 +1,123 @@
+module x86 {
+    fn codegen_packed_sequence(program: ir::Program, compiler: FunctionCompiler, position: SequencePosition) -> Option<PackedSequence> {
+        loan read program.functions[compiler.id] as function {
+            loan read function.blocks[codegen_current_block(compiler)] as block {
+                let scan = match packed_scan(block, position) {
+                    Some(value) => move value,
+                    None => {
+                        return None()
+                    }
+                }
+                let left = match packed_lane(block, compiler.uses, scan, 0) {
+                    Some(value) => move value,
+                    None => {
+                        return None()
+                    }
+                }
+                let right = match packed_lane(block, compiler.uses, scan, 1) {
+                    Some(value) => move value,
+                    None => {
+                        return None()
+                    }
+                }
+                if packed_lanes_adjacent(function, block, left, right) == false {
+                    return None()
+                }
+                return Some(PackedSequence {
+                        end: scan.end, left_load: left.left_load, right_load: left.right_load, store: scan.stores[0]
+                        left: left.left, right: left.right, destination: left.destination, operator: left.operator
+                    })
+            }
+        }
+    }
+
+    fn packed_lane(block: ir::BasicBlock, uses: Vec<usize>, scan: PackedScan, lane: usize) -> Option<PackedLane> {
+        let binary = scan.binaries[lane]
+        let result = match codegen_unique_result(block.instructions[binary], uses) {
+            Some(value) => value,
+            None => {
+                return None()
+            }
+        }
+        let destination = match packed_store(block.instructions[scan.stores[lane]].kind, result) {
+            Some(value) => value,
+            None => {
+                return None()
+            }
+        }
+        match read block.instructions[binary].kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let first = match packed_load_index(block, scan.loads, left) {
+                    Some(value) => value,
+                    None => {
+                        return None()
+                    }
+                }
+                let second = match packed_load_index(block, scan.loads, right) {
+                    Some(value) => value,
+                    None => {
+                        return None()
+                    }
+                }
+                if first == second || uses[left] != 1 || uses[right] != 1 {
+                    return None()
+                }
+                return Some(PackedLane {
+                        left: packed_load_address(block.instructions[first].kind), right: packed_load_address(block.instructions[second].kind)
+                        destination: destination, left_load: first, right_load: second, operator: operator
+                    })
+            }
+            _ => None()
+        }
+    }
+
+    fn packed_store(kind: ir::InstructionKind, result: usize) -> Option<usize> {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        if value != result || volatile {
+                            return None()
+                        }
+                        return Some(address)
+                    }
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn packed_load_index(block: ir::BasicBlock, loads: Vec<usize>, value: usize) -> Option<usize> {
+        for index in 0..loads.length() {
+            match block.instructions[loads[index]].result {
+                Some(result) => {
+                    if value == result {
+                        return Some(loads[index])
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return None()
+    }
+
+    fn packed_load_address(kind: ir::InstructionKind) -> usize {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile;
+                        address
+                    }
+                    _ => 0
+                }
+            }
+            _ => 0
+        }
+    }
+}

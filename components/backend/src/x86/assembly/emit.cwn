@@ -1,0 +1,50 @@
+module x86 {
+    fn assembly(object: object::CompilerObject, format: AssemblyFormat) -> Result<Text, u32> {
+        match object::validate(object) {
+            Err(error) => {
+                error;
+                return Err(1)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return assembly_validated(object, format)
+    }
+
+    fn assembly_relocatable(object: object::CompilerObject, format: AssemblyFormat) -> Result<Text, u32> {
+        match object::validate_relocatable(object) {
+            Err(error) => {
+                error;
+                return Err(1)
+            },
+            Ok(value) => {
+                value
+            }
+        }
+        return assembly_validated(object, format)
+    }
+
+    fn assembly_validated(object: object::CompilerObject, format: AssemblyFormat) -> Result<Text, u32> {
+        if object.architecture != object::ArchitectureX86_64() {
+            return Err(1)
+        }
+        var output = AssemblyOutput {
+            text: Text.new(), format: format
+        }
+        let entry = match read object.entry {
+            Some(value) => {
+                value;
+                true
+            },
+            None => false
+        }
+        assembly_header(output, entry)
+        assembly_emit_globals(object, output)
+        let index = assembly_index(object)
+        assembly_emit_sections(object, index, output)?
+        assembly_footer(output)
+        return Ok(replace(output.text, Text.new()))
+    }
+
+}

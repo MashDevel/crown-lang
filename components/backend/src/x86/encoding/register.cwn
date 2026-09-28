@@ -1,0 +1,86 @@
+module x86 {
+    fn encode_register_instruction(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ConditionalMove(condition, destination, source) => {
+                let destination_code = register_code(destination)
+                let source_code = register_code(source)
+                output.push(rex(destination_code, 0, source_code))
+                output.push(15)
+                output.push(64 | condition_code(condition))
+                output.push(modrm(3, destination_code, source_code))
+                return true
+            }
+            Set(condition, register) => {
+                let code = register_code(register)
+                if code >= 4 {
+                    output.push(64 |(code >> 3))
+                }
+                output.push(15)
+                output.push(144 | condition_code(condition))
+                output.push(modrm(3, 0, code))
+                return true
+            }
+            MoveSized(values) => {
+                encode_move_sized(values, output)
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn encode_move_sized(values: MoveSizedArgs, output: write Vec<u8>) -> void {
+        let destination = register_code(values.destination)
+        let source = register_code(values.source)
+        var wide = true
+        var first: u8 = 15
+        var second: u8 = 190
+        match read values.width {
+            Byte => {
+                if extension_is_zero(values.extension) {
+                    second = 182
+                }
+            }
+            Word => {
+                second = 191
+                if extension_is_zero(values.extension) {
+                    second = 183
+                }
+            }
+            Dword => {
+                first = 99
+                second = 0
+                if extension_is_zero(values.extension) {
+                    wide = false;
+                    first = 139
+                }
+            }
+            Qword => {
+                first = 139;
+                second = 0
+            }
+        }
+        if wide {
+            output.push(rex(destination, 0, source))
+        } else {
+            output.push(rex_narrow(destination, 0, source))
+        }
+        output.push(first)
+        if second != 0 {
+            output.push(second)
+        }
+        output.push(modrm(3, destination, source))
+    }
+
+    fn extension_is_zero(extension: Extension) -> bool {
+        match read extension {
+            ZeroExtend => {
+                return true
+            }
+            SignExtend => {
+                return false
+            }
+        }
+    }
+}

@@ -1,0 +1,17 @@
+fn declare<T>(factory: fn() -> T) -> Result<RootToken<T>, u32> {
+    return RootToken<T>.declare(factory)
+}
+fn raw() -> RawPtr<u8> {
+    unsafe {
+        return RawPtr<u8>.from_address(1)
+    }
+}
+fn main() -> u32 {
+    return match declare(raw) {
+        Ok(value) => {
+            value;
+            0
+        },
+        Err(error) => error
+    }
+}

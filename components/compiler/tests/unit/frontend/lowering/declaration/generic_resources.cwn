@@ -1,0 +1,110 @@
+fn source_input(text: Text, limit: usize) -> Option<lowering::ProgramInput> {
+    let source = frontend_test_source(text.clone())
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Ok(program) => {
+            let analysis = sema::analyze_with_limit(source.bytes.share(), program, limit);
+            return Some(lowering::ProgramInput {
+                    analysis: move analysis, program: move program
+                })
+        }
+        Err(errors) => {
+            errors;
+            return None()
+        }
+    }
+}
+fn rejects(text: Text, limit: usize) -> bool {
+    match source_input(text, limit) {
+        Some(input) => {
+            return input.analysis.errors != 0
+        },
+        None => {
+            return false
+        }
+    }
+}
+fn diagnostics() -> u32 {
+    if rejects("resource R<T,T> { value:T, drop { value } } fn main()->u32 { return 0 }", 128) == false {
+        return 1
+    }
+    if rejects("resource R<T> { value:Missing, drop { value } } fn main()->u32 { return 0 }", 128) == false {
+        return 2
+    }
+    if rejects("resource R<T> { value:T, drop { value } } fn main()->u32 { let r=R<u32,Text>{value:1};r;return 0 }", 128) == false {
+        return 3
+    }
+    if rejects("resource R<T> { value:T, drop { print(value) } } fn main()->u32 { return 0 }", 128) == false {
+        return 4
+    }
+    if rejects("resource R<T> { value:T, drop { value } } fn consume<T>(value:take T)->void {value} fn main()->u32 {let r=R<Text>{value:\"x\"};consume(move r);consume(move r);return 0}", 128) == false {
+        return 5
+    }
+    if rejects("resource R<T> { value:T, drop {let next=R<Vec<T>>{value:Vec<T>.new()};next} } fn main()->u32 {let r=R<u32>{value:1};r;return 0}", 8) == false {
+        return 6
+    }
+    return 0
+}
+fn lower_input(input: take lowering::ProgramInput) -> u32 {
+    if input.analysis.errors != 0 {
+        return 2
+    }
+    var compiler = lowering::compiler_new()
+    match lowering::declare_program(compiler, input.analysis) {
+        Ok(value) => {
+            value
+        },
+        Err(error) => {
+            return error
+        }
+    }
+    match lowering::lower_program(compiler, input) {
+        Ok(value) => {
+            value
+        },
+        Err(error) => {
+            return error
+        }
+    }
+    return 0
+}
+fn resource_lowering() -> u32 {
+    let text = "module m {struct T {value:u32} resource R<T>{value:T, drop {let pending:Option<Vec<T>>=None();pending;inspect(value)}} fn inspect<T>(value:T)->void {value;let pending=Vec<T>.new();pending}} fn main()->u32 {let first=m::R<Text>{value:\"owned\"};let second=m::R<u32>{value:7};first;second;return 0}"
+    let input = match source_input(text, 128) {
+        Some(value) => move value,
+        None => {
+            return 1
+        }
+    }
+    if input.analysis.checker.resource_instances.length() != 2 || input.analysis.instances.length() != 2 {
+        return 3
+    }
+    return lower_input(move input)
+}
+fn composite_lowering() -> u32 {
+    let text = "resource Leaf {value:u32, drop {value}} enum Wrap<T>{Item(T),Empty} resource R<T>{value:T, drop {visit(value,fn(item){item})}} resource S<T>{value:T, drop {value}} fn visit<T>(value:T,action:scoped fn(T)->void)->void{action(value)} fn main()->u32{let first=R<[u32;2]>{value:[1,2]};let second=R<Wrap<Leaf>>{value:Wrap::Item(Leaf{value:3})};let third=S<u32>{value:4};first;second;third;return 0}"
+    var input = match source_input(text, 128) {
+        Some(value) => move value,
+        None => {
+            return 1
+        }
+    }
+    if input.analysis.errors != 0 {
+        return 2
+    }
+    let boundary = resource_boundaries(input.analysis)
+    if boundary != 0 {
+        return boundary
+    }
+    return lower_input(move input)
+}
+fn main() -> u32 {
+    let errors = diagnostics()
+    if errors != 0 {
+        return errors
+    }
+    let lowering = resource_lowering()
+    if lowering != 0 {
+        return lowering
+    }
+    return composite_lowering()
+}

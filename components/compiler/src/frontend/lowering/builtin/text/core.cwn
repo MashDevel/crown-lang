@@ -1,0 +1,229 @@
+module lowering {
+    struct TextPushState {
+        address: usize
+        length_address: usize
+        capacity_address: usize
+        length: usize
+        capacity: usize
+    }
+
+    struct Utf8Encoding {
+        length: usize
+        first: usize
+        second: usize
+        third: usize
+        fourth: usize
+    }
+
+    struct Utf8Boundaries {
+        one: usize
+        two: usize
+        three: usize
+    }
+
+    fn text_method(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                let name = sema::name_text(analysis.checker.symbols.source, method)
+                match read name {
+                    "length" => {
+                        return sequence_length(compiler, analysis, expression)
+                    }
+                    "as_raw" => {
+                        return text_as_raw(compiler, analysis, receiver)
+                    }
+                    "clone" => {
+                        return clone_text(compiler, analysis, receiver)
+                    }
+                    "push" => {
+                        if arguments.length() != 1 {
+                            return Err(194)
+                        }
+                        return push_text(compiler, analysis, expression)
+                    }
+                    _ => {
+                        return Err(194)
+                    }
+                }
+            }
+            _ => {
+                return Err(195)
+            }
+        }
+    }
+
+    fn text_as_raw(compiler: write FunctionCompiler, analysis: sema::Analysis, receiver: Box<frontend::Expression>) -> Result<Value, u32> {
+        var address: usize = 0
+        loan read receiver as expression {
+            address = expression_place(compiler, analysis, expression)?
+        }
+        let pointer = function_load_pointer(compiler, address)?
+        var arguments = Vec<sema::Type>.new()
+        arguments.push(sema::builtin_leaf(sema::U8()))
+        return Ok(ScalarValue(pointer, sema::BuiltinType(sema::RawPtr(), move arguments)))
+    }
+
+    fn clone_text(compiler: write FunctionCompiler, analysis: sema::Analysis, receiver: Box<frontend::Expression>) -> Result<Value, u32> {
+        var source: usize = 0
+        loan read receiver as expression {
+            source = expression_place(compiler, analysis, expression)?
+        }
+        let value_type = sema::builtin_leaf(sema::Text())
+        let result = function_zeroed_stack(compiler, analysis.checker.symbols, value_type)?
+        let length_address = function_offset(compiler, source, 8)?
+        let load = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, analysis.checker.symbols, load)?
+        let clone = TextClone {
+            source: source, result: result, length: length
+        }
+        clone_nonempty_text(compiler, analysis.checker.symbols, clone)?
+        return Ok(AddressValue(result, move value_type))
+    }
+
+    struct TextClone {
+        source: usize
+        result: usize
+        length: usize
+    }
+
+    fn clone_nonempty_text(compiler: write FunctionCompiler, symbols: sema::Symbols, request: TextClone) -> Result<void, u32> {
+        let zero_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, zero_type, 0)
+        let nonempty = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), request.length, zero))?
+        let ready = function_begin_guarded_block(compiler, nonempty)?
+        copy_text_storage(compiler, symbols, request)?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+    fn copy_text_storage(compiler: write FunctionCompiler, symbols: sema::Symbols, request: TextClone) -> Result<void, u32> {
+        let source_data = function_load_pointer(compiler, request.source)?
+        let data = function_allocate(compiler, request.length)?
+        match function_append(compiler, ir::InstructionMemoryCopy(data, source_data, request.length)) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        function_store_pointer(compiler, request.result, data)?
+        let result_length = function_offset(compiler, request.result, 8)?
+        let result_capacity = function_offset(compiler, request.result, 16)?
+        let length_store = StoreRequest {
+            address: result_length, value: request.length, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, length_store)?
+        let capacity_store = StoreRequest {
+            address: result_capacity, value: request.length, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, capacity_store)?
+        return Ok(())
+    }
+
+    fn push_text(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        var receiver_address: usize = 0
+        var character_value: usize = 0
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method
+                if arguments.length() != 1 {
+                    return Err(198)
+                }
+                loan read receiver as value {
+                    receiver_address = expression_place(compiler, analysis, value)?
+                }
+                loan read arguments[0] as value {
+                    character_value = function_scalar_expression(compiler, analysis, value)?
+                }
+            }
+            _ => {
+                return Err(199)
+            }
+        }
+        return append_text_character(compiler, analysis.checker.symbols, receiver_address, character_value)
+    }
+
+    fn append_text_character(compiler: write FunctionCompiler, symbols: sema::Symbols, receiver_address: usize, character_value: usize) -> Result<Value, u32> {
+        let state = text_push_state(compiler, symbols, receiver_address)?
+        let encoding = utf8_encoding(compiler, character_value)?
+        ensure_text_capacity(compiler, symbols, state)?
+        let storage = Utf8Storage {
+            state: text_push_state_copy(state), encoding: utf8_encoding_copy(encoding)
+        }
+        store_utf8(compiler, symbols, storage)?
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: state.length, right: encoding.length, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let next = integer_binary(compiler, symbols, operation)?
+        let store = StoreRequest {
+            address: state.length_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        return Ok(VoidValue())
+    }
+
+    fn text_push_state(compiler: write FunctionCompiler, symbols: sema::Symbols, address: usize) -> Result<TextPushState, u32> {
+        let length_address = function_offset(compiler, address, 8)?
+        let capacity_address = function_offset(compiler, address, 16)?
+        let length_request = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, length_request)?
+        let capacity_request = Place {
+            address: capacity_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity = function_load(compiler, symbols, capacity_request)?
+        return Ok(TextPushState {
+                address: address, length_address: length_address, capacity_address: capacity_address, length: length, capacity: capacity
+            })
+    }
+
+    fn ensure_text_capacity(compiler: write FunctionCompiler, symbols: sema::Symbols, state: TextPushState) -> Result<void, u32> {
+        let four_type = ir::TypeInteger(ir::IntegerWidth64())
+        let four = function_integer(compiler, four_type, 4)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: state.length, right: four, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let required = integer_binary(compiler, symbols, operation)?
+        let grow = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), state.capacity, required))?
+        let ready = function_begin_guarded_block(compiler, grow)?
+        let growth = TextGrowth {
+            state: text_push_state_copy(state), required: required
+        }
+        grow_text(compiler, symbols, growth)?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+    struct TextGrowth {
+        state: TextPushState
+        required: usize
+    }
+
+    fn grow_text(compiler: write FunctionCompiler, symbols: sema::Symbols, growth: TextGrowth) -> Result<void, u32> {
+        let two_type = ir::TypeInteger(ir::IntegerWidth64())
+        let two = function_integer(compiler, two_type, 2)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryMultiply(), left: growth.state.capacity, right: two, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let doubled = integer_binary(compiler, symbols, operation)?
+        let smaller = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), doubled, growth.required))?
+        let next = function_append_value(compiler, ir::InstructionSelect(smaller, growth.required, doubled))?
+        let current = function_load_pointer(compiler, growth.state.address)?
+        let pointer = function_resize(compiler, current, next)?
+        function_store_pointer(compiler, growth.state.address, pointer)?
+        let store = StoreRequest {
+            address: growth.state.capacity_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn text_push_state_copy(state: TextPushState) -> TextPushState {
+        return TextPushState {
+            address: state.address, length_address: state.length_address, capacity_address: state.capacity_address, length: state.length, capacity: state.capacity
+        }
+    }
+}

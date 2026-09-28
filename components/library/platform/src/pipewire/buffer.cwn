@@ -1,0 +1,15 @@
+module native::pipewire {
+    copy struct Chunk {
+        offset: u32, size: u32, stride: i32, flags: i32
+    }
+    copy struct Data {
+        kind: u32, flags: u32, descriptor: i64, map_offset: u32, max_size: u32, data: RawPtr<f32>, chunk: RawPtr<Chunk>
+    }
+    copy struct SpaBuffer {
+        metas_count: u32, data_count: u32, metas: RawPtr<u8>, data: RawPtr<Data>
+    }
+    copy struct Buffer {
+        buffer: RawPtr<SpaBuffer>, user_data: RawPtr<u8>, size: u64, requested: u64
+    }
+
+}

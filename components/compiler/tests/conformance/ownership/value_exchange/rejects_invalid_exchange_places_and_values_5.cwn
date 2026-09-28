@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    var value = "a"
+    let other = "b"
+    replace(value, other)
+    return 0
+}

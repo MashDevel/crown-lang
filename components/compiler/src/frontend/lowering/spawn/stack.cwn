@@ -1,0 +1,77 @@
+module lowering {
+    struct ScopedStack {
+        configured: bool
+        base: usize
+        length: usize
+        owned: usize
+    }
+    struct ScopedEntry {
+        node: usize
+        entry: usize
+        environment: usize
+    }
+    fn scoped_stack_configuration(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<ScopedStack, u32> {
+        match read expression.kind {
+            frontend::ExpressionScopedSpawn(configuration, captures, body) => {
+                captures;
+                body
+                return scoped_stack_values(compiler, analysis, configuration)
+            }
+            _ => {
+                return Err(310)
+            }
+        }
+    }
+    fn scoped_stack_values(compiler: write FunctionCompiler, analysis: sema::Analysis, configuration: Vec<frontend::Expression>) -> Result<ScopedStack, u32> {
+        let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 0)
+        var result = ScopedStack {
+            configured: configuration.length() != 0, base: zero, length: zero, owned: null
+        }
+        if configuration.length() == 1 {
+            configure_owned_stack(compiler, analysis, configuration[0], result)?
+        }
+        if configuration.length() == 2 {
+            loan read configuration[0] as value {
+                result.base = scalar_expression(compiler, analysis, value)?
+            }
+            loan read configuration[1] as value {
+                result.length = scalar_expression(compiler, analysis, value)?
+            }
+        }
+        return Ok(move result)
+    }
+    fn start_scoped_thread(compiler: write FunctionCompiler, entry: take ScopedEntry, stack: ScopedStack) -> Result<usize, u32> {
+        let owned = function_offset(compiler, entry.node, 24)?
+        function_store_pointer(compiler, owned, stack.owned)?
+        if stack.configured == false {
+            return start_thread(compiler, entry.node, ThreadEntry {
+                    start: entry.entry, environment: entry.environment
+                })
+        }
+        var arguments = Vec<usize>.new()
+        arguments.push(entry.node)
+        arguments.push(entry.entry)
+        arguments.push(entry.environment)
+        arguments.push(stack.base)
+        arguments.push(stack.length)
+        return supplied_stack_call(compiler, "crown_pthread_create_stack", move arguments)
+    }
+    fn release_scoped_node(compiler: write FunctionCompiler, node: usize) -> Result<void, u32> {
+        let address = function_offset(compiler, node, 24)?
+        let stack = function_load_pointer(compiler, address)?
+        free_pointer(compiler, stack)?
+        return free_pointer(compiler, node)
+    }
+    fn configure_owned_stack(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, result: write ScopedStack) -> Result<void, u32> {
+        let value = function_expression(compiler, analysis, expression)?
+        let address = value_address(compiler, analysis.checker.symbols, move value)?
+        result.owned = function_load_pointer(compiler, address)?
+        result.base = function_append_value(compiler, ir::InstructionCast(ir::CastPointerToInteger(), result.owned, ir::TypeInteger(ir::IntegerWidth64())))?
+        let length = function_offset(compiler, address, 8)?
+        result.length = function_append_value(compiler, ir::InstructionLoad(length, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+        align_scoped_stack(compiler, result)?
+        return Ok(())
+    }
+
+}

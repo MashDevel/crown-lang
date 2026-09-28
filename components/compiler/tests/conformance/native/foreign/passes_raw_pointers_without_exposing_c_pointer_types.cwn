@@ -1,0 +1,13 @@
+extern "c" {
+    fn allocate(size: read usize) -> RawPtr<u8> = "malloc"
+    fn release(pointer: read RawPtr<u8>) -> void = "free"
+}
+fn main() -> u32 {
+    unsafe {
+        let pointer = allocate(1)
+        pointer.write_volatile(7)
+        let value = pointer.read_volatile()
+        release(pointer)
+        return u32.from(value)
+    }
+}

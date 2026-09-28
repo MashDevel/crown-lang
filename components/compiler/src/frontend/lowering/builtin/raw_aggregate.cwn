@@ -1,0 +1,86 @@
+module lowering {
+    struct RawTransfer {
+        destination: usize, source: usize, size: u64, volatile: bool
+    }
+
+    fn read_raw_value(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: PointerOperation, volatile: bool) -> Result<Value, u32> {
+        let storage = layout(symbols, operation.element)?
+        if type_is_direct(symbols, operation.element)? {
+            let value_type = ir_type(symbols, operation.element)?
+            let value = function_append_value(compiler, ir::InstructionLoad(operation.pointer, value_type, storage.alignment, volatile))?
+            return Ok(ScalarValue(value, sema::type_copy(operation.element)))
+        }
+        let destination = function_stack(compiler, symbols, operation.element)?
+        raw_transfer(compiler, RawTransfer {
+                destination: destination, source: operation.pointer, size: storage.size, volatile: volatile
+            })?
+        return Ok(AddressValue(destination, sema::type_copy(operation.element)))
+    }
+
+    fn write_raw_value(compiler: write FunctionCompiler, symbols: sema::Symbols, request: CopyRequest, volatile: bool) -> Result<void, u32> {
+        match read request.value {
+            ScalarValue(value, value_type) => {
+                let storage = layout(symbols, value_type)?
+                function_append(compiler, ir::InstructionStore(request.destination, value, storage.alignment, volatile))?
+            }
+            AddressValue(source, value_type) => {
+                let storage = layout(symbols, value_type)?
+                raw_transfer(compiler, RawTransfer {
+                        destination: request.destination, source: source, size: storage.size, volatile: volatile
+                    })?
+            }
+            VoidValue => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn raw_transfer(compiler: write FunctionCompiler, request: RawTransfer) -> Result<void, u32> {
+        let size = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), request.size)
+        if request.volatile == false {
+            function_append(compiler, ir::InstructionMemoryCopy(request.destination, request.source, size))?
+            return Ok(())
+        }
+        return volatile_transfer(compiler, request, size)
+    }
+
+    fn volatile_transfer(compiler: write FunctionCompiler, request: RawTransfer, size: usize) -> Result<void, u32> {
+        let index = function_append_value(compiler, ir::InstructionStackSlot(8, 8))?
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 0)
+        function_append(compiler, ir::InstructionStore(index, zero, 8, false))?
+        let header = function_new_block(compiler)?
+        let body = function_new_block(compiler)?
+        let done = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorBranch(header))?
+        function_select_block(compiler, header)
+        let offset = volatile_condition(compiler, index, size, [body, done])?
+        function_select_block(compiler, body)
+        volatile_byte(compiler, request, offset)?
+        volatile_advance(compiler, index, offset, header)?
+        function_select_block(compiler, done)
+        return Ok(())
+    }
+
+    fn volatile_condition(compiler: write FunctionCompiler, index: usize, size: usize, targets: [usize; 2]) -> Result<usize, u32> {
+        let offset = function_append_value(compiler, ir::InstructionLoad(index, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+        let condition = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), offset, size))?
+        function_finish(compiler, ir::TerminatorConditional(condition, targets[0], targets[1]))?
+        return Ok(offset)
+    }
+
+    fn volatile_advance(compiler: write FunctionCompiler, index: usize, offset: usize, header: usize) -> Result<void, u32> {
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), offset, one))?
+        function_append(compiler, ir::InstructionStore(index, next, 8, false))?
+        function_finish(compiler, ir::TerminatorBranch(header))?
+        return Ok(())
+    }
+
+    fn volatile_byte(compiler: write FunctionCompiler, request: RawTransfer, offset: usize) -> Result<void, u32> {
+        let source = function_append_value(compiler, ir::InstructionOffset(request.source, offset))?
+        let destination = function_append_value(compiler, ir::InstructionOffset(request.destination, offset))?
+        let value = function_append_value(compiler, ir::InstructionLoad(source, ir::TypeInteger(ir::IntegerWidth8()), 1, true))?
+        function_append(compiler, ir::InstructionStore(destination, value, 1, true))?
+        return Ok(())
+    }
+}

@@ -1,0 +1,11 @@
+fn escaped() -> ScopedThread {
+    thread_scope {
+        let handle = spawn[] {
+        }
+        return move handle
+    }
+}
+fn main() -> u32 {
+    escaped();
+    return 0
+}

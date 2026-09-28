@@ -1,0 +1,49 @@
+module lowering {
+    fn integer_divide(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        let signed = integer_is_signed(operation.value_type)
+        if signed {
+            let exceptional = integer_signed_division_exception(compiler, symbols, operation)?
+            let false_value = integer_boolean(compiler, false)
+            let valid = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), exceptional, false_value))?
+            function_guard_with(compiler, valid, "integer_overflow")?
+        }
+        let operator = integer_binary_operator(operation.operator, signed)?
+        return function_append_value(compiler, ir::InstructionBinary(operator, operation.left, operation.right))
+    }
+
+    fn integer_remainder(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        let signed = integer_is_signed(operation.value_type)
+        if signed == false {
+            let operator = integer_binary_operator(operation.operator, false)?
+            return function_append_value(compiler, ir::InstructionBinary(operator, operation.left, operation.right))
+        }
+        let exceptional = integer_signed_division_exception(compiler, symbols, operation)?
+        let blocks = conditional_blocks(compiler, exceptional)?
+        function_select_block(compiler, blocks.then_block)
+        let value_type = ir_type(symbols, operation.value_type)?
+        let zero_type = value_type
+        let zero = function_integer(compiler, zero_type, 0)
+        function_finish(compiler, ir::TerminatorBranch(blocks.merge))?
+        function_select_block(compiler, blocks.else_block)
+        let operator = integer_binary_operator(operation.operator, signed)?
+        let remainder = function_append_value(compiler, ir::InstructionBinary(operator, operation.left, operation.right))?
+        function_finish(compiler, ir::TerminatorBranch(blocks.merge))?
+        function_select_block(compiler, blocks.merge)
+        var incoming = Vec<ir::PhiIncoming>.new()
+        incoming.push(ir::PhiIncoming {
+                block: blocks.then_block, value: zero
+            })
+        incoming.push(ir::PhiIncoming {
+                block: blocks.else_block, value: remainder
+            })
+        return function_append_value(compiler, ir::InstructionPhi(value_type, move incoming))
+    }
+
+    fn integer_signed_division_exception(compiler: write FunctionCompiler, symbols: sema::Symbols, operation: ScalarOperation) -> Result<usize, u32> {
+        let minimum = integer_minimum_value(compiler, symbols, operation.value_type)?
+        let negative_one = integer_mask_value(compiler, symbols, operation.value_type)?
+        let minimum_left = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), operation.left, minimum))?
+        let negative_right = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), operation.right, negative_one))?
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), minimum_left, negative_right))
+    }
+}

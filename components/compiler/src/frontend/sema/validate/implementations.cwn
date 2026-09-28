@@ -1,0 +1,139 @@
+module sema {
+    fn validate_implementations(symbols: write Symbols) -> void {
+        var index: usize = 0
+        while index < symbols.implementations.length() {
+            var errors: u32 = 0
+            loan read symbols.implementations[index] as implementation {
+                match implementation_check(symbols, implementation) {
+                    None => {
+                        errors = errors + 1
+                    }
+                    Some(check) => {
+                        errors = errors + validate_implementation(symbols, check)
+                    }
+                }
+                if implementation_duplicate(symbols, index, implementation) {
+                    errors = errors + 1
+                }
+            }
+            if errors != 0 {
+                symbols.errors = symbols.errors + errors - 1
+                symbols_error(symbols, "implementation is duplicate or does not match the interface signature")
+            }
+            index = index + 1
+        }
+    }
+
+    fn implementation_check(symbols: Symbols, implementation: Implementation) -> Option<ImplementationCheck> {
+        match implementation_owner(symbols, implementation.target) {
+            None => {
+                return None()
+            }
+            Some(owner) => {
+                if type_is_concrete(implementation.target) == false || type_contains_view(symbols, implementation.target) {
+                    return None()
+                }
+                return Some(ImplementationCheck {
+                        interface_symbol: implementation.interface_symbol
+                        owner: owner
+                        target: type_copy(implementation.target)
+                    })
+            }
+        }
+    }
+
+    fn implementation_duplicate(symbols: Symbols, current: usize, implementation: Implementation) -> bool {
+        var index: usize = 0
+        while index < current {
+            loan read symbols.implementations[index] as previous {
+                if previous.interface_symbol == implementation.interface_symbol && types_equal(previous.target, implementation.target) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn validate_implementation(symbols: Symbols, check: ImplementationCheck) -> u32 {
+        var errors: u32 = 0
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            errors = errors + implementation_function_errors(symbols, symbols.functions[index], check)
+            index = index + 1
+        }
+        return errors
+    }
+
+    fn implementation_function_errors(symbols: Symbols, function: Function, check: ImplementationCheck) -> u32 {
+        match read function.kind {
+            InterfaceFunction(interface_symbol) => {
+                if interface_symbol == check.interface_symbol && implementation_method_count(symbols, function, check) != 1 {
+                    return 1
+                }
+                return 0
+            }
+            ImplementationFunction(owner, interface_symbol) => {
+                if owner != check.owner || interface_symbol != check.interface_symbol {
+                    return 0
+                }
+                var errors: u32 = 0
+                if function.unsafe_value || function.type_parameters.length() != 0 {
+                    errors = errors + 1
+                }
+                if interface_method_count(symbols, function, check) != 1 {
+                    errors = errors + 1
+                }
+                return errors
+            }
+            _ => 0
+        }
+    }
+
+    fn implementation_method_count(symbols: Symbols, expected: Function, check: ImplementationCheck) -> usize {
+        var count: usize = 0
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as actual {
+                if implementation_kind_is(actual.kind, check) && names_equal(symbols.source, expected.name, actual.name) {
+                    if interface_signatures_match(expected, actual, check) {
+                        count = count + 1
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return count
+    }
+
+    fn interface_method_count(symbols: Symbols, actual: Function, check: ImplementationCheck) -> usize {
+        var count: usize = 0
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            match read symbols.functions[index].kind {
+                InterfaceFunction(interface_symbol) => {
+                    if interface_symbol == check.interface_symbol && names_equal(symbols.source, symbols.functions[index].name, actual.name) {
+                        if interface_signatures_match(symbols.functions[index], actual, check) {
+                            count = count + 1
+                        }
+                    }
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        return count
+    }
+
+    fn implementation_kind_is(kind: FunctionKind, check: ImplementationCheck) -> bool {
+        match read kind {
+            ImplementationFunction(owner, interface_symbol) => {
+                return owner == check.owner && interface_symbol == check.interface_symbol
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

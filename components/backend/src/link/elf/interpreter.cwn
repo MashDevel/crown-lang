@@ -1,0 +1,40 @@
+module elf {
+    fn interpreter(bytes: Vec<u8>) -> Result<Text, Text> {
+        validate_header(bytes)?
+        let offset = usize.from(link_binary::number(bytes, 32, 8)?)
+        let count = usize.from(link_binary::number(bytes, 56, 2)?)
+        if link_binary::number(bytes, 54, 2)? != 56 || offset > bytes.length() || count >(bytes.length() - offset) / 56 {
+            return Err("invalid ELF program header table")
+        }
+        return find_interpreter(bytes, offset, count)
+    }
+
+    fn validate_header(bytes: Vec<u8>) -> Result<void, Text> {
+        if bytes.length() < 64 || link_binary::number(bytes, 0, 4)? != 1179403647 {
+            return Err("not an ELF executable")
+        }
+        if bytes[4] != 2 || bytes[5] != 1 || bytes[6] != 1 {
+            return Err("unsupported ELF executable format")
+        }
+        return Ok(())
+    }
+
+    fn find_interpreter(bytes: Vec<u8>, offset: usize, count: usize) -> Result<Text, Text> {
+        for index in 0..count {
+            let header = offset + index * 56
+            if link_binary::number(bytes, header, 4)? == 3 {
+                return read_interpreter(bytes, header)
+            }
+        }
+        return Err("ELF executable has no interpreter")
+    }
+    fn read_interpreter(bytes: Vec<u8>, header: usize) -> Result<Text, Text> {
+        let position = usize.from(link_binary::number(bytes, header + 8, 8)?)
+        let size = usize.from(link_binary::number(bytes, header + 32, 8)?)
+        if size == 0 || size > 4096 {
+            return Err("invalid ELF interpreter size")
+        }
+        let part = link_binary::part(bytes, position, size)?
+        return link_binary::terminated(part, 0)
+    }
+}

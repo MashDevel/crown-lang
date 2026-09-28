@@ -1,0 +1,129 @@
+module optimize {
+    fn fill_promotion_phis(function: write ir::Function, predecessors: Vec<Vec<usize>>, phis: Vec<Option<usize>>, states: Vec<Option<PromotionState>>) -> bool {
+        var block: usize = 0
+        while block < phis.length() {
+            match read phis[block] {
+                Some(result) => {
+                    let incoming = match promotion_phi_incoming(predecessors[block], states) {
+                        Some(value) => move value
+                        None => {
+                            return false
+                        }
+                    }
+                    if set_promotion_phi(function.blocks[block], result, move incoming) == false {
+                        return false
+                    }
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        return true
+    }
+
+    fn set_promotion_phi(block: write ir::BasicBlock, result: usize, incoming: take Vec<ir::PhiIncoming>) -> bool {
+        var index: usize = 0
+        while index < block.instructions.length() {
+            var matches = false
+            match read block.instructions[index].result {
+                Some(value) => {
+                    matches = value == result
+                }
+                None => {
+                }
+            }
+            if matches {
+                var selected: Option<ir::Type> = None()
+                match read block.instructions[index].kind {
+                    ir::InstructionPhi(value_type, old) => {
+                        old;
+                        selected = Some(value_type)
+                    }
+                    _ => {
+                    }
+                }
+                match selected {
+                    Some(value_type) => {
+                        block.instructions[index].kind = ir::InstructionPhi(value_type, move incoming)
+                        return true
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn remove_promotion_phis(function: write ir::Function, phis: Vec<Option<usize>>) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var output = Vec<ir::Instruction>.new()
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    if is_promotion_phi(instruction.result, phis) == false {
+                        output.push(ir::instruction_copy(instruction))
+                    }
+                }
+                index = index + 1
+            }
+            function.blocks[block].instructions = move output
+            block = block + 1
+        }
+    }
+
+    fn is_promotion_phi(result: Option<usize>, phis: Vec<Option<usize>>) -> bool {
+        match read result {
+            None => {
+                return false
+            }
+            Some(value) => {
+                var index: usize = 0
+                while index < phis.length() {
+                    match read phis[index] {
+                        Some(phi) => {
+                            if phi == value {
+                                return true
+                            }
+                        }
+                        None => {
+                        }
+                    }
+                    index = index + 1
+                }
+                return false
+            }
+        }
+    }
+
+    fn promotion_phi_incoming(predecessors: Vec<usize>, states: Vec<Option<PromotionState>>) -> Option<Vec<ir::PhiIncoming>> {
+        var incoming = Vec<ir::PhiIncoming>.new()
+        var index: usize = 0
+        while index < predecessors.length() {
+            let predecessor = predecessors[index]
+            match read states[predecessor] {
+                Some(state) => {
+                    match read state {
+                        PromotionValue(value) => {
+                            incoming.push(ir::PhiIncoming {
+                                    block: predecessor, value: value
+                                })
+                        }
+                        PromotionEmpty => {
+                            return None()
+                        }
+                    }
+                }
+                None => {
+                    return None()
+                }
+            }
+            index = index + 1
+        }
+        Some(move incoming)
+    }
+}

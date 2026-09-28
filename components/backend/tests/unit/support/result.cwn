@@ -1,0 +1,25 @@
+module backend_test {
+    fn checked<T, E>(result: take Result<T, E>, code: u32) -> Result<T, u32> {
+        match move result {
+            Ok(value) => Ok(move value)
+            Err(error) => {
+                error;
+                Err(code)
+            }
+        }
+    }
+
+    fn value<E>(result: take Result<Option<usize>, E>, failure: u32, missing: u32) -> Result<usize, u32> {
+        match checked(move result, failure)? {
+            Some(value) => Ok(value)
+            None => Err(missing)
+        }
+    }
+
+    fn finished(result: take Result<u32, u32>) -> u32 {
+        match result {
+            Ok(value) => value
+            Err(error) => error
+        }
+    }
+}

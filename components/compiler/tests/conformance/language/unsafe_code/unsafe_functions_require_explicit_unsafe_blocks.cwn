@@ -1,0 +1,6 @@
+unsafe fn operation() -> u32 {
+    return RawPtr<u32>.from_address(0).read()
+}
+fn main() -> u32 {
+    return 0
+}

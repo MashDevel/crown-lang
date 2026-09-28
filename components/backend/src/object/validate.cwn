@@ -1,0 +1,158 @@
+module object {
+    fn validate(object: CompilerObject) -> Result<void, Error> {
+        match validate_relocatable(object) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return validate_entry(object)
+    }
+
+    fn validate_relocatable(object: CompilerObject) -> Result<void, Error> {
+        var index: usize = 0
+        while index < object.sections.length() {
+            loan read object.sections[index] as section {
+                match validate_section(section, index) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < object.symbols.length() {
+            loan read object.symbols[index] as symbol {
+                match validate_symbol(object, symbol, index) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+            }
+            index = index + 1
+        }
+        index = 0
+        while index < object.relocations.length() {
+            loan read object.relocations[index] as relocation {
+                match validate_relocation(object, relocation, index) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(value) => {
+                        value
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn validate_section(section: Section, index: usize) -> Result<void, Error> {
+        if alignment_valid(section.alignment) == false {
+            return Err(error(ErrorInvalidAlignment(), index))
+        }
+        if u64.from(section.data.length()) > section.memory_size {
+            return Err(error(ErrorDataExceedsMemory(), index))
+        }
+        if section_is_zero_fill(section.kind) && section.data.length() != 0 {
+            return Err(error(ErrorZeroFillContainsData(), index))
+        }
+        return Ok(())
+    }
+
+    fn validate_symbol(object: CompilerObject, symbol: Symbol, index: usize) -> Result<void, Error> {
+        match read symbol.section {
+            None => {
+                return Ok(())
+            }
+            Some(section) => {
+                if symbol_is_import(symbol.binding) {
+                    return Err(error(ErrorSymbolOutOfBounds(), index))
+                }
+                if section >= object.sections.length() {
+                    return Err(error(ErrorUnknownSection(), section))
+                }
+                if symbol.offset > 18446744073709551615 - symbol.size {
+                    return Err(error(ErrorSymbolOutOfBounds(), index))
+                }
+                if symbol.offset + symbol.size > object.sections[section].memory_size {
+                    return Err(error(ErrorSymbolOutOfBounds(), index))
+                }
+                return Ok(())
+            }
+        }
+    }
+
+    fn validate_relocation(object: CompilerObject, relocation: Relocation, index: usize) -> Result<void, Error> {
+        if relocation.section >= object.sections.length() {
+            return Err(error(ErrorUnknownSection(), relocation.section))
+        }
+        loan read object.sections[relocation.section] as section {
+            if section_is_zero_fill(section.kind) {
+                return Err(error(ErrorRelocationUsesZeroFill(), index))
+            }
+            let width = relocation_width(relocation.kind)
+            if relocation.offset > 18446744073709551615 - width || relocation.offset + width > u64.from(section.data.length()) {
+                return Err(error(ErrorRelocationOutOfBounds(), index))
+            }
+        }
+        if relocation.symbol >= object.symbols.length() {
+            return Err(error(ErrorUnknownSymbol(), relocation.symbol))
+        }
+        match read relocation.subtract {
+            Some(symbol) => {
+                if symbol >= object.symbols.length() {
+                    return Err(error(ErrorUnknownSymbol(), symbol))
+                }
+            }
+            None => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn validate_entry(object: CompilerObject) -> Result<void, Error> {
+        let entry = match read object.entry {
+            Some(value) => value
+            None => {
+                return Err(error(ErrorEntryUnset(), 0))
+            }
+        }
+        if entry >= object.symbols.length() {
+            return Err(error(ErrorUnknownSymbol(), entry))
+        }
+        if symbol_is_import(object.symbols[entry].binding) {
+            return Err(error(ErrorEntryImported(), entry))
+        }
+        if symbol_is_function(object.symbols[entry].kind) == false {
+            return Err(error(ErrorEntryNotFunction(), entry))
+        }
+        let section = match read object.symbols[entry].section {
+            Some(value) => value
+            None => {
+                return Err(error(ErrorSymbolOutOfBounds(), entry))
+            }
+        }
+        if section >= object.sections.length() {
+            return Err(error(ErrorUnknownSection(), section))
+        }
+        if section_is_executable(object.sections[section].kind) == false {
+            return Err(error(ErrorEntryNotExecutable(), entry))
+        }
+        Ok(())
+    }
+
+    fn alignment_valid(alignment: u64) -> bool {
+        return alignment != 0 &&(alignment &(alignment - 1)) == 0
+    }
+}

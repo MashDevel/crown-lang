@@ -1,0 +1,31 @@
+module coverage {
+    fn profile_directories(paths: Vec<Text>) -> Result<Vec<Text>, Text> {
+        var output = Vec<Text>.new()
+        var visited = Vec<Text>.new()
+        for index in 0..paths.length() {
+            find_profiles(paths[index], output, visited)?
+        }
+        if output.length() == 0 {
+            return Err("no coverage maps found")
+        }
+        return Ok(move output)
+    }
+
+    fn find_profiles(path: Text, output: write Vec<Text>, visited: write Vec<Text>) -> Result<void, Text> {
+        let directory = toolchain::absolute(path)?
+        if std::text::list_contains(visited, directory) {
+            return Ok(())
+        }
+        visited.push(directory.clone())
+        if toolchain::exists(toolchain::path_join(directory, "map.json")) {
+            output.push(directory.clone())
+        }
+        let entries = toolchain::directory_entries(directory)?
+        for index in 0..entries.length() {
+            if toolchain::is_directory(entries[index]) {
+                find_profiles(entries[index], output, visited)?
+            }
+        }
+        return Ok(())
+    }
+}

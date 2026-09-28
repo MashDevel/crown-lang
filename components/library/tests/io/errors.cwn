@@ -1,0 +1,37 @@
+fn test_io_error_messages() -> u32 {
+    let errors = [std::io::Error::InvalidPath(), std::io::Error::Open(), std::io::Error::Seek(), std::io::Error::Read(), std::io::Error::Write(), std::io::Error::Close()]
+    let expected = ["path contains a NUL byte", "could not open file", "could not determine file length or seek", "could not read the complete file", "could not write the complete file", "could not close file"]
+    for index in 0..6 {
+        if std::text::equal(std::io::error_message(errors[index]), expected[index]) == false {
+            return 12
+        }
+    }
+    return 0
+}
+
+fn io_failed<T>(result: take Result<T, std::io::Error>, expected: std::io::Error) -> bool {
+    match move result {
+        Ok(value) => {
+            value;
+            return false
+        }
+        Err(error) => error == expected
+    }
+}
+
+fn test_unopenable_files(path: TextView) -> Result<u32, std::io::Error> {
+    let missing = std::text::joined(path, "/missing")
+    let expected = std::io::Error::Open()
+    if io_failed(std::io::read_file(missing), expected) == false {
+        return Ok(13)
+    }
+    if io_failed(std::io::write_file(missing, Vec<u8>.new()), expected) == false {
+        return Ok(14)
+    }
+    if io_failed(std::io::write_text(missing, "data"), expected) == false {
+        return Ok(15)
+    }
+    let file = std::io::open(path, std::io::Mode::Read())?
+    file;
+    return Ok(test_io_error_messages())
+}

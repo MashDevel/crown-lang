@@ -1,0 +1,38 @@
+fn float_allocation_program() -> Result<ir::Program, u32> {
+    var function = ir::function_new("safety_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let value_type = ir::TypeFloat(ir::FloatWidth64())
+    let two = ir::function_constant(function, value_type, ir::ConstantFloat64(4611686018427387904))
+    let three = ir::function_constant(function, value_type, ir::ConstantFloat64(4613937818241073152))
+    let sum = safety_append(function, block, ir::InstructionBinary(ir::BinaryFloatAdd(), two, three))?
+    let product = safety_append(function, block, ir::InstructionBinary(ir::BinaryFloatMultiply(), sum, three))?
+    let integer = safety_append(function, block, ir::InstructionCast(ir::CastFloatToSignedInteger(), product, ir::TypeInteger(ir::IntegerWidth64())))?
+    let expected = safety_integer(function, ir::IntegerWidth64(), 15)
+    safety_return_equal(function, block, integer, expected)?
+    let frame = match x86::codegen_build_frame(function) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err(1)
+        }
+    }
+    match x86::codegen_frame_float(frame, sum) {
+        Some(register) => {
+            safety_require(register.code >= 8, 2)?
+        }
+        None => {
+            return Err(3)
+        }
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
+}
+
+fn float_allocation() -> Result<void, u32> {
+    return safety_execute(float_allocation_program()?)
+}
+
+fn main() -> u32 {
+    return safety_status(float_allocation())
+}

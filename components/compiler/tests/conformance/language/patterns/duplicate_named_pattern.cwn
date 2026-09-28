@@ -1,0 +1,11 @@
+const ONE: u8 = 1
+fn f(value: u8) -> u32 {
+    match value {
+        ONE => 0,
+        1 => 1,
+        _ => 2
+    }
+}
+fn main() -> u32 {
+    0
+}

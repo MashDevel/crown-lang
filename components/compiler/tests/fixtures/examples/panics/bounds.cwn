@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let values = [40, 2]
+    return values[2]
+}

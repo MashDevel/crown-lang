@@ -1,0 +1,6 @@
+fn value() -> f32 {
+    return 1e100
+}
+fn main() -> u32 {
+    return 0
+}

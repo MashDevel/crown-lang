@@ -1,0 +1,24 @@
+module control {
+    copy enum Action {
+        Start, Stop, Pause
+    }
+    fn equal(left: Action, right: Action) -> bool {
+        left == right
+    }
+}
+fn main() -> u32 {
+    let start = control::Action::Start()
+    if control::equal(start, start) == false {
+        return 1
+    }
+    if control::equal(start, control::Action::Stop()) {
+        return 2
+    }
+    if start != control::Action::Start() {
+        return 3
+    }
+    if start == control::Action::Pause() {
+        return 4
+    }
+    return 0
+}

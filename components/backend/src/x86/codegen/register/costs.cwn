@@ -1,0 +1,52 @@
+module x86 {
+    fn codegen_spill_costs(function: ir::Function) -> Vec<u64> {
+        let loop_blocks = codegen_loop_blocks(function)
+        var output = codegen_u64_values(function.values.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var weight: u64 = 1
+            if loop_blocks[block] {
+                weight = 100
+            }
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    codegen_add_costs(ir::instruction_operands(instruction.kind), weight, output)
+                }
+                index = index + 1
+            }
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    codegen_add_costs(ir::terminator_operands(terminator), weight, output)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn codegen_u64_values(length: usize) -> Vec<u64> {
+        var output = Vec<u64>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(0);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_add_costs(operands: take Vec<usize>, weight: u64, costs: write Vec<u64>) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            let value = operands[index]
+            if u64.from_bits(-1) - costs[value] < weight {
+                costs[value] = u64.from_bits(-1)
+            } else {
+                costs[value] = costs[value] + weight
+            }
+            index = index + 1
+        }
+    }
+}

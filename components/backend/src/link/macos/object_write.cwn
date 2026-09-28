@@ -1,0 +1,131 @@
+module macho {
+    struct ObjectOutput {
+        bytes: Vec<u8>, offsets: Vec<usize>, addresses: Vec<u64>, commands: usize
+    }
+
+    fn object_file(object: object::CompilerObject) -> Result<Vec<u8>, Text> {
+        match object::validate_relocatable(object) {
+            Err(error) => {
+                error;
+                return Err("invalid relocatable object")
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        let commands: usize = 72 + object.sections.length() * 80 + 24
+        var output = ObjectOutput {
+            bytes: std::bytes::filled(32 + commands, 0), offsets: Vec<usize>.new(),
+            addresses: Vec<u64>.new(), commands: commands
+        }
+        object_header(output, object.sections.length(), object.architecture)
+        object_sections(output, object)?
+        object_relocations(output, object)?
+        object_symbols(output, object)
+        return Ok(replace(output.bytes, Vec<u8>.new()))
+    }
+
+    fn object_header(output: write ObjectOutput, sections: usize, architecture: object::Architecture) -> void {
+        link_binary::put(output.bytes, 0, 4277009103, 4)
+        link_binary::put(output.bytes, 4, cpu_type(architecture), 4)
+        link_binary::put(output.bytes, 8, cpu_subtype(architecture), 4)
+        link_binary::put(output.bytes, 12, 1, 4)
+        link_binary::put(output.bytes, 16, 2, 4)
+        link_binary::put(output.bytes, 20, u64.from(output.commands), 4)
+        link_binary::put(output.bytes, 32, 25, 4)
+        link_binary::put(output.bytes, 36, 72 + u64.from(sections) * 80, 4)
+        link_binary::put(output.bytes, 88, 7, 4)
+        link_binary::put(output.bytes, 92, 7, 4)
+        link_binary::put(output.bytes, 96, u64.from(sections), 4)
+    }
+
+    fn object_sections(output: write ObjectOutput, object: object::CompilerObject) -> Result<void, Text> {
+        var address: u64 = 0
+        for index in 0..object.sections.length() {
+            let alignment = usize.from(object.sections[index].alignment)
+            if alignment > page_size(object.architecture) {
+                return Err("object section alignment exceeds page size")
+            }
+            address = u64.from(link_binary::aligned(usize.from(address), alignment))
+            link_binary::pad(output.bytes, link_binary::aligned(output.bytes.length(), alignment))
+            output.offsets.push(output.bytes.length())
+            output.addresses.push(address)
+            object_section_header(output, object.sections[index], index)
+            link_binary::append(output.bytes, object.sections[index].data)
+            address = address + object.sections[index].memory_size
+        }
+        link_binary::put(output.bytes, 64, address, 8)
+        link_binary::put(output.bytes, 72, 32 + u64.from(output.commands), 8)
+        link_binary::put(output.bytes, 80, u64.from(output.bytes.length() - 32 - output.commands), 8)
+        return Ok(())
+    }
+
+    fn object_section_header(output: write ObjectOutput, section: object::Section, index: usize) -> void {
+        let offset: usize = 104 + index * 80
+        name(output.bytes, offset, std::text::joined("section", std::text::decimal(u64.from(index))))
+        name(output.bytes, offset + 16, if object::section_is_executable(section.kind) {
+                "__TEXT"
+            } else {
+                "__DATA"
+            })
+        link_binary::put(output.bytes, offset + 32, output.addresses[index], 8)
+        link_binary::put(output.bytes, offset + 40, section.memory_size, 8)
+        link_binary::put(output.bytes, offset + 48, u64.from(output.offsets[index]), 4)
+        var power: u64 = 0
+        while (u64.from(1) << power) < section.alignment {
+            power = power + 1
+        }
+        link_binary::put(output.bytes, offset + 52, power, 4)
+        let flags: u64 = if object::section_is_zero_fill(section.kind) {
+            1
+        } else {
+            if object::section_is_executable(section.kind) {
+                2147484672
+            } else {
+                0
+            }
+        }
+        link_binary::put(output.bytes, offset + 64, flags, 4)
+    }
+
+    fn object_symbols(output: write ObjectOutput, object: object::CompilerObject) -> void {
+        link_binary::pad(output.bytes, link_binary::aligned(output.bytes.length(), 8))
+        let start = output.bytes.length()
+        var strings = std::bytes::filled(1, 0)
+        for index in 0..object.symbols.length() {
+            object_symbol(output, object.symbols[index], strings)
+        }
+        let strings_offset = output.bytes.length()
+        link_binary::append(output.bytes, strings)
+        let command: usize = 104 + object.sections.length() * 80
+        link_binary::put(output.bytes, command, 2, 4)
+        link_binary::put(output.bytes, command + 4, 24, 4)
+        link_binary::put(output.bytes, command + 8, u64.from(start), 4)
+        link_binary::put(output.bytes, command + 12, u64.from(object.symbols.length()), 4)
+        link_binary::put(output.bytes, command + 16, u64.from(strings_offset), 4)
+        link_binary::put(output.bytes, command + 20, u64.from(strings.length()), 4)
+    }
+
+    fn object_symbol(output: write ObjectOutput, symbol: object::Symbol, strings: write Vec<u8>) -> void {
+        let offset = output.bytes.length()
+        link_binary::pad(output.bytes, offset + 16)
+        link_binary::put(output.bytes, offset, u64.from(strings.length()), 4)
+        strings.push(95)
+        link_binary::append(strings, toolchain::text_bytes(symbol.name))
+        strings.push(0)
+        let global: u64 = match read symbol.binding {
+            object::SymbolLocal => 0,
+            _ => 1
+        }
+        match read symbol.section {
+            Some(section) => {
+                link_binary::put(output.bytes, offset + 4, 14 | global, 1)
+                link_binary::put(output.bytes, offset + 5, u64.from(section + 1), 1)
+                link_binary::put(output.bytes, offset + 8, output.addresses[section] + symbol.offset, 8)
+            }
+            None => {
+                link_binary::put(output.bytes, offset + 4, 1, 1)
+            }
+        }
+    }
+}

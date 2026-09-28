@@ -1,0 +1,97 @@
+module duplication {
+    fn detect(corpus: Corpus, rules: toolchain::DuplicationRules) -> Findings {
+        var index = Index {
+            heads: std::map::new(identity, equal), windows: Vec<Window>.new()
+        }
+        var output = Findings {
+            clones: Vec<Clone>.new(), duplicated: std::bytes::filled(corpus.lines, 0)
+        }
+        for file in 0..corpus.files.length() {
+            loan read corpus.files[file] as source {
+                if source.end - source.start < rules.min_tokens {
+                    continue
+                }
+                for start in source.start..source.end - rules.min_tokens + 1 {
+                    seed(corpus, start, rules, index, output)
+                }
+            }
+        }
+        return move output
+    }
+
+    fn seed(corpus: Corpus, start: usize, rules: toolchain::DuplicationRules, index: write Index, output: write Findings) -> void {
+        var hash: usize = 0
+        for offset in 0..rules.min_tokens {
+            hash = (hash * 31 + corpus.symbols[start + offset].value + 1) % 4294967291
+        }
+        let previous = std::map::with_value(index.heads, hash, identity)
+        var candidate = previous
+        while true {
+            match candidate {
+                None => {
+                    break
+                }
+                Some(position) => {
+                    compare(corpus, index.windows[position].start, start, rules, output)
+                    candidate = index.windows[position].next
+                }
+            }
+        }
+        std::map::insert(index.heads, hash, index.windows.length())
+        index.windows.push(Window {
+                start: start, next: previous
+            })
+    }
+
+    fn compare(corpus: Corpus, first: usize, second: usize, rules: toolchain::DuplicationRules, output: write Findings) -> void {
+        if preceding(corpus, first, second) {
+            return
+        }
+        let length = common_length(corpus, first, second)
+        if length < rules.min_tokens {
+            return
+        }
+        if line_count(corpus, first, length) < rules.min_lines || line_count(corpus, second, length) < rules.min_lines {
+            return
+        }
+        mark(corpus, first, length, output.duplicated)
+        mark(corpus, second, length, output.duplicated)
+        output.clones.push(Clone {
+                first: first, second: second, tokens: length
+            })
+    }
+
+    fn preceding(corpus: Corpus, first: usize, second: usize) -> bool {
+        if first == corpus.files[corpus.symbols[first].file].start {
+            return false
+        }
+        if second == corpus.files[corpus.symbols[second].file].start {
+            return false
+        }
+        return corpus.symbols[first - 1].value == corpus.symbols[second - 1].value
+    }
+
+    fn common_length(corpus: Corpus, first: usize, second: usize) -> usize {
+        let first_end = corpus.files[corpus.symbols[first].file].end
+        let second_end = corpus.files[corpus.symbols[second].file].end
+        var length: usize = 0
+        while first + length < first_end && second + length < second_end {
+            if corpus.symbols[first + length].value != corpus.symbols[second + length].value {
+                break
+            }
+            length = length + 1
+        }
+        return length
+    }
+
+    fn line_count(corpus: Corpus, start: usize, length: usize) -> usize {
+        return corpus.symbols[start + length - 1].code_line - corpus.symbols[start].code_line + 1
+    }
+
+    fn mark(corpus: Corpus, start: usize, length: usize, duplicated: write Vec<u8>) -> void {
+        let first = corpus.symbols[start].code_line
+        for line in first..first + line_count(corpus, start, length) {
+            duplicated[line] = 1
+        }
+    }
+}

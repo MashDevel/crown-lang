@@ -1,0 +1,128 @@
+module x86 {
+    struct LoopAnalysis {
+        predecessors: Vec<Vec<usize>>
+        dominators: ir::Dominators
+        by_header: Vec<ir::BitSet>
+    }
+
+    struct Backedge {
+        header: usize
+        tail: usize
+    }
+
+    fn codegen_loop_blocks(function: ir::Function) -> Vec<bool> {
+        let analysis = codegen_loop_analysis(function)
+        return codegen_valid_loop_union(function, analysis)
+    }
+
+    fn codegen_loop_analysis(function: ir::Function) -> LoopAnalysis {
+        var analysis = LoopAnalysis {
+            predecessors: ir::predecessors(function)
+            dominators: ir::dominators(function)
+            by_header: ir::bitset_graph(function.blocks.length())
+        }
+        var source: usize = 0
+        while source < function.blocks.length() {
+            match read function.blocks[source].terminator {
+                Some(terminator) => {
+                    let targets = ir::terminator_targets(terminator)
+                    codegen_collect_backedges(source, targets, analysis)
+                }
+                None => {
+                }
+            }
+            source = source + 1
+        }
+        return move analysis
+    }
+
+    fn codegen_collect_backedges(source: usize, targets: Vec<usize>, analysis: write LoopAnalysis) -> void {
+        var index: usize = 0
+        while index < targets.length() {
+            let header = targets[index]
+            if ir::dominates(analysis.dominators, source, header) {
+                codegen_collect_natural_loop(Backedge {
+                        header: header, tail: source
+                    }, analysis)
+            }
+            index = index + 1
+        }
+    }
+
+    fn codegen_collect_natural_loop(edge: take Backedge, analysis: write LoopAnalysis) -> void {
+        ir::bitset_insert(analysis.by_header[edge.header], edge.header)
+        ir::bitset_insert(analysis.by_header[edge.header], edge.tail)
+        var pending = Vec<usize>.new()
+        pending.push(edge.tail)
+        while pending.length() > 0 {
+            var block: usize = edge.header
+            match pending.pop() {
+                Some(value) => {
+                    block = value
+                }
+                None => {
+                    return
+                }
+            }
+            var index: usize = 0
+            while index < analysis.predecessors[block].length() {
+                let predecessor = analysis.predecessors[block][index]
+                if predecessor != edge.header && ir::dominates(analysis.dominators, predecessor, edge.header) && ir::bitset_contains(analysis.by_header[edge.header], predecessor) == false {
+                    ir::bitset_insert(analysis.by_header[edge.header], predecessor)
+                    pending.push(predecessor)
+                }
+                index = index + 1
+            }
+        }
+    }
+
+    fn codegen_valid_loop_union(function: ir::Function, analysis: LoopAnalysis) -> Vec<bool> {
+        var output = ir::flags_new(function.blocks.length())
+        var header: usize = 0
+        while header < analysis.by_header.length() {
+            if codegen_has_preheader(function, header, analysis) {
+                var index: usize = 0
+                while index < analysis.by_header[header].length {
+                    if ir::bitset_contains(analysis.by_header[header], index) {
+                        output[index] = true
+                    }
+                    index = index + 1
+                }
+            }
+            header = header + 1
+        }
+        return move output
+    }
+
+    fn codegen_has_preheader(function: ir::Function, header: usize, analysis: LoopAnalysis) -> bool {
+        var candidate: usize = 0
+        var count: usize = 0
+        var index: usize = 0
+        while index < analysis.predecessors[header].length() {
+            let block = analysis.predecessors[header][index]
+            if ir::bitset_contains(analysis.by_header[header], block) == false {
+                candidate = block;
+                count = count + 1
+            }
+            index = index + 1
+        }
+        if count != 1 {
+            return false
+        }
+        match read function.blocks[candidate].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorBranch(target) => {
+                        return target == header
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}

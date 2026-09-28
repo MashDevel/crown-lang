@@ -1,0 +1,15 @@
+module std {
+    module text {
+        const HASH_OFFSET: usize = 2166136261
+        const HASH_PRIME: usize = 16777619
+
+        fn hash(value: TextView) -> usize {
+            var result = HASH_OFFSET
+            for index in 0..value.length() {
+                let mixed = result ^ usize.from(value[index])
+                result = mixed.wrapping_mul(HASH_PRIME)
+            }
+            return result
+        }
+    }
+}

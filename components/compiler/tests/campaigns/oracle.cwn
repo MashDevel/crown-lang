@@ -1,0 +1,75 @@
+module campaign {
+    struct Reference {
+        rows: Vec<Text>, checksum: Text
+    }
+
+    fn reference(root: Text, name: Text) -> Result<Reference, Text> {
+        let directory = toolchain::path_join(root, "components/compiler/tests/fixtures/oracles")
+        let metadata = reference_metadata(directory, name)?
+        let path = toolchain::path_join(directory, std::text::joined(name, ".tsv"))
+        let rows = reference_rows(path, metadata.count, metadata.checksum)?
+        return Ok(Reference {
+                rows: move rows, checksum: metadata.checksum.clone()
+            })
+    }
+
+    struct ReferenceMetadata {
+        count: u64, checksum: Text
+    }
+
+    fn reference_metadata(directory: Text, name: Text) -> Result<ReferenceMetadata, Text> {
+        let manifest = toolchain::json(toolchain::read_text(toolchain::path_join(directory, "manifest.json"))?)?
+        let tables = toolchain::json_required(manifest, manifest.root, "tables")?
+        let table = toolchain::json_required(manifest, tables, name)?
+        let count = toolchain::json_integer(manifest, toolchain::json_required(manifest, table, "rows")?)?
+        let checksum = toolchain::json_text(manifest, toolchain::json_required(manifest, table, "sha256")?)?
+        return Ok(ReferenceMetadata {
+                count: count, checksum: move checksum
+            })
+    }
+
+    fn reference_rows(path: Text, count: u64, checksum: Text) -> Result<Vec<Text>, Text> {
+        if std::text::equal(toolchain::digest(path)?, checksum) == false {
+            return Err("independent reference table checksum mismatch")
+        }
+        var rows = std::text::split(toolchain::read_text(path)?, 10)
+        if rows.length() != 0 && rows[rows.length() - 1].length() == 0 {
+            rows.pop()
+        }
+        if u64.from(rows.length()) != count {
+            return Err("independent reference table row count mismatch")
+        }
+        return Ok(move rows)
+    }
+
+    fn state(environment: harness::Environment) -> Result<void, Text> {
+        let table = reference(environment.root, "state")?
+        let path = toolchain::path_join(environment.root, "components/compiler/tests/generative/state_machine.cwn")
+        let sources = toolchain::require_sources(toolchain::single_source(path, toolchain::host_target()))?
+        let binary = harness::build_program(environment, sources, 128)?
+        var results = harness::report()
+        for index in 0..table.rows.length() {
+            let row = std::text::split(table.rows[index], 9)
+            let result = state_case(binary, row, environment.output)
+            harness::record_result(results, harness::outcome(table.rows[index], move result))
+        }
+        if harness::finish_report(results, environment.output)? != 0 {
+            return Err("state-machine reference mismatch")
+        }
+        return Ok(())
+    }
+
+    fn state_case(binary: Text, row: Vec<Text>, output: Text) -> Result<void, Text> {
+        if row.length() != 2 {
+            return Err("invalid state reference row")
+        }
+        var arguments = Vec<Text>.new()
+        arguments.push(binary.clone());
+        arguments.push(row[0].clone())
+        let result = harness::invoke(move arguments, output)?
+        if result.status != 0 || result.stderr.length() != 0 || std::text::equal(result.stdout, std::text::joined(row[1], "\n")) == false {
+            return Err(std::text::joined("state-machine output differs from independent reference: ", result.stdout))
+        }
+        return Ok(())
+    }
+}

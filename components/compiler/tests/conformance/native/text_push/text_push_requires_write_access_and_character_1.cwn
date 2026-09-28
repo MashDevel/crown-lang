@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let value = Text.new()
+    value.push('a')
+    return 0
+}

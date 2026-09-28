@@ -1,0 +1,14 @@
+fn wrapped_unsigned() -> u8 {
+    let maximum: u8 = 255
+    return maximum.wrapping_add(1)
+}
+fn wrapped_signed() -> bool {
+    let maximum: i8 = 127
+    return maximum.wrapping_add(1) == -128
+}
+fn main() -> u32 {
+    if wrapped_signed() {
+        return u32.from(wrapped_unsigned())
+    }
+    return 1
+}

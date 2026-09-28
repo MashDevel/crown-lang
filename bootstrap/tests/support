@@ -1,0 +1,37 @@
+expect_failure() {
+    if "$@" > "$scratch/failure.log" 2>&1; then
+        printf 'expected failure: %s\n' "$*" >&2
+        exit 1
+    fi
+}
+fixture() {
+    fixture_number=$((fixture_number + 1))
+    project="$scratch/project $fixture_number"
+    assets="$scratch/assets $fixture_number"
+    mkdir -p "$project/bootstrap/locks" "$assets"
+    for file in assets crown fetch fetch-compiler host checksum digest.awk package-seed package-release publish-release seed-release repository; do
+        cp "$root/bootstrap/$file" "$project/bootstrap/$file"
+    done
+}
+seed() {
+    mkdir -p "$project/bootstrap/$host"
+    printf 'seed for %s\n' "$host" > "$project/bootstrap/$host/compiler.s"
+    digest=$(sh "$root/bootstrap/checksum" "$project/bootstrap/$host/compiler.s")
+    printf '{"assembly_sha256":"%s"}\n' "$digest" > "$project/bootstrap/$host/manifest.json"
+    sh "$project/bootstrap/package-seed" "$host" "$assets"
+    cp "$assets/crown-bootstrap-$host.lock.json" "$project/bootstrap/locks/$host.json"
+    mv "$project/bootstrap/$host" "$project/original"
+}
+fetch() {
+    CROWN_BOOTSTRAP_ASSETS="$assets" sh "$project/bootstrap/fetch" "$host"
+}
+equal_seed() {
+    cmp "$project/original/compiler.s" "$project/bootstrap/$host/compiler.s"
+    cmp "$project/original/manifest.json" "$project/bootstrap/$host/manifest.json"
+}
+lock_digest() {
+    lock="$project/bootstrap/locks/$host.json"
+    replacement=$(sh "$root/bootstrap/checksum" "$2")
+    sed "s/\"$1\":\"[0-9a-f]*\"/\"$1\":\"$replacement\"/" "$lock" > "$lock.new"
+    mv "$lock.new" "$lock"
+}

@@ -1,0 +1,74 @@
+module ir {
+    fn collect_definitions(function: Function, id: usize) -> Result<Vec<bool>, ValidationError> {
+        var definitions = Vec<bool>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            definitions.push(false)
+            index = index + 1
+        }
+        index = 0
+        while index < function.parameters.length() {
+            insert_definition(definitions, id, function.parameters[index])?
+            index = index + 1
+        }
+        index = 0
+        while index < function.constants.length() {
+            loan read function.constants[index] as entry {
+                validate_constant_definition(function, id, entry)?
+                insert_definition(definitions, id, entry.id)?
+            }
+            index = index + 1
+        }
+        return collect_instruction_definitions(function, id, move definitions)
+    }
+
+    fn validate_constant_definition(function: Function, id: usize, entry: ConstantEntry) -> Result<void, ValidationError> {
+        if entry.id >= function.values.length() {
+            return Err(validation_value_error(ValidationInvalidValue(), id, entry.id))
+        }
+        loan read function.values[entry.id] as value_type {
+            if type_equal(value_type, entry.value_type) == false || constant_matches(entry.value, value_type) == false {
+                return Err(validation_value_error(ValidationInvalidConstant(), id, entry.id))
+            }
+        }
+        return Ok(())
+    }
+
+    fn collect_instruction_definitions(function: Function, id: usize, definitions: take Vec<bool>) -> Result<Vec<bool>, ValidationError> {
+        var output = move definitions
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var instruction: usize = 0
+            while instruction < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[instruction].result {
+                    Some(value) => {
+                        match insert_definition(output, id, value) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(item) => {
+                                item
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                instruction = instruction + 1
+            }
+            block = block + 1
+        }
+        return Ok(move output)
+    }
+
+    fn insert_definition(definitions: write Vec<bool>, id: usize, value: usize) -> Result<void, ValidationError> {
+        if value >= definitions.length() {
+            return Err(validation_value_error(ValidationInvalidValue(), id, value))
+        }
+        if definitions[value] {
+            return Err(validation_value_error(ValidationDuplicateValue(), id, value))
+        }
+        definitions[value] = true
+        return Ok(())
+    }
+}

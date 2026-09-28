@@ -1,0 +1,25 @@
+enum Item {
+    Value(u32), Empty
+}
+fn inspect(item: read Item) -> u32 {
+    match read item {
+        Value(value) => {
+            return value
+        }
+        Empty => {
+            return 0
+        }
+    }
+}
+fn main() -> u32 {
+    let item = Value(42)
+    let result = inspect(item)
+    match move item {
+        Value(value) => {
+            return result + value - 42
+        }
+        Empty => {
+            return 0
+        }
+    }
+}

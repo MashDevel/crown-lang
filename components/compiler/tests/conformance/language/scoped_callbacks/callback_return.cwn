@@ -1,0 +1,6 @@
+fn escape(action: scoped fn() -> void) -> scoped fn() -> void {
+    return action
+}
+fn main() -> u32 {
+    return 0
+}

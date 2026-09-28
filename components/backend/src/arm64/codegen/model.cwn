@@ -1,0 +1,73 @@
+module arm64 {
+    struct BranchFixup {
+        offset: usize, block: usize
+    }
+    struct SymbolFixup {
+        offset: u64, name: Text, kind: object::RelocationKind
+    }
+    struct Compiler {
+        variant: AbiVariant
+        frame: Frame
+        constants: Vec<Option<ir::WideInteger>>
+        bytes: Vec<u8>
+        symbols: Vec<SymbolFixup>
+        branches: Vec<BranchFixup>
+        blocks: Vec<usize>
+        error: Text
+        block: usize
+        target: u32
+        result_register: u32
+        normalized: bool
+    }
+    fn compiler_new(function: ir::Function, variant: AbiVariant) -> Result<Compiler, Text> {
+        return Ok(Compiler {
+                variant: variant, frame: frame_new(function)?, constants: value_constants(function), bytes: Vec<u8>.new(),
+                symbols: Vec<SymbolFixup>.new(), branches: Vec<BranchFixup>.new(),
+                blocks: Vec<usize>.new(), error: "", block: 0, target: 9, result_register: 9, normalized: false
+            })
+    }
+    fn emit(compiler: write Compiler, word: u32) -> void {
+        append_word(compiler.bytes, word)
+    }
+    fn emit_registers(compiler: write Compiler, opcode: u32, destination: u32, left: u32, right: u32) -> void {
+        emit_encoding(compiler, register_word(opcode, Registers {
+                    destination: destination, left: left, right: right
+                }))
+        return
+    }
+    fn relocate(compiler: write Compiler, name: Text, kind: object::RelocationKind) -> void {
+        compiler.symbols.push(SymbolFixup {
+                offset: u64.from(compiler.bytes.length()), name: name.clone(), kind: kind
+            })
+    }
+    fn call_symbol(compiler: write Compiler, name: Text) -> void {
+        relocate(compiler, name, object::RelocationArmBranch26())
+        emit_encoding(compiler, branch_word(0, true))
+        return
+    }
+    fn symbol_address(compiler: write Compiler, name: Text, register: u32) -> void {
+        relocate(compiler, name, object::RelocationArmGotPage21())
+        emit_encoding(compiler, page_address(register, 0))
+        relocate(compiler, name, object::RelocationArmGotLoadPageOffset12())
+        emit_encoding(compiler, memory_word(register, register, 0, 8, true))
+        return
+    }
+    fn patch_branch(compiler: write Compiler, offset: usize, destination: usize) -> void {
+        if offset > compiler.bytes.length() || compiler.bytes.length() - offset < 4 {
+            encoding_error(compiler, "ARM64 branch patch is outside its code")
+            return
+        }
+        let word = match branch_word(i64.from(destination) - i64.from(offset), false) {
+            Ok(value) => value
+            Err(error) => {
+                encoding_error(compiler, move error);
+                return
+            }
+        }
+        for byte in 0..4 {
+            compiler.bytes[offset + byte] = u8.from((word >> u32.from(byte * 8)) & 255)
+        }
+        return
+    }
+
+}

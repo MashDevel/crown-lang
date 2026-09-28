@@ -1,0 +1,100 @@
+module guest_tests {
+    fn protocol() -> Result<void, Text> {
+        let response = guest::request("write", "{\"handle\":7}", fn(message) {
+                testing::expect(std::text::ends(message, "\n"), "request newline")?
+                let document = toolchain::json(message.clone())?
+                let command = toolchain::json_text(document, toolchain::json_required(document, document.root, "execute")?)?
+                testing::expect(std::text::equal(command, "write"), "request name")?
+                return Ok("{\"return\":{\"count\":3}}")
+            })?
+        testing::expect(guest::number(response, "count")? == 3, "response count")?
+        testing::error(guest::request("write", "{}", fn(message) {
+                    message;
+                    return Ok("{\"error\":{\"desc\":\"denied\"}}")
+                }))?
+        testing::error(guest::request("write", "{}", fn(message) {
+                    message;
+                    return Ok("{}")
+                }))?
+        testing::error(guest::request("write", "{}", fn(message) {
+                    message;
+                    return Ok("malformed")
+                }))?
+        let pid = guest::execute("program", fn(message) {
+                testing::expect(std::text::contains(message, "\"capture-output\":true"), "capture guest output")?
+                return Ok("{\"return\":{\"pid\":5}}")
+            })?
+        return testing::expect(pid == 5, "guest execution pid")
+    }
+
+    fn wait() -> Result<void, Text> {
+        var count: usize = 0
+        var pauses: usize = 0
+        let result = guest::wait(5, 100, fn[write count](message) {
+                testing::expect(std::text::contains(message, "\"pid\":5"), "wait pid")?
+                count = count + 1
+                if count == 1 {
+                    return Ok("{\"return\":{\"exited\":false}}")
+                }
+                return Ok("{\"return\":{\"exited\":true,\"exitcode\":42}}")
+            }, fn() {
+                return u64.from(0)
+            }, fn[write pauses]() {
+                pauses = pauses + 1
+            })?
+        testing::expect(count == 2 && pauses == 1 && guest::status(result)? == 42, "poll and exit")?
+        return timeouts()
+    }
+
+    fn timeouts() -> Result<void, Text> {
+        var clock: u64 = 0
+        testing::error(guest::wait(5, 1, fn(message) {
+                    message;
+                    return Err("must not execute")
+                }, fn[write clock]() {
+                    clock = clock + 1;
+                    return clock
+                }, fn() {
+                }))?
+        var time: u64 = 0
+        testing::error(guest::wait(5, 2, fn(message) {
+                    message;
+                    return Ok("{\"return\":{\"exited\":false}}")
+                }, fn[write time]() {
+                    time = time + 1;
+                    return time
+                }, fn() {
+                }))?
+        testing::error(guest::exited(toolchain::json("{\"exited\":1}")?))?
+        return testing::expect(guest::exited(toolchain::json("{}")?)? == false, "absent exited flag")
+    }
+
+    fn output() -> Result<void, Text> {
+        let result = toolchain::json("{\"exitcode\":42,\"out-data\":\"b3V0\",\"err-data\":\"ZXJy\"}")?
+        testing::expect(guest::status(result)? == 42, "exit status")?
+        testing::expect(std::text::equal(std::text::from_bytes(guest::output(result, "out-data")?)?, "out"), "stdout")?
+        testing::expect(std::text::equal(std::text::from_bytes(guest::output(result, "err-data")?)?, "err"), "stderr")?
+        return exit_statuses()
+    }
+
+    fn exit_statuses() -> Result<void, Text> {
+        testing::expect(guest::status(toolchain::json("{\"signal\":9}")?)? == 137, "signal status")?
+        testing::expect(guest::status(toolchain::json("{}")?)? == 128, "missing status")?
+        let empty = guest::output(toolchain::json("{}")?, "out-data")?
+        testing::expect(empty.length() == 0, "missing output")?
+        return run_options()
+    }
+
+    fn run_options() -> Result<void, Text> {
+        let options = guest::options(testing::list("guest|--socket|socket"))?
+        testing::expect(guest::run(options, fn(message) {
+                    message;
+                    return Err("unexpected request")
+                })? == 0, "no command")?
+        let waiting = guest::options(testing::list("guest|--socket|socket|--wait-pid|17"))?
+        return testing::expect(guest::run(waiting, fn(message) {
+                    testing::expect(std::text::contains(message, "guest-exec-status") && std::text::contains(message, "\"pid\":17"), "resume guest process")?
+                    return Ok("{\"return\":{\"exited\":true,\"exitcode\":42}}")
+                })? == 42, "resumed exit")
+    }
+}

@@ -1,0 +1,18 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+    var values = Vec<Item>.new()
+    values.push(Item {
+            value: 3
+        })
+    let item = values.pop()
+    match move item {
+        Some(value) => {
+            return value.value
+        }
+        None => {
+            return 0
+        }
+    }
+}

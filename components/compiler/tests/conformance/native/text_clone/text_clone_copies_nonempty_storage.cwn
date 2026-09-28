@@ -1,0 +1,16 @@
+fn main() -> u32 {
+    let original = "crown"
+    let copied = original.clone()
+    if copied.length() != 5 {
+        return 1
+    }
+    unsafe {
+        if original.as_raw() == copied.as_raw() {
+            return 2
+        }
+        if copied.as_raw().read() != 99 {
+            return 3
+        }
+    }
+    return 42
+}

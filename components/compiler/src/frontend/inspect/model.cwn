@@ -1,0 +1,76 @@
+module inspect {
+    copy enum Kind {
+        Function, EndFunction, Statement, Expression, Control, Decision, Arm, Return
+    }
+    copy struct Node {
+        kind: Kind, span: frontend::Span, depth: usize, count: usize
+    }
+    struct Walk {
+        nodes: Vec<Node>, depth: usize
+    }
+
+    fn emit(walk: write Walk, kind: Kind, span: frontend::Span, count: usize) -> void {
+        walk.nodes.push(Node {
+                kind: kind, span: span, depth: walk.depth, count: count
+            })
+    }
+
+    fn program(program: frontend::Program) -> Vec<Node> {
+        var walk = Walk {
+            nodes: Vec<Node>.new(), depth: 0
+        }
+        for index in 0..program.functions.length() {
+            function(walk, program.functions[index])
+        }
+        for index in 0..program.resources.length() {
+            loan read program.resources[index] as declaration {
+                callable(walk, declaration.drop_body, declaration.span, 0)
+            }
+        }
+        for index in 0..program.implementations.length() {
+            loan read program.implementations[index] as implementation {
+                for method in 0..implementation.methods.length() {
+                    function(walk, implementation.methods[method])
+                }
+            }
+        }
+        return replace(walk.nodes, Vec<Node>.new())
+    }
+
+    fn function(walk: write Walk, function: frontend::Function) -> void {
+        callable(walk, function.body, function.span, function.parameters.length())
+    }
+
+    fn callable(walk: write Walk, body: Vec<frontend::Statement>, span: frontend::Span, parameters: usize) -> void {
+        let depth = walk.depth
+        walk.depth = 0
+        emit(walk, Kind::Function(), span, parameters)
+        statements(walk, body)
+        emit(walk, Kind::EndFunction(), span, 0)
+        walk.depth = depth
+    }
+
+    fn statements(walk: write Walk, body: Vec<frontend::Statement>) -> void {
+        for index in 0..body.length() {
+            statement(walk, body[index])
+        }
+    }
+
+    fn nested(walk: write Walk, body: Vec<frontend::Statement>) -> void {
+        walk.depth = walk.depth + 1
+        statements(walk, body)
+        walk.depth = walk.depth - 1
+    }
+
+    fn boxed(walk: write Walk, value: Box<frontend::Expression>) -> void {
+        loan read value as expression {
+            expression_node(walk, expression)
+        }
+    }
+
+    fn expressions(walk: write Walk, values: Vec<frontend::Expression>) -> void {
+        for index in 0..values.length() {
+            expression_node(walk, values[index])
+        }
+    }
+}

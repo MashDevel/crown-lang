@@ -1,0 +1,84 @@
+fn lower_source() -> Result<lowering::Compiler, u32> {
+    let source = frontend_test_source("interface Counter {\nfn value(self: read Self) -> u32\n}\nstruct Inner { answer: u32 }\nstruct Outer { inner: Inner }\nstruct ArenaItem { value: u32 }\nstruct Count { value: u32 }\nimpl Counter for Count {\nfn value(self: read Count) -> u32 { return self.value }\n}\nfn nested() -> u32 {\nlet nothing = ()\nnothing\nvar value = Outer { inner: Inner { answer: 41 } }\nvalue.inner.answer = 42\nreturn value.inner.answer\n}\nfn arena_paths() -> u32 {\nvar items = Arena<ArenaItem>.new()\nlet handle = items.insert(ArenaItem { value: 41 })\nitems.with(handle) as write item {\nitem.value = item.value + 1\n}\nmatch items.remove(handle) {\nSome(item) => { return item.value }\nNone => { return 0 }\n}\n}\nfn slice_paths() -> u32 {\nlet values = [40, 2]\nloan read values[0..2] as all { return all[0] + all[1] }\n}\nfn apply(action: read fn(u32, u32) -> u32) -> u32 { return action(40, 2) }\nfn function_paths() -> u32 { return apply(fn(left, right) { return left + right }) }\nfn concurrency_paths() -> u32 {\nlet channel = Channel<u32>.new()\nlet worker = channel.share()\nvar thread = spawn move { worker.send(42) }\nthread.join()\nmatch channel.try_receive() { Some(value) => { return value } None => { return 0 } }\n}\nfn dynamic_paths() -> u32 {\nvar counter: dynamic Counter = Count { value: 42 }\nreturn counter.value()\n}\nfn lock_paths() -> u32 {\nlet state = Shared.new(Mutex.new(Count { value: 42 }))\nstate.lock write as current { return current.value }\n}\nfn unsafe_paths() -> u32 {\nlet values = [42]\nunsafe { return values.get_unchecked(0) }\n}\nfn main() -> u32 {\nlet answer = 42\nreturn answer\n}\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            return Err(u32.from(diagnostics.length()))
+        }
+        Ok(program) => {
+            let analysis = sema::analyze(source.bytes.share(), program)
+            if analysis.errors != 0 {
+                return Err(1)
+            }
+            var compiler = lowering::compiler_new()
+            lowering::declare_program(compiler, analysis)?
+            let input = lowering::ProgramInput {
+                analysis: move analysis, program: move program
+            }
+            lowering::lower_program(compiler, input)?
+            return Ok(move compiler)
+        }
+    }
+}
+
+fn lowered_main_shape(compiler: lowering::Compiler) -> bool {
+    let entry = match read compiler.output.entry {
+        Some(value) => value
+        None => {
+            return false
+        }
+    }
+    if entry >= compiler.output.functions.length() {
+        return false
+    }
+    loan read compiler.output.functions[entry] as function {
+        if function.blocks.length() != 1 {
+            return false
+        }
+        if function.blocks[0].instructions.length() != 3 {
+            return false
+        }
+        match read function.blocks[0].terminator {
+            Some(terminator) => {
+                return returns_known_value(terminator, function.values.length())
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}
+
+fn returns_known_value(terminator: ir::Terminator, values: usize) -> bool {
+    match read terminator {
+        ir::TerminatorReturn(value) => {
+            match read value {
+                Some(result) => result < values
+                None => false
+            }
+        }
+        _ => false
+    }
+}
+
+fn main() -> u32 {
+    match lower_source() {
+        Err(error) => {
+            return error
+        }
+        Ok(compiler) => {
+            match ir::validate_program(compiler.output) {
+                Err(error) => {
+                    error;
+                    return 2
+                }
+                Ok(value) => {
+                    value
+                }
+            }
+            if lowered_main_shape(compiler) == false {
+                return 3
+            }
+        }
+    }
+    return 42
+}

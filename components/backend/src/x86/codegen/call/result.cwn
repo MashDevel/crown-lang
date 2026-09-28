@@ -1,0 +1,95 @@
+module x86 {
+    fn codegen_store_call_result(program: ir::Program, compiler: write FunctionCompiler, input: take CallResult) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < input.signature.parameter_abi.length() {
+            match read input.signature.parameter_abi[index] {
+                ir::ParameterReturn(aggregate) => {
+                    if index >= input.arguments.length() {
+                        return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+                    }
+                    match read aggregate {
+                        ir::AggregateMemory(size, alignment) => {
+                            size;
+                            alignment;
+                            return Ok(())
+                        }
+                        ir::AggregateRegisters(size, alignment, components) => {
+                            size;
+                            alignment
+                            let returned = ReturnAggregate {
+                                value: input.arguments[index]
+                                components: codegen_abi_components_copy(components)
+                            }
+                            return codegen_store_return_components(program, compiler, move returned)
+                        }
+                    }
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        return codegen_store_optional_call_result(program, compiler, input.result)
+    }
+
+    fn codegen_store_return_components(program: ir::Program, compiler: write FunctionCompiler, returned: take ReturnAggregate) -> Result<void, CodegenError> {
+        codegen_load_value(program, compiler, ValueAccess {
+                value: returned.value, register: R11()
+            })?
+        var registers = ReturnRegisters {
+            integer: 0, float: 0
+        }
+        var index: usize = 0
+        while index < returned.components.length() {
+            loan read returned.components[index] as component {
+                let source = codegen_return_component_source(compiler, component, registers)?
+                codegen_store_return_component(compiler, component, source)?
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn codegen_return_component_source(compiler: write FunctionCompiler, component: ir::AbiComponent, registers: write ReturnRegisters) -> Result<Register, CodegenError> {
+        if ir::type_is_float(component.value_type) {
+            let register = match codegen_return_float_register(registers.float) {
+                Some(value) => value
+                None => {
+                    return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                }
+            }
+            let width = codegen_float_width(component.value_type)?
+            codegen_emit(compiler, MoveFromFloat(width, R10(), register))
+            registers.float = registers.float + 1
+            return Ok(R10())
+        }
+        let register = match codegen_return_integer_register(registers.integer) {
+            Some(value) => value
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        registers.integer = registers.integer + 1
+        return Ok(register)
+    }
+
+    fn codegen_store_return_component(compiler: write FunctionCompiler, component: ir::AbiComponent, source: take Register) -> Result<void, CodegenError> {
+        if component.offset > 2147483647 {
+            return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
+        }
+        match codegen_width(component.value_type) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(width) => {
+                codegen_emit(compiler, StoreSized(StoreSizedArgs {
+                            base: R11()
+                            offset: i32.from(component.offset)
+                            source: source
+                            width: width
+                        }))
+                return Ok(())
+            }
+        }
+    }
+}

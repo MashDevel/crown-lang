@@ -1,0 +1,128 @@
+module optimize {
+    struct Induction {
+        header: usize
+        preheader: usize
+        latch: usize
+        value: usize
+        start: usize
+        step: usize
+        next: usize
+        operator: ir::BinaryOperator
+        value_type: ir::Type
+    }
+
+    copy struct InductionStep {
+        value: usize
+        operator: ir::BinaryOperator
+    }
+
+    struct ScaledInduction {
+        block: usize
+        instruction: usize
+        result: usize
+        factor: usize
+    }
+
+    fn induction_find(function: ir::Function, natural_loop: NaturalLoop) -> Vec<Induction> {
+        let header = memory_loop_header(function, natural_loop.preheader)
+        var output = Vec<Induction>.new()
+        for index in 0..function.blocks[header].instructions.length() {
+            match induction_phi(function, natural_loop, function.blocks[header].instructions[index]) {
+                Some(value) => {
+                    output.push(move value)
+                }
+                None => {
+                }
+            }
+        }
+        return move output
+    }
+
+    fn induction_phi(function: ir::Function, natural_loop: NaturalLoop, instruction: ir::Instruction) -> Option<Induction> {
+        let result = match instruction.result {
+            Some(value) => value,
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                if incoming.length() != 2 || ir::type_is_integer(value_type) == false {
+                    return None()
+                }
+                var entry: usize = 0
+                if incoming[entry].block != natural_loop.preheader {
+                    entry = 1
+                }
+                if incoming[entry].block != natural_loop.preheader {
+                    return None()
+                }
+                let back = incoming[1 - entry]
+                if natural_loop.blocks[back.block] == false {
+                    return None()
+                }
+                let step = induction_step(function, back, result)
+                match step {
+                    Some(value) => Some(Induction {
+                            header: memory_loop_header(function, natural_loop.preheader)
+                            preheader: natural_loop.preheader, latch: back.block, value: result
+                            start: incoming[entry].value, step: value.value, next: back.value, operator: value.operator, value_type: value_type
+                        })
+                    None => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn induction_step(function: ir::Function, back: ir::PhiIncoming, value: usize) -> Option<InductionStep> {
+        for index in 0..function.blocks[back.block].instructions.length() {
+            loan read function.blocks[back.block].instructions[index] as instruction {
+                match instruction.result {
+                    Some(result) => {
+                        if result == back.value {
+                            return induction_addend(function, instruction.kind, value)
+                        }
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return None()
+    }
+
+    fn induction_addend(function: ir::Function, kind: ir::InstructionKind, value: usize) -> Option<InductionStep> {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                let constant = induction_operand(operator, left, right, value)
+                match constant {
+                    Some(id) => {
+                        if integer_constant(function, id) != None() {
+                            return Some(InductionStep {
+                                    value: id, operator: operator
+                                })
+                        }
+                    }
+                    None => {
+                    }
+                }
+                return None()
+            }
+            _ => None()
+        }
+    }
+
+    fn induction_operand(operator: ir::BinaryOperator, left: usize, right: usize, value: usize) -> Option<usize> {
+        if operator != ir::BinaryAdd() && operator != ir::BinarySubtract() {
+            return None()
+        }
+        if left == value {
+            return Some(right)
+        }
+        if operator == ir::BinaryAdd() && right == value {
+            return Some(left)
+        }
+        return None()
+    }
+}

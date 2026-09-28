@@ -1,0 +1,9 @@
+copy struct Point {
+    x: u32
+}
+fn consume(value: take Point) -> u32 {
+    return value.x
+}
+fn main() -> u32 {
+    return 0
+}

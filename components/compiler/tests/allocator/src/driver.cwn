@@ -1,0 +1,37 @@
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() != 3 {
+        return 5
+    }
+    match build_audited(arguments[1].clone(), arguments[2].clone()) {
+        Ok(value) => {
+            value;
+            return 0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
+}
+
+fn build_audited(source: Text, output: Text) -> Result<void, Text> {
+    let sources = toolchain::require_sources(toolchain::single_source(source, toolchain::host_target()))?
+    let checked = frontend::checked_sources(sources, 128)?
+    var object = frontend::instrumented_object(move checked, "", toolchain::optimization_options(), toolchain::host_target())?
+    auditor::instrument(object)
+    let runtime = auditor::runtime_object()?
+    link_object::merge(object, move runtime)?
+    return link_audited(move object, output)
+}
+
+fn link_audited(object: take object::CompilerObject, output: Text) -> Result<void, Text> {
+    if toolchain::host_target().platform == toolchain::Platform::Linux() {
+        var options = toolchain::options("build")
+        options.output = output.clone()
+        frontend::linux_executable(move object, options)?;
+        return Ok(())
+    }
+    let bytes = macho::executable(object, macho::libraries(Vec<Text>.new())?)?
+    frontend::write_native_executable(output, bytes)?;
+    return Ok(())
+}

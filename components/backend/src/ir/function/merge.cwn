@@ -1,0 +1,299 @@
+module ir {
+    struct MergePlan {
+        next: Vec<Option<usize>>
+        targets: Vec<bool>
+    }
+
+    fn function_merge_linear_blocks(function: write Function) -> usize {
+        let plan = merge_plan(function)
+        if merge_targets_empty(plan.targets) {
+            return 0
+        }
+        var representatives = block_representatives(function.blocks.length())
+        var replacements = merge_none_values(function.values.length())
+        let merged = merge_chains(function, plan, representatives, replacements)
+        replace_merged_values(function, replacements)
+        replace_merged_blocks(function, representatives)
+        function_prune_unreachable(function)
+        return merged
+    }
+
+    fn merge_plan(function: Function) -> MergePlan {
+        let counts = predecessor_counts(function)
+        var next = Vec<Option<usize>>.with_capacity(function.blocks.length())
+        var targets = Vec<bool>.with_capacity(function.blocks.length())
+        var index: usize = 0
+        while index < function.blocks.length() {
+            targets.push(false);
+            index = index + 1
+        }
+        var source: usize = 0
+        while source < function.blocks.length() {
+            let target = merge_candidate(function, counts, source)
+            match read target {
+                Some(value) => {
+                    targets[value] = true
+                }
+                None => {
+                }
+            }
+            next.push(target)
+            source = source + 1
+        }
+        return MergePlan {
+            next: move next, targets: move targets
+        }
+    }
+
+    fn merge_candidate(function: Function, counts: Vec<usize>, source: usize) -> Option<usize> {
+        match read function.blocks[source].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    TerminatorBranch(target) => {
+                        if target != 0 && target != source && counts[target] == 1 {
+                            return Some(target)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        return None()
+    }
+
+    fn predecessor_counts(function: Function) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(function.blocks.length())
+        var index: usize = 0
+        while index < function.blocks.length() {
+            output.push(0);
+            index = index + 1
+        }
+        var source: usize = 0
+        while source < function.blocks.length() {
+            match read function.blocks[source].terminator {
+                Some(terminator) => {
+                    count_predecessor_targets(output, terminator_targets(terminator))
+                }
+                None => {
+                }
+            }
+            source = source + 1
+        }
+        return move output
+    }
+
+    fn count_predecessor_targets(counts: write Vec<usize>, targets: take Vec<usize>) -> void {
+        var seen = Vec<bool>.with_capacity(counts.length())
+        var index: usize = 0
+        while index < counts.length() {
+            seen.push(false);
+            index = index + 1
+        }
+        index = 0
+        while index < targets.length() {
+            let target = targets[index]
+            if seen[target] == false {
+                counts[target] = counts[target] + 1;
+                seen[target] = true
+            }
+            index = index + 1
+        }
+    }
+
+    fn block_representatives(length: usize) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(index);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn merge_chains(function: write Function, plan: MergePlan, representatives: write Vec<usize>, replacements: write Vec<Option<usize>>) -> usize {
+        var merged: usize = 0
+        var root: usize = 0
+        while root < function.blocks.length() {
+            if plan.targets[root] == false {
+                var source = root
+                var active = true
+                while active {
+                    var target: usize = 0
+                    match read plan.next[source] {
+                        Some(value) => {
+                            target = value
+                        }
+                        None => {
+                            active = false
+                        }
+                    }
+                    if active {
+                        merge_planned_block(function, root, target, replacements)
+                        representatives[target] = root
+                        merged = merged + 1
+                        source = target
+                    }
+                }
+            }
+            root = root + 1
+        }
+        return merged
+    }
+
+    fn merge_planned_block(function: write Function, root: usize, target: usize, replacements: write Vec<Option<usize>>) -> void {
+        var copied = basic_block_new()
+        loan read function.blocks[target] as block {
+            copied = basic_block_copy(block)
+        }
+        var index: usize = 0
+        while index < copied.instructions.length() {
+            loan read copied.instructions[index] as instruction {
+                if instruction_is_phi(instruction.kind) {
+                    record_merged_phi(instruction, replacements)
+                } else {
+                    function.blocks[root].instructions.push(instruction_copy(instruction))
+                }
+            }
+            index = index + 1
+        }
+        match read copied.terminator {
+            Some(terminator) => {
+                function.blocks[root].terminator = Some(terminator_copy(terminator))
+            }
+            None => {
+                function.blocks[root].terminator = None()
+            }
+        }
+    }
+
+    fn record_merged_phi(instruction: Instruction, replacements: write Vec<Option<usize>>) -> void {
+        match read instruction.result {
+            Some(result) => {
+                match read instruction.kind {
+                    InstructionPhi(value_type, incoming) => {
+                        value_type
+                        if incoming.length() > 0 {
+                            replacements[result] = Some(incoming[0].value)
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+    }
+
+    fn replace_merged_values(function: write Function, replacements: Vec<Option<usize>>) -> void {
+        var value: usize = 0
+        while value < replacements.length() {
+            let resolved = resolve_merged_value(value, replacements)
+            if resolved != value {
+                function_replace_uses(function, value, resolved)
+            }
+            value = value + 1
+        }
+    }
+
+    fn merge_targets_empty(targets: Vec<bool>) -> bool {
+        var index: usize = 0
+        while index < targets.length() {
+            if targets[index] {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn merge_none_values(length: usize) -> Vec<Option<usize>> {
+        var output = Vec<Option<usize>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn resolve_merged_value(value: usize, replacements: Vec<Option<usize>>) -> usize {
+        var current = value
+        var index: usize = 0
+        while index < replacements.length() {
+            match read replacements[current] {
+                Some(next) => {
+                    current = next
+                }
+                None => {
+                    return current
+                }
+            }
+            index = index + 1
+        }
+        return current
+    }
+
+    fn replace_merged_blocks(function: write Function, representatives: Vec<usize>) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan write function.blocks[block].instructions[index].kind as kind {
+                    replace_phi_blocks(kind, representatives)
+                }
+                index = index + 1
+            }
+            match write function.blocks[block].terminator {
+                Some(terminator) => {
+                    replace_terminator_blocks(terminator, representatives)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+    }
+
+    fn replace_phi_blocks(kind: write InstructionKind, representatives: Vec<usize>) -> void {
+        match write kind {
+            InstructionPhi(value_type, incoming) => {
+                value_type
+                var index: usize = 0
+                while index < incoming.length() {
+                    incoming[index].block = representatives[incoming[index].block]
+                    index = index + 1
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn replace_terminator_blocks(terminator: write Terminator, representatives: Vec<usize>) -> void {
+        match write terminator {
+            TerminatorBranch(target) => {
+                target = representatives[target]
+            }
+            TerminatorConditional(condition, then_block, else_block) => {
+                condition
+                then_block = representatives[then_block]
+                else_block = representatives[else_block]
+            }
+            TerminatorSwitch(value, cases, default) => {
+                value
+                var index: usize = 0
+                while index < cases.length() {
+                    cases[index].block = representatives[cases[index].block]
+                    index = index + 1
+                }
+                default = representatives[default]
+            }
+            _ => {
+            }
+        }
+    }
+}

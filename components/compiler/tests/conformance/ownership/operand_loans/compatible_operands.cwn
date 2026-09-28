@@ -1,0 +1,98 @@
+struct Buffers {
+    selected: Vec<u32>
+    other: Vec<u32>
+}
+
+fn next_bound(counter: write usize) -> usize {
+    let current = counter
+    counter = counter + 1
+    return current
+}
+
+fn slice_operands() -> u32 {
+    var values = operand_values()
+    loan read values[0..values.length()] as part {
+        if part[0] != 7 {
+            return 1
+        }
+    }
+    loan write values[values.length() - 1..values.length()] as part {
+        part[0] = 9
+    }
+    loan write values[values.length()..values.length()] as empty {
+        if empty.length() != 0 {
+            return 2
+        }
+    }
+    if values[0] != 9 {
+        return 3
+    }
+    var counter: usize = 0
+    loan read values[next_bound(counter)..next_bound(counter)] as ordered {
+        if ordered.length() != 1 || counter != 2 {
+            return 10
+        }
+    }
+    empty_values(values)
+    return 0
+}
+
+fn disjoint_operands() -> u32 {
+    var first = operand_values()
+    var buffers = Buffers {
+        selected: move first, other: Vec<u32>.new()
+    }
+    loan read buffers.selected[empty_values(buffers.other)..1] as part {
+        if part[0] != 7 {
+            return 4
+        }
+    }
+    empty_values(buffers.selected)
+    return 0
+}
+
+fn arena_key(values: read Arena<u32>, key: Handle<u32>) -> Handle<u32> {
+    if values.contains(key) {
+        return key
+    }
+    return key
+}
+
+fn arena_operands() -> u32 {
+    var values = Arena<u32>.new()
+    let key = values.insert(7)
+    values.with(arena_key(values, key)) as write item {
+        item = 9
+    }
+    values.with(arena_key(values, key)) as read item {
+        if item != 9 {
+            return 5
+        }
+    }
+    match values.remove(key) {
+        Some(value) => {
+            if value != 9 {
+                return 6
+            }
+        }
+        None => {
+            return 7
+        }
+    }
+    return 0
+}
+
+fn method_operands() -> u32 {
+    var values = operand_values()
+    values.push(u32.from(values.length()))
+    if values.length() != 2 || values[1] != 1 {
+        return 8
+    }
+    empty_values(values)
+    return 0
+}
+
+fn main() -> u32 {
+    let result = slice_operands() + disjoint_operands() + arena_operands() + method_operands()
+    return result
+}

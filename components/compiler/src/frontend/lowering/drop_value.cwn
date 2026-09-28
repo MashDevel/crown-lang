@@ -1,0 +1,173 @@
+module lowering {
+    fn drop_value(compiler: write FunctionCompiler, request: Place) -> Result<void, u32> {
+        if type_is_copy(compiler, request.value_type) {
+            return Ok(())
+        }
+        let name = drop_function_key(request.value_type)
+        var target: usize = 0
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                target = value
+            }
+            None => {
+                return Err(224)
+            }
+        }
+        var arguments = Vec<usize>.new()
+        arguments.push(request.address)
+        match function_append(compiler, ir::InstructionCall(target, move arguments, ir::TypeVoid())) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+
+    fn drop_value_inline(compiler: write FunctionCompiler, symbols: sema::Symbols, request: Place) -> Result<void, u32> {
+        if sema::type_is_copy_with_symbols(symbols, request.value_type) {
+            return Ok(())
+        }
+        match read request.value_type {
+            sema::ArrayType(element, length) => {
+                loan read element as value {
+                    return drop_fixed_array(compiler, symbols, request.address, value, length)
+                }
+            }
+            sema::BuiltinType(builtin, arguments) => {
+                let builtin_drop = BuiltinDrop {
+                    address: request.address, builtin: builtin, arguments: sema::types_copy(arguments)
+                }
+                return drop_builtin(compiler, symbols, builtin_drop)
+            }
+            sema::NamedType(symbol, arguments) => {
+                let named_drop = NamedDrop {
+                    address: request.address, symbol: symbol, arguments: sema::types_copy(arguments)
+                }
+                return drop_named(compiler, symbols, named_drop)
+            }
+            sema::DynamicType(interface_symbol) => {
+                interface_symbol;
+                return drop_dynamic(compiler, request.address)
+            }
+            _ => {
+                return Ok(())
+            }
+        }
+    }
+
+    struct BuiltinDrop {
+        address: usize
+        builtin: sema::Builtin
+        arguments: Vec<sema::Type>
+    }
+
+    fn drop_builtin(compiler: write FunctionCompiler, symbols: sema::Symbols, request: BuiltinDrop) -> Result<void, u32> {
+        let kind = request.builtin
+        match kind {
+            sema::ScopedThread => {
+                return Ok(())
+            }
+            sema::NativeRoot | sema::RootLease => {
+                return drop_native_root(compiler, request.address, kind)
+            }
+            sema::Text => {
+                return drop_allocation(compiler, request.address)
+            }
+            sema::Thread => {
+                return drop_thread(compiler, symbols, request.address)
+            }
+            sema::Option | sema::Result => {
+                return drop_builtin_enum(compiler, symbols, request)
+            }
+            _ => {
+            }
+        }
+        if request.arguments.length() != 1 || sema::builtin_has_inline_payload(kind) || sema::builtin_is_copy(request.builtin) {
+            return Ok(())
+        }
+        let owner = BufferOwner {
+            address: request.address, element: sema::type_copy(request.arguments[0])
+        }
+        drop_element_owner(compiler, symbols, kind, owner)
+    }
+
+    fn drop_element_owner(compiler: write FunctionCompiler, symbols: sema::Symbols, builtin: sema::Builtin, owner: BufferOwner) -> Result<void, u32> {
+        if builtin == sema::Vec() {
+            return drop_vector(compiler, symbols, owner)
+        }
+        if builtin == sema::Box() {
+            return drop_box(compiler, owner)
+        }
+        if builtin == sema::Shared() {
+            return drop_shared(compiler, symbols, owner)
+        }
+        if builtin == sema::Mutex() || builtin == sema::RwLock() {
+            return drop_lock_owner(compiler, symbols, owner, builtin == sema::Mutex())
+        }
+        if builtin == sema::Arena() {
+            return drop_arena(compiler, symbols, owner)
+        }
+        if builtin == sema::Channel() {
+            return drop_channel(compiler, symbols, owner)
+        }
+        Ok(())
+    }
+
+    fn free_pointer(compiler: write FunctionCompiler, pointer: usize) -> Result<void, u32> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypeVoid())
+        var arguments = Vec<usize>.new()
+        arguments.push(pointer)
+        let request = ImportedCall {
+            name: "free", signature: move signature, arguments: move arguments
+        }
+        match function_imported_call(compiler, request) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+        }
+    }
+
+    fn drop_allocation(compiler: write FunctionCompiler, address: usize) -> Result<void, u32> {
+        let pointer = function_load_pointer(compiler, address)?
+        return free_pointer(compiler, pointer)
+    }
+
+    struct BufferOwner {
+        address: usize
+        element: sema::Type
+    }
+
+    fn drop_box(compiler: write FunctionCompiler, request: BufferOwner) -> Result<void, u32> {
+        let pointer = function_load_pointer(compiler, request.address)?
+        return drop_allocated_value(compiler, pointer, request.element)
+    }
+    fn drop_allocated_value(compiler: write FunctionCompiler, pointer: usize, value_type: sema::Type) -> Result<void, u32> {
+        drop_value(compiler, Place {
+                address: pointer, value_type: sema::type_copy(value_type)
+            })?
+        return free_pointer(compiler, pointer)
+    }
+
+    fn drop_fixed_array(compiler: write FunctionCompiler, symbols: sema::Symbols, base: usize, element: sema::Type, length: usize) -> Result<void, u32> {
+        var index = length
+        while index != 0 {
+            index = index - 1
+            let layout = layout(symbols, element)?
+            let address = function_offset(compiler, base, layout.size * u64.from(index))?
+            drop_value(compiler, Place {
+                    address: address, value_type: sema::type_copy(element)
+                })?
+        }
+        return Ok(())
+    }
+
+}

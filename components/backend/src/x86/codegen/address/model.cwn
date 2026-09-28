@@ -1,0 +1,65 @@
+module x86 {
+    enum FusedMemory {
+        FusedLoad(Option<usize>, usize, MemoryOffset, ir::Type)
+        FusedStore(usize, MemoryOffset, usize)
+    }
+
+    enum MemoryOffset {
+        MemoryImmediate(i32)
+        MemoryDynamic(usize, u8)
+    }
+
+    struct MemoryFusion {
+        memory: FusedMemory
+        consumed: usize
+    }
+
+    struct SequencePosition {
+        index: usize
+        limit: usize
+    }
+
+    struct MemoryPattern {
+        address: usize
+        base: usize
+        offset: MemoryOffset
+    }
+
+    struct ScaledIndex {
+        value: usize
+        scale: u8
+    }
+
+    struct LoadAtInput {
+        result: Option<usize>
+        address: usize
+        offset: i32
+        value_type: ir::Type
+    }
+
+    struct LoadIndexedInput {
+        result: Option<usize>
+        base: usize
+        index: usize
+        scale: u8
+        value_type: ir::Type
+    }
+
+    struct StoreAtInput {
+        address: usize
+        offset: i32
+        value: usize
+    }
+
+    struct StoreIndexedInput {
+        base: usize
+        index: usize
+        scale: u8
+        value: usize
+    }
+
+    struct IndexedValues {
+        base: usize
+        index: usize
+    }
+}

@@ -1,0 +1,10 @@
+fn required<T>(value: take Option<T>) -> T {
+    return match move value {
+        Some(item) => move item,
+        None => { while true {} }
+    }
+}
+fn main() -> u32 {
+    let value: u32 = required(Some(u32.from(7)))
+    return if value == 7 { 0 } else { 1 }
+}

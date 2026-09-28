@@ -1,0 +1,39 @@
+struct Item {
+    value: u32
+}
+fn main() -> u32 {
+    let values = [2, 4, 6]
+    var items = Vec<Item>.with_capacity(1)
+    items.push(Item {
+            value: values[1]
+        })
+    let popped = items.pop()
+    let text = "crown"
+    text.length()
+    let boxed = Box.new(Item {
+            value: 9
+        })
+    let shared = Shared.new(Item {
+            value: 10
+        })
+    let another = shared.share()
+    var arena = Arena<Item>.new()
+    let handle = arena.insert(Item {
+            value: 11
+        })
+    arena.with(handle) as write current {
+        current.value = 13
+    }
+    arena.with(handle) as read current {
+        print(current.value)
+    }
+    let removed = arena.remove(handle)
+    match move popped {
+        Some(item) => {
+            return item.value
+        }
+        None => {
+            return 0
+        }
+    }
+}

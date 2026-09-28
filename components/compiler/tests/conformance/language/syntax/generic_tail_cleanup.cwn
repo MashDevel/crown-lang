@@ -1,0 +1,20 @@
+resource Item {
+    value: u32
+    drop {
+        print(value)
+    }
+}
+fn unwrap<T>(value: take Option<T>, fallback: take T) -> T {
+    match move value {
+        Some(item) => move item,
+        None => move fallback
+    }
+}
+fn main() -> u32 {
+    let item = unwrap(Some(Item {
+                value: 1
+            }), Item {
+            value: 2
+        });
+    item.value + 41
+}

@@ -1,0 +1,148 @@
+module lowering {
+    struct ChannelCapacity {
+        address: usize
+        length: usize
+        capacity: usize
+    }
+
+    struct ChannelGrowth {
+        state: usize
+        element: sema::Type
+    }
+
+    struct ChannelResize {
+        state: usize
+        capacity_address: usize
+        capacity: usize
+        element: sema::Type
+    }
+
+    struct ChannelItem {
+        data: usize
+        index: usize
+        element: sema::Type
+    }
+
+    fn channel_send(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                if arguments.length() != 1 || sema::name_is(analysis.checker.symbols.source, method, "send") == false {
+                    return Err(297)
+                }
+                var channel = LockedChannel {
+                    state: 0, mutex: 0, element: sema::Invalid()
+                }
+                loan read receiver as value {
+                    channel = channel_state(compiler, analysis, value)?
+                }
+                let value = function_expression(compiler, analysis, arguments[0])?
+                if expression_terminated(compiler) {
+                    return Ok(VoidValue())
+                }
+                call_lock(compiler, "pthread_mutex_lock", channel.mutex)?
+                return send_channel_value(compiler, analysis, channel, move value)
+            }
+            _ => {
+                return Err(298)
+            }
+        }
+    }
+
+    fn send_channel_value(compiler: write FunctionCompiler, analysis: sema::Analysis, channel: LockedChannel, value: take Value) -> Result<Value, u32> {
+        let growth = ChannelGrowth {
+            state: channel.state, element: sema::type_copy(channel.element)
+        }
+        grow_channel(compiler, analysis.checker.symbols, move growth)?
+        let data = function_load_pointer_field(compiler, channel.state, 16)?
+        let length_address = function_offset(compiler, channel.state, 24)?
+        let load = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, analysis.checker.symbols, load)?
+        let position = channel_position(compiler, analysis.checker.symbols, channel.state, length)?
+        let item = ChannelItem {
+            data: data, index: position, element: sema::type_copy(channel.element)
+        }
+        let target = channel_element(compiler, analysis.checker.symbols, move item)?
+        function_copy(compiler, analysis.checker.symbols, CopyRequest {
+                destination: target, value: move value
+            })?
+        channel_store_next_length(compiler, analysis.checker.symbols, ChannelLength {
+                address: length_address, length: length
+            })?
+        call_lock(compiler, "pthread_mutex_unlock", channel.mutex)?
+        return Ok(VoidValue())
+    }
+
+    struct ChannelLength {
+        address: usize
+        length: usize
+    }
+
+    fn channel_store_next_length(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ChannelLength) -> Result<void, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: state.length, right: one, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let next = integer_binary(compiler, symbols, operation)?
+        let store = StoreRequest {
+            address: state.address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn grow_channel(compiler: write FunctionCompiler, symbols: sema::Symbols, growth: take ChannelGrowth) -> Result<void, u32> {
+        let capacity = channel_capacity(compiler, symbols, growth.state)?
+        let full = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), capacity.length, capacity.capacity))?
+        let ready = function_begin_guarded_block(compiler, full)?
+        let next = next_buffer_capacity(compiler, symbols, capacity.capacity)?
+        let resize = ChannelResize {
+            state: growth.state, capacity_address: capacity.address, capacity: next, element: sema::type_copy(growth.element)
+        }
+        resize_channel(compiler, symbols, move resize)?
+        function_end_guarded_block(compiler, ready)?
+        return Ok(())
+    }
+
+    fn channel_capacity(compiler: write FunctionCompiler, symbols: sema::Symbols, state: usize) -> Result<ChannelCapacity, u32> {
+        let length_address = function_offset(compiler, state, 24)?
+        let capacity_address = function_offset(compiler, state, 32)?
+        let length_load = Place {
+            address: length_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity_load = Place {
+            address: capacity_address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, length_load)?
+        let capacity = function_load(compiler, symbols, capacity_load)?
+        return Ok(ChannelCapacity {
+                address: capacity_address, length: length, capacity: capacity
+            })
+    }
+
+    fn resize_channel(compiler: write FunctionCompiler, symbols: sema::Symbols, resize: take ChannelResize) -> Result<void, u32> {
+        let bytes = buffer_byte_size(compiler, symbols, resize.element, resize.capacity)?
+        let data_address = function_offset(compiler, resize.state, 16)?
+        let data = function_load_pointer(compiler, data_address)?
+        let buffers = channel_buffers(compiler, symbols, resize.state, resize.element)?
+        let result = function_allocate(compiler, bytes)?
+        channel_copy_buffers(compiler, symbols, result, buffers)?
+        free_pointer(compiler, data)?
+        function_store_pointer(compiler, data_address, result)?
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 0)
+        channel_store_field(compiler, symbols, resize.state, 40, zero)?
+        let store = StoreRequest {
+            address: resize.capacity_address, value: resize.capacity, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn channel_element(compiler: write FunctionCompiler, symbols: sema::Symbols, item: take ChannelItem) -> Result<usize, u32> {
+        let layout = layout(symbols, item.element)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, value_type, layout.size)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), item.index, size))?
+        return function_append_value(compiler, ir::InstructionOffset(item.data, bytes))
+    }
+}

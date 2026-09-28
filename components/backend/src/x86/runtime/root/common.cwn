@@ -1,0 +1,46 @@
+module x86 {
+    fn root_runtime_name(name: Text) -> bool {
+        return std::text::equal(name, "crown_root_register") || std::text::equal(name, "crown_root_acquire") || std::text::equal(name, "crown_root_close") || std::text::equal(name, "crown_root_release") || std::text::equal(name, "crown_root_declare") || std::text::equal(name, "crown_root_declare_publish")
+    }
+
+    fn root_runtime_compare(instructions: write Vec<Instruction>, expected: i64, desired: i64) -> void {
+        instructions.push(MoveImmediate(Rax(), expected))
+        instructions.push(MoveImmediate(R10(), desired))
+        instructions.push(CompareExchangeMemory(CompareExchangeMemoryArgs {
+                    address: R8(), value: R10(), width: Qword()
+                }))
+    }
+
+    fn root_runtime_return(instructions: write Vec<Instruction>) -> void {
+        instructions.push(Xor(Rax(), Rax()))
+        instructions.push(Return())
+    }
+
+    fn root_runtime_abort(instructions: write Vec<Instruction>) -> void {
+        instructions.push(Call("abort"))
+        instructions.push(Trap())
+    }
+
+    fn root_runtime_entry(instructions: write Vec<Instruction>, token: Register, invalid: usize) -> void {
+        instructions.push(Load(R9(), token, 0))
+        instructions.push(CompareImmediate(R9(), 1024))
+        instructions.push(JumpIf(AboveOrEqual(), InternalLabel(invalid)))
+        instructions.push(Load(R11(), token, 8))
+        instructions.push(Test(R11(), R11()))
+        instructions.push(JumpIf(Equal(), InternalLabel(invalid)))
+        instructions.push(LoadSymbolAddress(R8(), "__compiler_root_entries"))
+        instructions.push(MultiplyImmediate(R9(), 40))
+        instructions.push(Add(R8(), R9()))
+    }
+
+    fn root_runtime_failure() -> Function {
+        var instructions = Vec<Instruction>.new()
+        instructions.push(Xor(Rax(), Rax()))
+        instructions.push(Store(Rdi(), 0, Rax()))
+        instructions.push(Store(Rdi(), 16, Rax()))
+        instructions.push(Store(Rdi(), 8, Rsi()))
+        instructions.push(Move(Rax(), Rsi()))
+        instructions.push(Return())
+        return function_new("__compiler_root_failure", move instructions)
+    }
+}

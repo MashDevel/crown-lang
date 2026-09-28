@@ -1,0 +1,98 @@
+module lowering {
+    struct TextPatternTest {
+        span: frontend::Span
+        accepted: usize
+        rejected: usize
+    }
+
+    fn match_text_dispatch(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::MatchExpression) -> Result<void, u32> {
+        let flow = compiler.matches.length() - 1
+        for index in 0..expression.arms.length() {
+            let accepted = compiler.matches[flow].blocks[index]
+            loan read expression.arms[index].pattern.choices as choices {
+                for choice in 0..choices.length() {
+                    if dispatch_text_choice(compiler, analysis, choices[choice], accepted)? {
+                        return Ok(())
+                    }
+                }
+            }
+        }
+        return function_finish(compiler, ir::TerminatorBranch(compiler.matches[flow].invalid))
+    }
+
+    fn text_pattern_test(compiler: write FunctionCompiler, analysis: sema::Analysis, request: TextPatternTest) -> Result<void, u32> {
+        let flow = compiler.matches.length() - 1
+        let bytes = frontend::text_literal_bytes(analysis.checker.symbols.source, request.span)
+        let address = function_offset(compiler, compiler.matches[flow].address, 8)?
+        let actual = function_append_value(compiler, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+        let length = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), u64.from(bytes.length()))
+        let same_length = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), actual, length))?
+        if bytes.length() == 0 {
+            return function_finish(compiler, ir::TerminatorConditional(same_length, request.accepted, request.rejected))
+        }
+        let compare = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(same_length, compare, request.rejected))?
+        function_select_block(compiler, compare)
+        let pointer = function_load_pointer(compiler, compiler.matches[flow].address)?
+        var arguments = Vec<usize>.new()
+        arguments.push(pointer)
+        arguments.push(text_pattern_global(compiler, request.span)?)
+        arguments.push(length)
+        let equal = text_pattern_compare(compiler, move arguments)?
+        return function_finish(compiler, ir::TerminatorConditional(equal, request.accepted, request.rejected))
+    }
+
+    fn text_pattern_global(compiler: write FunctionCompiler, span: frontend::Span) -> Result<usize, u32> {
+        var key = "text_"
+        frontend::text_push_usize(key, span.start)
+        match function_global_id(compiler, key) {
+            None => {
+                return Err(97)
+            }
+            Some(global) => {
+                return function_append_value(compiler, ir::InstructionGlobalAddress(global))
+            }
+        }
+    }
+
+    fn text_pattern_compare(compiler: write FunctionCompiler, arguments: take Vec<usize>) -> Result<usize, u32> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+        let request = ImportedCall {
+            name: "memcmp", signature: move signature, arguments: move arguments
+        }
+        let result = function_imported_call(compiler, request)?
+        match result {
+            None => {
+                return Err(93)
+            }
+            Some(value) => {
+                let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth32()), 0)
+                return function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), value, zero))
+            }
+        }
+    }
+    fn dispatch_text_choice(compiler: write FunctionCompiler, analysis: sema::Analysis, choice: frontend::PatternKind, accepted: usize) -> Result<bool, u32> {
+        match read choice {
+            frontend::PatternWildcard => {
+                function_finish(compiler, ir::TerminatorBranch(accepted))?
+                return Ok(true)
+            }
+            frontend::PatternText(span) => {
+                let rejected = function_new_block(compiler)?
+                text_pattern_test(compiler, analysis, TextPatternTest {
+                        span: span, accepted: accepted, rejected: rejected
+                    })?
+                function_select_block(compiler, rejected)
+                return Ok(false)
+            }
+            _ => {
+                return Err(211)
+            }
+        }
+    }
+
+}

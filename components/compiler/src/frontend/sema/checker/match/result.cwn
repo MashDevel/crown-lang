@@ -1,0 +1,68 @@
+module sema {
+    fn checker_match_body(checker: write Checker, body: Vec<frontend::Statement>, context: write MatchContext) -> void {
+        var expected: Option<Type> = None()
+        match read context.result_hint {
+            Some(value) => {
+                expected = Some(type_copy(value))
+            }
+            None => {
+            }
+        }
+        match move expected {
+            None => {
+                checker_statements(checker, body)
+            }
+            Some(hint) => {
+                let result = checker_value_block_contents(checker, body, hint)
+                match_result_info(checker, context, result)
+            }
+        }
+    }
+
+    fn match_result_info(checker: write Checker, context: write MatchContext, result: Option<ExpressionInfo>) -> void {
+        match read result {
+            None => {
+            }
+            Some(info) => {
+                match_result_type(checker, context, info.value_type)
+            }
+        }
+    }
+
+    fn match_result_type(checker: write Checker, context: write MatchContext, value_type: Type) -> void {
+        match read context.result_type {
+            None => {
+            }
+            Some(previous) => {
+                if types_equal(previous, value_type) == false {
+                    checker_type_error(checker, previous, value_type)
+                }
+            }
+        }
+        context.result_type = Some(type_copy(value_type))
+        context.result_hint = Some(type_copy(value_type))
+    }
+
+    fn match_expression_result(checker: write Checker, context: MatchContext) -> Option<ExpressionInfo> {
+        match read context.result_hint {
+            None => {
+                return None()
+            }
+            Some(value) => {
+                value
+            }
+        }
+        match read context.result_type {
+            None => {
+                checker_error(checker, "match expression needs a continuing value branch");
+                return None()
+            }
+            Some(value_type) => {
+                if type_is_copy_with_symbols(checker.symbols, value_type) {
+                    return Some(copy_info(type_copy(value_type)))
+                }
+                return Some(owned_info(type_copy(value_type)))
+            }
+        }
+    }
+}

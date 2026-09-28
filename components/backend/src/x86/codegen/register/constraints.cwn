@@ -1,0 +1,121 @@
+module x86 {
+    fn codegen_register_bit(register: Register) -> u16 {
+        return codegen_code_bit(register_code(register))
+    }
+
+    fn codegen_code_bit(code: u8) -> u16 {
+        return u16.from(1) << u16.from(code)
+    }
+
+    fn codegen_caller_mask() -> u16 {
+        var mask = codegen_code_bit(0) | codegen_code_bit(2)
+        mask = mask | codegen_code_bit(7) | codegen_code_bit(6)
+        mask = mask | codegen_code_bit(8) | codegen_code_bit(9)
+        return mask | codegen_code_bit(10) | codegen_code_bit(11)
+    }
+
+    fn codegen_parameter_forbidden(allowed: Option<Register>) -> u16 {
+        var mask = codegen_code_bit(0) | codegen_code_bit(1)
+        mask = mask | codegen_code_bit(2) | codegen_code_bit(7)
+        mask = mask | codegen_code_bit(6) | codegen_code_bit(8)
+        mask = mask | codegen_code_bit(9)
+        match read allowed {
+            Some(register) => {
+                return mask & ~codegen_register_bit(register)
+            }
+            None => {
+                return mask
+            }
+        }
+    }
+
+    fn codegen_allocatable(value_type: ir::Type, kind: ir::InstructionKind) -> bool {
+        if codegen_scalar(value_type) == false && ir::type_is_vector(value_type) == false {
+            return false
+        }
+        match read kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryStackSlot(size, alignment) => {
+                        size;
+                        alignment;
+                        return false
+                    }
+                    ir::MemoryGlobalAddress(global) => {
+                        global;
+                        return false
+                    }
+                    ir::MemorySymbolAddress(symbol) => {
+                        symbol;
+                        return false
+                    }
+                    ir::MemoryFunctionAddress(function) => {
+                        function;
+                        return false
+                    }
+                    _ => {
+                        return true
+                    }
+                }
+            }
+
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn codegen_scalar(value_type: ir::Type) -> bool {
+        if ir::type_is_integer(value_type) || ir::type_is_pointer(value_type) || ir::type_is_float(value_type) {
+            match ir::type_size(value_type) {
+                Some(size) => {
+                    return size <= 8
+                }
+                None => {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    fn codegen_eligible_values(function: ir::Function) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(false);
+            index = index + 1
+        }
+        index = 0
+        while index < function.parameters.length() {
+            let value = function.parameters[index]
+            loan read function.values[value] as value_type {
+                output[value] = codegen_scalar(value_type)
+            }
+            index = index + 1
+        }
+        return codegen_instruction_eligibility(function, move output)
+    }
+
+    fn codegen_instruction_eligibility(function: ir::Function, initial: take Vec<bool>) -> Vec<bool> {
+        var output = move initial
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].result {
+                    Some(value) => {
+                        loan read function.values[value] as value_type {
+                            output[value] = codegen_allocatable(value_type, function.blocks[block].instructions[index].kind)
+                        }
+                    }
+                    None => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+}

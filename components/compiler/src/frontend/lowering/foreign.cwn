@@ -1,0 +1,89 @@
+module lowering {
+    fn foreign_call_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionCall(name, arguments) => {
+                var semantic_function: usize = 0
+                match sema::find_function(analysis.checker.symbols, name) {
+                    Some(value) => {
+                        semantic_function = value
+                    }
+                    None => {
+                        return Err(115)
+                    }
+                }
+                return call_foreign_function(compiler, analysis, semantic_function, arguments)
+            }
+            _ => {
+                return Err(118)
+            }
+        }
+    }
+
+    fn find_import_in_values(values: Vec<ImportBinding>, semantic_function: usize) -> Option<usize> {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index].semantic_function == semantic_function {
+                return Some(values[index].function)
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn foreign_argument(compiler: write FunctionCompiler, analysis: sema::Analysis, parameter: sema::NamedParameter, expression: frontend::Expression) -> Result<usize, u32> {
+        if sema::mode_is_write(parameter.mode) {
+            return expression_place(compiler, analysis, expression)
+        }
+        function_scalar_expression(compiler, analysis, expression)
+    }
+
+    fn foreign_parameter_type(symbols: sema::Symbols, parameter: sema::NamedParameter) -> Result<ir::Type, u32> {
+        if sema::mode_is_write(parameter.mode) {
+            return Ok(ir::TypePointer())
+        }
+        ir_type(symbols, parameter.value_type)
+    }
+
+    fn call_foreign_function(compiler: write FunctionCompiler, analysis: sema::Analysis, semantic_function: usize, arguments: Vec<frontend::Expression>) -> Result<Value, u32> {
+        loan read analysis.checker.symbols.functions[semantic_function] as function {
+            if function.foreign == false || function.parameters.length() != arguments.length() {
+                return Err(116)
+            }
+            var values = Vec<usize>.new()
+            let parameters = foreign_call_arguments(compiler, analysis, semantic_function, arguments, values)?
+            var target: usize = 0
+            match find_import_in_values(compiler.tables.imports, semantic_function) {
+                Some(value) => {
+                    target = value
+                }
+                None => {
+                    return Err(117)
+                }
+            }
+            let result_type = ir_type(analysis.checker.symbols, function.result)?
+            var signature = ir::signature_new(move parameters, result_type)
+            foreign_signature_attributes(signature, function)
+            let address = function_append_value(compiler, ir::InstructionFunctionAddress(target))?
+            let call = function_append(compiler, ir::InstructionCallIndirect(address, move signature, move values))?
+            return call_value(call, None(), function.result)
+        }
+    }
+    fn foreign_call_arguments(compiler: write FunctionCompiler, analysis: sema::Analysis, function: usize, arguments: Vec<frontend::Expression>, values: write Vec<usize>) -> Result<Vec<ir::Type>, u32> {
+        var parameters = Vec<ir::Type>.new()
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read analysis.checker.symbols.functions[function].parameters[index] as parameter {
+                let value = foreign_argument(compiler, analysis, parameter, arguments[index])?
+                let value_type = foreign_parameter_type(analysis.checker.symbols, parameter)?
+                let variadic = sema_variadic(analysis.checker.symbols.functions[function].variadic_start, index)
+                let argument = promoted_foreign_argument(compiler, parameter.value_type, ForeignArgument {
+                        value: value, value_type: value_type
+                    }, variadic)?
+                values.push(argument.value)
+                parameters.push(argument.value_type)
+            }
+            index = index + 1
+        }
+        return Ok(move parameters)
+    }
+}

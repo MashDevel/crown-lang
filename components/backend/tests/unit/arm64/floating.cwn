@@ -1,0 +1,36 @@
+fn conversions() -> Result<void, Text> {
+    let expected: [u32; 8] = [2653028681, 2657222985, 2653094217, 2657288521, 2654470473, 2658664777, 2654536009, 2658730313]
+    for index in 0..8 {
+        let actual = arm64::float_integer_convert(9, 10, index % 2 == 1, index % 4 >= 2, index < 4)?
+        testing::expect(actual == expected[index], "ARM64 integer conversion agrees with assembler")?
+    }
+    testing::error(arm64::float_integer_convert(32, 0, false, false, true))?
+    return testing::error(arm64::float_integer_convert(0, 32, true, true, false))
+}
+
+fn memory_encodings() -> Result<void, Text> {
+    testing::expect(arm64::simd_memory_word(9, 10, 12, 4, false)? == 3170897225, "32-bit SIMD store")?
+    testing::expect(arm64::simd_memory_word(9, 10, 24, 8, true)? == 4248833353, "64-bit SIMD load")?
+    testing::expect(arm64::simd_memory_word(9, 10, 32, 16, false)? == 1031801161, "128-bit SIMD store")?
+    return testing::expect(arm64::simd_memory_word(9, 10, 48, 16, true)? == 1035996489, "128-bit SIMD load")
+}
+
+fn memory_boundaries() -> Result<void, Text> {
+    arm64::simd_memory_word(31, 31, 65520, 16, true)?;
+    testing::error(arm64::simd_memory_word(32, 0, 0, 4, false))?
+    testing::error(arm64::simd_memory_word(0, 32, 0, 8, true))?
+    testing::error(arm64::simd_memory_word(0, 0, 3, 16, false))?
+    testing::error(arm64::simd_memory_word(0, 0, 65536, 16, true))?
+    testing::error(arm64::simd_memory_word(0, 0, 0, 3, false))?
+    return testing::error(arm64::scaled_memory_word(0, 0, 0, 0, 0))
+}
+
+fn run() -> Result<void, Text> {
+    conversions()?
+    memory_encodings()?
+    return memory_boundaries()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

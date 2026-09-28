@@ -1,0 +1,84 @@
+extern "c" {
+    fn begin() -> void = "crown_test_begin"
+    fn allocate(size: usize) -> RawPtr<u8> = "crown_test_malloc"
+    fn zeroed(count: usize, size: usize) -> RawPtr<u8> = "crown_test_calloc"
+    fn resize(pointer: RawPtr<u8>, size: usize) -> RawPtr<u8> = "crown_test_realloc"
+    fn release(pointer: RawPtr<u8>) -> void = "crown_test_free"
+    fn live() -> u64 = "crown_test_live"
+    fn allocated() -> u64 = "crown_test_allocated"
+    fn acquired(pointer: RawPtr<u8>) -> void = "crown_test_acquired"
+}
+
+fn disabled() -> u32 {
+    unsafe {
+        let pointer = allocate(8)
+        if pointer == RawPtr<u8>.from_address(0) {
+            return 6
+        }
+        release(pointer)
+        return if live() == 0 && allocated() == 0 {
+            0
+        } else {
+            7
+        }
+    }
+}
+
+fn reset() -> u32 {
+    unsafe {
+        if live() != 0 || allocated() != 3 {
+            return 5
+        }
+        begin()
+        acquired(RawPtr<u8>.from_address(0))
+        return if live() == 0 && allocated() == 0 {
+            0
+        } else {
+            8
+        }
+    }
+}
+
+fn resized(pointer: RawPtr<u8>) -> Result<RawPtr<u8>, u32> {
+    unsafe {
+        let result = resize(pointer, 32)
+        if result == RawPtr<u8>.from_address(0) {
+            return Err(3)
+        }
+        if live() != 3 || allocated() != 3 {
+            return Err(4)
+        }
+        return Ok(result)
+    }
+}
+
+fn main() -> u32 {
+    unsafe {
+        let null = RawPtr<u8>.from_address(0)
+        let status = disabled()
+        if status != 0 {
+            return status
+        }
+        begin()
+        var first = allocate(16)
+        let second = zeroed(4, 4)
+        let third = resize(null, 8)
+        if first == null || second == null || third == null {
+            return 1
+        }
+        if live() != 3 || allocated() != 3 {
+            return 2
+        }
+        first = match resized(first) {
+            Ok(value) => value,
+            Err(error) => {
+                return error
+            }
+        }
+        release(null)
+        release(first)
+        release(second)
+        release(third)
+        return reset()
+    }
+}

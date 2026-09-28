@@ -1,0 +1,56 @@
+fn gvn_chain(length: read usize) -> Result<ir::Function, ir::BuildError> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var function = ir::function_new("chain", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    let constant = ir::ConstantInteger(u64.from(1))
+    let one = ir::function_constant(function, value_type, constant)
+    for index in 0..length { ir::function_add_block(function)? }
+    for index in 0..length {
+        let result = ir::function_append(function, index, ir::InstructionBinary(ir::BinaryAdd(), 0, one))?
+        if index + 1 == length {
+            ir::function_terminate(function, index, ir::TerminatorReturn(result))?
+        } else {
+            ir::function_terminate(function, index, ir::TerminatorBranch(index + 1))?
+        }
+    }
+    return Ok(move function)
+}
+
+fn gvn_worker(output: read Channel<usize>) -> void {
+    match gvn_chain(512) {
+        Ok(value) => {
+            var function = move value
+            output.send(optimize::gvn(function))
+        }
+        Err(error) => { error; output.send(0) }
+    }
+}
+
+fn gvn_siblings() -> bool {
+    match gvn_chain(3) {
+        Err(error) => { error; return false }
+        Ok(value) => {
+            var function = move value
+            let constant = ir::ConstantInteger(u64.from(1))
+            let condition = ir::function_constant(function, ir::TypeInteger(ir::IntegerWidth1()), constant)
+            function.blocks[0].instructions = Vec<ir::Instruction>.new()
+            function.blocks[0].terminator = Some(ir::TerminatorConditional(condition, 1, 2))
+            function.blocks[1].terminator = Some(ir::TerminatorReturn(Some(0)))
+            return optimize::gvn(function) == 0
+        }
+    }
+}
+
+fn main() -> u32 {
+    let output = Channel<usize>.new()
+    let sender = output.share()
+    var thread = spawn move { gvn_worker(sender) }
+    thread.join()
+    match output.try_receive() {
+        Some(count) => { if count != 511 { return 1 } }
+        None => { return 2 }
+    }
+    if gvn_siblings() == false { return 3 }
+    return 42
+}

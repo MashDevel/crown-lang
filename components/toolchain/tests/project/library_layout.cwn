@@ -1,0 +1,98 @@
+fn source_policy(root: Text, forbidden: Text) -> Result<void, Text> {
+    let files = toolchain::walk_files(root)?
+    let names = testing::list(forbidden)
+    for index in 0..files.length() {
+        if std::text::ends(files[index], ".cwn") == false {
+            continue
+        }
+        let source = normalized(toolchain::read_text(files[index])?)
+        for name in 0..names.length() {
+            testing::expect(std::text::contains(source, names[name]) == false, std::text::joined("library boundary: ", files[index]))?
+        }
+    }
+    return Ok(())
+}
+
+fn normalized(source: Text) -> Text {
+    var output = ""
+    var space = false
+    loan read source as bytes {
+        for index in 0..bytes.length() {
+            let byte = bytes[index]
+            let blank = whitespace(byte)
+            if blank == false {
+                output.push(char.from(u32.from(byte)))
+            }
+            if blank && space == false {
+                output.push(' ')
+            }
+            space = blank
+        }
+    }
+    return move output
+}
+
+fn whitespace(byte: u8) -> bool {
+    return byte == 32 || byte == 9 || byte == 10 || byte == 13
+}
+
+fn names(root: Text, paths: Text, present: bool) -> Result<void, Text> {
+    let entries = testing::list(paths)
+    for index in 0..entries.length() {
+        let path = toolchain::path_join(root, entries[index])
+        testing::expect(toolchain::exists(path) == present, std::text::joined("library path: ", path))?
+    }
+    return Ok(())
+}
+
+fn consumers() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let crown = toolchain::temporary_path(temporary)
+    let root = toolchain::path_join(crown, "consumer")
+    let library = toolchain::path_join(crown, "lang/components/library")
+    let manifest = "[package]\nname = \"consumer\"\nsources = [\"src\", \"../lang/components/library/src\", \"../lang/components/library/platform/src\", \"../lang/components/library/integrations/src\"]\n"
+    let path = testing::write_file(root, "Crown.toml", manifest)?
+    consumer(root, library)?
+    toolchain::write_text(path, "[package]\nname = \"incomplete\"\nsource = \"src\"\n")?
+    testing::error(consumer(root, library))?
+    toolchain::write_text(path, "invalid manifest")?
+    return testing::error(consumer(root, library))
+}
+
+fn consumer(root: Text, library: Text) -> Result<void, Text> {
+    let document = toolchain::toml(toolchain::read_text(toolchain::path_join(root, "Crown.toml"))?)?
+    let entries = toolchain::relative_paths(root, toolchain::manifest_sources(document.document)?)?
+    let layers = testing::list("src|platform/src|integrations/src")
+    for layer in 0..layers.length() {
+        let expected = toolchain::absolute(toolchain::path_join(library, layers[layer]))?
+        testing::expect(std::text::list_contains(entries, expected), "consumer must select shared layers")?
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let root = toolchain::repository_root()?
+    let library = toolchain::path_join(root, "components/library")
+    let source = toolchain::path_join(library, "src")
+    source_policy(source, "module x11|module pipewire|module integration|module native|SteamGameId")?
+    source_policy(toolchain::path_join(library, "platform/src"), "SteamGameId|SteamAppId|buffer_frames|audio_format")?
+    names(source, "dylib.cwn|discard.cwn|map/core.cwn", true)?
+    names(source, "dynamic.cwn|value.cwn|map.cwn", false)?
+    names(library, "platform/tests/Crown.toml|integrations/tests/Crown.toml", true)?
+    consumers()?
+    return registration(root)
+}
+
+fn registration(root: Text) -> Result<void, Text> {
+    let gate = toolchain::read_text(toolchain::path_join(root, "components/compiler/tests/unit/gate/library.cwn"))?
+    let projects = testing::list("tests|platform/tests|integrations/tests")
+    for index in 0..projects.length() {
+        let path = std::text::joined("\"components/library/", std::text::joined(projects[index], "\""))
+        testing::expect(std::text::contains(gate, path), "library tests must be registered")?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

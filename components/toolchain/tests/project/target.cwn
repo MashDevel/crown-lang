@@ -1,0 +1,106 @@
+fn target_projects(root: Text) -> Result<void, Text> {
+    target_matrix()?
+    host_source_matrix()?
+    let directory = toolchain::path_join(root, "targets")
+    let path = target_project_fixture(directory)?
+    let macos = toolchain::load_project(path, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos()))?
+    let linux = toolchain::load_project(path, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux()))?
+    target_source_selection(macos, linux)?
+    target_link_selection(macos, linux)?
+    return bedrock_target_project(path, directory)
+}
+
+fn target_project_fixture(directory: Text) -> Result<Text, Text> {
+    testing::write_file(directory, "src/main.cwn", "fn main() -> u32 { 0 }")?
+    testing::write_file(directory, "src/native.macos.cwn", "macos")?
+    testing::write_file(directory, "src/native.linux.cwn", "linux")?
+    let manifest = "[package]\nname='targets'\nsource='src'\n[target.macos]\nframeworks=['AppKit']\nlibraries=['objc']\n[target.linux]\nlibraries=['m']\n"
+    return testing::write_file(directory, "Crown.toml", manifest)
+}
+
+fn invalid_target_projects(root: Text) -> Result<void, Text> {
+    let variants = testing::list("libraries='m'|libraries=['']|frameworks=['AppKit']")
+    for index in 0..variants.length() {
+        let source = std::text::joined("[package]\nname='targets'\nsource='src'\n[target.linux]\n", variants[index])
+        let path = testing::write_file(root, "Crown.toml", source)?
+        testing::error(toolchain::load_project(path, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux())))?
+        testing::error(toolchain::load_project(path, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos())))?
+    }
+    let macos = toolchain::path_join(root, "src/native.macos.cwn")
+    testing::error(toolchain::require_sources(toolchain::single_source(macos, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux()))))?
+    return Ok(())
+}
+
+fn bedrock_target_project(path: Text, directory: Text) -> Result<void, Text> {
+    let project = toolchain::load_project(path, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Bedrock()))?
+    testing::expect(project.links.length() == 0, "Bedrock must not inherit Linux link libraries")?
+    return invalid_target_projects(directory)
+}
+
+fn target_source_selection(macos: toolchain::Project, linux: toolchain::Project) -> Result<void, Text> {
+    testing::expect(macos.sources.length() == 2 && linux.sources.length() == 2, "target source count")?
+    testing::expect(std::text::ends(macos.sources[1], "native.macos.cwn"), "macOS source selection")?
+    testing::expect(std::text::ends(linux.sources[1], "native.linux.cwn"), "Linux source selection")?
+    return Ok(())
+}
+
+fn target_link_selection(macos: toolchain::Project, linux: toolchain::Project) -> Result<void, Text> {
+    testing::expect(testing::equal_lists(macos.links, testing::list("-framework|AppKit|-lobjc")), "macOS links")?
+    testing::expect(testing::equal_lists(linux.links, testing::list("-lm")), "Linux links")?
+    return Ok(())
+}
+
+fn target_matrix() -> Result<void, Text> {
+    let names = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock")
+    for index in 0..names.length() {
+        let value = toolchain::parse_target(names[index])?
+        testing::expect(std::text::equal(toolchain::target_name(value), names[index]), "target round trip")?
+        testing::expect(toolchain::target_source("main.cwn", value), "shared source")?
+        target_architecture_sources(value)?
+        let macos = value.platform == toolchain::Platform::Macos()
+        let linux = value.platform == toolchain::Platform::Linux()
+        testing::expect(toolchain::target_source("main.macos.cwn", value) == macos, "macOS source across architectures")?
+        testing::expect(toolchain::target_source("main.linux.cwn", value) == linux, "Linux source across architectures")?
+    }
+    return target_rejections()
+}
+
+fn target_rejections() -> Result<void, Text> {
+    let rejected = testing::list("arm32-linux|x86-linux|arm64-bedrock|aarch64-windows|ARM64-macos|x86_64-macos-extra")
+    for index in 0..rejected.length() {
+        testing::error(toolchain::parse_target(rejected[index]))?
+    }
+    testing::error(toolchain::parse_target(""))?
+    return Ok(())
+}
+
+fn target_architecture_sources(value: toolchain::Target) -> Result<void, Text> {
+    let arm = value.architecture == toolchain::Architecture::Arm64()
+    let macos = value.platform == toolchain::Platform::Macos()
+    testing::expect(toolchain::target_source("main.arm64.cwn", value) == arm, "ARM64 source selection")?
+    testing::expect(toolchain::target_source("main.x86_64.cwn", value) != arm, "x86-64 source selection")?
+    testing::expect(toolchain::target_source("main.arm64.macos.cwn", value) ==(arm && macos), "combined source selection")?
+    testing::expect(toolchain::target_source("main.x86_64.macos.cwn", value) ==(arm == false && macos), "combined x86 source selection")?
+    testing::expect(toolchain::target_source("folder.arm64/shared.cwn", value), "directory names do not select architecture")?
+    testing::expect(toolchain::target_source("arm64.cwn", value), "unqualified architecture filename")?
+    return Ok(())
+}
+
+fn host_source_matrix() -> Result<void, Text> {
+    let names = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock")
+    let root = toolchain::path_join(toolchain::repository_root()?, "components/toolchain/src/host")
+    for index in 0..names.length() {
+        let value = toolchain::parse_target(names[index])?
+        host_source_files(root, value)?
+    }
+    return Ok(())
+}
+
+fn host_source_files(root: Text, value: toolchain::Target) -> Result<void, Text> {
+    let sources = toolchain::require_sources(toolchain::single_source(root, value))?
+    let cpu = std::text::joined(std::text::joined("target.", toolchain::architecture_name(value.architecture)), ".cwn")
+    let platform = std::text::joined(std::text::joined("target.", toolchain::platform_name(value.platform)), ".cwn")
+    testing::expect(std::text::list_contains(sources, toolchain::path_join(root, cpu)), "host architecture follows compilation target")?
+    testing::expect(std::text::list_contains(sources, toolchain::path_join(root, platform)), "host platform follows compilation target")?
+    return Ok(())
+}

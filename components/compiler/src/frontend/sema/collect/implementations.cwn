@@ -1,0 +1,64 @@
+module sema {
+    fn collect_implementation_functions(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.implementations.length() {
+            loan read program.implementations[index] as declaration {
+                collect_implementation(symbols, declaration)
+            }
+            index = index + 1
+        }
+    }
+
+    fn collect_implementation(symbols: write Symbols, declaration: frontend::ImplDecl) -> void {
+        var interface_symbol: usize = 0
+        var valid_interface = false
+        match find_symbol(symbols, declaration.interface_name) {
+            Some(value) => {
+                interface_symbol = value
+                match read symbols.types[value].kind {
+                    Interface => {
+                        valid_interface = true
+                    }
+                    _ => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        let empty = resolution_new()
+        let target = resolve_type(symbols, empty, declaration.target)
+        var owner: usize = 0
+        var valid_owner = false
+        match implementation_owner(symbols, target) {
+            Some(symbol) => {
+                owner = symbol;
+                valid_owner = true
+            }
+            None => {
+            }
+        }
+        if valid_interface == false || valid_owner == false {
+            symbols_error(symbols, "implementation requires a valid interface and target type");
+            return
+        }
+        symbols.implementations.push(Implementation {
+                interface_symbol: interface_symbol, target: type_copy(target)
+            })
+        var index: usize = 0
+        while index < declaration.methods.length() {
+            loan read declaration.methods[index] as function {
+                let context = FunctionContext {
+                    resolution: Resolution {
+                        parameters: names_copy(function.type_parameters), self_symbol: Some(owner)
+                    }
+                    kind: ImplementationFunction(owner, interface_symbol)
+                    foreign: false
+                    symbol: function.name.span
+                }
+                collect_function(symbols, function, move context)
+            }
+            index = index + 1
+        }
+    }
+}

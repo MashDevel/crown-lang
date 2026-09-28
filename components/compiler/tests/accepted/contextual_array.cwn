@@ -1,0 +1,13 @@
+struct Values {
+    bytes: [i8; 2]
+}
+
+fn main() -> u32 {
+    let values = Values {
+        bytes: [0, 127]
+    }
+    if values.bytes[1] == 127 {
+        return 42
+    }
+    return 0
+}

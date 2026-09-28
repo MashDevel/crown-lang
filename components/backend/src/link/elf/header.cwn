@@ -1,0 +1,76 @@
+module elf {
+    struct Segment {
+        kind: u64, flags: u64, offset: usize, size: usize, alignment: u64
+    }
+
+    fn header(image: write Image) -> void {
+        link_binary::put(image.bytes, 0, 1179403647, 4)
+        image.bytes[4] = 2
+        image.bytes[5] = 1
+        image.bytes[6] = 1
+        link_binary::put(image.bytes, 16, 2, 2)
+        link_binary::put(image.bytes, 18, if image.architecture == object::ArchitectureArm64() {
+                183
+            } else {
+                62
+            }, 2)
+        link_binary::put(image.bytes, 20, 1, 4)
+        link_binary::put(image.bytes, 24, IMAGE_BASE + u64.from(image.entry_offset), 8)
+        link_binary::put(image.bytes, 32, 64, 8)
+        link_binary::put(image.bytes, 52, 64, 2)
+        link_binary::put(image.bytes, 54, 56, 2)
+        link_binary::put(image.bytes, 56, 6, 2)
+        link_binary::put(image.bytes, 58, 64, 2)
+        segments(image)
+    }
+
+    fn segments(image: write Image) -> void {
+        segment(image.bytes, 0, Segment {
+                kind: 6, flags: 4, offset: 64, size: 336, alignment: 8
+            })
+        segment(image.bytes, 1, Segment {
+                kind: 3, flags: 4, offset: image.interpreter_offset, size: image.interpreter_size, alignment: 1
+            })
+        segment(image.bytes, 2, Segment {
+                kind: 1, flags: 5, offset: 0, size: image.data_offset, alignment: u64.from(PAGE_SIZE)
+            })
+        segment(image.bytes, 3, Segment {
+                kind: 1, flags: 6, offset: image.data_offset, size: image.bytes.length() - image.data_offset, alignment: u64.from(PAGE_SIZE)
+            })
+        segment(image.bytes, 4, Segment {
+                kind: 2, flags: 6, offset: image.dynamic_offset, size: image.dynamic_entries.length(), alignment: 8
+            })
+        segment(image.bytes, 5, Segment {
+                kind: 1685382481, flags: 6, offset: 0, size: 0, alignment: 16
+            })
+    }
+
+    fn segment(bytes: write Vec<u8>, index: usize, value: Segment) -> void {
+        let offset: usize = 64 + index * 56
+        let address: u64 = if value.kind == 1685382481 {
+            0
+        } else {
+            IMAGE_BASE + u64.from(value.offset)
+        }
+        link_binary::put(bytes, offset, value.kind, 4)
+        link_binary::put(bytes, offset + 4, value.flags, 4)
+        link_binary::put(bytes, offset + 8, u64.from(value.offset), 8)
+        link_binary::put(bytes, offset + 16, address, 8)
+        link_binary::put(bytes, offset + 24, address, 8)
+        link_binary::put(bytes, offset + 32, u64.from(value.size), 8)
+        link_binary::put(bytes, offset + 40, u64.from(value.size), 8)
+        link_binary::put(bytes, offset + 48, value.alignment, 8)
+    }
+
+    fn write_interpreter(image: write Image, path: Text) -> Result<void, Text> {
+        if std::text::starts(path, "/") == false || std::text::contains(path, "\0") || path.length() > 3695 {
+            return Err("ELF interpreter must be a bounded absolute path")
+        }
+        let bytes = toolchain::text_bytes(path)
+        for index in 0..bytes.length() {
+            image.bytes[image.interpreter_offset + index] = bytes[index]
+        }
+        image.interpreter_size = bytes.length() + 1
+        return Ok(())
+    }
+}

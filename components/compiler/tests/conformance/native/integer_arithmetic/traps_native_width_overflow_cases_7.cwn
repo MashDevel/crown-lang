@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let value: i8 = 43
+    let factor: i8 = 3
+    value * factor
+    return 0
+}

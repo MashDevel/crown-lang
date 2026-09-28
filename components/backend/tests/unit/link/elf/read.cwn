@@ -1,0 +1,70 @@
+fn object_contents() -> Result<void, Text> {
+    let object = elf::read_object(fixture())?
+    testing::expect(object.sections.length() == 3, "ELF allocated sections")?
+    testing::expect(object.symbols.length() == 2, "unused ELF imports are omitted")?
+    testing::expect(object.relocations.length() == 1, "ELF RELA records")?
+    testing::expect(object::section_is_zero_fill(object.sections[2].kind), "ELF zero fill")?
+    testing::expect(object.sections[2].memory_size == 16 && object.sections[2].data.length() == 0, "ELF zero fill size")?
+    testing::expect(object.symbols[0].kind == object::SymbolFunction(), "ELF function symbol")?
+    return object_relocation(object)
+}
+
+fn object_relocation(object: object::CompilerObject) -> Result<void, Text> {
+    testing::expect(object.relocations[0].addend == 3, "ELF explicit relocation addend")?
+    return testing::expect(object.relocations[0].symbol == 0 && object.relocations[0].section == 1, "ELF index translation")
+}
+
+fn rejected_field(offset: usize, value: u64, width: usize) -> Result<void, Text> {
+    var bytes = fixture()
+    link_binary::put(bytes, offset, value, width)
+    return testing::error(elf::read_object(move bytes))
+}
+
+fn malformed_objects() -> Result<void, Text> {
+    testing::error(elf::read_object(Vec<u8>.new()))?
+    rejected_field(4, 1, 1)?
+    rejected_field(18, 40, 2)?
+    rejected_field(40, 18446744073709551615, 8)?
+    rejected_field(60, 65535, 2)?
+    rejected_field(136, 1026, 8)?
+    rejected_field(216, 719, 8)?
+    rejected_field(440, 23, 8)?
+    return malformed_relocations()
+}
+
+fn malformed_relocations() -> Result<void, Text> {
+    rejected_field(664, 17179869185, 8)?
+    rejected_field(664, 4294967327, 8)?
+    rejected_field(656, 7, 8)?
+    return rejected_field(590, 65521, 2)
+}
+
+fn imported_call() -> Result<void, Text> {
+    var bytes = fixture()
+    link_binary::put(bytes, 664, 12884901892, 8)
+    link_binary::put(bytes, 672, 18446744073709551612, 8)
+    let object = elf::read_object(move bytes)?
+    testing::expect(object.symbols.length() == 3, "referenced imports retained")?
+    testing::expect(object.symbols[2].kind == object::SymbolFunction(), "PLT relocation classifies untyped function import")?
+    return testing::expect(object.relocations[0].addend == -4, "signed ELF addend")
+}
+
+fn unwind_section() -> Result<void, Text> {
+    var bytes = fixture()
+    link_binary::put(bytes, 196, 1879048193, 4)
+    link_binary::put(bytes, 200, 2, 8)
+    let object = elf::read_object(move bytes)?
+    return testing::expect(object.sections[1].data.length() == 8, "x86-64 unwind sections retain their bytes and relocations")
+}
+
+fn run() -> Result<void, Text> {
+    object_contents()?
+    malformed_objects()?
+    imported_call()?
+    unwind_section()?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

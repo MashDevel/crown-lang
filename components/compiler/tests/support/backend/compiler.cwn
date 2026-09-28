@@ -1,0 +1,30 @@
+fn safety_compiler(program: ir::Program, id: usize) -> Result<x86::FunctionCompiler, u32> {
+    let frame = match x86::codegen_build_frame(program.functions[id]) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err(93)
+        }
+    }
+    return Ok(x86::FunctionCompiler {
+            id: id, frame: move frame, instructions: Some(Vec<x86::Instruction>.new()), block: Some(0)
+            symbols: x86::codegen_symbol_addresses(program.functions[id])
+            uses: x86::codegen_value_uses(program.functions[id]), cached_value: None(), label_sequence: 0
+        })
+}
+
+fn safety_components(size: u64) -> Vec<ir::AbiComponent> {
+    let widths = [ir::IntegerWidth64(), ir::IntegerWidth32(), ir::IntegerWidth16(), ir::IntegerWidth8()]
+    var result = Vec<ir::AbiComponent>.new()
+    var offset: u64 = 0
+    for index in 0..4 {
+        let bytes = ir::integer_width_bytes(widths[index])
+        while size - offset >= bytes {
+            result.push(ir::AbiComponent {
+                    offset: offset, value_type: ir::TypeInteger(widths[index])
+                })
+            offset = offset + bytes
+        }
+    }
+    return move result
+}

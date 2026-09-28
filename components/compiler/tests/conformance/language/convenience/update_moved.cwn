@@ -1,0 +1,2 @@
+fn consume(value: take Vec<u32>) -> u32 { return 1 }
+fn main() -> u32 { var values = Vec<u32>.new(); values.push(1); values[0] += consume(move values); return 0 }

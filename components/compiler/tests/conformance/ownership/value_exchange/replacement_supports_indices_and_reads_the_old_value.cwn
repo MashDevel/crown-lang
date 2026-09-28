@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    var values = [20, 1]
+    let previous = replace(values[0], values[0] + 1)
+    swap(values[0], values[1])
+    return previous + values[0] + values[1]
+}

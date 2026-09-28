@@ -1,0 +1,27 @@
+module x86 {
+    fn codegen_wide_memory_load(program: ir::Program, compiler: write FunctionCompiler, input: take LoadInput) -> Result<void, CodegenError> {
+        input.value_type
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.address, register: R10()
+            })?
+        codegen_emit(compiler, Load(Rax(), R10(), 0))
+        codegen_emit(compiler, Load(Rdx(), R10(), 8))
+        return codegen_store_wide_result(compiler, input.result, WideRegisters {
+                low: Rax(), high: Rdx()
+            })
+    }
+
+    fn codegen_wide_memory_store(program: ir::Program, compiler: write FunctionCompiler, input: take StoreInput) -> Result<void, CodegenError> {
+        codegen_load_value(program, compiler, ValueAccess {
+                value: input.address, register: R10()
+            })?
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: input.value, registers: WideRegisters {
+                    low: Rax(), high: Rdx()
+                }
+            })?
+        codegen_emit(compiler, Store(R10(), 0, Rax()))
+        codegen_emit(compiler, Store(R10(), 8, Rdx()))
+        return Ok(())
+    }
+}

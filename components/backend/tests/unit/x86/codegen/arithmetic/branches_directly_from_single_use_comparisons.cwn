@@ -1,0 +1,108 @@
+fn add_test_block(function: write ir::Function) -> usize {
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            return value
+        }
+        Err(error) => {
+            error;
+            return 0
+        }
+    }
+}
+
+fn terminate_test_block(function: write ir::Function, block: read usize, terminator: take ir::Terminator) -> bool {
+    match ir::function_terminate(function, block, move terminator) {
+        Ok(value) => {
+            value;
+            return true
+        }
+        Err(error) => {
+            error;
+            return false
+        }
+    }
+}
+
+fn main() -> u32 {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    let signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth64()))
+    var function = ir::function_new("compare_branch", move signature, ir::LinkageLocal())
+    let entry = add_test_block(function)
+    let then_block = add_test_block(function)
+    let else_block = add_test_block(function)
+    var comparison: usize = 0
+    match ir::function_append(function, entry, ir::InstructionCompare(ir::CompareSignedLess(), function.parameters[0], function.parameters[1])) {
+        Err(error) => {
+            error;
+            return 1
+        }
+        Ok(value) => {
+            match value {
+                Some(id) => {
+                    comparison = id
+                }
+                None => {
+                    return 2
+                }
+            }
+        }
+    }
+    if terminate_test_block(function, entry, ir::TerminatorConditional(comparison, then_block, else_block)) == false {
+        return 3
+    }
+    let one_type = ir::TypeInteger(ir::IntegerWidth64())
+    let one_value = ir::ConstantInteger(u64.from(1))
+    let one = ir::function_constant(function, one_type, one_value)
+    if terminate_test_block(function, then_block, ir::TerminatorReturn(Some(one))) == false {
+        return 4
+    }
+    if terminate_test_block(function, else_block, ir::TerminatorReturn(Some(one))) == false {
+        return 5
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return 6
+        }
+        Ok(instructions) => {
+            return check_generated_instructions(instructions)
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var direct = false
+    var materialized = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::JumpIf(condition, label) => {
+                label;
+                if x86::condition_code(condition) == x86::condition_code(x86::Less()) {
+                    direct = true
+                }
+            }
+            x86::Set(condition, register) => {
+                condition;
+                register;
+                materialized = true
+            }
+            x86::Test(left, right) => {
+                left;
+                right;
+                materialized = true
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if direct == false || materialized {
+        return 7
+    }
+    42
+}

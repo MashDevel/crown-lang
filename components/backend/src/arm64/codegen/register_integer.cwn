@@ -1,0 +1,77 @@
+module arm64 {
+    fn register_binary(compiler: write Compiler, operator: ir::BinaryOperator, value_type: ir::Type, left: usize, right: usize) -> Result<void, Text> {
+        let width = integer_bits(value_type)
+        compiler.result_register = compiler.target
+        compiler.normalized = width == 32
+        if ir::binary_is_shift(operator) {
+            return register_shift(compiler, operator, width, left, right)
+        }
+        let registers = Registers {
+            destination: compiler.target,
+            left: value_register(compiler, left, 9), right: value_register(compiler, right, 10)
+        }
+        emit(compiler, integer_sized_word(integer_word(integer_operation(operator)?, registers)?, width))
+        return Ok(())
+    }
+
+    fn integer_bits(value_type: ir::Type) -> u32 {
+        return match value_type {
+            ir::TypeInteger(bits) => ir::integer_width_bits(bits)
+            _ => 64
+        }
+    }
+
+    fn integer_sized_word(word: u32, width: u32) -> u32 {
+        return if width == 32 {
+            word & 2147483647
+        } else {
+            word
+        }
+    }
+
+    fn register_shift(compiler: write Compiler, operator: ir::BinaryOperator, width: u32, left: usize, right: usize) -> Result<void, Text> {
+        let operation = match operator {
+            ir::BinaryShiftLeft => ShiftOperation::Left()
+            ir::BinaryShiftRightSigned => ShiftOperation::ArithmeticRight()
+            _ => ShiftOperation::LogicalRight()
+        }
+        var registers = Registers {
+            destination: compiler.target, left: value_register(compiler, left, 9), right: 10
+        }
+        if operation == ShiftOperation::ArithmeticRight() && width < 32 {
+            value_load(compiler, left, 9)
+            emit_encoding(compiler, extend_word(9, 9, width, true))
+            registers.left = 9
+        }
+        if immediate_shift(compiler, operation, registers, width, right)? {
+            return Ok(())
+        }
+        registers.right = value_register(compiler, right, 10)
+        if width < 32 {
+            immediate(compiler, 11, u64.from(width - 1))
+            emit_encoding(compiler, integer_word(IntegerOperation::And(), Registers {
+                        destination: 10, left: registers.right, right: 11
+                    }))
+            registers.right = 10
+        }
+        emit(compiler, integer_sized_word(shift_word(operation, registers)?, width))
+        return Ok(())
+    }
+
+    fn immediate_shift(compiler: write Compiler, operation: ShiftOperation, registers: Registers, width: u32, value: usize) -> Result<bool, Text> {
+        match compiler.constants[value] {
+            Some(constant) => {
+                let amount = u32.from(constant.low & u64.from(width - 1))
+                emit(compiler, shift_immediate(operation, registers, amount, if width == 32 {
+                            32
+                        } else {
+                            64
+                        })?)
+                return Ok(true)
+            }
+            None => {
+                return Ok(false)
+            }
+        }
+    }
+}

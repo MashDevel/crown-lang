@@ -1,0 +1,42 @@
+module frontend {
+    extern "c" {
+        fn parse_float32(source: RawPtr<u8>, end: RawPtr<RawPtr<u8>>) -> f32 = "strtof"
+        fn parse_float64(source: RawPtr<u8>, end: RawPtr<RawPtr<u8>>) -> f64 = "strtod"
+    }
+
+    fn float32_bits(source: Shared<Vec<u8>>, span: Span) -> u32 {
+        var bytes = float_bytes(source, span)
+        unsafe {
+            let end = RawPtr<RawPtr<u8>>.from_address(0)
+            let value = parse_float32(bytes.as_raw(), end)
+            var values = Vec<f32>.new()
+            values.push(value)
+            return RawPtr<u32>.cast(values.as_raw()).read()
+        }
+    }
+
+    fn float64_bits(source: Shared<Vec<u8>>, span: Span) -> u64 {
+        var bytes = float_bytes(source, span)
+        unsafe {
+            let end = RawPtr<RawPtr<u8>>.from_address(0)
+            let value = parse_float64(bytes.as_raw(), end)
+            var values = Vec<f64>.new()
+            values.push(value)
+            return RawPtr<u64>.cast(values.as_raw()).read()
+        }
+    }
+
+    fn float_bytes(source: Shared<Vec<u8>>, span: Span) -> Vec<u8> {
+        var bytes = Vec<u8>.with_capacity(span.end - span.start + 1)
+        var index = span.start
+        while index < span.end {
+            let byte = source_byte(source, index)
+            if byte != 95 {
+                bytes.push(byte)
+            }
+            index = index + 1
+        }
+        bytes.push(0)
+        return move bytes
+    }
+}

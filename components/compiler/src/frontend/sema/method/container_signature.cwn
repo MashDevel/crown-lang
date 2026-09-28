@@ -1,0 +1,71 @@
+module sema {
+    fn channel_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() != 1 {
+            return None()
+        }
+        var element = Invalid()
+        loan read arguments[0] as value {
+            element = type_copy(value)
+        }
+        if name_is(checker.symbols.source, method, "share") {
+            let receiver = BuiltinType(Channel(), types_copy(arguments))
+            return Some(empty_method(false, type_copy(receiver)))
+        }
+        if name_is(checker.symbols.source, method, "send") {
+            return Some(unary_method(false, move element, builtin_leaf(Unit())))
+        }
+        if name_is(checker.symbols.source, method, "try_receive") {
+            var types = Vec<Type>.new()
+            types.push(move element)
+            return Some(empty_method(false, BuiltinType(Option(), move types)))
+        }
+        return None()
+    }
+
+    fn arena_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() != 1 {
+            return None()
+        }
+        var element = Invalid()
+        loan read arguments[0] as value {
+            element = type_copy(value)
+        }
+        if name_is(checker.symbols.source, method, "insert") {
+            var handle_types = Vec<Type>.new()
+            handle_types.push(type_copy(element))
+            let handle = BuiltinType(Handle(), move handle_types)
+            return Some(unary_method(true, move element, move handle))
+        }
+        if name_is(checker.symbols.source, method, "contains") {
+            var types = Vec<Type>.new()
+            types.push(type_copy(element))
+            let handle = BuiltinType(Handle(), move types)
+            return Some(unary_method(false, move handle, builtin_leaf(Bool())))
+        }
+        if name_is(checker.symbols.source, method, "remove") {
+            var handle_types = Vec<Type>.new()
+            handle_types.push(type_copy(element))
+            var result_types = Vec<Type>.new()
+            result_types.push(move element)
+            let handle = BuiltinType(Handle(), move handle_types)
+            let result = BuiltinType(Option(), move result_types)
+            return Some(unary_method(true, move handle, move result))
+        }
+        return None()
+    }
+
+    fn option_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() == 1 && name_is(checker.symbols.source, method, "take") {
+            let receiver = BuiltinType(Option(), types_copy(arguments))
+            return Some(empty_method(true, type_copy(receiver)))
+        }
+        return None()
+    }
+
+    fn thread_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() == 0 && name_is(checker.symbols.source, method, "join") {
+            return Some(empty_method(true, builtin_leaf(Unit())))
+        }
+        return None()
+    }
+}

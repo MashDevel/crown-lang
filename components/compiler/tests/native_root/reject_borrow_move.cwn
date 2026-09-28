@@ -1,0 +1,17 @@
+fn main() -> u32 {
+    let owner = NativeRoot<Text>.new("owned")
+    let token = owner.token()
+    match token.acquire() {
+        Err(error) => {
+            return error
+        },
+        Ok(lease) => {
+            var held = move lease
+            loan write held as payload {
+                let stolen = move payload
+                stolen
+            }
+        }
+    }
+    return 0
+}

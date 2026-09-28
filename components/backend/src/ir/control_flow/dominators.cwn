@@ -1,0 +1,177 @@
+module ir {
+    struct Dominators {
+        blocks: Vec<Vec<u64>>
+        count: usize
+    }
+
+    struct DominatorInput {
+        predecessors: Vec<Vec<usize>>
+        reachable: Vec<bool>
+        order: Vec<usize>
+    }
+
+    fn dominators(function: Function) -> Dominators {
+        let predecessors = predecessors(function)
+        let order = reverse_postorder(function)
+        let reachable = order_membership(function.blocks.length(), order)
+        var blocks = initial_dominators(reachable)
+        let input = DominatorInput {
+            predecessors: move predecessors
+            reachable: move reachable
+            order: move order
+        }
+        var changed = true
+        while changed {
+            changed = update_dominators(input, blocks)
+        }
+        return Dominators {
+            blocks: move blocks, count: function.blocks.length()
+        }
+    }
+
+    fn initial_dominators(reachable: Vec<bool>) -> Vec<Vec<u64>> {
+        let all = dominator_bits(reachable, false)
+        let reached = dominator_bits(reachable, true)
+        var blocks = Vec<Vec<u64>>.with_capacity(reachable.length())
+        var block: usize = 0
+        while block < reachable.length() {
+            var row = Vec<u64>.new()
+            if block == 0 {
+                row = zero_dominator_words(all.length())
+                set_dominator_bit(row, 0)
+            }
+            if block != 0 && reachable[block] {
+                loan read reached as words {
+                    row = copy_dominator_row(words)
+                }
+            }
+            if block != 0 && reachable[block] == false {
+                loan read all as words {
+                    row = copy_dominator_row(words)
+                }
+            }
+            blocks.push(move row)
+            block = block + 1
+        }
+        return move blocks
+    }
+
+    fn dominator_bits(reachable: Vec<bool>, reachable_only: bool) -> Vec<u64> {
+        var output = zero_dominator_words(dominator_word_count(reachable.length()))
+        var index: usize = 0
+        while index < reachable.length() {
+            if reachable_only == false || reachable[index] {
+                set_dominator_bit(output, index)
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn dominator_word_count(count: usize) -> usize {
+        return (count + 63) / 64
+    }
+
+    fn zero_dominator_words(count: usize) -> Vec<u64> {
+        var output = Vec<u64>.with_capacity(count)
+        var index: usize = 0
+        while index < count {
+            output.push(u64.from(0))
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn set_dominator_bit(bits: write Vec<u64>, index: usize) -> void {
+        let word = index / 64
+        let bit = u64.from(index % 64)
+        bits[word] = bits[word] |(u64.from(1) << bit)
+    }
+
+    fn update_dominators(input: DominatorInput, blocks: write Vec<Vec<u64>>) -> bool {
+        var changed = false
+        var index: usize = 1
+        while index < input.order.length() {
+            let block = input.order[index]
+            var next = Vec<u64>.new()
+            loan read input.predecessors[block] as incoming {
+                next = dominator_intersection(incoming, input.reachable, blocks)
+            }
+            set_dominator_bit(next, block)
+            loan read blocks[block] as current {
+                if dominator_rows_equal(next, current) == false {
+                    changed = true
+                }
+            }
+            blocks[block] = move next
+            index = index + 1
+        }
+        return changed
+    }
+
+    fn dominator_intersection(incoming: Slice<usize>, reachable: Vec<bool>, blocks: Vec<Vec<u64>>) -> Vec<u64> {
+        var output = Vec<u64>.new()
+        var found = false
+        var index: usize = 0
+        while index < incoming.length() {
+            let predecessor = incoming[index]
+            if reachable[predecessor] {
+                loan read blocks[predecessor] as row {
+                    if found {
+                        intersect_dominator_rows(output, row)
+                    }
+                    else {
+                        output = copy_dominator_row(row);
+                        found = true
+                    }
+                }
+            }
+            index = index + 1
+        }
+        if found == false {
+            return zero_dominator_words(dominator_word_count(blocks.length()))
+        }
+        return move output
+    }
+
+    fn intersect_dominator_rows(output: write Vec<u64>, incoming: Slice<u64>) -> void {
+        var index: usize = 0
+        while index < output.length() {
+            output[index] = output[index] & incoming[index]
+            index = index + 1
+        }
+    }
+
+    fn copy_dominator_row(input: Slice<u64>) -> Vec<u64> {
+        var output = Vec<u64>.with_capacity(input.length())
+        var index: usize = 0
+        while index < input.length() {
+            output.push(input[index])
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn dominator_rows_equal(left: Vec<u64>, right: Slice<u64>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        var index: usize = 0
+        while index < left.length() {
+            if left[index] != right[index] {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn dominates(dominators: Dominators, block: usize, dominator: usize) -> bool {
+        if block >= dominators.count || dominator >= dominators.count {
+            return false
+        }
+        let word = dominator / 64
+        let bit = u64.from(dominator % 64)
+        return dominators.blocks[block][word] &(u64.from(1) << bit) != 0
+    }
+}

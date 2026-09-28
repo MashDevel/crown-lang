@@ -1,0 +1,151 @@
+module ir {
+    fn instruction_operands(kind: InstructionKind) -> Vec<usize> {
+        var operands = Vec<usize>.new()
+        if collect_scalar_operands(kind, operands) {
+            return move operands
+        }
+        if collect_memory_operands(kind, operands) {
+            return move operands
+        }
+        collect_call_operands(kind, operands)
+        move operands
+    }
+
+    fn collect_scalar_operands(kind: InstructionKind, operands: write Vec<usize>) -> bool {
+        match read kind {
+            InstructionVectorSplat(value, target) => {
+                target;
+                operands.push(value);
+                return true
+            }
+            InstructionBinary(operator, left, right) => {
+                operator;
+                push_pair(operands, left, right);
+                return true
+            }
+            InstructionUnary(operator, value) => {
+                operator;
+                operands.push(value);
+                return true
+            }
+            InstructionCompare(operator, left, right) => {
+                operator;
+                push_pair(operands, left, right);
+                return true
+            }
+            InstructionCast(operator, value, target) => {
+                operator;
+                target;
+                operands.push(value);
+                return true
+            }
+            InstructionSelect(condition, then_value, else_value) => {
+                push_triple(operands, ValueTriple {
+                        first: condition, second: then_value, third: else_value
+                    });
+                return true
+            }
+            InstructionPhi(value_type, incoming) => {
+                value_type
+                var index: usize = 0
+                while index < incoming.length() {
+                    operands.push(incoming[index].value)
+                    index = index + 1
+                };
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn collect_memory_operands(kind: InstructionKind, operands: write Vec<usize>) -> bool {
+        match read kind {
+            InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        operands.push(address);
+                        return true
+                    }
+                    MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        push_pair(operands, address, value);
+                        return true
+                    }
+                    MemoryOffset(base, offset) => {
+                        push_pair(operands, base, offset);
+                        return true
+                    }
+                    MemoryCopy(destination, source, size) => {
+                        push_triple(operands, ValueTriple {
+                                first: destination, second: source, third: size
+                            });
+                        return true
+                    }
+                    MemorySet(destination, value, size) => {
+                        push_triple(operands, ValueTriple {
+                                first: destination, second: value, third: size
+                            });
+                        return true
+                    }
+                    MemoryRepeat(destination, source, size, count) => {
+                        push_triple(operands, ValueTriple {
+                                first: destination, second: source, third: size
+                            })
+                        operands.push(count);
+                        return true
+                    }
+                    _ => false
+                }
+            }
+
+            _ => false
+        }
+    }
+
+    fn collect_call_operands(kind: InstructionKind, operands: write Vec<usize>) -> bool {
+        match read kind {
+            InstructionCall(function, arguments, result) => {
+                function;
+                result
+                push_values(operands, arguments);
+                return true
+            }
+            InstructionCallIndirect(function, signature, arguments) => {
+                signature
+                operands.push(function)
+                push_values(operands, arguments);
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn push_pair(values: write Vec<usize>, first: usize, second: usize) -> void {
+        values.push(first)
+        values.push(second)
+    }
+
+    struct ValueTriple {
+        first: usize
+        second: usize
+        third: usize
+    }
+
+    fn push_triple(values: write Vec<usize>, triple: take ValueTriple) -> void {
+        values.push(triple.first)
+        values.push(triple.second)
+        values.push(triple.third)
+    }
+
+    fn push_values(output: write Vec<usize>, input: Vec<usize>) -> void {
+        var index: usize = 0
+        while index < input.length() {
+            output.push(input[index])
+            index = index + 1
+        }
+    }
+}

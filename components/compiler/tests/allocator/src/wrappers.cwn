@@ -1,0 +1,44 @@
+module auditor {
+    fn acquired_result(instructions: write Vec<x86::Instruction>) -> void {
+        instructions.push(x86::Move(x86::Rbx(), x86::Rax()))
+        instructions.push(x86::Move(x86::Rdi(), x86::Rax()))
+        instructions.push(x86::Call("crown_test_acquired"))
+        instructions.push(x86::Move(x86::Rax(), x86::Rbx()))
+    }
+
+    fn allocate(name: Text) -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::Push(x86::Rbx()))
+        instructions.push(x86::Call(name.clone()))
+        acquired_result(instructions)
+        instructions.push(x86::Pop(x86::Rbx()))
+        instructions.push(x86::Return())
+        return x86::function_new(std::text::joined("crown_test_", name), move instructions)
+    }
+
+    fn reallocate() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::Push(x86::Rbx()))
+        instructions.push(x86::Move(x86::Rbx(), x86::Rdi()))
+        instructions.push(x86::Call("realloc"))
+        instructions.push(x86::Test(x86::Rbx(), x86::Rbx()))
+        instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(0)))
+        acquired_result(instructions)
+        instructions.push(x86::Label(x86::InternalLabel(0)))
+        instructions.push(x86::Pop(x86::Rbx()))
+        instructions.push(x86::Return())
+        return x86::function_new("crown_test_realloc", move instructions)
+    }
+
+    fn release() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::SubtractImmediate(x86::Rsp(), 8))
+        enabled(instructions)
+        update(instructions, -1, 1)
+        instructions.push(x86::Label(x86::InternalLabel(0)))
+        instructions.push(x86::Call("free"))
+        instructions.push(x86::AddImmediate(x86::Rsp(), 8))
+        instructions.push(x86::Return())
+        return x86::function_new("crown_test_free", move instructions)
+    }
+}

@@ -1,0 +1,212 @@
+module lowering {
+    struct NamedDrop {
+        address: usize
+        symbol: usize
+        arguments: Vec<sema::Type>
+    }
+
+    fn drop_named(compiler: write FunctionCompiler, symbols: sema::Symbols, request: NamedDrop) -> Result<void, u32> {
+        if request.symbol >= symbols.types.length() {
+            return Err(225)
+        }
+        match read symbols.types[request.symbol].kind {
+            sema::Enum => {
+                return drop_named_enum(compiler, symbols, request)
+            }
+            sema::Struct => {
+                return drop_struct(compiler, symbols, request)
+            }
+            sema::Resource(opaque_value, transferable) => {
+                opaque_value;
+                return drop_struct(compiler, symbols, request)
+            }
+            sema::Interface => {
+                return Ok(())
+            }
+        }
+    }
+
+    fn drop_struct(compiler: write FunctionCompiler, symbols: sema::Symbols, request: NamedDrop) -> Result<void, u32> {
+        let owner = sema::NamedType(request.symbol, sema::types_copy(request.arguments))
+        var index = symbols.types[request.symbol].fields.length()
+        while index != 0 {
+            index = index - 1
+            loan read symbols.types[request.symbol].fields[index] as field {
+                let layout = layout_field(symbols, owner, field.name)?
+                let address = function_offset(compiler, request.address, layout.offset)?
+                let field_drop = Place {
+                    address: address, value_type: sema::type_copy(layout.value_type)
+                }
+                drop_value(compiler, field_drop)?
+            }
+        }
+        return Ok(())
+    }
+
+    struct EnumDropFlow {
+        owner: sema::Type
+        blocks: Vec<usize>
+        invalid: usize
+        merge: usize
+    }
+
+    fn drop_named_enum(compiler: write FunctionCompiler, symbols: sema::Symbols, request: NamedDrop) -> Result<void, u32> {
+        let owner = sema::NamedType(request.symbol, sema::types_copy(request.arguments))
+        var blocks = Vec<usize>.new()
+        var cases = Vec<ir::SwitchCase>.new()
+        var index: usize = 0
+        while index < symbols.types[request.symbol].variants.length() {
+            let block = function_new_block(compiler)?
+            blocks.push(block)
+            cases.push(ir::SwitchCase {
+                    value: u64.from(index), block: block
+                })
+            index = index + 1
+        }
+        let flow = EnumDropFlow {
+            owner: move owner, blocks: move blocks, invalid: function_new_block(compiler)?, merge: function_new_block(compiler)?
+        }
+        let load = Place {
+            address: request.address, value_type: sema::builtin_leaf(sema::U32())
+        }
+        let tag = function_load(compiler, symbols, load)?
+        function_finish(compiler, ir::TerminatorSwitch(tag, move cases, flow.invalid))?
+        let variants = EnumDrop {
+            address: request.address, symbol: request.symbol, flow: enum_drop_flow_copy(flow)
+        }
+        drop_named_variants(compiler, symbols, variants)?
+        function_select_block(compiler, flow.invalid)
+        function_panic_now(compiler, "invalid_enum_tag")?
+        function_select_block(compiler, flow.merge)
+        return Ok(())
+    }
+
+    struct EnumDrop {
+        address: usize
+        symbol: usize
+        flow: EnumDropFlow
+    }
+
+    fn drop_named_variants(compiler: write FunctionCompiler, symbols: sema::Symbols, request: EnumDrop) -> Result<void, u32> {
+        var index: usize = 0
+        while index < request.flow.blocks.length() {
+            function_select_block(compiler, request.flow.blocks[index])
+            loan read symbols.types[request.symbol].variants[index] as variant {
+                let layout = layout_variant(symbols, request.flow.owner, variant.name)?
+                drop_variant_fields(compiler, request.address, layout.fields)?
+            }
+            function_finish(compiler, ir::TerminatorBranch(request.flow.merge))?
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn enum_drop_flow_copy(flow: EnumDropFlow) -> EnumDropFlow {
+        return EnumDropFlow {
+            owner: sema::type_copy(flow.owner), blocks: ir::usize_values_copy(flow.blocks), invalid: flow.invalid, merge: flow.merge
+        }
+    }
+
+    fn drop_builtin_enum(compiler: write FunctionCompiler, symbols: sema::Symbols, request: BuiltinDrop) -> Result<void, u32> {
+        var cases = Vec<ir::SwitchCase>.new()
+        let first = function_new_block(compiler)?
+        let second = function_new_block(compiler)?
+        let invalid = function_new_block(compiler)?
+        let merge = function_new_block(compiler)?
+        cases.push(ir::SwitchCase {
+                value: 0, block: first
+            })
+        cases.push(ir::SwitchCase {
+                value: 1, block: second
+            })
+        let load = Place {
+            address: request.address, value_type: sema::builtin_leaf(sema::U32())
+        }
+        let tag = function_load(compiler, symbols, load)?
+        function_finish(compiler, ir::TerminatorSwitch(tag, move cases, invalid))?
+        let flow = BuiltinEnumDrop {
+            request: builtin_drop_copy(request), first: first, second: second, invalid: invalid, merge: merge
+        }
+        drop_builtin_variants(compiler, symbols, flow)?
+        return Ok(())
+    }
+
+    struct BuiltinEnumDrop {
+        request: BuiltinDrop
+        first: usize
+        second: usize
+        invalid: usize
+        merge: usize
+    }
+
+    fn drop_builtin_variants(compiler: write FunctionCompiler, symbols: sema::Symbols, flow: BuiltinEnumDrop) -> Result<void, u32> {
+        function_select_block(compiler, flow.first)
+        if flow.request.builtin == sema::Result() {
+            loan read flow.request.arguments[1] as value {
+                let request = BuiltinDropField {
+                    address: flow.request.address, value_type: sema::type_copy(value), arguments: sema::types_copy(flow.request.arguments)
+                }
+                drop_builtin_field(compiler, symbols, request)?
+            }
+        }
+        function_finish(compiler, ir::TerminatorBranch(flow.merge))?
+        function_select_block(compiler, flow.second)
+        loan read flow.request.arguments[0] as value {
+            let request = BuiltinDropField {
+                address: flow.request.address, value_type: sema::type_copy(value), arguments: sema::types_copy(flow.request.arguments)
+            }
+            drop_builtin_field(compiler, symbols, request)?
+        }
+        function_finish(compiler, ir::TerminatorBranch(flow.merge))?
+        function_select_block(compiler, flow.invalid)
+        function_panic_now(compiler, "invalid_enum_tag")?
+        function_select_block(compiler, flow.merge)
+        return Ok(())
+    }
+
+    struct BuiltinDropField {
+        address: usize
+        value_type: sema::Type
+        arguments: Vec<sema::Type>
+    }
+
+    fn drop_builtin_field(compiler: write FunctionCompiler, symbols: sema::Symbols, request: BuiltinDropField) -> Result<void, u32> {
+        var alignment: u32 = 1
+        var index: usize = 0
+        while index < request.arguments.length() {
+            loan read request.arguments[index] as value {
+                let layout = layout(symbols, value)?
+                if layout.alignment > alignment {
+                    alignment = layout.alignment
+                }
+            }
+            index = index + 1
+        }
+        let target = function_offset(compiler, request.address, align_to(4, alignment))?
+        let value_drop = Place {
+            address: target, value_type: sema::type_copy(request.value_type)
+        }
+        return drop_value(compiler, value_drop)
+    }
+
+    fn builtin_drop_copy(value: BuiltinDrop) -> BuiltinDrop {
+        return BuiltinDrop {
+            address: value.address, builtin: value.builtin, arguments: sema::types_copy(value.arguments)
+        }
+    }
+    fn drop_variant_fields(compiler: write FunctionCompiler, base: usize, fields: Vec<FieldLayout>) -> Result<void, u32> {
+        var field = fields.length()
+        while field != 0 {
+            field = field - 1
+            loan read fields[field] as value {
+                let address = function_offset(compiler, base, value.offset)?
+                let field_drop = Place {
+                    address: address, value_type: sema::type_copy(value.value_type)
+                }
+                drop_value(compiler, field_drop)?
+            }
+        }
+        return Ok(())
+    }
+
+}

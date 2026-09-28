@@ -1,0 +1,101 @@
+module sema {
+    fn layout_query_name(source: Shared<Vec<u8>>, name: frontend::Name) -> bool {
+        return name_is(source, name, "size_of") || name_is(source, name, "align_of") || name_is(source, name, "offset_of")
+    }
+
+    fn checker_layout_query(checker: write Checker, kind: frontend::ExpressionKind) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                let value_type = checker_resolve_type(checker, reference)
+                if checker_layout_owner(checker, value_type) == false {
+                    return None()
+                }
+                if checker_layout_arguments(checker, value_type, method, arguments) == false {
+                    return None()
+                }
+                let marker = frontend::expression(frontend::ExpressionUnit(), reference.span)
+                let info = owned_info(type_copy(value_type))
+                checker_record(checker, marker, info)
+                return Some(copy_info(builtin_leaf(USize())))
+            }
+            _ => None()
+        }
+    }
+
+    fn checker_layout_owner(checker: write Checker, value_type: Type) -> bool {
+        if checker_require_storable(checker, value_type) == false {
+            return false
+        }
+        let unsupported = match type_named_symbol(value_type) {
+            Some(symbol) => {
+                match read checker.symbols.types[symbol].kind {
+                    Interface => true
+                    _ => false
+                }
+            }
+            None => false
+        }
+        if unsupported {
+            checker_error(checker, "layout queries require a concrete storage type, not an interface")
+            return false
+        }
+        return true
+    }
+
+    fn checker_layout_arguments(checker: write Checker, owner: Type, method: frontend::Name, arguments: Vec<frontend::Expression>) -> bool {
+        if name_is(checker.symbols.source, method, "offset_of") == false {
+            if arguments.length() == 0 {
+                return true
+            }
+            checker_error(checker, "layout size and alignment queries take no arguments")
+            return false
+        }
+        match layout_query_field(checker.symbols.source, arguments) {
+            None => {
+                checker_error(checker, "offset_of requires a field name string literal")
+                return false
+            }
+            Some(name) => {
+                if checker_require_field_access(checker, owner) == false {
+                    return false
+                }
+                match checker_field_type(checker, owner, name) {
+                    Some(value) => {
+                        value;
+                        return true
+                    }
+                    None => false
+                }
+            }
+        }
+    }
+
+    fn layout_query_field(source: Shared<Vec<u8>>, arguments: Vec<frontend::Expression>) -> Option<frontend::Name> {
+        if arguments.length() != 1 {
+            return None()
+        }
+        layout_field_literal(source, arguments[0].kind)
+    }
+
+    fn layout_field_literal(source: Shared<Vec<u8>>, kind: frontend::ExpressionKind) -> Option<frontend::Name> {
+        match read kind {
+            frontend::ExpressionText(span) => {
+                let bytes = frontend::text_literal_bytes(source, span)
+                if bytes.length() == 0 {
+                    return None()
+                }
+                var text = Text.new()
+                for index in 0..bytes.length() {
+                    if bytes[index] >= 128 {
+                        return None()
+                    }
+                    text.push(char.from(u32.from(bytes[index])))
+                }
+                return Some(frontend::Name {
+                        text: move text, span: span
+                    })
+            }
+            _ => None()
+        }
+    }
+}

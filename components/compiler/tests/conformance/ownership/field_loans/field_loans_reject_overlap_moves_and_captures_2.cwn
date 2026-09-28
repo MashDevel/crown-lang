@@ -1,0 +1,14 @@
+struct Pair {
+    left: u32, right: u32
+}
+fn main() -> u32 {
+    var pair = Pair {
+        left: 1, right: 2
+    }
+    loan write pair.left as left {
+        loan read pair.left as other {
+            print(other)
+        }
+    }
+    return 0
+}

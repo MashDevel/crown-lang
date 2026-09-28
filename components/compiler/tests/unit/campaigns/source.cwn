@@ -1,0 +1,84 @@
+fn numeric_generation() -> Result<void, Text> {
+    let value = campaign::numeric_case("u8\t+\t1\t2\t3", 7)?
+    var cases = Vec<campaign::NumericCase>.new();
+    cases.push(move value)
+    let source = campaign::numeric_source(cases)
+    testing::expect(std::text::contains(source, "arguments.length() - 1"), "runtime salt")?
+    testing::expect(std::text::contains(source, "1 ^ salt"), "runtime operands")?
+    testing::expect(std::text::contains(source, "actual7 != 3 { return 8 }"), "precise numeric failure index")?
+    testing::expect(std::text::contains(source, "print(result0); return 1"), "numeric failure output")?
+    let wrapping = campaign::numeric_case("i8\twrapping_add\t127\t1\t-128", 0)?
+    testing::expect(std::text::equal(campaign::numeric_expression(wrapping, "left", "right"), "left.wrapping_add(right)"), "wrapping call")?
+    testing::error(campaign::numeric_case("invalid", 0))?
+    return Ok(())
+}
+
+fn reproducible_inputs() -> Result<void, Text> {
+    let first = campaign::malformed_corpus(17, 20)?
+    let second = campaign::malformed_corpus(17, 20)?
+    let third = campaign::malformed_corpus(18, 20)?
+    testing::expect(first.length() == 35 && second.length() == 35, "malformed boundaries remain included")?
+    return compare_inputs(first, second, third)
+}
+
+fn compare_inputs(first: Vec<Vec<u8>>, second: Vec<Vec<u8>>, third: Vec<Vec<u8>>) -> Result<void, Text> {
+    var different = false
+    var empty = false
+    var invalid = false
+    for index in 0..first.length() {
+        matching_bytes(first[index], second[index])?
+        if different_bytes(first[index], third[index])? {
+            different = true
+        }
+        if first[index].length() == 0 {
+            empty = true
+        }
+        if invalid_byte(first[index]) {
+            invalid = true
+        }
+    }
+    testing::expect(different && empty && invalid, "seed changes corpus with invalid UTF-8 and empty boundary")?
+    return Ok(())
+}
+
+fn oracle_provenance() -> Result<void, Text> {
+    let root = toolchain::repository_root()?
+    let integers = campaign::reference(root, "integers")?
+    let floats = campaign::reference(root, "floats")?
+    testing::expect(integers.rows.length() == 13425 && floats.rows.length() == 4788, "independent numeric reference counts")?
+    state_provenance(root)?
+    testing::expect(std::text::list_contains(integers.rows, "i8\twrapping_add\t127\t1\t-128"), "signed wrapping reference")?
+    testing::expect(std::text::list_contains(integers.rows, "u8\twrapping_sub\t0\t1\t255"), "unsigned wrapping reference")?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    numeric_generation()?;
+    reproducible_inputs()?;
+    oracle_provenance()?;
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn state_provenance(root: Text) -> Result<void, Text> {
+    let state = campaign::reference(root, "state")?
+    testing::expect(state.rows.length() == 109, "independent state reference count")?
+    testing::expect(std::text::list_contains(state.rows, "0\t4061748477"), "state boundary zero")?
+    testing::expect(std::text::list_contains(state.rows, "1\t3568043209"), "state boundary one")?
+    testing::expect(std::text::list_contains(state.rows, "4294967295\t2923302927"), "state unsigned maximum")?
+    return Ok(())
+}
+
+fn different_bytes(first: Vec<u8>, second: Vec<u8>) -> Result<bool, Text> {
+    return Ok(std::text::equal(toolchain::digest_bytes(first)?, toolchain::digest_bytes(second)?) == false)
+}
+
+fn matching_bytes(first: Vec<u8>, second: Vec<u8>) -> Result<void, Text> {
+    return testing::expect(different_bytes(first, second)? == false, "same seed reproduces bytes")
+}
+
+fn invalid_byte(bytes: Vec<u8>) -> bool {
+    return bytes.length() == 1 && bytes[0] == 255
+}

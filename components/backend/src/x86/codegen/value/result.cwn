@@ -1,0 +1,93 @@
+module x86 {
+    fn codegen_store_result(program: ir::Program, compiler: write FunctionCompiler, input: take ResultStore) -> Result<void, CodegenError> {
+        match read input.result {
+            Some(result) => {
+                let access = ValueAccess {
+                    value: result, register: input.source
+                }
+                match codegen_store_value(program, compiler, move access) {
+                    Err(error) => {
+                        return Err(move error)
+                    }
+                    Ok(done) => {
+                        done
+                        let cached = ValueAccess {
+                            value: result, register: input.source
+                        }
+                        return codegen_cache_value(program, compiler, cached)
+                    }
+                }
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+    }
+
+    fn codegen_store_normalized_result(program: ir::Program, compiler: write FunctionCompiler, input: take ResultStore) -> Result<void, CodegenError> {
+        var result: usize = 0
+        match read input.result {
+            Some(value) => {
+                result = value
+            }
+            None => {
+                return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+            }
+        }
+        match codegen_frame_register(compiler.frame, result) {
+            Some(register) => {
+                if register_equal(register, input.source) {
+                    let access = ValueAccess {
+                        value: result, register: register
+                    }
+                    return codegen_cache_value(program, compiler, access)
+                }
+            }
+            None => {
+            }
+        }
+        return codegen_store_result(program, compiler, move input)
+    }
+
+    fn codegen_store_sized_result(program: ir::Program, compiler: write FunctionCompiler, input: take SizedResultStore) -> Result<void, CodegenError> {
+        match codegen_frame_register(compiler.frame, input.result) {
+            Some(register) => {
+                if register_equal(register, input.source) {
+                    let access = ValueAccess {
+                        value: input.result, register: register
+                    }
+                    return codegen_cache_value(program, compiler, access)
+                }
+            }
+            None => {
+            }
+        }
+        codegen_emit(compiler, MoveSized(MoveSizedArgs {
+                    destination: input.source
+                    source: input.source
+                    width: input.width
+                    extension: ZeroExtend()
+                }))
+        return codegen_store_result(program, compiler, ResultStore {
+                result: Some(input.result)
+                source: input.source
+            })
+    }
+
+    fn codegen_result_register(compiler: FunctionCompiler, result: Option<usize>, fallback: Register) -> Register {
+        match read result {
+            Some(value) => {
+                match codegen_frame_register(compiler.frame, value) {
+                    Some(register) => {
+                        return register
+                    }
+                    None => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        return fallback
+    }
+}

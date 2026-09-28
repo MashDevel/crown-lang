@@ -1,0 +1,125 @@
+fn send_range(channel: Channel<u32>, start: usize, end: usize) -> void {
+    for index in start..end {
+        channel.send(u32.from(index))
+    }
+}
+
+fn receive_range(channel: Channel<u32>, start: usize, end: usize) -> u32 {
+    for index in start..end {
+        match channel.try_receive() {
+            Some(value) => {
+                if value != u32.from(index) {
+                    return 1
+                }
+            }
+            None => {
+                return 2
+            }
+        }
+    }
+    return 0
+}
+
+fn wrap_and_grow(channel: Channel<u32>) -> u32 {
+    send_range(channel, 0, 4)
+    if receive_range(channel, 0, 3) != 0 {
+        return 1
+    }
+    send_range(channel, 4, 200)
+    if receive_range(channel, 3, 180) != 0 {
+        return 2
+    }
+    send_range(channel, 200, 600)
+    if receive_range(channel, 180, 600) != 0 {
+        return 3
+    }
+    match channel.try_receive() {
+        Some(value) => {
+            value;
+            return 4
+        }
+        None => {
+        }
+    }
+    for index in 0..1000 {
+        channel.send(u32.from(index))
+        if receive_range(channel, index, index + 1) != 0 {
+            return 5
+        }
+    }
+    return 0
+}
+
+fn concurrent_senders() -> u32 {
+    let channel = Channel<u32>.new()
+    var threads = Vec<Thread>.new()
+    for producer in 0..4 {
+        let sender = channel.share()
+        threads.push(spawn move {
+                send_range(sender, producer * 100, (producer + 1) * 100)
+            })
+    }
+    for index in 0..threads.length() {
+        loan write threads[index] as worker {
+            worker.join()
+        }
+    }
+    var next = [0, 100, 200, 300]
+    for index in 0..400 {
+        index
+        match channel.try_receive() {
+            Some(value) => {
+                let producer = usize.from(value / 100)
+                if producer >= 4 || value != next[producer] {
+                    return 6
+                }
+                next[producer] = next[producer] + 1
+            }
+            None => {
+                return 7
+            }
+        }
+    }
+    return 0
+}
+
+fn unit_values() -> u32 {
+    let channel = Channel<void>.new()
+    for index in 0..20 {
+        index;
+        channel.send(())
+    }
+    for index in 0..20 {
+        index
+        match channel.try_receive() {
+            Some(value) => {
+                value
+            }
+            None => {
+                return 8
+            }
+        }
+    }
+    match channel.try_receive() {
+        Some(value) => {
+            value;
+            return 9
+        }
+        None => {
+        }
+    }
+    return 0
+}
+
+fn main() -> u32 {
+    let channel = Channel<u32>.new()
+    let wrapped = wrap_and_grow(channel)
+    if wrapped != 0 {
+        return wrapped
+    }
+    let concurrent = concurrent_senders()
+    if concurrent != 0 {
+        return concurrent
+    }
+    return unit_values()
+}

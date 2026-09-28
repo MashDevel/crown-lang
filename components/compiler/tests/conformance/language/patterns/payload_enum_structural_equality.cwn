@@ -1,0 +1,13 @@
+copy enum Item {
+    Empty, Value(u32)
+}
+fn main() -> u32 {
+    let empty = Item::Empty()
+    if empty != Item::Empty() || empty == Item::Value(0) {
+        return 1
+    }
+    if Item::Value(7) != Item::Value(7) || Item::Value(7) == Item::Value(8) {
+        return 2
+    }
+    return 0
+}

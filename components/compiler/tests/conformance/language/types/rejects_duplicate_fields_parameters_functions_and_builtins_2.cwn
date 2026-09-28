@@ -1,0 +1,6 @@
+fn same(value: read u32, value: read u32) -> u32 {
+    return value
+}
+fn main() -> u32 {
+    return 0
+}

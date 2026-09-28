@@ -1,0 +1,10 @@
+fn apply<T, R>(action: fn(read T) -> R, value: T) -> R {
+    return action(value)
+}
+fn action(value: u32) -> Result<u32, u32> {
+    return Ok(value)
+}
+fn main() -> u32 {
+    apply(action, 1);
+    return 0
+}

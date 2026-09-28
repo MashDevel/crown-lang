@@ -1,0 +1,37 @@
+module campaign {
+    fn verify_malformed(result: toolchain::ProcessResult) -> Result<void, Text> {
+        if result.status == 0 {
+            return harness::verify_clean(result)
+        }
+        if result.status == 1 && std::text::contains(result.stderr, ": error: ") {
+            return Ok(())
+        }
+        return Err(std::text::joined("malformed source crashed or failed without a source error: ", std::text::signed_decimal(i64.from(result.status))))
+    }
+
+    fn malformed(environment: harness::Environment, seed: u64) -> Result<void, Text> {
+        let values = malformed_corpus(seed, 1000)?
+        var results = harness::report()
+        for index in 0..values.length() {
+            let name = std::text::joined("input-", std::text::decimal(u64.from(index)))
+            let result = malformed_case(environment, name, values[index])
+            harness::record_result(results, harness::outcome(name, move result))
+        }
+        if harness::finish_report(results, environment.output)? != 0 {
+            return Err("malformed-source campaign failed")
+        }
+        return Ok(())
+    }
+
+    fn malformed_case(environment: harness::Environment, name: Text, value: Vec<u8>) -> Result<void, Text> {
+        let path = toolchain::path_join(environment.output, std::text::joined(name, ".cwn"))
+        toolchain::write_bytes(path, value)?
+        var arguments = Vec<Text>.new()
+        arguments.push(environment.compiler.clone());
+        arguments.push("check");
+        arguments.push(path.clone())
+        var command = toolchain::command(move arguments)
+        command.timeout = 10000
+        return verify_malformed(toolchain::capture(command, environment.output)?)
+    }
+}

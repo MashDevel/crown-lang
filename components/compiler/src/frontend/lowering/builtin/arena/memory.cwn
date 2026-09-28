@@ -1,0 +1,73 @@
+module lowering {
+    struct ArenaPosition {
+        arena: usize
+        index: usize
+    }
+
+    struct ArenaItem {
+        data: usize
+        index: usize
+        element: sema::Type
+    }
+
+    fn arena_element_address(compiler: write FunctionCompiler, symbols: sema::Symbols, item: take ArenaItem) -> Result<usize, u32> {
+        let layout = layout(symbols, item.element)?
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, size_type, layout.size)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), item.index, size))?
+        return function_append_value(compiler, ir::InstructionOffset(item.data, bytes))
+    }
+
+    fn arena_generation_address(compiler: write FunctionCompiler, data: usize, index: usize) -> Result<usize, u32> {
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let four = function_integer(compiler, size_type, 4)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), index, four))?
+        return function_append_value(compiler, ir::InstructionOffset(data, bytes))
+    }
+
+    fn arena_generation(compiler: write FunctionCompiler, symbols: sema::Symbols, position: take ArenaPosition) -> Result<usize, u32> {
+        let address = arena_generation_address(compiler, position.arena, position.index)?
+        let load = Place {
+            address: address, value_type: sema::builtin_leaf(sema::U32())
+        }
+        return function_load(compiler, symbols, load)
+    }
+
+    fn arena_mark_live(compiler: write FunctionCompiler, symbols: sema::Symbols, position: take ArenaPosition) -> Result<void, u32> {
+        let live = function_load_pointer_field(compiler, position.arena, 16)?
+        let item = function_append_value(compiler, ir::InstructionOffset(live, position.index))?
+        let one_type = ir::TypeInteger(ir::IntegerWidth1())
+        let one = function_integer(compiler, one_type, 1)
+        let store = StoreRequest {
+            address: item, value: one, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn arena_increment_length(compiler: write FunctionCompiler, symbols: sema::Symbols, arena: usize) -> Result<void, u32> {
+        let field = function_offset(compiler, arena, 24)?
+        let load = Place {
+            address: field, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, load)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let operation = ScalarOperation {
+            operator: frontend::BinaryAdd(), left: length, right: one, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let next = integer_binary(compiler, symbols, operation)?
+        let store = StoreRequest {
+            address: field, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+    fn arena_slot_occupied(compiler: write FunctionCompiler, symbols: sema::Symbols, position: ArenaPosition) -> Result<usize, u32> {
+        let live = function_load_pointer_field(compiler, position.arena, 16)?
+        let item = function_append_value(compiler, ir::InstructionOffset(live, position.index))?
+        let occupied_load = Place {
+            address: item, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        return function_load(compiler, symbols, occupied_load)
+    }
+
+}

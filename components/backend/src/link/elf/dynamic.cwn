@@ -1,0 +1,96 @@
+module elf {
+    fn dynamic_entry(image: write Image, tag: u64, value: u64) -> void {
+        let offset = image.dynamic_entries.length()
+        link_binary::pad(image.dynamic_entries, offset + 16)
+        link_binary::put(image.dynamic_entries, offset, tag, 8)
+        link_binary::put(image.dynamic_entries, offset + 8, value, 8)
+    }
+
+    fn dynamic_relocation(image: write Image, address: u64, symbol: usize, kind: u64, addend: i64) -> void {
+        let offset = image.relocations.length()
+        link_binary::pad(image.relocations, offset + 24)
+        link_binary::put(image.relocations, offset, address, 8)
+        link_binary::put(image.relocations, offset + 8, (image.dynamic_indices[symbol] << 32) | kind, 8)
+        link_binary::put(image.relocations, offset + 16, u64.from_bits(addend), 8)
+    }
+
+    fn string(strings: write Vec<u8>, value: Text) -> Result<u64, Text> {
+        if std::text::contains(value, "\0") {
+            return Err("ELF string contains a null byte")
+        }
+        let offset = u64.from(strings.length())
+        link_binary::append(strings, toolchain::text_bytes(value))
+        strings.push(0)
+        return Ok(offset)
+    }
+
+    fn prepare_dynamic(image: write Image, object: object::CompilerObject, options: Options) -> Result<void, Text> {
+        var strings = std::bytes::filled(1, 0)
+        let symbols = dynamic_symbols(image, object, strings)?
+        dynamic_libraries(image, options, strings)?
+        prepare_versions(image, object, options, strings)?
+        let symbol_offset = append(image, symbols, 8)?
+        let string_offset = append(image, strings, 1)?
+        let hash_offset = append(image, symbol_hash(symbols.length() / 24), 4)?
+        dynamic_entry(image, 5, IMAGE_BASE + u64.from(string_offset))
+        dynamic_entry(image, 6, IMAGE_BASE + u64.from(symbol_offset))
+        dynamic_entry(image, 10, u64.from(strings.length()))
+        dynamic_entry(image, 11, 24)
+        dynamic_entry(image, 4, IMAGE_BASE + u64.from(hash_offset))
+        return initialize_dynamic(image, object)
+    }
+
+    fn dynamic_libraries(image: write Image, options: Options, strings: write Vec<u8>) -> Result<void, Text> {
+        for index in 0..options.libraries.length() {
+            dynamic_entry(image, 1, string(strings, options.libraries[index])?)
+        }
+        dynamic_entry(image, 29, string(strings, toolchain::parent_path(options.interpreter))?)
+        dynamic_entry(image, 30, 8)
+        return Ok(())
+    }
+
+    fn initialize_dynamic(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..image.imports.length() {
+            let symbol = image.imports[index]
+            dynamic_relocation(image, image.slots[symbol], symbol, global_relocation(image.architecture), 0)
+        }
+        for index in 0..object.symbols.length() {
+            if std::text::equal(object.symbols[index].name, "crown_cov_init") {
+                let offset = reserve(image, 8, 8)?
+                link_binary::put(image.bytes, offset, image.symbols[index], 8)
+                dynamic_entry(image, 25, IMAGE_BASE + u64.from(offset))
+                dynamic_entry(image, 27, 8)
+            }
+        }
+        return Ok(())
+    }
+
+    fn global_relocation(architecture: object::Architecture) -> u64 {
+        return if architecture == object::ArchitectureArm64() {
+            1025
+        } else {
+            6
+        }
+    }
+
+    fn absolute_relocation(architecture: object::Architecture) -> u64 {
+        return if architecture == object::ArchitectureArm64() {
+            257
+        } else {
+            1
+        }
+    }
+
+    fn finish_dynamic(image: write Image) -> Result<void, Text> {
+        let relocations = replace(image.relocations, Vec<u8>.new())
+        let offset = append(image, relocations, 8)?
+        dynamic_entry(image, 7, IMAGE_BASE + u64.from(offset))
+        dynamic_entry(image, 8, u64.from(relocations.length()))
+        dynamic_entry(image, 9, 24)
+        dynamic_entry(image, 0, 0)
+        let entries = replace(image.dynamic_entries, Vec<u8>.new())
+        image.dynamic_offset = append(image, entries, 8)?
+        image.dynamic_entries = move entries
+        return Ok(())
+    }
+}

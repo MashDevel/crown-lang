@@ -1,0 +1,7 @@
+fn call(action: scoped fn() -> void) -> void {
+    let saved = action;
+    saved()
+}
+fn main() -> u32 {
+    return 0
+}

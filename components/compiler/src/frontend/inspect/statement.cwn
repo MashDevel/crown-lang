@@ -1,0 +1,113 @@
+module inspect {
+    fn statement(walk: write Walk, value: frontend::Statement) -> void {
+        emit(walk, Kind::Statement(), value.span, 0)
+        match read value.kind {
+            frontend::StatementBind(name, mutable_value, annotation, expression) => {
+                name;
+                mutable_value;
+                annotation;
+                expression_node(walk, expression)
+            }
+            frontend::StatementDestructure(mutable, fields, expression) => {
+                mutable;
+                fields;
+                expression_node(walk, expression)
+            }
+            frontend::StatementUpdate(target, operator, expression) => {
+                operator;
+                expression_node(walk, target);
+                expression_node(walk, expression)
+            }
+            frontend::StatementAssign(target, expression) => {
+                expression_node(walk, target);
+                expression_node(walk, expression)
+            }
+            frontend::StatementReturn(expression, implicit) => {
+                implicit;
+                emit(walk, Kind::Return(), value.span, 0);
+                expression_node(walk, expression)
+            }
+            frontend::StatementPrint(expression) => {
+                expression_node(walk, expression)
+            }
+            frontend::StatementExpression(expression) => {
+                expression_node(walk, expression)
+            }
+            frontend::StatementThreadScope(body) => {
+                nested(walk, body)
+            }
+            frontend::StatementUnsafe(body) => {
+                nested(walk, body)
+            }
+            _ => scoped_statement(walk, value)
+        }
+    }
+
+    fn scoped_statement(walk: write Walk, value: frontend::Statement) -> void {
+        match read value.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                mode;
+                alias;
+                expression_node(walk, source);
+                nested(walk, body)
+            }
+            frontend::StatementLock(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                nested(walk, body)
+            }
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                alias;
+                boxed(walk, arena);
+                boxed(walk, handle);
+                nested(walk, body)
+            }
+            frontend::StatementIf(condition, then_body, else_body) => {
+                control(walk, condition)
+                nested(walk, then_body)
+                nested(walk, else_body)
+            }
+            frontend::StatementWhile(condition, body) => {
+                control(walk, condition);
+                nested(walk, body)
+            }
+            frontend::StatementFor(name, start, end, body) => {
+                name
+                emit(walk, Kind::Control(), value.span, 1)
+                emit(walk, Kind::Decision(), value.span, 0)
+                expression_node(walk, start);
+                expression_node(walk, end);
+                nested(walk, body)
+            }
+            frontend::StatementMatch(matched) => {
+                matched_expression(walk, matched)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn control(walk: write Walk, condition: frontend::Expression) -> void {
+        emit(walk, Kind::Control(), condition.span, 1)
+        emit(walk, Kind::Decision(), condition.span, 0)
+        expression_node(walk, condition)
+    }
+
+    fn matched_expression(walk: write Walk, matched: frontend::MatchExpression) -> void {
+        expression_node(walk, matched.value)
+        let branches: usize = if matched.arms.length() == 0 {
+            0
+        } else {
+            matched.arms.length() - 1
+        }
+        emit(walk, Kind::Control(), matched.span, branches)
+        for index in 0..matched.arms.length() {
+            loan read matched.arms[index] as arm {
+                emit(walk, Kind::Arm(), arm.span, 0)
+                nested(walk, arm.body)
+            }
+        }
+    }
+}

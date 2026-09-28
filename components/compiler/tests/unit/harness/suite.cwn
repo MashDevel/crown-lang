@@ -1,0 +1,89 @@
+fn start_case(root: Text, index: usize, script: Text, deadline: u64) -> Result<harness::Worker, Text> {
+    let directory = toolchain::path_join(root, std::text::decimal(u64.from(index)))
+    toolchain::make_directory(directory)?
+    var arguments = Vec<Text>.new()
+    arguments.push("/bin/sh")
+    arguments.push("-c")
+    arguments.push(script.clone())
+    let command = toolchain::Command {
+        arguments: move arguments,
+        stdout: toolchain::path_join(directory, "stdout.log"),
+        stderr: toolchain::path_join(directory, "stderr.log"), timeout: 30000
+    }
+    return Ok(harness::Worker {
+            name: std::text::decimal(u64.from(index)), directory: move directory,
+            pid: toolchain::start_process(command)?, index: index, deadline: deadline,
+            status: toolchain::process_status_slot()
+        })
+}
+
+fn empty_outcomes(count: usize) -> Vec<Option<harness::Outcome>> {
+    var output = Vec<Option<harness::Outcome>>.new()
+    for index in 0..count {
+        index
+        output.push(None())
+    }
+    return move output
+}
+
+fn completion_order(root: Text) -> Result<void, Text> {
+    var workers = Vec<harness::Worker>.new()
+    let deadline = toolchain::milliseconds() + 30000
+    workers.push(start_case(root, 0, "sleep 0.25; exit 0", deadline)?)
+    workers.push(start_case(root, 1, "exit 0", deadline)?)
+    var completed = empty_outcomes(2)
+    harness::finish_next_worker(workers, completed)
+    testing::expect(workers.length() == 1 && workers[0].index == 0, "free completed worker slot")?
+    return registry_order(workers, completed)
+}
+
+fn registry_order(workers: write Vec<harness::Worker>, completed: write Vec<Option<harness::Outcome>>) -> Result<void, Text> {
+    var selected = Vec<bool>.new()
+    selected.push(true)
+    selected.push(true)
+    var next: usize = 0
+    var results = harness::report()
+    harness::report_ready(selected, completed, next, results)
+    testing::expect(next == 0 && results.rows.length() == 0, "preserve registry order")?
+    harness::finish_next_worker(workers, completed)
+    harness::report_ready(selected, completed, next, results)
+    testing::expect(next == 2 && results.rows.length() == 2, "report both completed cases")?
+    testing::expect(std::text::equal(results.rows[0].name, "0") && std::text::equal(results.rows[1].name, "1"), "stable result order")?
+    return Ok(())
+}
+
+fn failed_and_expired(root: Text) -> Result<void, Text> {
+    var workers = Vec<harness::Worker>.new()
+    workers.push(start_case(root, 2, "exit 19", toolchain::milliseconds() + 30000)?)
+    var completed = empty_outcomes(3)
+    harness::finish_next_worker(workers, completed)
+    match read completed[2] {
+        Some(row) => {
+            testing::expect(std::text::contains(row.error, "worker status 19"), "failed worker status")?
+        }
+        None() => {
+            return Err("failed worker has no outcome")
+        }
+    }
+    workers.push(start_case(root, 1, "sleep 10", 0)?)
+    harness::finish_next_worker(workers, completed)
+    match read completed[1] {
+        Some(row) => {
+            return testing::expect(std::text::contains(row.error, "timed out"), "expired worker status")
+        }
+        None() => {
+            return Err("expired worker has no outcome")
+        }
+    }
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    completion_order(root)?
+    return failed_and_expired(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

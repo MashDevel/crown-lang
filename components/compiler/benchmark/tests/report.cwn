@@ -1,0 +1,53 @@
+fn run() -> Result<void, Text> {
+    finished_provenance()?
+    preparation()?
+    rejected_preparation()?
+    check_reports()?
+    return native_stage()
+}
+
+fn check_reports() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    var current = benchmark::Benchmark {
+        directory: root.clone(), results: Vec<Text>.new()
+    }
+    let before = benchmark::usage()?
+    benchmark::measure(current, "success", testing::list("true"))?
+    testing::error(benchmark::measure(current, "failure", testing::list("false")))?
+    testing::error(benchmark::measure(current, "warning", testing::list("/bin/sh|-c|printf warning >&2")))?
+    testing::error(benchmark::measure(current, "maximum", testing::list("/bin/sh|-c|exit 255")))?
+    let after = benchmark::usage()?
+    testing::expect(after.user >= before.user && after.system >= before.system, "cumulative child CPU usage")?
+    return validate_report(root)
+}
+
+fn validate_report(root: Text) -> Result<void, Text> {
+    let document = toolchain::json(toolchain::read_text(toolchain::path_join(root, "results.json"))?)?
+    let rows = toolchain::json_array_values(document, document.root)?
+    testing::expect(rows.length() == 4, "all benchmark measurements persisted")?
+    validate_statuses(document, rows)?
+    return validate_timing(document, rows[0])
+}
+
+fn field_number(document: toolchain::Json, row: usize, name: Text) -> Result<u64, Text> {
+    return toolchain::json_integer(document, toolchain::json_required(document, row, name)?)
+}
+
+fn validate_statuses(document: toolchain::Json, rows: Slice<usize>) -> Result<void, Text> {
+    let expected: [u64; 4] = [0, 1, 0, 255]
+    for index in 0..4 {
+        testing::expect(field_number(document, rows[index], "status")? == expected[index], "benchmark exit status")?
+    }
+    return Ok(())
+}
+
+fn validate_timing(document: toolchain::Json, row: usize) -> Result<void, Text> {
+    field_number(document, row, "milliseconds")?
+    field_number(document, row, "user_microseconds")?
+    field_number(document, row, "system_microseconds")?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}

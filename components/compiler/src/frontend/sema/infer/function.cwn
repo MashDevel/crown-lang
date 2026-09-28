@@ -1,0 +1,21 @@
+module sema {
+    fn infer_function(actual: Type, parameters: Vec<ParameterType>, result: Box<Type>, values: write Vec<Type>) -> void {
+        match read actual {
+            FunctionType(actual_parameters, actual_result) => {
+                if parameters.length() != actual_parameters.length() {
+                    return
+                }
+                for index in 0..parameters.length() {
+                    infer_type(parameters[index].value_type, actual_parameters[index].value_type, values)
+                }
+                loan read result as schema {
+                    loan read actual_result as value {
+                        infer_type(schema, value, values)
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+}

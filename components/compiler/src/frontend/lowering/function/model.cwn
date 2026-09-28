@@ -1,0 +1,200 @@
+module lowering {
+    enum Value {
+        ScalarValue(usize, sema::Type)
+        AddressValue(usize, sema::Type)
+        VoidValue
+    }
+
+    struct Binding {
+        name: frontend::Name
+        value_type: sema::Type
+        address: usize
+        owned: bool
+        available: bool
+        depth: usize
+    }
+
+    struct LoopTarget {
+        continue_block: usize
+        break_block: usize
+        breaks: bool
+        scope_depth: usize
+    }
+
+    struct ScopeExit {
+        name: Text
+        argument: usize
+        depth: usize
+    }
+
+    struct LoweredFunction {
+        function: usize
+        lowered: ir::Function
+    }
+
+    struct FunctionCompiler {
+        semantic_function: usize
+        substitutions: Vec<sema::Type>
+        indirect_receiver: bool
+        tables: Tables
+        ir: ir::Function
+        block: Option<usize>
+        bindings: Vec<Binding>
+        exits: Vec<ScopeExit>
+        temporaries: Vec<Temporary>
+        scope_depth: usize
+        loops: Vec<LoopTarget>
+        matches: Vec<MatchFlow>
+        result: sema::Type
+        result_address: Option<usize>
+        lowered_generated: Vec<LoweredFunction>
+    }
+
+    fn value_copy(value: Value) -> Value {
+        match read value {
+            ScalarValue(id, value_type) => {
+                return ScalarValue(id, sema::type_copy(value_type))
+            }
+            AddressValue(id, value_type) => {
+                return AddressValue(id, sema::type_copy(value_type))
+            }
+            VoidValue => {
+                return VoidValue()
+            }
+        }
+    }
+
+    fn function_compiler_new(compiler: write Compiler, analysis: sema::Analysis, binding: FunctionBinding) -> Result<FunctionCompiler, u32> {
+        if binding.function >= compiler.output.functions.length() || binding.semantic_function >= analysis.checker.symbols.functions.length() {
+            return Err(30)
+        }
+        var name = Text.new()
+        var linkage = ir::LinkageLocal()
+        loan read compiler.output.functions[binding.function] as function {
+            name = function.name.clone()
+            linkage = function.linkage
+        }
+        var result = sema::Invalid()
+        var indirect = false
+        loan read analysis.checker.symbols.functions[binding.semantic_function] as function {
+            result = sema::substitute(function.result, binding.arguments)
+            indirect = function_is_implementation(function)
+        }
+        var ir = ir::function_new(move name, ir::signature_copy(binding.signature), linkage)
+        function_exclusive_parameters(ir, analysis.checker.symbols.functions[binding.semantic_function])
+        return Ok(FunctionCompiler {
+                semantic_function: binding.semantic_function
+                substitutions: sema::types_copy(binding.arguments)
+                indirect_receiver: indirect
+                tables: replace(compiler.tables, tables_new())
+                ir: move ir
+                block: None()
+                bindings: Vec<Binding>.new()
+                exits: Vec<ScopeExit>.new()
+                temporaries: Vec<Temporary>.new()
+                scope_depth: 0
+                loops: Vec<LoopTarget>.new()
+                matches: Vec<MatchFlow>.new()
+                result: move result
+                result_address: None()
+                lowered_generated: Vec<LoweredFunction>.new()
+            })
+    }
+
+    fn generated_function_compiler(compiler: write Compiler, name: Text) -> Result<FunctionCompiler, u32> {
+        var function: usize = 0
+        match find_generated_function(compiler, name) {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(219)
+            }
+        }
+        if function >= compiler.output.functions.length() {
+            return Err(220)
+        }
+        var signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        var linkage = ir::LinkageLocal()
+        var ir_name = Text.new()
+        loan read compiler.output.functions[function] as declared {
+            signature = ir::signature_copy(declared.signature)
+            linkage = declared.linkage
+            ir_name = declared.name.clone()
+        }
+        return Ok(FunctionCompiler {
+                semantic_function: 0
+                substitutions: Vec<sema::Type>.new()
+                indirect_receiver: false
+                tables: replace(compiler.tables, tables_new())
+                ir: ir::function_new(move ir_name, move signature, linkage)
+                block: None()
+                bindings: Vec<Binding>.new()
+                exits: Vec<ScopeExit>.new()
+                temporaries: Vec<Temporary>.new()
+                scope_depth: 0
+                loops: Vec<LoopTarget>.new()
+                matches: Vec<MatchFlow>.new()
+                result: sema::builtin_leaf(sema::Unit())
+                result_address: None()
+                lowered_generated: Vec<LoweredFunction>.new()
+            })
+    }
+
+    fn usizes_copy(values: Vec<usize>) -> Vec<usize> {
+        var output = Vec<usize>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn type_is_copy(compiler: FunctionCompiler, value_type: sema::Type) -> bool {
+        if sema::type_is_copy(value_type) {
+            return true
+        }
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                if sema::builtin_copies_arguments(builtin, arguments.length()) {
+                    return type_arguments_are_copy(compiler, arguments)
+                }
+                return false
+            }
+            sema::ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return type_is_copy(compiler, value)
+                }
+            }
+            sema::NamedType(symbol, arguments) => {
+                arguments
+                var index: usize = 0
+                while index < compiler.tables.copy_symbols.length() {
+                    if compiler.tables.copy_symbols[index] == symbol {
+                        return true
+                    }
+                    index = index + 1
+                }
+                return false
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_arguments_are_copy(compiler: FunctionCompiler, arguments: Vec<sema::Type>) -> bool {
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as argument {
+                if type_is_copy(compiler, argument) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+}

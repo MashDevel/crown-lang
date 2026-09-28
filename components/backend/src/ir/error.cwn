@@ -1,0 +1,149 @@
+module ir {
+    enum BuildErrorKind {
+        BuildImportHasBody
+        BuildUnknownBlock
+        BuildUnknownValue
+        BuildBlockAlreadyTerminated
+    }
+
+    struct BuildError {
+        kind: BuildErrorKind
+        block: Option<usize>
+    }
+
+    fn build_error(kind: take BuildErrorKind, block: take Option<usize>) -> BuildError {
+        return BuildError {
+            kind: move kind, block: block
+        }
+    }
+
+    copy struct ValidationErrorKind {
+        code: u32
+    }
+
+    struct ValidationError {
+        kind: ValidationErrorKind
+        function: Option<usize>
+        block: Option<usize>
+        value: Option<usize>
+    }
+
+    fn validation_program_error(kind: take ValidationErrorKind) -> ValidationError {
+        return ValidationError {
+            kind: kind, function: None(), block: None(), value: None()
+        }
+    }
+
+    fn validation_function_error(kind: take ValidationErrorKind, function: usize) -> ValidationError {
+        return ValidationError {
+            kind: kind, function: Some(function), block: None(), value: None()
+        }
+    }
+
+    fn validation_block_error(kind: take ValidationErrorKind, function: usize, block: usize) -> ValidationError {
+        return ValidationError {
+            kind: kind, function: Some(function), block: Some(block), value: None()
+        }
+    }
+
+    fn validation_value_error(kind: take ValidationErrorKind, function: usize, value: usize) -> ValidationError {
+        return ValidationError {
+            kind: kind, function: Some(function), block: None(), value: Some(value)
+        }
+    }
+
+    struct ValidationLocation {
+        function: usize
+        block: usize
+    }
+
+    fn validation_location_error(kind: take ValidationErrorKind, location: take ValidationLocation, value: take Option<usize>) -> ValidationError {
+        return ValidationError {
+            kind: kind
+            function: Some(location.function)
+            block: Some(location.block)
+            value: value
+        }
+    }
+
+    fn ValidationUnknownEntry() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 1
+        }
+    }
+    fn ValidationImportedEntry() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 2
+        }
+    }
+    fn ValidationDuplicateSymbol() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 3
+        }
+    }
+    fn ValidationInvalidGlobal() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 4
+        }
+    }
+    fn ValidationInvalidSignature() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 5
+        }
+    }
+    fn ValidationImportHasBody() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 6
+        }
+    }
+    fn ValidationMissingBody() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 7
+        }
+    }
+    fn ValidationMissingTerminator() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 8
+        }
+    }
+    fn ValidationInvalidBlock() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 9
+        }
+    }
+    fn ValidationInvalidFunction() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 10
+        }
+    }
+    fn ValidationInvalidValue() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 11
+        }
+    }
+    fn ValidationDuplicateValue() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 12
+        }
+    }
+    fn ValidationTypeMismatch() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 13
+        }
+    }
+    fn ValidationInvalidConstant() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 14
+        }
+    }
+    fn ValidationInvalidPhi() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 15
+        }
+    }
+    fn ValidationInvalidDominance() -> ValidationErrorKind {
+        ValidationErrorKind {
+            code: 16
+        }
+    }
+}

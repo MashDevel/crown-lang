@@ -1,0 +1,30 @@
+resource Item {
+    code: u32, drop {
+        print(code)
+    }
+}
+fn fail() -> Result<u32, u32> {
+    Err(7)
+}
+fn attempted() -> Result<u32, u32> {
+    let first = Item {
+        code: 1
+    }
+    let second = Item {
+        code: 2
+    }
+    let value = fail()?
+    Ok(value + first.code + second.code)
+}
+fn main() -> u32 {
+    match attempted() {
+        Err(value) => {
+            print(value)
+        }
+        Ok(value) => {
+            value;
+            return 1
+        }
+    }
+    return 42
+}

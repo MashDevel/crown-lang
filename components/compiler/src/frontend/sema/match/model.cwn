@@ -1,0 +1,45 @@
+module sema {
+    struct MatchSource {
+        value_type: Type
+        root_key: Option<VariableKey>
+        access: Option<frontend::LoanMode>
+    }
+
+    struct MatchArmState {
+        continuing: bool
+        scopes: Vec<Scope>
+        regions: Vec<ThreadRegion>
+    }
+
+    struct MatchContext {
+        value_type: Type
+        before: Vec<Scope>
+        region_before: Vec<ThreadRegion>
+        access: Option<frontend::LoanMode>
+        seen: Vec<frontend::Name>
+        wildcard: bool
+        states: Vec<MatchArmState>
+        current_fields: Vec<Type>
+        integer_patterns: Vec<u64>
+        text_patterns: Vec<Vec<u8>>
+        result_hint: Option<Type>
+        result_type: Option<Type>
+    }
+
+    fn match_context(source: MatchSource, before: Vec<Scope>, expected: take Option<Type>) -> MatchContext {
+        return MatchContext {
+            value_type: type_copy(source.value_type)
+            before: scopes_copy(before)
+            region_before: Vec<ThreadRegion>.new()
+            access: source.access
+            seen: Vec<frontend::Name>.new()
+            wildcard: false
+            states: Vec<MatchArmState>.new()
+            current_fields: Vec<Type>.new()
+            integer_patterns: Vec<u64>.new()
+            text_patterns: Vec<Vec<u8>>.new()
+            result_hint: move expected
+            result_type: None()
+        }
+    }
+}

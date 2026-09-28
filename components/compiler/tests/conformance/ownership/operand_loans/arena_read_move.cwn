@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    var values = Arena<u32>.new()
+    let key = values.insert(7)
+    values.with(consume_arena(move values, key)) as read item {
+        return item
+    }
+    return 0
+}

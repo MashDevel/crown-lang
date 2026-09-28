@@ -1,0 +1,60 @@
+roundtrip() {
+    fixture
+    seed
+    fetch
+    equal_seed
+    CROWN_BOOTSTRAP_ASSETS=/unavailable sh "$project/bootstrap/fetch" "$host"
+    sh "$project/bootstrap/package-seed" "$host" "$project/repeated"
+    cmp "$assets/crown-bootstrap-$host.s.gz" "$project/repeated/crown-bootstrap-$host.s.gz"
+    printf 'corrupt' >> "$project/bootstrap/$host/compiler.s"
+    expect_failure fetch
+}
+download_failures() {
+    fixture
+    seed
+    cp "$assets/crown-bootstrap-$host.s.gz" "$assets/original.gz"
+    printf 'corrupt' >> "$assets/crown-bootstrap-$host.s.gz"
+    expect_failure fetch
+    test ! -e "$project/bootstrap/$host"
+    cp "$assets/original.gz" "$assets/crown-bootstrap-$host.s.gz"
+    printf 'corrupt' >> "$assets/crown-bootstrap-$host.json"
+    expect_failure fetch
+    test ! -e "$project/bootstrap/$host"
+    cp "$project/original/manifest.json" "$assets/crown-bootstrap-$host.json"
+    printf 'not gzip' > "$assets/crown-bootstrap-$host.s.gz"
+    lock_digest archive_sha256 "$assets/crown-bootstrap-$host.s.gz"
+    expect_failure fetch
+    test ! -e "$project/bootstrap/$host"
+}
+inconsistent_pin() {
+    fixture
+    seed
+    printf 'different assembly' > "$assets/changed"
+    lock_digest assembly_sha256 "$assets/changed"
+    expect_failure fetch
+    test ! -e "$project/bootstrap/$host"
+}
+installation_failures() {
+    fixture
+    seed
+    mkdir "$project/bootstrap/$host.installing"
+    expect_failure fetch
+    test ! -e "$project/bootstrap/$host"
+    rmdir "$project/bootstrap/$host.installing"
+    mkdir "$project/bootstrap/$host"
+    expect_failure fetch
+    expect_failure sh "$project/bootstrap/fetch" unsupported
+    expect_failure sh "$project/bootstrap/package-seed" unsupported "$assets"
+    expect_failure sh "$project/bootstrap/package-seed" "$host" "$assets"
+}
+invalid_inputs() {
+    fixture
+    seed
+    printf '{}\n' > "$project/bootstrap/locks/$host.json"
+    expect_failure fetch
+    printf '../bad\n' > "$project/bootstrap/seed-release"
+    expect_failure fetch
+    printf 'v1\n' > "$project/bootstrap/seed-release"
+    expect_failure env CROWN_BOOTSTRAP_REPOSITORY=invalid sh "$project/bootstrap/fetch" "$host"
+    expect_failure env CROWN_BOOTSTRAP_REPOSITORY=owner/repo/extra sh "$project/bootstrap/fetch" "$host"
+}

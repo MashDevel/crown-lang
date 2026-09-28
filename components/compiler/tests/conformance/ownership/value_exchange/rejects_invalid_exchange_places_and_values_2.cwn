@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    var value = 1
+    return replace(value, true)
+}

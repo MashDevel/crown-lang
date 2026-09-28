@@ -1,0 +1,29 @@
+module lowering {
+    struct SpawnCaptureSource {
+        capture: sema::SpawnCapture
+        source: usize
+    }
+    fn spawn_capture_value_layout(symbols: sema::Symbols, capture: sema::SpawnCapture) -> Result<Layout, u32> {
+        if sema::capture_is_borrowed(capture.kind) {
+            return layout(symbols, sema::builtin_leaf(sema::USize()))
+        }
+        return layout(symbols, capture.value_type)
+    }
+    fn load_spawn_capture(compiler: write FunctionCompiler, symbols: sema::Symbols, request: take SpawnCaptureSource) -> Result<void, u32> {
+        let borrowed = sema::capture_is_borrowed(request.capture.kind)
+        var address: usize = 0
+        if borrowed {
+            address = function_load_pointer(compiler, request.source)?
+        } else {
+            address = function_stack(compiler, symbols, request.capture.value_type)?
+            function_copy(compiler, symbols, CopyRequest {
+                    destination: address, value: AddressValue(request.source, sema::type_copy(request.capture.value_type))
+                })?
+        }
+        function_add_binding(compiler, Binding {
+                name: frontend::name_copy(request.capture.name), value_type: sema::type_copy(request.capture.value_type),
+                address: address, owned: borrowed == false, available: true, depth: compiler.scope_depth
+            })
+        return Ok(())
+    }
+}

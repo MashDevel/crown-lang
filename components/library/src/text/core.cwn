@@ -1,0 +1,130 @@
+module std {
+    module text {
+        fn equal(left: TextView, right: TextView) -> bool {
+            if left.length() != right.length() {
+                return false
+            }
+            for index in 0..left.length() {
+                if left[index] != right[index] {
+                    return false
+                }
+            }
+            return true
+        }
+
+        fn joined(left: TextView, right: TextView) -> Text {
+            var output = ""
+            append(output, left)
+            append(output, right)
+            return move output
+        }
+
+        fn slice(value: TextView, start: usize, end: usize) -> Text {
+            var output = ""
+            loan read value[start..end] as bytes {
+                append_bytes(output, bytes)
+            }
+            return move output
+        }
+
+        fn starts(value: TextView, prefix: TextView) -> bool {
+            return prefix.length() <= value.length() && view_at(value, prefix, 0)
+        }
+
+        fn ends(value: TextView, suffix: TextView) -> bool {
+            if suffix.length() > value.length() {
+                return false
+            }
+            return view_at(value, suffix, value.length() - suffix.length())
+        }
+
+        fn contains(value: TextView, needle: TextView) -> bool {
+            return needle.length() == 0 || occurrences(value, needle) != 0
+        }
+
+        fn occurrences(value: TextView, needle: TextView) -> usize {
+            if needle.length() == 0 || value.length() < needle.length() {
+                return 0
+            }
+            var count: usize = 0
+            for index in 0..value.length() - needle.length() + 1 {
+                if view_at(value, needle, index) {
+                    count = count + 1
+                }
+            }
+            return count
+        }
+
+        fn view_at(value: TextView, needle: TextView, start: usize) -> bool {
+            if start > value.length() || needle.length() > value.length() - start {
+                return false
+            }
+            for index in 0..needle.length() {
+                if value[start + index] != needle[index] {
+                    return false
+                }
+            }
+            return true
+        }
+
+        fn less(left: TextView, right: TextView) -> bool {
+            let count = if left.length() < right.length() {
+                left.length()
+            } else {
+                right.length()
+            }
+            for index in 0..count {
+                if left[index] != right[index] {
+                    return left[index] < right[index]
+                }
+            }
+            return left.length() < right.length()
+        }
+
+        fn clone_list(values: Slice<Text>) -> Vec<Text> {
+            return std::sequence::clone(values, fn(value) {
+                    return value.clone()
+                })
+        }
+
+        fn list_contains(values: Slice<Text>, value: TextView) -> bool {
+            for index in 0..values.length() {
+                if equal(values[index], value) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        fn sort_list(values: write Vec<Text>) -> void {
+            std::sequence::sort(values, fn(left, right) {
+                    return compare(left, right)
+                })
+        }
+
+        fn compare(left: TextView, right: TextView) -> i32 {
+            if less(left, right) {
+                return -1
+            }
+            if less(right, left) {
+                return 1
+            }
+            return 0
+        }
+
+        fn split(value: TextView, delimiter: u8) -> Vec<Text> {
+            var output = Vec<Text>.new()
+            var start: usize = 0
+            loan read value as bytes {
+                for index in 0..bytes.length() {
+                    if bytes[index] == delimiter {
+                        output.push(slice(value, start, index));
+                        start = index + 1
+                    }
+                }
+            }
+            output.push(slice(value, start, value.length()))
+            return move output
+        }
+    }
+}

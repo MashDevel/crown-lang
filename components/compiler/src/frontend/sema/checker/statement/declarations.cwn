@@ -1,0 +1,168 @@
+module sema {
+    fn checker_check_implementations(checker: write Checker, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.implementations.length() {
+            loan read program.implementations[index] as declaration {
+                checker_check_implementation(checker, declaration)
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_check_implementation(checker: write Checker, declaration: frontend::ImplDecl) -> void {
+        var method: usize = 0
+        while method < declaration.methods.length() {
+            loan read declaration.methods[method] as function {
+                match checker_implementation_function(checker, declaration, function.name) {
+                    None => {
+                        checker_error(checker, "invalid implementation or resource destructor")
+                    }
+                    Some(index) => {
+                        checker_check_function(checker, index, function.body)
+                    }
+                }
+            }
+            method = method + 1
+        }
+    }
+
+    fn checker_implementation_function(checker: write Checker, declaration: frontend::ImplDecl, name: frontend::Name) -> Option<usize> {
+        var owner: Option<usize> = None()
+        let resolution = resolution_new()
+        let target = resolve_type(checker.symbols, resolution, declaration.target)
+        match implementation_owner(checker.symbols, target) {
+            Some(value) => {
+                owner = Some(value)
+            }
+            None => {
+            }
+        }
+        var interface_symbol: Option<usize> = None()
+        match find_symbol(checker.symbols, declaration.interface_name) {
+            Some(value) => {
+                interface_symbol = Some(value)
+            }
+            None => {
+            }
+        }
+        let method_owner = MethodOwner {
+            owner: owner, interface_symbol: interface_symbol
+        }
+        return find_method(checker, name, method_owner)
+    }
+
+    fn find_method(checker: Checker, name: frontend::Name, owner: MethodOwner) -> Option<usize> {
+        var index: usize = 0
+        while index < checker.symbols.functions.length() {
+            loan read checker.symbols.functions[index] as function {
+                if names_equal(checker.symbols.source, function.name, name) {
+                    if method_kind_matches(function.kind, owner) {
+                        return Some(index)
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn method_kind_matches(kind: FunctionKind, owner: MethodOwner) -> bool {
+        match read kind {
+            ImplementationFunction(actual_owner, actual_interface) => {
+                return option_usize_is(owner.owner, actual_owner) && option_usize_is(owner.interface_symbol, actual_interface)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn option_usize_is(value: Option<usize>, expected: usize) -> bool {
+        match read value {
+            Some(actual) => {
+                return actual == expected
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn checker_check_resources(checker: write Checker, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.resources.length() {
+            loan read program.resources[index] as declaration {
+                checker_check_resource(checker, declaration)
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_check_resource(checker: write Checker, declaration: frontend::ResourceDecl) -> void {
+        checker.module_name = frontend::namespace_module_at(checker.symbols.modules, declaration.span)
+        checker.place_loans = Vec<PlaceLoan>.new()
+        checker.thread_regions = Vec<ThreadRegion>.new()
+        checker.scopes = Vec<Scope>.new()
+        checker_push_scope(checker)
+        checker.returns_allowed = false
+        checker.current_function = None()
+        checker.current_resource = find_symbol(checker.symbols, declaration.name)
+        checker.result = builtin_leaf(Unit())
+        checker.type_parameters = names_copy(declaration.parameters)
+        checker.unsafe_depth = 0
+        checker.continuing = true
+        checker.loop_states = Vec<LoopState>.new()
+        match find_symbol(checker.symbols, declaration.name) {
+            None => {
+                checker_error(checker, "invalid implementation or resource destructor")
+            }
+            Some(symbol) => {
+                checker_add_resource_fields(checker, symbol)
+            }
+        }
+        checker_statements(checker, declaration.drop_body)
+        checker.returns_allowed = true
+    }
+
+    fn checker_add_resource_fields(checker: write Checker, symbol: usize) -> void {
+        var fields = Vec<Field>.new()
+        loan read checker.symbols.types[symbol] as declaration {
+            fields = fields_copy(declaration.fields)
+        }
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as field {
+                let variable = Variable {
+                    name: frontend::name_copy(field.name)
+                    value_type: type_copy(field.value_type)
+                    copy_value: type_is_copy_with_symbols(checker.symbols, field.value_type)
+                    mutable_value: true
+                    state: Available()
+                    access: WriteAccess()
+                    state_span: field.name.span
+                    span: field.name.span
+                }
+                checker_add_variable(checker, move variable)
+            }
+            index = index + 1
+        }
+    }
+
+    fn fields_copy(values: Vec<Field>) -> Vec<Field> {
+        var output = Vec<Field>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as field {
+                output.push(Field {
+                        private_value: field.private_value, name: frontend::name_copy(field.name), value_type: type_copy(field.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+    struct MethodOwner {
+        owner: Option<usize>
+        interface_symbol: Option<usize>
+    }
+}

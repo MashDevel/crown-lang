@@ -1,0 +1,10 @@
+fn main() -> u32 {
+    let outer = 42
+    let action: fn(u32) -> u32 = fn(value) {
+        match Some(value) {
+            Some(number) => outer + number,
+            None => 0
+        }
+    }
+    action(0)
+}

@@ -1,0 +1,50 @@
+fn twice(action: scoped fn() -> void) -> void {
+    action()
+    action()
+}
+
+fn forward(action: scoped fn() -> void) -> void {
+    twice(action)
+}
+
+fn apply<T>(value: take T, action: scoped fn(take T) -> T) -> T {
+    return action(move value)
+}
+
+fn identity<T>(value: take T) -> T {
+    return move value
+}
+
+fn generic<T>(value: take T) -> T {
+    return apply(move value, fn(item) {
+            return move item
+        })
+}
+
+fn main() -> u32 {
+    var total: u32 = 0
+    let amount: u32 = 21
+    forward(fn[write total, read amount]() {
+            total = total + amount
+        })
+    if total != 42 {
+        return 1
+    }
+    let number = generic(7)
+    if number != 7 {
+        return 2
+    }
+    let text = generic("hello")
+    if text.length() != 5 {
+        return 3
+    }
+    let action: fn(take u32) -> u32 = identity
+    if action(9) != 9 {
+        return 4
+    }
+    if apply(11, identity) != 11 {
+        return 5
+    }
+    print(total)
+    return 0
+}

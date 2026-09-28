@@ -1,0 +1,44 @@
+resource Guard {
+    id: u32, text: Text, drop {
+        print(id)
+    }
+}
+
+fn enqueue(channel: Channel<Guard>, start: usize, end: usize) -> void {
+    for index in start..end {
+        channel.send(Guard {
+                id: u32.from(index), text: "owned"
+            })
+    }
+}
+
+fn consume(channel: Channel<Guard>, start: usize, end: usize) -> u32 {
+    for index in start..end {
+        match channel.try_receive() {
+            Some(value) => {
+                if value.id != u32.from(index) || value.text.length() != 5 {
+                    return 1
+                }
+            }
+            None => {
+                return 2
+            }
+        }
+    }
+    return 0
+}
+
+fn main() -> u32 {
+    let channel = Channel<Guard>.new()
+    let other = channel.share()
+    enqueue(channel, 0, 4)
+    if consume(other, 0, 3) != 0 {
+        return 1
+    }
+    enqueue(other, 4, 8)
+    if consume(channel, 3, 6) != 0 {
+        return 2
+    }
+    enqueue(channel, 8, 13)
+    return 0
+}

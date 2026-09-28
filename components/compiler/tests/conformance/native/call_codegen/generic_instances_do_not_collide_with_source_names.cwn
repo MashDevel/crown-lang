@@ -1,0 +1,9 @@
+fn value<T>(input: take T) -> T {
+    return move input
+}
+fn value__u32() -> u32 {
+    return 40
+}
+fn main() -> u32 {
+    return value__u32() + value(2)
+}

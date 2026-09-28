@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let values = [1, 2]
+    let view = values[0..1]
+    return 0
+}

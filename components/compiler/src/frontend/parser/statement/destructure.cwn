@@ -1,0 +1,28 @@
+module frontend {
+    fn parser_destructure(parser: write Parser, start: Span, mutable: bool) -> Statement {
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var fields = Vec<StructBinding>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            let field = parser_identifier(parser)
+            var binding = name_copy(field)
+            if parser_consumed(parser, TokenColon()) {
+                binding = parser_identifier(parser)
+            }
+            fields.push(StructBinding {
+                    field: move field, binding: move binding
+                })
+            parser_skip_breaks(parser)
+            if parser_consumed(parser, TokenComma()) == false {
+                break
+            }
+            parser_skip_breaks(parser)
+        }
+        parser_expect(parser, TokenRightBrace())
+        parser_expect(parser, TokenEqual())
+        let value = parser_expression(parser)
+        let span = span_through(start, value.span)
+        parser_line_end(parser)
+        return statement(StatementDestructure(mutable, move fields, move value), span)
+    }
+}

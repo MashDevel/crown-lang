@@ -1,0 +1,9 @@
+unsafe fn make() -> fn() -> u32 {
+    return fn() {
+        let pointer = RawPtr<u32>.from_address(0)
+        return pointer.read()
+    }
+}
+fn main() -> u32 {
+    return 0
+}

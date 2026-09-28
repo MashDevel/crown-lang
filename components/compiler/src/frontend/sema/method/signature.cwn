@@ -1,0 +1,108 @@
+module sema {
+    fn builtin_method_signature(checker: Checker, receiver: Type, method: frontend::Name) -> Option<MethodSignature> {
+        if native_root_kind(type_builtin(receiver)) {
+            return root_method_signature(checker, receiver, method)
+        }
+        match read receiver {
+            BuiltinType(builtin, arguments) => {
+                let kind = builtin
+                if builtin_is_integer(builtin) {
+                    return integer_method_signature(checker, receiver, method)
+                }
+                if kind == Text() || kind == TextView() || kind == Arguments() {
+                    return text_method_signature(checker, kind, method)
+                }
+                return generic_method_signature(checker, kind, arguments, method)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn generic_method_signature(checker: Checker, builtin: Builtin, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if builtin == ScopedThread() {
+            return scoped_thread_signature(checker, arguments, method)
+        }
+        if builtin == Vec() {
+            return vec_method_signature(checker, arguments, method)
+        }
+        if builtin == Slice() {
+            return slice_method_signature(checker, arguments, method)
+        }
+        if builtin == Shared() {
+            return shared_method_signature(checker, arguments, method)
+        }
+        if builtin == Channel() {
+            return channel_method_signature(checker, arguments, method)
+        }
+        if builtin == Arena() {
+            return arena_method_signature(checker, arguments, method)
+        }
+        if builtin == Option() {
+            return option_method_signature(checker, arguments, method)
+        }
+        if builtin == Thread() {
+            return thread_method_signature(checker, arguments, method)
+        }
+        None()
+    }
+
+    fn integer_method_signature(checker: Checker, receiver: Type, method: frontend::Name) -> Option<MethodSignature> {
+        let wrapping = name_is(checker.symbols.source, method, "wrapping_add") || name_is(checker.symbols.source, method, "wrapping_sub") || name_is(checker.symbols.source, method, "wrapping_mul")
+        if wrapping == false {
+            return None()
+        }
+        return Some(unary_method(false, type_copy(receiver), type_copy(receiver)))
+    }
+
+    fn vec_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() != 1 {
+            return None()
+        }
+        var element = Invalid()
+        loan read arguments[0] as value {
+            element = type_copy(value)
+        }
+        if name_is(checker.symbols.source, method, "push") {
+            return Some(unary_method(true, move element, builtin_leaf(Unit())))
+        }
+        if name_is(checker.symbols.source, method, "pop") {
+            var types = Vec<Type>.new()
+            types.push(move element)
+            return Some(empty_method(true, BuiltinType(Option(), move types)))
+        }
+        if name_is(checker.symbols.source, method, "length") || name_is(checker.symbols.source, method, "capacity") {
+            return Some(empty_method(false, builtin_leaf(USize())))
+        }
+        return None()
+    }
+
+    fn slice_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() == 1 && name_is(checker.symbols.source, method, "length") {
+            return Some(empty_method(false, builtin_leaf(USize())))
+        }
+        return None()
+    }
+
+    fn text_method_signature(checker: Checker, builtin: Builtin, method: frontend::Name) -> Option<MethodSignature> {
+        if builtin == Text() && name_is(checker.symbols.source, method, "push") {
+            return Some(unary_method(true, builtin_leaf(Char()), builtin_leaf(Unit())))
+        }
+        if name_is(checker.symbols.source, method, "length") {
+            return Some(empty_method(false, builtin_leaf(USize())))
+        }
+        if (builtin == Text() || builtin == TextView()) && name_is(checker.symbols.source, method, "clone") {
+            return Some(empty_method(false, builtin_leaf(Text())))
+        }
+        return None()
+    }
+
+    fn shared_method_signature(checker: Checker, arguments: Vec<Type>, method: frontend::Name) -> Option<MethodSignature> {
+        if arguments.length() == 1 && name_is(checker.symbols.source, method, "share") {
+            let receiver = BuiltinType(Shared(), types_copy(arguments))
+            return Some(empty_method(false, type_copy(receiver)))
+        }
+        return None()
+    }
+}

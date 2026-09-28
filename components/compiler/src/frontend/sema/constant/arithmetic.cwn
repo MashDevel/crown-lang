@@ -1,0 +1,70 @@
+module sema {
+    fn constant_arithmetic(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let left = constant_magnitude(input.left)
+        var right = constant_magnitude(input.right)
+        match input.operator {
+            frontend::BinaryAdd => {
+                return constant_encode(constant_add(left, right)?, input.left.builtin)
+            }
+            frontend::BinarySubtract => {
+                right.negative = right.negative == false
+                return constant_encode(constant_add(left, right)?, input.left.builtin)
+            }
+            frontend::BinaryMultiply => {
+                if right.value != 0 && left.value > 0xffff_ffff_ffff_ffff / right.value {
+                    return Err("constant arithmetic overflow")
+                }
+                return constant_encode(ConstantMagnitude {
+                        negative: left.negative != right.negative, value: left.value * right.value
+                    }, input.left.builtin)
+            }
+            _ => {
+                return constant_divide(input)
+            }
+        }
+    }
+
+    fn constant_add(left: ConstantMagnitude, right: ConstantMagnitude) -> Result<ConstantMagnitude, Text> {
+        if left.negative == right.negative {
+            if left.value > 0xffff_ffff_ffff_ffff - right.value {
+                return Err("constant arithmetic overflow")
+            }
+            return Ok(ConstantMagnitude {
+                    negative: left.negative, value: left.value + right.value
+                })
+        }
+        if left.value >= right.value {
+            return Ok(ConstantMagnitude {
+                    negative: left.negative, value: left.value - right.value
+                })
+        }
+        return Ok(ConstantMagnitude {
+                negative: right.negative, value: right.value - left.value
+            })
+    }
+
+    fn constant_divide(input: ConstantBinary) -> Result<ConstantScalar, Text> {
+        let left = constant_magnitude(input.left)
+        let right = constant_magnitude(input.right)
+        if right.value == 0 {
+            return Err("constant division by zero")
+        }
+        let quotient = ConstantMagnitude {
+            negative: left.negative != right.negative, value: left.value / right.value
+        }
+        let result = constant_encode(quotient, input.left.builtin)?
+        match input.operator {
+            frontend::BinaryDivide => {
+                return Ok(result)
+            }
+            frontend::BinaryRemainder => {
+                return constant_encode(ConstantMagnitude {
+                        negative: left.negative, value: left.value % right.value
+                    }, input.left.builtin)
+            }
+            _ => {
+                return Err("invalid constant arithmetic operator")
+            }
+        }
+    }
+}

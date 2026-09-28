@@ -1,0 +1,95 @@
+module toolchain {
+    fn execute_options(compiler: Text, options: Options) -> Result<u32, Text> {
+        let root = repository_root()?
+        if std::text::equal(options.command, "bootstrap") {
+            let directory = if options.output.length() == 0 {
+                bootstrap_directory(root)
+            } else {
+                options.output.clone()
+            }
+            let request = BootstrapRequest {
+                root: root.clone(), compiler: compiler.clone(), directory: move directory, force: options.force, verify: true
+            }
+            say(bootstrap(request)?)
+            return Ok(0)
+        }
+        if std::text::equal(options.command, "refresh-seed") {
+            refresh_seed(root, compiler)?;
+            return Ok(0)
+        }
+        if std::text::equal(options.command, "build") || std::text::equal(options.command, "run") {
+            return execute_build(compiler, options)
+        }
+        return execute_task(compiler, options, root)
+    }
+
+    fn execute_build(compiler: Text, options: Options) -> Result<u32, Text> {
+        let output = build_project(project_build_request(compiler, options)?)?
+        if std::text::equal(options.command, "build") {
+            return Ok(0)
+        }
+        var arguments = Vec<Text>.new()
+        arguments.push(output.clone())
+        for index in 0..options.arguments.length() {
+            arguments.push(options.arguments[index].clone())
+        }
+        replace_process(arguments)?
+        return Ok(0)
+    }
+
+    fn exit_status(status: i32) -> u32 {
+        if status < 0 {
+            let normalized: i32 = 128 - status;
+            return u32.from(normalized)
+        }
+        return u32.from(status)
+    }
+
+    fn execute_task(compiler: Text, options: Options, root: Text) -> Result<u32, Text> {
+        let folder = if std::text::equal(options.command, "benchmark") {
+            "components/compiler/benchmark"
+        } else {
+            "components/compiler/tests/runner"
+        }
+        let project = load_project(path_join(root, folder), host_target())?
+        let output = path_join(root, std::text::joined("target/toolchain/", project.name))
+        let request = BuildRequest {
+            compiler: compiler.clone(), project: move project, output: move output, objects: Vec<Text>.new(), links: Vec<Text>.new(), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
+        }
+        var arguments = Vec<Text>.new()
+        arguments.push(build_project(request)?)
+        arguments.push(options.command.clone())
+        arguments.push(compiler.clone())
+        task_arguments(arguments, options)
+        replace_process(arguments)?
+        return Ok(0)
+    }
+
+    fn task_arguments(arguments: write Vec<Text>, options: Options) -> void {
+        arguments.push("--jobs");
+        arguments.push(std::text::decimal(u64.from(options.jobs)))
+        if std::text::equal(options.command, "benchmark") {
+            arguments.push("--runs");
+            arguments.push(std::text::decimal(u64.from(options.runs)))
+        }
+        if std::text::equal(options.command, "release") {
+            arguments.push("--seed");
+            arguments.push(std::text::decimal(options.seed))
+        }
+        if options.output.length() != 0 {
+            arguments.push("--output");
+            arguments.push(options.output.clone())
+        }
+        if options.coverage.length() != 0 {
+            arguments.push("--coverage");
+            arguments.push(options.coverage.clone())
+        }
+        if options.filter.length() != 0 {
+            arguments.push("--filter");
+            arguments.push(options.filter.clone())
+        }
+        for index in 0..options.paths.length() {
+            arguments.push(options.paths[index].clone())
+        }
+    }
+}

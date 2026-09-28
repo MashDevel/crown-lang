@@ -1,0 +1,99 @@
+module coverage {
+    fn runtime_assembly(bytes: u64, path: Text, target: toolchain::Target) -> Result<Text, Text> {
+        if target.architecture == toolchain::Architecture::Arm64() {
+            let object = arm64::instrumentation_object(bytes, path, false)?
+            let variant = if target.platform == toolchain::Platform::Macos() {
+                arm64::AbiVariant::Darwin()
+            } else {
+                arm64::AbiVariant::Aapcs64()
+            }
+            return arm64::assembly(object, "coverage", variant)
+        }
+        let object = runtime_object(bytes, path)?
+        let format = if target.platform == toolchain::Platform::Macos() {
+            x86::AssemblyFormat::MachO()
+        } else {
+            x86::AssemblyFormat::Elf()
+        }
+        return match x86::assembly_relocatable(object, format) {
+            Ok(value) => Ok(move value),
+            Err(error) => {
+                error;
+                Err("could not render coverage runtime")
+            }
+        }
+    }
+
+    fn runtime_object(bytes: u64, path: Text) -> Result<object::CompilerObject, Text> {
+        return instrumentation_object(bytes, path, runtime_hit(), "cannot initialize Crown coverage")
+    }
+
+    fn instrumentation_object(bytes: u64, path: Text, hit: take x86::Function, failure: Text) -> Result<object::CompilerObject, Text> {
+        var program = x86::program_relocatable()
+        runtime_functions(program, move hit)?
+        runtime_data(program, bytes, path, failure)?
+        return match x86::encode_program(program) {
+            Ok(value) => Ok(move value)
+            Err(error) => {
+                error;
+                Err("could not encode coverage runtime")
+            }
+        }
+    }
+
+    fn runtime_functions(program: write x86::Program, hit: take x86::Function) -> Result<void, Text> {
+        runtime_function(program, move hit)?
+        runtime_function(program, runtime_initialize())?
+        let imports = std::text::split("mkstemp|ftruncate|mmap|close|perror|exit", 124)
+        for index in 0..imports.length() {
+            match x86::program_add_import(program, imports[index].clone()) {
+                Ok(value) => {
+                    value
+                },
+                Err(error) => {
+                    error;
+                    return Err("could not declare coverage runtime import")
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn runtime_function(program: write x86::Program, function: take x86::Function) -> Result<void, Text> {
+        return match x86::program_add_function(program, move function) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                error;
+                Err("could not declare coverage runtime function")
+            }
+        }
+    }
+
+    fn runtime_data(program: write x86::Program, bytes: u64, path: Text, failure: Text) -> Result<void, Text> {
+        var size = Vec<u8>.new()
+        for shift in 0..8 {
+            size.push(u8.from((bytes >> u64.from(shift * 8)) & 255))
+        }
+        var encoded = toolchain::text_bytes(path)
+        encoded.push(0)
+        var error = toolchain::text_bytes(failure)
+        error.push(0)
+        runtime_add_data(program, x86::data_zero_fill("crown_cov_data", 8))?
+        runtime_add_data(program, x86::data_initialized("crown_cov_size", move size, x86::DataReadOnly()))?
+        runtime_add_data(program, x86::data_initialized("crown_cov_path", move encoded, x86::DataWritable()))?
+        runtime_add_data(program, x86::data_initialized("crown_cov_error", move error, x86::DataReadOnly()))?
+        return Ok(())
+    }
+
+    fn runtime_add_data(program: write x86::Program, data: take x86::Data) -> Result<void, Text> {
+        var value = move data
+        x86::data_align(value, 8)
+        return match x86::program_add_data(program, move value) {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                error;
+                Err("could not declare coverage runtime data")
+            }
+        }
+    }
+}

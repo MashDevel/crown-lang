@@ -1,0 +1,68 @@
+module x86 {
+    fn codegen_vector_splat(program: ir::Program, compiler: write FunctionCompiler, value: usize, result: Option<usize>) -> Result<void, CodegenError> {
+        let scalar = codegen_value_type(program, compiler, value)?
+        let size = match ir::type_size(scalar) {
+            Some(bytes) => bytes
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        codegen_load_value(program, compiler, ValueAccess {
+                value: value, register: Rax()
+            })?
+        if size < 4 {
+            let factor: i64 = if size == 1 {
+                16843009
+            } else {
+                65537
+            }
+            codegen_emit(compiler, MoveImmediate(Rdx(), factor))
+            codegen_emit(compiler, Multiply(Rax(), Rdx()))
+        }
+        codegen_emit(compiler, MoveToFloat(Float64(), Xmm0(), Rax()))
+        codegen_emit(compiler, ShufflePacked(Xmm0(), if size == 8 {
+                    68
+                } else {
+                    0
+                }))
+        let destination = match result {
+            Some(found) => found
+            None => {
+                return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+            }
+        }
+        return codegen_store_vector(compiler, FloatValueAccess {
+                value: destination, register: Xmm0()
+            })
+    }
+
+    fn codegen_copy_vector(compiler: write FunctionCompiler, transfer: PhiCopy) -> Result<void, CodegenError> {
+        codegen_load_vector(compiler, FloatValueAccess {
+                value: transfer.source, register: Xmm0()
+            })?
+        return codegen_store_vector(compiler, FloatValueAccess {
+                value: transfer.result, register: Xmm0()
+            })
+    }
+
+    fn codegen_push_vector(compiler: write FunctionCompiler, source: usize) -> Result<void, CodegenError> {
+        codegen_load_vector(compiler, FloatValueAccess {
+                value: source, register: Xmm0()
+            })?
+        codegen_emit(compiler, SubtractImmediate(Rsp(), 16))
+        codegen_emit(compiler, StorePackedFloat(StoreFloatMemoryArgs {
+                    width: Float64(), source: Xmm0(), base: Rsp(), offset: 0
+                }))
+        return Ok(())
+    }
+
+    fn codegen_pop_vector(compiler: write FunctionCompiler, destination: usize) -> Result<void, CodegenError> {
+        codegen_emit(compiler, LoadPackedFloat(LoadFloatMemoryArgs {
+                    width: Float64(), destination: Xmm0(), base: Rsp(), offset: 0
+                }))
+        codegen_emit(compiler, AddImmediate(Rsp(), 16))
+        return codegen_store_vector(compiler, FloatValueAccess {
+                value: destination, register: Xmm0()
+            })
+    }
+}

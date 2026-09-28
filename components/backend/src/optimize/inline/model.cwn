@@ -1,0 +1,138 @@
+module optimize {
+    struct InlineSite {
+        block: usize
+        instruction: usize
+        callee: usize
+        cost: usize
+    }
+
+    struct InlineCandidate {
+        blocks: usize
+        cost: usize
+        linkage: ir::Linkage
+        returns: bool
+        calls: Vec<usize>
+    }
+
+    struct InlineCallSite {
+        result: Option<usize>
+        arguments: Vec<usize>
+    }
+
+    struct InlineMapping {
+        values: Vec<Option<usize>>
+        blocks: Vec<usize>
+    }
+
+    struct InlineReturn {
+        block: usize
+        value: Option<usize>
+    }
+
+    struct InlineEligibility {
+        caller: usize
+        callee: usize
+        inside_loop: bool
+        constant_argument: bool
+    }
+
+    fn inline_candidate(function: ir::Function) -> InlineCandidate {
+        var returns = false
+        var calls = Vec<usize>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    match read terminator {
+                        ir::TerminatorReturn(value) => {
+                            value;
+                            returns = true
+                        }
+                        _ => {
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[index].kind {
+                    ir::InstructionCall(callee, arguments, result) => {
+                        arguments;
+                        result
+                        unique_usize(calls, callee)
+                    }
+                    _ => {
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return InlineCandidate {
+            blocks: function.blocks.length()
+            cost: inline_cost(function)
+            linkage: function.linkage
+            returns: returns
+            calls: move calls
+        }
+    }
+
+    fn inline_cost(function: ir::Function) -> usize {
+        var output: usize = 0
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index].kind as kind {
+                    output = output + instruction_cost(kind)
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return output
+    }
+
+    fn instruction_cost(kind: ir::InstructionKind) -> usize {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                left;
+                right
+                match read operator {
+                    ir::BinaryUnsignedDivide => {
+                        return 8
+                    }
+                    ir::BinaryUnsignedRemainder => {
+                        return 8
+                    }
+                    ir::BinarySignedDivide => {
+                        return 8
+                    }
+                    ir::BinarySignedRemainder => {
+                        return 8
+                    }
+                    _ => {
+                        return 1
+                    }
+                }
+            }
+            ir::InstructionCall(function, arguments, result) => {
+                function;
+                arguments;
+                result;
+                return 5
+            }
+            ir::InstructionCallIndirect(function, signature, arguments) => {
+                function;
+                signature;
+                arguments;
+                return 5
+            }
+            _ => {
+                return 1
+            }
+        }
+    }
+}

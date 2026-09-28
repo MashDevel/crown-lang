@@ -1,0 +1,47 @@
+module optimize {
+    fn prune_program(program: write ir::Program) -> Result<usize, ir::ValidationError> {
+        ir::validate_program(program)?
+        var state = reachability_new(program)
+        reach_roots(program, state)
+        reach_references(program, state)
+        return Ok(retain_reachable(program, state))
+    }
+
+    fn retain_reachable(program: write ir::Program, state: Reachability) -> usize {
+        let mapping = ProgramMapping {
+            functions: reach_mapping(state.functions), globals: reach_mapping(state.globals)
+        }
+        let before = program.functions.length() + program.globals.length()
+        retain_functions(program, state.functions)
+        retain_globals(program, state.globals)
+        remap_program(program, mapping)
+        return before - program.functions.length() - program.globals.length()
+    }
+
+    fn retain_functions(program: write ir::Program, used: Vec<bool>) -> void {
+        var functions = Vec<ir::Function>.new()
+        var index: usize = 0
+        while index < program.functions.length() {
+            if used[index] {
+                functions.push(ir::function_take(program.functions[index]))
+            }
+            index = index + 1
+        }
+        program.functions = move functions
+    }
+
+    fn retain_globals(program: write ir::Program, used: Vec<bool>) -> void {
+        var globals = Vec<ir::Global>.new()
+        var index: usize = 0
+        while index < program.globals.length() {
+            if used[index] {
+                let empty = ir::Global {
+                    name: Text.new(), bytes: Vec<u8>.new(), size: 0, alignment: 1, kind: ir::GlobalReadOnly(), exported: false, references: Vec<ir::GlobalReference>.new()
+                }
+                globals.push(replace(program.globals[index], move empty))
+            }
+            index = index + 1
+        }
+        program.globals = move globals
+    }
+}

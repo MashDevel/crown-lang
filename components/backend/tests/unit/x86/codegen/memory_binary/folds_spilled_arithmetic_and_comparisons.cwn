@@ -1,0 +1,103 @@
+fn append_result(function: write ir::Function, block: read usize, kind: take ir::InstructionKind) -> usize {
+    match ir::function_append(function, block, move kind) {
+        Ok(value) => {
+            match value {
+                Some(result) => {
+                    return result
+                }
+                None => {
+                    return 0
+                }
+            }
+        }
+        Err(error) => {
+            error;
+            return 0
+        }
+    }
+}
+
+fn main() -> u32 {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    var index: usize = 0
+    while index < 16 {
+        parameters.push(value_type);
+        index = index + 1
+    }
+    let signature = ir::signature_new(move parameters, value_type)
+    var function = ir::function_new("memory_binary", move signature, ir::LinkageLocal())
+    var block: usize = 0
+    match ir::function_add_block(function) {
+        Ok(value) => {
+            block = value
+        }
+        Err(error) => {
+            error;
+            return 1
+        }
+    }
+    index = 1
+    while index < function.parameters.length() {
+        append_result(function, block, ir::InstructionCompare(ir::CompareEqual(), function.parameters[0], function.parameters[index]))
+        index = index + 1
+    }
+    var result = function.parameters[0]
+    index = 1
+    while index < function.parameters.length() {
+        result = append_result(function, block, ir::InstructionBinary(ir::BinaryAdd(), result, function.parameters[index]))
+        index = index + 1
+    }
+    match ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error;
+            return 2
+        }
+    }
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return 3
+        }
+        Ok(instructions) => {
+            return check_generated_instructions(instructions)
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var arithmetic = false
+    var comparison_found = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::MemoryBinary(values) => {
+                match read values.operator {
+                    x86::MemoryAdd => {
+                        arithmetic = true
+                    }
+                    x86::MemoryCompare => {
+                        comparison_found = true
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if arithmetic == false {
+        return 4
+    }
+    if comparison_found == false {
+        return 5
+    }
+    42
+}

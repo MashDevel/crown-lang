@@ -1,0 +1,20 @@
+struct State {
+    value: u32
+}
+fn main() -> u32 {
+    let state = Shared.new(Mutex.new(State {
+                value: 1
+            }))
+    state.lock write as current {
+        current.value = 12
+    }
+    let values = Shared.new(RwLock.new(State {
+                value: 7
+            }))
+    values.lock read as current {
+        print(current.value)
+    }
+    state.lock write as current {
+        return current.value
+    }
+}

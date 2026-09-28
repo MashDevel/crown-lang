@@ -1,0 +1,98 @@
+module x86 {
+    fn codegen_copy_phis(program: ir::Program, compiler: write FunctionCompiler, copies: take Vec<PhiCopy>) -> Result<void, CodegenError> {
+        codegen_clear_cache(compiler)
+        var state = PhiState {
+            active: codegen_active_phi_copies(compiler, copies), copies: move copies
+        }
+        while codegen_has_active(state.active) {
+            match codegen_direct_phi_index(compiler, state) {
+                Some(index) => {
+                    loan read state.copies[index] as transfer {
+                        match codegen_copy_phi_value(program, compiler, transfer) {
+                            Err(error) => {
+                                return Err(move error)
+                            }
+                            Ok(done) => {
+                                done
+                            }
+                        }
+                    }
+                    state.active[index] = false
+                }
+                None => {
+                    match codegen_cycle_phis(program, compiler, state) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+            }
+        }
+        codegen_clear_cache(compiler)
+        return Ok(())
+    }
+
+    fn codegen_active_phi_copies(compiler: FunctionCompiler, copies: Vec<PhiCopy>) -> Vec<bool> {
+        var active = Vec<bool>.with_capacity(copies.length())
+        var index: usize = 0
+        while index < copies.length() {
+            loan read copies[index] as transfer {
+                active.push(codegen_same_phi_location(compiler, transfer) == false)
+            }
+            index = index + 1
+        }
+        return move active
+    }
+
+    fn codegen_has_active(active: Vec<bool>) -> bool {
+        var index: usize = 0
+        while index < active.length() {
+            if active[index] {
+                return true
+            };
+            index = index + 1
+        }
+        return false
+    }
+
+    fn codegen_direct_phi_index(compiler: FunctionCompiler, state: PhiState) -> Option<usize> {
+        var index: usize = 0
+        while index < state.copies.length() {
+            if state.active[index] && codegen_phi_destination_required(compiler, state, index) == false {
+                return Some(index)
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn codegen_phi_destination_required(compiler: FunctionCompiler, state: PhiState, index: usize) -> bool {
+        let destination = match codegen_frame_location(compiler.frame, state.copies[index].result) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        var cursor: usize = 0
+        while cursor < state.copies.length() {
+            let other = cursor
+            cursor = cursor + 1
+            if state.active[other] == false || other == index {
+                continue
+            }
+            let source = match codegen_frame_location(compiler.frame, state.copies[other].source) {
+                Some(value) => move value
+                None => {
+                    continue
+                }
+            }
+            if codegen_location_equal(destination, source) {
+                return true
+            }
+        }
+        false
+    }
+}

@@ -1,0 +1,294 @@
+module optimize {
+    struct PromotionAnalysis {
+        candidates: Vec<PromotionCandidate>
+        slots: Vec<Option<usize>>
+    }
+
+    fn promotion_candidates(function: ir::Function) -> PromotionAnalysis {
+        var slots = none_usize(function.values.length())
+        var candidates = Vec<PromotionCandidate>.new()
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    add_promotion_candidate(instruction, slots, candidates)
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return PromotionAnalysis {
+            candidates: move candidates, slots: move slots
+        }
+    }
+
+    fn add_promotion_candidate(instruction: ir::Instruction, slots: write Vec<Option<usize>>, output: write Vec<PromotionCandidate>) -> void {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryStackSlot(size, alignment) => {
+                        alignment
+                        if size == 0 || size > 8 {
+                            return
+                        }
+                        match read instruction.result {
+                            Some(slot) => {
+                                slots[slot] = Some(output.length())
+                                output.push(PromotionCandidate {
+                                        slot: slot
+                                        value_type: None()
+                                        valid: true
+                                        stores: Vec<ir::Type>.new()
+                                        loads: Vec<ir::Type>.new()
+                                        accesses: Vec<usize>.new()
+                                    })
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn inspect_promotions(function: ir::Function, analysis: write PromotionAnalysis) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    inspect_promotion_instruction(function, analysis, block, instruction)
+                }
+                index = index + 1
+            }
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    invalidate_operands(ir::terminator_operands(terminator), analysis)
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        finalize_promotion_candidates(analysis.candidates)
+    }
+
+    fn inspect_promotion_instruction(function: ir::Function, analysis: write PromotionAnalysis, block: usize, instruction: ir::Instruction) -> void {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        alignment
+                        inspect_promotion_load(analysis, block, address, value_type, volatile)
+                    }
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment
+                        let store = IrStoreUse {
+                            address: address, value: value, volatile: volatile
+                        }
+                        inspect_promotion_store(function, analysis, block, store)
+                    }
+                    _ => {
+                        invalidate_operands(ir::instruction_operands(instruction.kind), analysis)
+                    }
+                }
+            }
+
+            _ => {
+                invalidate_operands(ir::instruction_operands(instruction.kind), analysis)
+            }
+        }
+    }
+
+    struct IrStoreUse {
+        address: usize
+        value: usize
+        volatile: bool
+    }
+
+    fn inspect_promotion_load(analysis: write PromotionAnalysis, block: usize, address: usize, value_type: ir::Type, volatile: bool) -> void {
+        let selected = promotion_slot(analysis.slots, address)
+        match selected {
+            Some(index) => {
+                loan write analysis.candidates[index] as candidate {
+                    candidate.valid = candidate.valid && volatile == false && promotion_scalar(value_type)
+                    candidate.loads.push(value_type)
+                    unique_usize(candidate.accesses, block)
+                }
+            }
+            None => {
+            }
+        }
+    }
+
+    fn inspect_promotion_store(function: ir::Function, analysis: write PromotionAnalysis, block: usize, store: IrStoreUse) -> void {
+        let selected = promotion_slot(analysis.slots, store.address)
+        match selected {
+            Some(index) => {
+                loan write analysis.candidates[index] as candidate {
+                    match ir::function_value_type(function, store.value) {
+                        Some(value_type) => {
+                            candidate.stores.push(value_type)
+                        }
+                        None => {
+                            candidate.valid = false
+                        }
+                    }
+                    candidate.valid = candidate.valid && store.volatile == false
+                    unique_usize(candidate.accesses, block)
+                }
+            }
+            None => {
+            }
+        }
+        invalidate_promotion(store.value, analysis)
+    }
+
+    fn invalidate_operands(operands: take Vec<usize>, analysis: write PromotionAnalysis) -> void {
+        var index: usize = 0
+        while index < operands.length() {
+            invalidate_promotion(operands[index], analysis)
+            index = index + 1
+        }
+    }
+
+    fn invalidate_promotion(value: usize, analysis: write PromotionAnalysis) -> void {
+        if value >= analysis.slots.length() {
+            return
+        }
+        let selected = promotion_slot(analysis.slots, value)
+        match selected {
+            Some(index) => {
+                analysis.candidates[index].valid = false
+            }
+            None => {
+            }
+        }
+    }
+
+    fn finalize_promotion_candidates(candidates: write Vec<PromotionCandidate>) -> void {
+        var index: usize = 0
+        while index < candidates.length() {
+            var selected: Option<ir::Type> = None()
+            loan read candidates[index] as candidate {
+                if candidate.stores.length() > 0 {
+                    loan read candidate.stores[0] as value_type {
+                        selected = Some(value_type)
+                    }
+                }
+                if candidate.stores.length() == 0 && candidate.loads.length() > 0 {
+                    loan read candidate.loads[0] as value_type {
+                        selected = Some(value_type)
+                    }
+                }
+            }
+            candidates[index].value_type = selected
+            loan write candidates[index] as candidate {
+                candidate.valid = candidate.valid && promotion_types_valid(candidate)
+            }
+            index = index + 1
+        }
+    }
+
+    fn promotion_types_valid(candidate: PromotionCandidate) -> bool {
+        match read candidate.value_type {
+            None => {
+                return false
+            }
+            Some(value_type) => {
+                var index: usize = 0
+                while index < candidate.stores.length() {
+                    loan read candidate.stores[index] as stored {
+                        if ir::type_equal(stored, value_type) == false {
+                            return false
+                        }
+                    }
+                    index = index + 1
+                }
+                index = 0
+                while index < candidate.loads.length() {
+                    loan read candidate.loads[index] as loaded {
+                        if promotion_compatible(value_type, loaded) == false {
+                            return false
+                        }
+                    }
+                    index = index + 1
+                }
+                return true
+            }
+        }
+    }
+
+    fn promotion_compatible(stored: ir::Type, loaded: ir::Type) -> bool {
+        if ir::type_equal(stored, loaded) {
+            return true
+        }
+        if ir::type_is_integer(stored) == false || ir::type_is_integer(loaded) == false {
+            return false
+        }
+        match ir::type_size(stored) {
+            Some(left) => {
+                match ir::type_size(loaded) {
+                    Some(right) => {
+                        return left == right
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn promotion_scalar(value_type: ir::Type) -> bool {
+        match ir::type_size(value_type) {
+            Some(size) => {
+                return size != 0 && size <= 8
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn unique_usize(values: write Vec<usize>, value: usize) -> void {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index] == value {
+                return
+            }
+            index = index + 1
+        }
+        values.push(value)
+    }
+
+    fn promotion_slot(slots: Vec<Option<usize>>, value: usize) -> Option<usize> {
+        match read slots[value] {
+            Some(index) => {
+                return Some(index)
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn none_usize(length: usize) -> Vec<Option<usize>> {
+        var output = Vec<Option<usize>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+}

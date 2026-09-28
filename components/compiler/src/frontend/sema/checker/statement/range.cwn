@@ -1,0 +1,85 @@
+module sema {
+    fn checker_range(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementFor(name, start, end, body) => {
+                let value_type = checker_range_bounds(checker, start, end)
+                if type_is_integer(value_type) == false {
+                    return
+                }
+                let before = scopes_copy(checker.scopes)
+                checker_push_scope(checker)
+                checker_add_variable(checker, Variable {
+                        name: frontend::name_copy(name), value_type: move value_type, copy_value: true, mutable_value: false,
+                        state: Available(), access: OwnedAccess(), span: name.span, state_span: name.span
+                    })
+                checker.loop_states.push(loop_state(checker.scopes))
+                checker_statements(checker, body)
+                checker.loop_states.pop()
+                checker_pop_scope(checker)
+                if checker.continuing && scopes_equal(before, checker.scopes) == false {
+                    checker_error(checker, "loop iterations leave ownership in different states")
+                }
+                checker.scopes = move before
+                checker.continuing = true
+            }
+            _ => {
+                checker_error(checker, "invalid range loop")
+            }
+        }
+    }
+
+    fn checker_range_bounds(checker: write Checker, start: frontend::Expression, end: frontend::Expression) -> Type {
+        var info: Option<ExpressionInfo> = None()
+        if range_integer_literal(start) {
+            var hint = Infer()
+            if range_integer_literal(end) {
+                hint = builtin_leaf(USize())
+            }
+            info = checker_expression_expected(checker, end, hint)
+            match read info {
+                Some(value) => {
+                    checker_value(checker, start, value.value_type)
+                }
+                None => {
+                }
+            }
+        } else {
+            info = checker_expression(checker, start)
+            match read info {
+                Some(value) => {
+                    checker_value(checker, end, value.value_type)
+                }
+                None => {
+                }
+            }
+        }
+        match move info {
+            Some(value) => {
+                if type_is_integer(value.value_type) {
+                    return type_copy(value.value_type)
+                }
+                checker_error(checker, "range bounds must have the same integer type")
+            }
+            None => {
+            }
+        }
+        return Invalid()
+    }
+
+    fn range_integer_literal(expression: frontend::Expression) -> bool {
+        return range_integer_kind(expression.kind)
+        return false
+    }
+
+    fn range_integer_kind(kind: frontend::ExpressionKind) -> bool {
+        match read kind {
+            frontend::ExpressionInteger(value) => {
+                value;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

@@ -1,0 +1,51 @@
+fn instrumentation() -> Result<void, Text> {
+    let names = testing::list("malloc|calloc|realloc|free")
+    for index in 0..names.length() {
+        let expected = std::text::joined("crown_test_", names[index])
+        testing::expect(std::text::equal(auditor::instrument_name(names[index]), expected), "allocator symbol rewrite")?
+        testing::expect(std::text::equal(auditor::instrument_name(expected), expected), "idempotent instrumentation")?
+    }
+    testing::expect(std::text::equal(auditor::instrument_name("malloced"), "malloced"), "partial symbols unchanged")?
+    testing::expect(std::text::equal(auditor::instrument_name("prefix_malloc"), "prefix_malloc"), "prefixed symbols unchanged")?
+    return Ok(())
+}
+
+fn contract() -> Result<void, Text> {
+    let root = toolchain::repository_root()?
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let directory = toolchain::temporary_path(temporary)
+    let binary = toolchain::path_join(directory, "allocator-test")
+    var environment = harness::Environment {
+        coverage: "",
+        root: root.clone(), output: directory.clone(), compiler: testing::compiler()?
+    }
+    let names = testing::list("allocator_contract|allocations")
+    for index in 0..names.length() {
+        let relative = std::text::joined("components/compiler/tests/generative/", std::text::joined(names[index], ".cwn"))
+        let source = toolchain::path_join(root, relative)
+        environment.output = toolchain::path_join(directory, names[index])
+        campaign::allocator_build(environment, source, binary)?
+        shared_auditor(environment)?
+        var arguments = Vec<Text>.new();
+        arguments.push(binary.clone())
+        harness::verify_clean(harness::invoke(move arguments, directory)?)?
+    }
+    return Ok(())
+}
+
+fn shared_auditor(environment: harness::Environment) -> Result<void, Text> {
+    let cached = toolchain::path_join(environment.root, "target/toolchain/crown-allocation-auditor")
+    testing::expect(toolchain::exists(cached), "allocation audits share their cached compiler")?
+    testing::expect(toolchain::exists(std::text::joined(cached, ".crown-build")), "the audit compiler has a verified build fingerprint")?
+    let isolated = toolchain::path_join(environment.output, "allocator-generator")
+    return testing::expect(toolchain::exists(isolated) == false, "independent audit outputs do not rebuild private compilers")
+}
+
+fn run() -> Result<void, Text> {
+    instrumentation()?
+    contract()?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}

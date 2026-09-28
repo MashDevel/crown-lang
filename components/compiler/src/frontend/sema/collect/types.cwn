@@ -1,0 +1,91 @@
+module sema {
+    fn collect_type_bodies(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.structs.length() {
+            loan read program.structs[index] as declaration {
+                match find_symbol(symbols, declaration.name) {
+                    Some(symbol) => {
+                        let context = Resolution {
+                            parameters: names_copy(declaration.parameters), self_symbol: Some(symbol)
+                        }
+                        symbols.types[symbol].fields = resolve_fields(symbols, context, declaration.fields)
+                    }
+                    None => {
+                    }
+                }
+            }
+            index = index + 1
+        }
+        collect_enum_bodies(symbols, program)
+        collect_resource_bodies(symbols, program)
+    }
+
+    fn collect_enum_bodies(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.enums.length() {
+            loan read program.enums[index] as declaration {
+                match find_symbol(symbols, declaration.name) {
+                    Some(symbol) => {
+                        let context = Resolution {
+                            parameters: names_copy(declaration.parameters), self_symbol: Some(symbol)
+                        }
+                        symbols.types[symbol].variants = resolve_variants(symbols, context, declaration.variants)
+                    }
+                    None => {
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn collect_resource_bodies(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.resources.length() {
+            loan read program.resources[index] as declaration {
+                match find_symbol(symbols, declaration.name) {
+                    Some(symbol) => {
+                        let context = Resolution {
+                            parameters: names_copy(declaration.parameters), self_symbol: Some(symbol)
+                        }
+                        symbols.types[symbol].fields = resolve_fields(symbols, context, declaration.fields)
+                    }
+                    None => {
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn resolve_fields(symbols: write Symbols, context: Resolution, fields: Vec<frontend::Field>) -> Vec<Field> {
+        var output = Vec<Field>.with_capacity(fields.length())
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as field {
+                output.push(Field {
+                        private_value: field.private_value
+                        name: frontend::name_copy(field.name)
+                        value_type: resolve_type(symbols, context, field.value_type)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn resolve_variants(symbols: write Symbols, context: Resolution, variants: Vec<frontend::Variant>) -> Vec<Variant> {
+        var output = Vec<Variant>.with_capacity(variants.length())
+        var index: usize = 0
+        while index < variants.length() {
+            loan read variants[index] as variant {
+                output.push(Variant {
+                        name: qualified_variant_name(symbols, context, variant.name)
+                        fields: resolve_arguments(symbols, context, variant.fields)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

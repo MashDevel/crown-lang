@@ -1,0 +1,19 @@
+struct FrontendTestSource {
+    bytes: Shared<Vec<u8>>
+    length: usize
+}
+
+fn frontend_test_source(value: take Text) -> FrontendTestSource {
+    var bytes = Vec<u8>.with_capacity(value.length())
+    loan read value as source {
+        var index: usize = 0
+        while index < source.length() {
+            bytes.push(source[index]);
+            index = index + 1
+        }
+    }
+    let length = bytes.length()
+    return FrontendTestSource {
+        bytes: Shared.new(move bytes), length: length
+    }
+}

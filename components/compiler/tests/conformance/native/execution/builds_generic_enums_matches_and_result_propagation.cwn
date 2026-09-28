@@ -1,0 +1,48 @@
+enum Choice<T> {
+    First(T), Second(T)
+}
+fn choose() -> u32 {
+    let selected = First(7)
+    match move selected {
+        First(value) => {
+            return value
+        }
+        Second(value) => {
+            return value
+        }
+    }
+}
+fn compute() -> Result<u32, u32> {
+    let value = Ok(choose())?
+    return Ok(value + 1)
+}
+fn take_option(value: read u32) -> u32 {
+    var option: Option<u32> = Some(value)
+    let taken = option.take()
+    match option {
+        Some(unexpected) => {
+            return unexpected
+        }
+        None => {
+        }
+    }
+    match taken {
+        Some(taken_value) => {
+            return taken_value
+        }
+        None => {
+            return 0
+        }
+    }
+}
+fn main() -> u32 {
+    let outcome = compute()
+    match outcome {
+        Ok(value) => {
+            return take_option(value)
+        }
+        Err(error) => {
+            return error
+        }
+    }
+}

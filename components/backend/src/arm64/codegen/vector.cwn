@@ -1,0 +1,84 @@
+module arm64 {
+    fn vector_load(compiler: write Compiler, value: usize, register: u32) -> Result<void, Text> {
+        frame_address(compiler, 17, frame_value(compiler.frame, value)?)
+        emit_encoding(compiler, simd_memory_word(register, 17, 0, 16, true))
+        return Ok(())
+    }
+    fn vector_result(compiler: write Compiler) -> Result<void, Text> {
+        emit_encoding(compiler, float_move_bits(9, 0, false, true))
+        emit(compiler, 1310211072 | 10)
+        return Ok(())
+    }
+    fn vector_binary(function: ir::Function, compiler: write Compiler, operator: ir::BinaryOperator, left: usize, right: usize) -> Result<void, Text> {
+        let value_type = function.values[left]
+        if ir::vector_binary_supported(value_type, operator) == false {
+            return Err("unsupported ARM64 vector operation")
+        }
+        vector_load(compiler, left, 0)?
+        vector_load(compiler, right, 1)?
+        let scalar = match ir::vector_scalar(value_type) {
+            Some(value) => value,
+            None => {
+                return Err("invalid ARM64 vector type")
+            }
+        }
+        let opcode = if ir::type_is_float(scalar) {
+            vector_float_opcode(operator, ir::type_is_float64(scalar))?
+        } else {
+            vector_integer_opcode(operator, value_size(scalar)?)?
+        }
+        emit_registers(compiler, opcode, 0, 0, 1)
+        return vector_result(compiler)
+    }
+    fn vector_integer_opcode(operator: ir::BinaryOperator, size: u32) -> Result<u32, Text> {
+        let lane = vector_lane_size(size)?
+        match operator {
+            ir::BinaryAdd => Ok(1310753792 |(lane << 22))
+            ir::BinarySubtract => Ok(1847624704 |(lane << 22))
+            ir::BinaryMultiply => Ok(1310759936 |(lane << 22))
+            ir::BinaryAnd => Ok(1310727168)
+            ir::BinaryOr => Ok(1319115776)
+            ir::BinaryXor => Ok(1847598080)
+            _ => Err("invalid ARM64 vector integer operation")
+        }
+    }
+    fn vector_float_opcode(operator: ir::BinaryOperator, double: bool) -> Result<u32, Text> {
+        let opcode: u32 = match operator {
+            ir::BinaryFloatAdd => 1310774272
+            ir::BinaryFloatSubtract => 1319162880
+            ir::BinaryFloatMultiply => 1847647232
+            ir::BinaryFloatDivide => 1847655424
+            _ => {
+                return Err("invalid ARM64 vector float operation")
+            }
+        }
+        return Ok(opcode | if double {
+                4194304
+            } else {
+                0
+            })
+    }
+    fn vector_splat(compiler: write Compiler, value: usize, target: ir::Type) -> Result<void, Text> {
+        let scalar = match ir::vector_scalar(target) {
+            Some(item) => item,
+            None => {
+                return Err("invalid ARM64 vector splat")
+            }
+        }
+        value_load(compiler, value, 9)
+        let size = value_size(scalar)?
+        emit(compiler, 1308625920 |(size << 16) |(9 << 5))
+        return vector_result(compiler)
+    }
+
+    fn vector_lane_size(size: u32) -> Result<u32, Text> {
+        match size {
+            1 => Ok(0),
+            2 => Ok(1),
+            4 => Ok(2),
+            8 => Ok(3),
+            _ => Err("invalid ARM64 vector lane")
+        }
+    }
+
+}

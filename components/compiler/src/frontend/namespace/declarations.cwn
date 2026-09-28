@@ -1,0 +1,180 @@
+module frontend {
+    fn namespace_declarations(resolver: write NamespaceResolver, program: write Program) -> void {
+        namespace_resolve_structs(resolver, program.structs)
+        namespace_resolve_enums(resolver, program.enums)
+        namespace_resolve_resources(resolver, program.resources)
+        namespace_resolve_interfaces(resolver, program.interfaces)
+        namespace_resolve_functions(resolver, program.functions)
+        namespace_resolve_foreign_functions(resolver, program.foreign_functions)
+        namespace_resolve_constants(resolver, program.constants)
+        namespace_resolve_implementations(resolver, program.implementations)
+    }
+
+    fn namespace_resolve_structs(resolver: write NamespaceResolver, items: write Vec<StructDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                resolver.parameters = sema::names_copy(item.parameters)
+                namespace_fields(resolver, item.fields)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_enums(resolver: write NamespaceResolver, items: write Vec<EnumDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                resolver.parameters = sema::names_copy(item.parameters)
+                namespace_variants(resolver, item.variants)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_resources(resolver: write NamespaceResolver, items: write Vec<ResourceDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = sema::names_copy(item.parameters)
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                namespace_fields(resolver, item.fields)
+                namespace_field_locals(resolver, item.fields)
+                namespace_block(resolver, item.drop_body)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_interfaces(resolver: write NamespaceResolver, items: write Vec<InterfaceDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                namespace_interface_methods(resolver, item.methods)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_functions(resolver: write NamespaceResolver, items: write Vec<Function>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                namespace_function(resolver, item)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_foreign_functions(resolver: write NamespaceResolver, items: write Vec<ForeignFunction>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                namespace_parameters(resolver, item.parameters)
+                namespace_type(resolver, item.result)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_constants(resolver: write NamespaceResolver, items: write Vec<ConstDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_declaration_name(resolver, item.name)
+                namespace_type(resolver, item.value_type)
+                namespace_expression(resolver, item.value)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_resolve_implementations(resolver: write NamespaceResolver, items: write Vec<ImplDecl>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_set_module(resolver, item.span)
+                resolver.parameters = Vec<Name>.new()
+                resolver.locals = Vec<Name>.new()
+                namespace_type_name(resolver, item.interface_name)
+                namespace_type(resolver, item.target)
+                namespace_methods(resolver, item.methods)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_function(resolver: write NamespaceResolver, function: write Function) -> void {
+        resolver.parameters = sema::names_copy(function.type_parameters)
+        resolver.locals = Vec<Name>.new()
+        namespace_parameters(resolver, function.parameters)
+        namespace_type(resolver, function.result)
+        namespace_block(resolver, function.body)
+    }
+
+    fn namespace_variants(resolver: write NamespaceResolver, items: write Vec<Variant>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_types(resolver, item.fields)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_field_locals(resolver: write NamespaceResolver, items: write Vec<Field>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                resolver.locals.push(name_copy(item.name))
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_interface_methods(resolver: write NamespaceResolver, items: write Vec<InterfaceMethod>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_parameters(resolver, item.parameters);
+                namespace_type(resolver, item.result)
+            }
+            index = index + 1
+        }
+    }
+
+    fn namespace_methods(resolver: write NamespaceResolver, items: write Vec<Function>) -> void {
+        var index: usize = 0
+        while index < items.length() {
+            loan write items[index] as item {
+                namespace_function(resolver, item)
+            }
+            index = index + 1
+        }
+    }
+}

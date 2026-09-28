@@ -1,0 +1,53 @@
+module elf {
+    fn executable(input: take object::CompilerObject, options: Options) -> Result<Vec<u8>, Text> {
+        var object = move input
+        match object::validate(object) {
+            Err(error) => {
+                error;
+                return Err("invalid ELF executable object")
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        let startup = startup_import(object)?
+        var image = layout(object)?
+        write_interpreter(image, options.interpreter)?
+        write_startup(image, object, startup)?
+        prepare_dynamic(image, object, options)?
+        relocate(image, object)?
+        finish_dynamic(image)?
+        header(image)
+        return Ok(replace(image.bytes, Vec<u8>.new()))
+    }
+
+    fn libraries(options: Vec<Text>) -> Result<Vec<Text>, Text> {
+        var output = Vec<Text>.new()
+        output.push("libc.so.6")
+        output.push("libm.so.6")
+        output.push("libpthread.so.0")
+        output.push("libdl.so.2")
+        for index in 0..options.length() {
+            let library = library_name(options[index])?
+            if std::text::list_contains(output, library) == false {
+                output.push(library.clone())
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn library_name(option: Text) -> Result<Text, Text> {
+        if std::text::starts(option, "-l") == false || option.length() <= 2 {
+            return Err("unsupported ELF library option")
+        }
+        let name = std::text::slice(option, 2, option.length())
+        toolchain::valid_link_name(name)?
+        match read name {
+            "c" => Ok("libc.so.6")
+            "m" => Ok("libm.so.6")
+            "pthread" => Ok("libpthread.so.0")
+            "dl" => Ok("libdl.so.2")
+            _ => Ok(std::text::joined(std::text::joined("lib", name), ".so"))
+        }
+    }
+}

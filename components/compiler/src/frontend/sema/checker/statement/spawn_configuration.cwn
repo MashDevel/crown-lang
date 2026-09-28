@@ -1,0 +1,24 @@
+module sema {
+    fn checker_spawn_configuration(checker: write Checker, configuration: Vec<frontend::Expression>) -> void {
+        if configuration.length() == 0 {
+            return
+        }
+        if configuration.length() != 2 || checker.unsafe_depth == 0 {
+            checker_error(checker, "supplied-stack spawn requires unsafe, a stack address, and a stack length")
+        }
+        for index in 0..configuration.length() {
+            loan read configuration[index] as argument {
+                checker_value(checker, argument, builtin_leaf(USize()))
+            }
+        }
+    }
+
+    fn spawn_result_type(configuration_count: usize) -> Type {
+        if configuration_count == 0 {
+            return builtin_leaf(Thread())
+        }
+        var arguments = Vec<Type>.new()
+        arguments.push(builtin_leaf(USize()))
+        return BuiltinType(Option(), move arguments)
+    }
+}

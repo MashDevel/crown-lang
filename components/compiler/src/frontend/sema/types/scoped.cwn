@@ -1,0 +1,58 @@
+module sema {
+    fn type_is_scoped_function(value_type: Type) -> bool {
+        match read value_type {
+            ScopedFunction(inner) => {
+                inner;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn callable_type(value_type: Type) -> Type {
+        match read value_type {
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return type_copy(value)
+                }
+            }
+            _ => {
+                return type_copy(value_type)
+            }
+        }
+    }
+
+    fn scoped_function_equal(value: Type, right: Type) -> bool {
+        match read right {
+            ScopedFunction(inner) => {
+                loan read inner as other {
+                    return types_equal(value, other)
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn parameter_access_mode(parameter: ParameterType) -> frontend::Mode {
+        if type_is_scoped_function(parameter.value_type) {
+            return frontend::ModeWrite()
+        }
+        return parameter.mode
+    }
+
+    fn scoped_captures_copy(values: Vec<ScopedCapture>) -> Vec<ScopedCapture> {
+        var output = Vec<ScopedCapture>.with_capacity(values.length())
+        for index in 0..values.length() {
+            loan read values[index] as value {
+                output.push(ScopedCapture {
+                        name: frontend::name_copy(value.name), value_type: type_copy(value.value_type), mode: value.mode
+                    })
+            }
+        }
+        return move output
+    }
+}

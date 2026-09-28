@@ -1,0 +1,162 @@
+module ir {
+    copy struct PhiIncoming {
+        block: usize
+        value: usize
+    }
+
+    enum InstructionKind {
+        InstructionMemory(MemoryInstruction)
+        InstructionBinary(BinaryOperator, usize, usize)
+        InstructionUnary(UnaryOperator, usize)
+        InstructionCompare(CompareOperator, usize, usize)
+        InstructionCast(CastOperator, usize, Type)
+        InstructionCall(usize, Vec<usize>, Type)
+        InstructionCallIndirect(usize, Signature, Vec<usize>)
+        InstructionPhi(Type, Vec<PhiIncoming>)
+        InstructionSelect(usize, usize, usize)
+        InstructionVectorSplat(usize, Type)
+    }
+
+    fn instruction_result_type(kind: InstructionKind) -> Option<Type> {
+        if instruction_produces_address(kind) {
+            return Some(TypePointer())
+        }
+        match read kind {
+            InstructionVectorSplat(value, target) => {
+                value;
+                return Some(target)
+            }
+            InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right
+                return Some(TypeInteger(IntegerWidth1()))
+            }
+            InstructionCast(operator, value, target) => {
+                operator;
+                value;
+                return Some(target)
+            }
+            InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    MemoryLoad(address, value_type, alignment, volatile) => {
+                        address;
+                        alignment;
+                        volatile
+                        return Some(value_type)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            InstructionCall(function, arguments, result) => {
+                function;
+                arguments
+                return value_type(result)
+            }
+            InstructionCallIndirect(function, signature, arguments) => {
+                function;
+                arguments
+                return value_type(signature.result)
+            }
+            InstructionPhi(value_type, incoming) => {
+                incoming;
+                return Some(value_type)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn value_type(value_type: Type) -> Option<Type> {
+        if type_has_value(value_type) {
+            return Some(value_type)
+        }
+        return None()
+    }
+
+    fn instruction_removable(kind: InstructionKind) -> bool {
+        if instruction_produces_address(kind) {
+            return true
+        }
+        match read kind {
+            InstructionVectorSplat(value, target) => {
+                value;
+                target;
+                return true
+            }
+            InstructionBinary(operator, left, right) => {
+                left;
+                right;
+                return binary_may_trap(operator) == false
+            }
+            InstructionUnary(operator, value) => {
+                operator;
+                value;
+                return true
+            }
+            InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return true
+            }
+            InstructionCast(operator, value, target) => {
+                operator;
+                value;
+                target;
+                return true
+            }
+            InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                return true
+            }
+            InstructionSelect(condition, then_value, else_value) => {
+                condition;
+                then_value;
+                else_value;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn instruction_produces_address(kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    MemoryStackSlot(size, alignment) => {
+                        size;
+                        alignment;
+                        true
+                    }
+                    MemoryOffset(base, offset) => {
+                        base;
+                        offset;
+                        true
+                    }
+                    MemoryGlobalAddress(global) => {
+                        global;
+                        true
+                    }
+                    MemorySymbolAddress(symbol) => {
+                        symbol;
+                        true
+                    }
+                    MemoryFunctionAddress(function) => {
+                        function;
+                        true
+                    }
+                    _ => false
+                }
+            }
+
+            _ => false
+        }
+    }
+}

@@ -1,0 +1,39 @@
+module toolchain {
+    fn bootstrap_cache(root: Text, input: Text) -> Text {
+        let directory = path_join(root, path_join("target/bootstrap-cache", input))
+        return path_join(directory, "compiler")
+    }
+
+    fn reuse_bootstrap(request: BootstrapRequest, output: Text, seed: Text, sources: Vec<Text>, input: Text) -> Result<void, Text> {
+        let cached = bootstrap_cache(request.root, input)
+        let lock = lock_file(std::text::joined(cached, ".lock"))?
+        if request.force || fresh(cached, input) == false {
+            if request.force == false && fresh(request.compiler, input) {
+                install_bootstrap(request.compiler, cached, seed, request, input)?
+            } else {
+                publish_bootstrap(request, cached, seed, sources, input)?
+            }
+        }
+        install_bootstrap(cached, output, seed, request, input)?
+        lock;
+        return Ok(())
+    }
+
+    fn install_bootstrap(source: Text, output: Text, seed: Text, request: BootstrapRequest, input: Text) -> Result<void, Text> {
+        let temporary = temporary(parent_path(output))?
+        let binary = path_join(temporary_path(temporary), "compiler")
+        copy_cached_compiler(source, binary, input)?
+        verify_bootstrap_inputs(request.root, seed, input, request.verify)?
+        rename_file(binary, output)?
+        return record_bootstrap(output, input, seed)
+    }
+
+    fn copy_cached_compiler(source: Text, binary: Text, input: Text) -> Result<void, Text> {
+        copy_file(source, binary)?
+        copy_file(std::text::joined(source, ".crown-build"), std::text::joined(binary, ".crown-build"))?
+        if fresh(binary, input) == false {
+            return Err("cached compiler changed during installation")
+        }
+        return executable(binary)
+    }
+}

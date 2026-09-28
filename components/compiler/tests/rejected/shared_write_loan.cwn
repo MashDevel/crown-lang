@@ -1,0 +1,9 @@
+fn main() -> u32 {
+    var values = Vec<u32>.new()
+    values.push(1)
+    var shared = Shared.new(move values)
+    loan write shared as items {
+        items.push(2)
+    }
+    return 0
+}

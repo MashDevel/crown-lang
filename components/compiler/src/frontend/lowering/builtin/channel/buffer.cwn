@@ -1,0 +1,76 @@
+module lowering {
+    struct ChannelBuffers {
+        front: DropBuffer
+        back: DropBuffer
+    }
+
+    fn channel_load_field(compiler: write FunctionCompiler, symbols: sema::Symbols, state: usize, offset: u64) -> Result<usize, u32> {
+        let address = function_offset(compiler, state, offset)?
+        let load = Place {
+            address: address, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_load(compiler, symbols, load)
+    }
+
+    fn channel_store_field(compiler: write FunctionCompiler, symbols: sema::Symbols, state: usize, offset: u64, value: usize) -> Result<void, u32> {
+        let address = function_offset(compiler, state, offset)?
+        let store = StoreRequest {
+            address: address, value: value, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn channel_position(compiler: write FunctionCompiler, symbols: sema::Symbols, state: usize, index: usize) -> Result<usize, u32> {
+        let head = channel_load_field(compiler, symbols, state, 40)?
+        let capacity = channel_load_field(compiler, symbols, state, 32)?
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 1)
+        let mask = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), capacity, one))?
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), head, index))?
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), next, mask))
+    }
+
+    fn channel_buffers(compiler: write FunctionCompiler, symbols: sema::Symbols, state: usize, element: sema::Type) -> Result<ChannelBuffers, u32> {
+        let data = function_load_pointer_field(compiler, state, 16)?
+        let head = channel_load_field(compiler, symbols, state, 40)?
+        let length = channel_load_field(compiler, symbols, state, 24)?
+        let capacity = channel_load_field(compiler, symbols, state, 32)?
+        let available = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), capacity, head))?
+        let fits = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLessEqual(), length, available))?
+        let first = function_append_value(compiler, ir::InstructionSelect(fits, length, available))?
+        let second = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), length, first))?
+        let start = channel_element(compiler, symbols, ChannelItem {
+                data: data, index: head, element: sema::type_copy(element)
+            })?
+        return Ok(ChannelBuffers {
+                front: DropBuffer {
+                    data: start, length: first, element: sema::type_copy(element)
+                }
+                back: DropBuffer {
+                    data: data, length: second, element: sema::type_copy(element)
+                }
+            })
+    }
+
+    fn channel_copy_buffers(compiler: write FunctionCompiler, symbols: sema::Symbols, destination: usize, buffers: ChannelBuffers) -> Result<void, u32> {
+        let tail = channel_copy_buffer(compiler, symbols, destination, buffers.front)?
+        channel_copy_buffer(compiler, symbols, tail, buffers.back)?
+        return Ok(())
+    }
+
+    fn channel_copy_buffer(compiler: write FunctionCompiler, symbols: sema::Symbols, destination: usize, buffer: DropBuffer) -> Result<usize, u32> {
+        let layout = layout(symbols, buffer.element)?
+        let size = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), layout.size)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), buffer.length, size))?
+        function_append(compiler, ir::InstructionMemoryCopy(destination, buffer.data, bytes))?
+        return function_append_value(compiler, ir::InstructionOffset(destination, bytes))
+    }
+
+    fn channel_advance(compiler: write FunctionCompiler, symbols: sema::Symbols, state: usize) -> Result<void, u32> {
+        let one = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 1)
+        let next = channel_position(compiler, symbols, state, one)?
+        channel_store_field(compiler, symbols, state, 40, next)?
+        let length = channel_load_field(compiler, symbols, state, 24)?
+        let remaining = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), length, one))?
+        return channel_store_field(compiler, symbols, state, 24, remaining)
+    }
+}

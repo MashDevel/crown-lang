@@ -1,0 +1,67 @@
+module x86 {
+    fn codegen_empty_registers(length: usize) -> Vec<Option<Register>> {
+        var output = Vec<Option<Register>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_register_is_allocatable(register: Register) -> bool {
+        let order = codegen_allocation_order()
+        loan read order as values {
+            var index: usize = 0
+            while index < values.length() {
+                if register_equal(register, values[index]) {
+                    return true
+                }
+                index = index + 1
+            }
+        }
+        false
+    }
+
+    fn codegen_allocatable_register(index: usize) -> Option<Register> {
+        let order = codegen_allocation_order()
+        loan read order as values {
+            if index >= values.length() {
+                return None()
+            }
+            return Some(values[index])
+        }
+    }
+
+    fn codegen_allocation_order() -> [Register; 12] {
+        [Rbx(), R12(), R13(), R14(), R15(), Rdi(), Rsi(), R8(), R9(), R10(), Rax(), Rdx()]
+    }
+
+    fn codegen_register_is_callee(register: Register) -> bool {
+        let code = register_code(register)
+        return code == 3 || code == 12 || code == 13 || code == 14 || code == 15
+    }
+
+    fn codegen_option_register_is_none(value: Option<Register>) -> bool {
+        match read value {
+            Some(register) => {
+                register;
+                return false
+            }
+            None => {
+                return true
+            }
+        }
+    }
+
+    fn codegen_option_register_copy(value: Option<Register>) -> Option<Register> {
+        match read value {
+            Some(register) => {
+                return Some(register)
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+}

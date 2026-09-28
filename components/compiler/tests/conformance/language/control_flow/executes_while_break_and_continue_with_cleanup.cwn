@@ -1,0 +1,23 @@
+resource Guard {
+    code: u32
+    drop {
+        print(code)
+    }
+}
+fn main() -> u32 {
+    var count = 0
+    while count < 3 {
+        count = count + 1
+        let guard = Guard {
+            code: count
+        }
+        if count == 2 {
+            continue
+        }
+        if count == 3 {
+            break
+        }
+        guard.code
+    }
+    return count
+}

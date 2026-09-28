@@ -1,0 +1,104 @@
+module macho {
+    struct ExportNode {
+        byte: u8, children: Vec<usize>, address: Option<u64>
+    }
+
+    fn export_node(byte: u8) -> ExportNode {
+        return ExportNode {
+            byte: byte, children: Vec<usize>.new(), address: None()
+        }
+    }
+
+    fn export_trie(object: object::CompilerObject, image: Image) -> Result<Vec<u8>, Text> {
+        var nodes = Vec<ExportNode>.new()
+        nodes.push(export_node(0))
+        for index in 0..object.symbols.length() {
+            match read object.symbols[index].binding {
+                object::SymbolGlobal => {
+                    let name = std::text::joined("_", object.symbols[index].name)
+                    export_insert(nodes, toolchain::text_bytes(name), image.symbols[index] - 4294967296)?
+                }
+                _ => {
+                }
+            }
+        }
+        return encode_exports(nodes)
+    }
+
+    fn export_insert(nodes: write Vec<ExportNode>, name: Vec<u8>, address: u64) -> Result<void, Text> {
+        var current: usize = 0
+        for index in 0..name.length() {
+            if name[index] == 0 {
+                return Err("exported symbol contains a null byte")
+            }
+            current = export_child(nodes, current, name[index])
+        }
+        nodes[current].address = Some(address)
+        return Ok(())
+    }
+
+    fn export_child(nodes: write Vec<ExportNode>, parent: usize, byte: u8) -> usize {
+        for index in 0..nodes[parent].children.length() {
+            let child = nodes[parent].children[index]
+            if nodes[child].byte == byte {
+                return child
+            }
+        }
+        let child = nodes.length()
+        nodes.push(export_node(byte))
+        nodes[parent].children.push(child)
+        return child
+    }
+
+    fn encode_exports(nodes: Vec<ExportNode>) -> Result<Vec<u8>, Text> {
+        var offsets = Vec<u64>.with_capacity(nodes.length())
+        for index in 0..nodes.length() {
+            offsets.push(0)
+        }
+        var changed = true
+        while changed {
+            changed = false
+            var offset: u64 = 0
+            for index in 0..nodes.length() {
+                if offsets[index] != offset {
+                    changed = true;
+                    offsets[index] = offset
+                }
+                let bytes = export_bytes(nodes, index, offsets)?
+                offset = offset + u64.from(bytes.length())
+            }
+        }
+        var output = Vec<u8>.new()
+        for index in 0..nodes.length() {
+            link_binary::append(output, export_bytes(nodes, index, offsets)?)
+        }
+        return Ok(move output)
+    }
+
+    fn export_bytes(nodes: Vec<ExportNode>, index: usize, offsets: Vec<u64>) -> Result<Vec<u8>, Text> {
+        var terminal = Vec<u8>.new()
+        match read nodes[index].address {
+            Some(address) => {
+                terminal.push(0);
+                uleb(terminal, address)
+            }
+            None => {
+            }
+        }
+        var output = Vec<u8>.new()
+        uleb(output, u64.from(terminal.length()))
+        link_binary::append(output, terminal)
+        let children = nodes[index].children.length()
+        if children > 255 {
+            return Err("too many export trie branches")
+        }
+        output.push(u8.from(children))
+        for child_index in 0..children {
+            let child = nodes[index].children[child_index]
+            output.push(nodes[child].byte)
+            output.push(0)
+            uleb(output, offsets[child])
+        }
+        return Ok(move output)
+    }
+}

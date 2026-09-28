@@ -1,0 +1,28 @@
+module lowering {
+    fn include_root_drop_type(output: write Vec<sema::Type>, symbols: sema::Symbols, value_type: sema::Type) -> void {
+        if sema::type_is_concrete(value_type) == false {
+            return
+        }
+        if sema::type_builtin(value_type) == sema::Result() {
+            match declaration_token(value_type) {
+                Ok(token) => {
+                    include_root_drop_type(output, symbols, token)
+                },
+                Err(error) => {
+                    error;
+                }
+            }
+        }
+        if sema::native_root_kind(sema::type_builtin(value_type)) == false {
+            return
+        }
+        match root_box_type(value_type) {
+            Ok(boxed) => {
+                include_drop_type(output, symbols, boxed)
+            },
+            Err(error) => {
+                error
+            }
+        }
+    }
+}

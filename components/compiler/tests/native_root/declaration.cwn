@@ -1,0 +1,47 @@
+module declaration_tests {
+    fn factory() -> Vec<u32> {
+        var values = Vec<u32>.new();
+        values.push(7);
+        return move values
+    }
+    fn different() -> Vec<u32> {
+        return factory()
+    }
+    fn recursive() -> u32 {
+        return match RootToken<u32>.declare(recursive) {
+            Err(error) => error,
+            Ok(value) => {
+                value;
+                99
+            }
+        }
+    }
+    fn run() -> Result<void, u32> {
+        let first = RootToken<Vec<u32>>.declare(factory)?
+        let second = RootToken<Vec<u32>>.declare(factory)?
+        if first.slot() != second.slot() || first.generation() != second.generation() {
+            return Err(10)
+        }
+        let third = RootToken<Vec<u32>>.declare(different)?
+        if third.slot() == first.slot() {
+            return Err(11)
+        }
+        let recursive = RootToken<u32>.declare(recursive)?
+        let lease = recursive.acquire()?
+        loan read lease as value {
+            if value != 2 {
+                return Err(12)
+            }
+        }
+        return Ok(())
+    }
+}
+fn main() -> u32 {
+    return match declaration_tests::run() {
+        Ok(value) => {
+            value;
+            0
+        },
+        Err(error) => error
+    }
+}

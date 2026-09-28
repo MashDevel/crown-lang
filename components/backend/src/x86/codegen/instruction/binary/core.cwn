@@ -1,0 +1,59 @@
+module x86 {
+    fn codegen_compile_binary(program: ir::Program, compiler: write FunctionCompiler, input: take BinaryInput) -> Result<void, CodegenError> {
+        if ir::binary_is_float(input.operator) {
+            return codegen_float_binary(program, compiler, move input)
+        }
+        if codegen_constant_unsigned_division(program, compiler, input)? {
+            return Ok(())
+        }
+        if codegen_compile_immediate_binary(program, compiler, input)? {
+            return Ok(())
+        }
+        if ir::binary_is_shift(input.operator) {
+            return codegen_dynamic_shift(program, compiler, input)
+        }
+        if codegen_binary_is_division(input.operator) {
+            return codegen_division(program, compiler, input)
+        }
+        return codegen_direct_binary(program, compiler, input)
+    }
+
+    fn codegen_direct_binary(program: ir::Program, compiler: write FunctionCompiler, input: BinaryInput) -> Result<void, CodegenError> {
+        if codegen_compile_memory_binary(program, compiler, input)? {
+            return Ok(())
+        }
+        let registers = codegen_load_direct_operands(program, compiler, input)?
+        let value_type = codegen_value_type(program, compiler, input.left)?
+        let raw_width = codegen_width(value_type)?
+        let width = codegen_zeroing_width(input.operator, raw_width)
+        let machine = BinaryMachine {
+            operator: input.operator
+            destination: registers.destination
+            source: registers.source
+            width: width
+        }
+        let sized = codegen_emit_binary_machine(compiler, move machine)
+        if sized {
+            match read input.result {
+                Some(result) => {
+                    return codegen_store_binary_sized(program, compiler, SizedResultStore {
+                            result: result
+                            source: registers.destination
+                            width: width
+                        })
+                }
+                None => {
+                    return Err(codegen_error_here(compiler, CodegenInvalidIr()))
+                }
+            }
+        }
+        return codegen_store_result(program, compiler, ResultStore {
+                result: input.result
+                source: registers.destination
+            })
+    }
+
+    fn codegen_store_binary_sized(program: ir::Program, compiler: write FunctionCompiler, input: take SizedResultStore) -> Result<void, CodegenError> {
+        return codegen_store_sized_result(program, compiler, move input)
+    }
+}

@@ -1,0 +1,108 @@
+module sema {
+    struct CaptureAccess {
+        path: frontend::Path
+        mode: frontend::Mode
+    }
+
+    fn checker_scoped_argument(checker: write Checker, argument: frontend::Expression, expected: Type) -> Option<ExpressionInfo> {
+        match place_path(argument) {
+            Some(path) => {
+                match checker_find_variable(checker, path.segments[0]) {
+                    Some(key) => {
+                        let variable = checker_variable_copy(checker, key)
+                        if type_is_scoped_function(variable.value_type) {
+                            match checker_path(checker, path, WritePath()) {
+                                None => {
+                                    return None()
+                                }
+                                Some(info) => {
+                                    info
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+            }
+            None => {
+            }
+        }
+        return checker_expression_expected(checker, argument, expected)
+    }
+
+    fn checker_capture_aliases(checker: write Checker, parameters: Vec<ParameterType>, arguments: Vec<frontend::Expression>) -> void {
+        var accesses = Vec<CaptureAccess>.new()
+        var captured = false
+        for index in 0..arguments.length() {
+            match borrow_argument(checker.symbols, parameters[index], arguments[index]) {
+                Some(path) => {
+                    accesses.push(CaptureAccess {
+                            path: move path, mode: parameter_access_mode(parameters[index])
+                        })
+                }
+                None => {
+                }
+            }
+            match read arguments[index].kind {
+                frontend::ExpressionClosure(captures, names, body) => {
+                    names;
+                    body
+                    for offset in 0..captures.length() {
+                        captured = true
+                        accesses.push(CaptureAccess {
+                                path: named_path(captures[offset].name), mode: captures[offset].mode
+                            })
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+        if captured {
+            checker_capture_accesses(checker, accesses)
+        }
+    }
+
+    fn checker_capture_accesses(checker: write Checker, accesses: Vec<CaptureAccess>) -> void {
+        for current in 0..accesses.length() {
+            for previous in 0..current {
+                if modes_conflict(accesses[previous].mode, accesses[current].mode) && paths_overlap(checker.symbols.source, accesses[previous].path, accesses[current].path) {
+                    checker_error_at(checker, accesses[current].path.span, "closure capture conflicts with another argument or capture")
+                    checker_note(checker, accesses[previous].path.span, "overlapping access lasts until this call returns")
+                    return
+                }
+            }
+        }
+    }
+
+    fn checker_invoke_variable(checker: write Checker, arguments: Vec<frontend::Expression>, request: take CallRequest, name: frontend::Name) -> Option<ExpressionInfo> {
+        let count = checker.place_loans.length()
+        match checker_find_variable(checker, name) {
+            Some(key) => {
+                let variable = checker_variable_copy(checker, key)
+                if type_is_scoped_function(variable.value_type) {
+                    let path = named_path(name)
+                    match checker_path(checker, path, WritePath()) {
+                        None => {
+                            return None()
+                        }
+                        Some(info) => {
+                            info
+                        }
+                    }
+                    checker.place_loans.push(PlaceLoan {
+                            depth: checker.scopes.length(), path: move path, mode: frontend::LoanWrite(), origin: name.span, duration: LoanCallEnd(), requested: frontend::LoanWrite()
+                        })
+                }
+            }
+            None => {
+            }
+        }
+        let result = checker_start_call(checker, arguments, move request)
+        while checker.place_loans.length() > count {
+            checker.place_loans.pop()
+        }
+        return move result
+    }
+}

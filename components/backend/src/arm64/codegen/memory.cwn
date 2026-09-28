@@ -1,0 +1,150 @@
+module arm64 {
+    fn compile_memory(program: ir::Program, function: ir::Function, compiler: write Compiler, result: Option<usize>, memory: ir::MemoryInstruction) -> Result<void, Text> {
+        match read memory {
+            ir::MemoryStackSlot(size, alignment) => {
+                size;
+                let value = match result {
+                    Some(id) => id,
+                    None => {
+                        return Err("ARM64 stack slot has no result")
+                    }
+                }
+                frame_address(compiler, 9, compiler.frame.allocations[value])
+                if alignment > 16 {
+                    immediate(compiler, 10, u64.from(alignment - 1))
+                    emit_registers(compiler, 2332033024, 9, 9, 10)
+                    immediate(compiler, 10, 0 - u64.from(alignment))
+                    emit_registers(compiler, 2315255808, 9, 9, 10)
+                }
+            }
+            ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                alignment;
+                volatile;
+                register_memory_load(compiler, address, value_type)?
+            }
+            ir::MemoryStore(address, value, alignment, volatile) => {
+                alignment;
+                volatile;
+                return store_memory_value(function, compiler, address, value)
+            }
+            ir::MemoryOffset(base, offset) => {
+                value_load(compiler, base, 9)
+                value_load(compiler, offset, 10)
+                normalize(compiler, function.values[offset], 10, true)
+                emit_registers(compiler, 2332033024, 9, 9, 10)
+            }
+            _ => {
+                compile_memory_other(program, compiler, memory)?
+            }
+        }
+        return store_result(function, compiler, result)
+    }
+    fn store_memory_value(function: ir::Function, compiler: write Compiler, address: usize, value: usize) -> Result<void, Text> {
+        let size = value_size(function.values[value])?
+        if size <= 8 {
+            let base = value_register(compiler, address, 16)
+            let register = value_register(compiler, value, 9)
+            emit_encoding(compiler, memory_word(register, base, 0, size, false))
+            return Ok(())
+        }
+        value_load(compiler, address, 16)
+        value_load(compiler, value, 9)
+        if value_size(function.values[value])? == 16 {
+            value_high(compiler, value, 10)
+        }
+        return memory_store(compiler, function.values[value])
+    }
+
+    fn register_memory_load(compiler: write Compiler, address: usize, value_type: ir::Type) -> Result<void, Text> {
+        let size = value_size(value_type)?
+        if size > 8 {
+            value_load(compiler, address, 16)
+            return memory_load(compiler, value_type)
+        }
+        let base = value_register(compiler, address, 16)
+        compiler.result_register = compiler.target
+        compiler.normalized = integer_bits(value_type) != 1
+        emit_encoding(compiler, memory_word(compiler.target, base, 0, size, true))
+        return Ok(())
+    }
+    fn compile_memory_other(program: ir::Program, compiler: write Compiler, memory: ir::MemoryInstruction) -> Result<void, Text> {
+        match read memory {
+            ir::MemoryGlobalAddress(id) => {
+                symbol_address(compiler, program.globals[id].name, 9);
+                Ok(())
+            }
+            ir::MemoryFunctionAddress(id) => {
+                symbol_address(compiler, program.functions[id].name, 9);
+                Ok(())
+            }
+            ir::MemorySymbolAddress(name) => {
+                symbol_address(compiler, name, 9);
+                Ok(())
+            }
+            ir::MemoryCopy(destination, source, size) => bulk_memory(compiler, "memmove", destination, source, size)
+            ir::MemorySet(destination, value, size) => bulk_memory(compiler, "memset", destination, value, size)
+            ir::MemoryRepeat(destination, source, size, count) => repeat_memory(compiler, destination, source, size, count)
+            _ => Err("invalid ARM64 memory operation")
+        }
+    }
+    fn memory_load(compiler: write Compiler, value_type: ir::Type) -> Result<void, Text> {
+        let size = value_size(value_type)?
+        emit_encoding(compiler, memory_word(9, 16, 0, if size == 16 {
+                    8
+                } else {
+                    size
+                }, true))
+        if size == 16 {
+            emit_encoding(compiler, memory_word(10, 16, 8, 8, true))
+        }
+        return Ok(())
+    }
+    fn memory_store(compiler: write Compiler, value_type: ir::Type) -> Result<void, Text> {
+        let size = value_size(value_type)?
+        emit_encoding(compiler, memory_word(9, 16, 0, if size == 16 {
+                    8
+                } else {
+                    size
+                }, false))
+        if size == 16 {
+            emit_encoding(compiler, memory_word(10, 16, 8, 8, false))
+        }
+        return Ok(())
+    }
+    fn bulk_memory(compiler: write Compiler, name: Text, destination: usize, source: usize, size: usize) -> Result<void, Text> {
+        value_load(compiler, destination, 0)
+        value_load(compiler, source, 1)
+        value_load(compiler, size, 2)
+        call_symbol(compiler, name)
+        return Ok(())
+    }
+    fn repeat_memory(compiler: write Compiler, destination: usize, source: usize, size: usize, count: usize) -> Result<void, Text> {
+        value_load(compiler, destination, 9)
+        value_load(compiler, source, 10)
+        value_load(compiler, size, 11)
+        value_load(compiler, count, 12)
+        let outer = compiler.bytes.length()
+        emit_encoding(compiler, compare_word(12, 31))
+        emit_encoding(compiler, conditional_branch(8, 1))
+        let done = compiler.bytes.length()
+        emit_encoding(compiler, branch_word(0, false))
+        immediate(compiler, 13, 0)
+        let inner = compiler.bytes.length()
+        emit_encoding(compiler, compare_word(13, 11))
+        emit_encoding(compiler, conditional_branch(8, 3))
+        let next = compiler.bytes.length()
+        emit_encoding(compiler, branch_word(0, false))
+        emit_registers(compiler, 2332033024, 14, 10, 13)
+        emit_encoding(compiler, memory_word(15, 14, 0, 1, true))
+        emit_encoding(compiler, memory_word(15, 9, 0, 1, false))
+        emit_encoding(compiler, add_immediate(9, 9, 1, false))
+        emit_encoding(compiler, add_immediate(13, 13, 1, false))
+        emit_encoding(compiler, branch_word(i64.from(inner) - i64.from(compiler.bytes.length()), false))
+        patch_branch(compiler, next, compiler.bytes.length())
+        emit_encoding(compiler, add_immediate(12, 12, 1, true))
+        emit_encoding(compiler, branch_word(i64.from(outer) - i64.from(compiler.bytes.length()), false))
+        patch_branch(compiler, done, compiler.bytes.length())
+        return Ok(())
+    }
+
+}

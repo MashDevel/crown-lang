@@ -1,0 +1,8 @@
+enum List {
+    End,
+    Link(Box<List>)
+}
+fn main() -> u32 {
+    let list = Link(Box.new(Link(Box.new(End()))))
+    return 0
+}

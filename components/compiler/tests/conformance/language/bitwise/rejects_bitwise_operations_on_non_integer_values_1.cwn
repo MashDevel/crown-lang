@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value = true & false
+    return 0
+}

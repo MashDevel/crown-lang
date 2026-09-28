@@ -1,0 +1,61 @@
+module arm64 {
+    fn encoding_error(compiler: write Compiler, error: take Text) -> void {
+        if compiler.error.length() == 0 {
+            compiler.error = move error
+            return
+        }
+    }
+    fn emit_encoding(compiler: write Compiler, encoded: take Result<u32, Text>) -> void {
+        match move encoded {
+            Ok(word) => emit(compiler, word)
+            Err(error) => encoding_error(compiler, move error)
+        }
+    }
+    fn encoded_operation(compiler: write Compiler, result: take Result<void, Text>) -> void {
+        match move result {
+            Ok(value) => {
+                value;
+            }
+            Err(error) => encoding_error(compiler, move error)
+        }
+    }
+    fn immediate(compiler: write Compiler, register: u32, value: u64) -> void {
+        let result = emit_immediate(compiler.bytes, register, value)
+        encoded_operation(compiler, move result)
+    }
+    fn frame_address(compiler: write Compiler, register: u32, offset: u64) -> void {
+        let result = emit_frame_address(compiler.bytes, register, offset)
+        encoded_operation(compiler, move result)
+    }
+    fn frame_access(compiler: write Compiler, register: u32, offset: u64, width: u32, load: bool) -> void {
+        let result = emit_frame_access(compiler.bytes, register, offset, width, load)
+        encoded_operation(compiler, move result)
+    }
+    fn stack_adjust(compiler: write Compiler, size: u64, subtract: bool) -> void {
+        let result = emit_stack_adjust(compiler.bytes, size, subtract)
+        encoded_operation(compiler, move result)
+    }
+    fn prologue(compiler: write Compiler) -> void {
+        let result = emit_prologue(compiler.bytes, compiler.frame)
+        encoded_operation(compiler, move result)
+    }
+    fn epilogue(compiler: write Compiler) -> void {
+        let result = emit_epilogue(compiler.bytes, compiler.frame)
+        encoded_operation(compiler, move result)
+    }
+    fn value_offset(compiler: write Compiler, value: usize) -> u64 {
+        match frame_value(compiler.frame, value) {
+            Ok(offset) => offset
+            Err(error) => {
+                encoding_error(compiler, move error);
+                0
+            }
+        }
+    }
+    fn finish_encoding(compiler: Compiler) -> Result<void, Text> {
+        if compiler.error.length() != 0 {
+            return Err(compiler.error.clone())
+        }
+        return Ok(())
+    }
+}

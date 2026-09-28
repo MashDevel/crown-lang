@@ -1,0 +1,14 @@
+module data {
+    struct Value {
+        private number: u32
+    }
+    fn make() -> Value {
+        return Value {
+            number: 42
+        }
+    }
+}
+fn main() -> u32 {
+    let value = data::make()
+    return value.number
+}

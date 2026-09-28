@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    let end: u8 = 2;
+    let start: u32 = 1;
+    for index in start..end {
+    }
+    return 0
+}

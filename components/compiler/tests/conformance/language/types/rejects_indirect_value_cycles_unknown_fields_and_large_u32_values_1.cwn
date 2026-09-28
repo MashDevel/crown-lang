@@ -1,0 +1,9 @@
+struct First {
+    second: Second
+}
+struct Second {
+    first: First
+}
+fn main() -> u32 {
+    return 0
+}

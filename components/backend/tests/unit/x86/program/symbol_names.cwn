@@ -1,0 +1,149 @@
+fn growth(program: write x86::Program) -> u32 {
+    for index in 0..256 {
+        let name = std::text::joined("function_", std::text::decimal(u64.from(index)))
+        let function = x86::function_new(name.clone(), Vec<x86::Instruction>.new())
+        match x86::program_add_function(program, move function) {
+            Ok(value) => {
+                value
+            }
+            Err(error) => {
+                error
+                return 1
+            }
+        }
+        if x86::program_has_function(program, name) == false || x86::program_has_symbol(program, name) == false {
+            return 2
+        }
+    }
+    if program.functions.length() != 256 || x86::program_has_function(program, "missing") {
+        return 3
+    }
+    return 0
+}
+
+fn categories(program: write x86::Program) -> u32 {
+    let data = x86::data_initialized("datum", Vec<u8>.new(), x86::DataReadOnly())
+    match x86::program_add_data(program, move data) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+            return 4
+        }
+    }
+    match x86::program_add_import(program, "foreign") {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+            return 5
+        }
+    }
+    if x86::program_has_data(program, "datum") == false || x86::program_has_import(program, "foreign") == false {
+        return 6
+    }
+    if x86::program_has_function(program, "datum") || x86::program_has_data(program, "foreign") {
+        return 7
+    }
+    let duplicate = x86::function_new("datum", Vec<x86::Instruction>.new())
+    match x86::program_add_function(program, move duplicate) {
+        Ok(value) => {
+            value
+            return 8
+        }
+        Err(error) => {
+            error
+        }
+    }
+    return 0
+}
+
+fn removal(program: write x86::Program) -> u32 {
+    if x86::program_remove_import(program, "missing") {
+        return 9
+    }
+    if x86::program_remove_import(program, "foreign") == false || x86::program_has_symbol(program, "foreign") {
+        return 10
+    }
+    let function = x86::function_new("foreign", Vec<x86::Instruction>.new())
+    match x86::program_add_function(program, move function) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            error
+            return 11
+        }
+    }
+    if x86::program_has_function(program, "foreign") == false || x86::program_has_import(program, "foreign") {
+        return 12
+    }
+    return 0
+}
+
+fn expect_rejection(result: take Result<void, x86::EncodeError>, code: u32) -> Result<void, u32> {
+    match move result {
+        Ok(value) => {
+            value
+            return Err(code)
+        }
+        Err(error) => {
+            error
+            return Ok(())
+        }
+    }
+}
+
+fn collision_cases(program: write x86::Program) -> Result<void, u32> {
+    let duplicate_function = x86::function_new("function_0", Vec<x86::Instruction>.new())
+    expect_rejection(x86::program_add_function(program, move duplicate_function), 13)?
+    let duplicate_data = x86::data_initialized("datum", Vec<u8>.new(), x86::DataReadOnly())
+    expect_rejection(x86::program_add_data(program, move duplicate_data), 14)?
+    let function_as_data = x86::data_initialized("function_0", Vec<u8>.new(), x86::DataReadOnly())
+    expect_rejection(x86::program_add_data(program, move function_as_data), 15)?
+    let import_as_data = x86::data_initialized("foreign", Vec<u8>.new(), x86::DataReadOnly())
+    expect_rejection(x86::program_add_data(program, move import_as_data), 16)?
+    let import_as_function = x86::function_new("foreign", Vec<x86::Instruction>.new())
+    expect_rejection(x86::program_add_function(program, move import_as_function), 17)?
+    expect_rejection(x86::program_add_import(program, "function_0"), 18)?
+    expect_rejection(x86::program_add_import(program, "datum"), 19)?
+    expect_rejection(x86::program_add_typed_import(program, "foreign", object::SymbolData()), 20)?
+    match x86::program_add_import(program, "foreign") {
+        Ok(value) => {
+            value
+            return Ok(())
+        }
+        Err(error) => {
+            error
+            return Err(21)
+        }
+    }
+}
+
+fn main() -> u32 {
+    var program = x86::program_relocatable()
+    let first = growth(program)
+    if first != 0 {
+        return first
+    }
+    let second = categories(program)
+    if second != 0 {
+        return second
+    }
+    match collision_cases(program) {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            return error
+        }
+    }
+    let last = removal(program)
+    return if last == 0 {
+        42
+    } else {
+        last
+    }
+}

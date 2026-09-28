@@ -1,0 +1,167 @@
+module optimize {
+    fn scalar_propagate_copies(analysis: write ScalarAnalysis) -> void {
+        var changed = true
+        while changed {
+            changed = false
+            var index: usize = 0
+            while index < analysis.copies.length() {
+                var value = ScalarCopy {
+                    destination: ScalarAddress {
+                        root: 0, offset: 0
+                    }
+                    source: ScalarAddress {
+                        root: 0, offset: 0
+                    }
+                    size: 0
+                }
+                loan read analysis.copies[index] as source {
+                    value = scalar_copy_copy(source)
+                }
+                if scalar_merge_copy(analysis, move value) {
+                    changed = true
+                }
+                index = index + 1
+            }
+        }
+    }
+
+    fn scalar_merge_copy(analysis: write ScalarAnalysis, value: take ScalarCopy) -> bool {
+        let destination_root = value.destination.root
+        let source_root = value.source.root
+        let destination_address = scalar_address_copy(value.destination)
+        let source_address = scalar_address_copy(value.source)
+        if analysis.roots[destination_root].valid == false || analysis.roots[source_root].valid == false {
+            let changed = analysis.roots[destination_root].valid || analysis.roots[source_root].valid
+            scalar_invalidate_pair(analysis, destination_root, source_root)
+            return changed
+        }
+        let destination = scalar_copied_fields(analysis, destination_address, value.size)
+        let source = scalar_copied_fields(analysis, source_address, value.size)
+        let destination_fields = match move destination {
+            None => {
+                scalar_invalidate_pair(analysis, destination_root, source_root);
+                return true
+            }
+            Some(fields) => move fields
+        }
+        let source_fields = match move source {
+            None => {
+                scalar_invalidate_pair(analysis, destination_root, source_root);
+                return true
+            }
+            Some(fields) => move fields
+        }
+        var changed = scalar_merge_fills(analysis, destination_root, source_root)
+        changed = scalar_translate_fields(analysis, move destination_fields, destination_address, source_address) || changed
+        changed = scalar_translate_fields(analysis, move source_fields, source_address, destination_address) || changed
+        if analysis.roots[destination_root].valid == false || analysis.roots[source_root].valid == false {
+            scalar_invalidate_pair(analysis, destination_root, source_root)
+        }
+        return changed
+    }
+
+    fn scalar_copied_fields(analysis: ScalarAnalysis, address: ScalarAddress, size: u64) -> Option<Vec<ScalarField>> {
+        if address.offset > 18446744073709551615 - size {
+            return None()
+        }
+        let end = address.offset + size
+        var output = Vec<ScalarField>.new()
+        var index: usize = 0
+        while index < analysis.roots[address.root].fields.length() {
+            loan read analysis.roots[address.root].fields[index] as field {
+                match scalar_field_contained(field, address.offset, end) {
+                    None => {
+                        return None()
+                    }
+                    Some(contained) => {
+                        if contained {
+                            output.push(scalar_field_copy(field))
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Some(move output)
+    }
+
+    fn scalar_merge_fills(analysis: write ScalarAnalysis, first: usize, second: usize) -> bool {
+        var values = Vec<u8>.new()
+        var index: usize = 0
+        while index < analysis.roots[first].fills.length() {
+            values.push(analysis.roots[first].fills[index]);
+            index = index + 1
+        }
+        index = 0
+        while index < analysis.roots[second].fills.length() {
+            values.push(analysis.roots[second].fills[index]);
+            index = index + 1
+        }
+        var changed = false
+        index = 0
+        while index < values.length() {
+            loan write analysis.roots[first] as root {
+                changed = scalar_add_fill(root, values[index]) || changed
+            }
+            loan write analysis.roots[second] as root {
+                changed = scalar_add_fill(root, values[index]) || changed
+            }
+            index = index + 1
+        }
+        return changed
+    }
+
+    fn scalar_translate_fields(analysis: write ScalarAnalysis, fields: take Vec<ScalarField>, from: ScalarAddress, to: ScalarAddress) -> bool {
+        var changed = false
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as source {
+                var field = scalar_field_copy(source)
+                field.offset = to.offset + field.offset - from.offset
+                changed = scalar_insert_field(analysis, to.root, move field) || changed
+            }
+            index = index + 1
+        }
+        return changed
+    }
+
+    fn scalar_sort_fields(analysis: write ScalarAnalysis) -> void {
+        var root: usize = 0
+        while root < analysis.roots.length() {
+            var end = analysis.roots[root].fields.length()
+            while end > 1 {
+                var index: usize = 1
+                while index < end {
+                    if analysis.roots[root].fields[index].offset < analysis.roots[root].fields[index - 1].offset {
+                        let left = scalar_field_copy(analysis.roots[root].fields[index - 1])
+                        let right = scalar_field_copy(analysis.roots[root].fields[index])
+                        analysis.roots[root].fields[index - 1] = move right
+                        analysis.roots[root].fields[index] = move left
+                    }
+                    index = index + 1
+                }
+                end = end - 1
+            }
+            root = root + 1
+        }
+    }
+    fn scalar_field_contained(field: ScalarField, start: u64, end: u64) -> Option<bool> {
+        let size = match ir::type_size(field.value_type) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if field.offset > 18446744073709551615 - size {
+            return None()
+        }
+        let field_end = field.offset + size
+        let overlaps = field.offset < end && start < field_end
+        let contained = start <= field.offset && field_end <= end
+        if overlaps && contained == false {
+            return None()
+        }
+        return Some(contained)
+    }
+
+}

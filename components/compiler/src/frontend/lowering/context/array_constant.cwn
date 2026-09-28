@@ -1,0 +1,75 @@
+module lowering {
+    fn array_constant_key(constant: sema::Constant) -> Text {
+        var key = "constant_array_"
+        frontend::text_push_usize(key, constant.name.span.start)
+        return move key
+    }
+
+    fn declare_array_constants(compiler: write Compiler, analysis: sema::Analysis) -> void {
+        for index in 0..analysis.checker.symbols.constants.length() {
+            loan read analysis.checker.symbols.constants[index] as constant {
+                if sema::scalar_array_type(constant.value_type) {
+                    declare_array_constant(compiler, constant)
+                }
+            }
+        }
+    }
+
+    fn declare_array_constant(compiler: write Compiler, constant: sema::Constant) -> void {
+        match read constant.value_type {
+            sema::ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    declare_scalar_array(compiler, constant, value)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn declare_scalar_array(compiler: write Compiler, constant: sema::Constant, element_type: sema::Type) -> void {
+        var bytes = Vec<u8>.new()
+        var alignment = sema::builtin_width(sema::type_builtin(element_type)) / 8
+        if alignment == 0 {
+            alignment = 1
+        }
+        for element in 0..constant.elements.length() {
+            let scalar = constant.elements[element]
+            for byte in 0..usize.from(alignment) {
+                bytes.push(u8.from(scalar.bits >> u64.from(byte * 8) & 255))
+            }
+        }
+        if bytes.length() == 0 {
+            bytes.push(0)
+        }
+        declare_aligned_bytes_global(compiler, array_constant_key(constant), move bytes, alignment)
+    }
+
+    fn array_constant_value(compiler: write FunctionCompiler, constant: sema::Constant) -> Result<Value, u32> {
+        let key = array_constant_key(constant)
+        match function_global_id(compiler, key) {
+            Some(index) => {
+                let address = function_append_value(compiler, ir::InstructionGlobalAddress(index))?
+                return Ok(AddressValue(address, sema::type_copy(constant.value_type)))
+            }
+            None => {
+                return Err(229)
+            }
+        }
+    }
+
+    fn constant_place(compiler: write FunctionCompiler, analysis: sema::Analysis, name: frontend::Name) -> Result<Place, u32> {
+        let value = named_value(compiler, analysis, name)?
+        match move value {
+            AddressValue(address, value_type) => {
+                return Ok(Place {
+                        address: address, value_type: move value_type
+                    })
+            }
+            _ => {
+                return Err(126)
+            }
+        }
+    }
+}

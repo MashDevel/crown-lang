@@ -1,0 +1,80 @@
+module testing {
+    fn expect(condition: bool, message: Text) -> Result<void, Text> {
+        if condition {
+            return Ok(())
+        }
+        return Err(message.clone())
+    }
+
+    fn error<T, E>(result: take Result<T, E>) -> Result<void, Text> {
+        match move result {
+            Err(message) => {
+                message;
+                return Ok(())
+            }
+            Ok(value) => {
+                value;
+                return Err("expected failure")
+            }
+        }
+    }
+
+    fn done(result: take Result<void, Text>) -> u32 {
+        match move result {
+            Ok(value) => {
+                value;
+                return 42
+            }
+            Err(message) => {
+                toolchain::failure(message);
+                return 1
+            }
+        }
+    }
+
+    fn write_file(root: Text, path: Text, source: Text) -> Result<Text, Text> {
+        let destination = toolchain::path_join(root, path)
+        toolchain::make_directory(toolchain::parent_path(destination))?
+        toolchain::write_text(destination, source)?
+        return Ok(move destination)
+    }
+
+    fn list(value: Text) -> Vec<Text> {
+        return std::text::split(value, 124)
+    }
+
+    fn equal_lists(left: Vec<Text>, right: Vec<Text>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        for index in 0..left.length() {
+            if std::text::equal(left[index], right[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn compiler() -> Result<Text, Text> {
+        let configured = toolchain::environment("CROWN_TEST_COMPILER")
+        if configured.length() == 0 {
+            return Err("CROWN_TEST_COMPILER is required by integration tests")
+        }
+        return toolchain::absolute(configured)
+    }
+
+    fn invoke(arguments: take Vec<Text>, root: Text) -> Result<toolchain::ProcessResult, Text> {
+        var command = Vec<Text>.new()
+        command.push(compiler()?)
+        for index in 0..arguments.length() {
+            command.push(arguments[index].clone())
+        }
+        return capture_compiler(move command, root)
+    }
+
+    fn capture_compiler(arguments: take Vec<Text>, root: Text) -> Result<toolchain::ProcessResult, Text> {
+        var request = toolchain::command(move arguments)
+        request.timeout = 0
+        return toolchain::capture(request, root)
+    }
+}

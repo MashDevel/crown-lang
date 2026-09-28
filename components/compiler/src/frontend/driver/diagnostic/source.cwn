@@ -1,0 +1,94 @@
+module frontend {
+    struct DiagnosticLocation {
+        file: usize
+        line: usize
+        column: usize
+        line_start: usize
+        line_end: usize
+    }
+
+    fn print_diagnostic(bundle: SourceBundle, span: Span, message: Text) -> void {
+        print_labeled_diagnostic(bundle, span, message, "error")
+    }
+
+    fn print_labeled_diagnostic(bundle: SourceBundle, span: Span, message: Text, level: take Text) -> void {
+        if bundle.files.length() == 0 {
+            diagnostic_write(level)
+            diagnostic_literal(": ")
+            diagnostic_write(message)
+            diagnostic_literal("\n")
+            return
+        }
+        let location = diagnostic_location(bundle, span)
+        diagnostic_write(bundle.files[location.file].path)
+        var header = ":"
+        text_push_usize(header, location.line)
+        header.push(':')
+        text_push_usize(header, location.column)
+        let separator = ": "
+        std::text::append(header, separator)
+        std::text::append(header, level)
+        std::text::append(header, separator)
+        diagnostic_write(header)
+        diagnostic_write(message)
+        diagnostic_literal("\n")
+        diagnostic_excerpt(bundle, location, span)
+    }
+
+    fn diagnostic_location(bundle: SourceBundle, span: Span) -> DiagnosticLocation {
+        var file: usize = 0
+        while file + 1 < bundle.files.length() && span.start >= bundle.files[file + 1].start {
+            file = file + 1
+        }
+        var position = span.start
+        if position > bundle.files[file].end {
+            position = bundle.files[file].end
+        }
+        var index = bundle.files[file].start
+        var line: usize = 1
+        var line_start = index
+        loan read bundle.source as bytes {
+            while index < position {
+                if bytes[index] == 10 {
+                    line = line + 1;
+                    line_start = index + 1
+                }
+                index = index + 1
+            }
+            while index < bundle.files[file].end && bytes[index] != 10 {
+                index = index + 1
+            }
+        }
+        return DiagnosticLocation {
+            file: file, line: line, column: position - line_start + 1, line_start: line_start, line_end: index
+        }
+    }
+
+    fn diagnostic_excerpt(bundle: SourceBundle, location: DiagnosticLocation, span: Span) -> void {
+        var underline = Text.new()
+        loan read bundle.source as bytes {
+            unsafe {
+                frontend_diagnostic_bytes(bytes.as_raw().offset(location.line_start), location.line_end - location.line_start)
+            }
+            var index = location.line_start
+            let start = location.line_start + location.column - 1
+            while index < start {
+                if bytes[index] == 9 {
+                    underline.push('\t')
+                } else {
+                    underline.push(' ')
+                }
+                index = index + 1
+            }
+            underline.push('^')
+            index = start + 1
+            while index < span.end && index < location.line_end {
+                underline.push('^');
+                index = index + 1
+            }
+        }
+        underline.push('\n')
+        diagnostic_literal("\n")
+        diagnostic_write(underline)
+    }
+}

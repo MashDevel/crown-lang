@@ -1,0 +1,113 @@
+module toolchain {
+    opaque resource Directory {
+        private handle: RawPtr<u8>
+        drop {
+            if handle != null() {
+                unsafe {
+                    raw_closedir(handle)
+                }
+            }
+        }
+    }
+
+    fn open_directory(path: Text) -> Result<Directory, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            let handle = raw_opendir(std::cstr::as_raw(encoded))
+            if handle == null() {
+                return Err(std::text::joined("could not open directory: ", path))
+            }
+            return Ok(Directory {
+                    handle: handle
+                })
+        }
+    }
+
+    fn is_directory(path: Text) -> bool {
+        match open_directory(path) {
+            Ok(directory) => {
+                directory;
+                return true
+            }
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+    }
+
+    fn directory_next(directory: Directory) -> Result<Option<Text>, Text> {
+        unsafe {
+            raw_errno().write(0)
+            let entry = raw_readdir(directory.handle)
+            if entry != null() {
+                return Ok(Some(pointer_text(entry.offset(DIRECTORY_NAME_OFFSET))))
+            }
+            if raw_errno().read() != 0 {
+                return Err("could not read directory entry")
+            }
+        }
+        return Ok(None())
+    }
+
+    fn directory_entries(path: Text) -> Result<Vec<Text>, Text> {
+        let directory = open_directory(path)?
+        var output = Vec<Text>.new()
+        while true {
+            match directory_next(directory)? {
+                None => {
+                    break
+                }
+                Some(name) => {
+                    if std::text::equal(name, ".") == false && std::text::equal(name, "..") == false {
+                        output.push(path_join(path, name))
+                    }
+                }
+            }
+        }
+        std::text::sort_list(output)
+        return Ok(move output)
+    }
+
+    fn walk_files(root: Text) -> Result<Vec<Text>, Text> {
+        var pending = Vec<Text>.new()
+        var output = WalkOutput {
+            directories: Vec<Text>.new(), files: Vec<Text>.new()
+        }
+        pending.push(root.clone())
+        while pending.length() != 0 {
+            match pending.pop() {
+                Some(path) => {
+                    walk_path(path, pending, output)?
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(replace(output.files, Vec<Text>.new()))
+    }
+
+    struct WalkOutput {
+        directories: Vec<Text>, files: Vec<Text>
+    }
+
+    fn walk_path(path: Text, pending: write Vec<Text>, output: write WalkOutput) -> Result<void, Text> {
+        if exists(path) == false {
+            return Err(std::text::joined("source path does not exist: ", path))
+        }
+        if is_directory(path) == false {
+            output.files.push(absolute(path)?);
+            return Ok(())
+        }
+        let canonical = absolute(path)?
+        if std::text::list_contains(output.directories, canonical) {
+            return Ok(())
+        }
+        output.directories.push(move canonical)
+        let entries = directory_entries(path)?
+        for index in 0..entries.length() {
+            pending.push(entries[index].clone())
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,17 @@
+struct Cpu {
+    value: u32
+}
+struct Emulator {
+    cpu: Cpu
+}
+fn update(emulator: read Emulator, cpu: write Cpu) -> u32 {
+    return emulator.cpu.value
+}
+fn main() -> u32 {
+    var emulator = Emulator {
+        cpu: Cpu {
+            value: 1
+        }
+    }
+    return update(emulator, emulator.cpu)
+}

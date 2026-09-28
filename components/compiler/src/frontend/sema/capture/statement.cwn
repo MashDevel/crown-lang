@@ -1,0 +1,185 @@
+module sema {
+    fn capture_statements(checker: Checker, scan: write CaptureScan, statements: Vec<frontend::Statement>) -> void {
+        var index: usize = 0
+        while index < statements.length() {
+            loan read statements[index] as statement {
+                capture_statement(checker, scan, statement)
+            }
+            index = index + 1
+        }
+    }
+
+    fn capture_statement(checker: Checker, scan: write CaptureScan, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementBind(name, mutable_value, annotation, value) => {
+                mutable_value;
+                annotation
+                capture_expression(checker, scan, value)
+                capture_local(scan, name)
+            }
+            frontend::StatementDestructure(mutable, fields, value) => {
+                mutable;
+                capture_expression(checker, scan, value)
+                for index in 0..fields.length() {
+                    capture_local(scan, fields[index].binding)
+                }
+            }
+            frontend::StatementUpdate(target, operator, value) => {
+                operator;
+                capture_expression(checker, scan, target);
+                capture_expression(checker, scan, value)
+            }
+            frontend::StatementAssign(target, value) => {
+                capture_expression(checker, scan, target)
+                capture_expression(checker, scan, value)
+            }
+            frontend::StatementReturn(value, implicit) => {
+                implicit;
+                capture_expression(checker, scan, value)
+            }
+            frontend::StatementPrint(value) => {
+                capture_expression(checker, scan, value)
+            }
+            frontend::StatementExpression(value) => {
+                capture_expression(checker, scan, value)
+            }
+            _ => capture_control_statement(checker, scan, statement)
+        }
+    }
+
+    fn capture_block(checker: Checker, scan: write CaptureScan, body: Vec<frontend::Statement>) -> void {
+        let length = scan.locals.length()
+        capture_statements(checker, scan, body)
+        capture_scope_end(scan, length)
+    }
+
+    fn capture_scoped(checker: Checker, scan: write CaptureScan, statement: frontend::Statement) -> void {
+        let length = scan.locals.length()
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                mode
+                capture_expression(checker, scan, source)
+                capture_local(scan, alias)
+                capture_statements(checker, scan, body)
+            }
+            frontend::StatementLock(mode, source, alias, body) => {
+                mode
+                capture_path(checker, scan, source)
+                capture_local(scan, alias)
+                capture_statements(checker, scan, body)
+            }
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode
+                loan read arena as value {
+                    capture_expression(checker, scan, value)
+                }
+                loan read handle as value {
+                    capture_expression(checker, scan, value)
+                }
+                capture_local(scan, alias)
+                capture_statements(checker, scan, body)
+            }
+            _ => {
+            }
+        }
+        capture_scope_end(scan, length)
+    }
+
+    fn capture_if(checker: Checker, scan: write CaptureScan, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementIf(condition, then_body, else_body) => {
+                capture_expression(checker, scan, condition)
+                capture_block(checker, scan, then_body)
+                capture_block(checker, scan, else_body)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn capture_match(checker: Checker, scan: write CaptureScan, value: frontend::MatchExpression) -> void {
+        capture_expression(checker, scan, value.value)
+        var index: usize = 0
+        while index < value.arms.length() {
+            capture_match_arm(checker, scan, value.arms[index])
+            index = index + 1
+        }
+    }
+
+    fn capture_match_arm(checker: Checker, scan: write CaptureScan, arm: frontend::MatchArm) -> void {
+        let length = scan.locals.length()
+        var index: usize = 0
+        while index < arm.pattern.bindings.length() {
+            loan read arm.pattern.bindings[index] as name {
+                capture_local(scan, name)
+            }
+            index = index + 1
+        }
+        capture_statements(checker, scan, arm.body)
+        capture_scope_end(scan, length)
+    }
+
+    fn capture_loop(checker: Checker, scan: write CaptureScan, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementWhile(condition, body) => {
+                capture_expression(checker, scan, condition)
+                capture_block(checker, scan, body)
+            }
+            frontend::StatementFor(name, start, end, body) => {
+                capture_expression(checker, scan, start)
+                capture_expression(checker, scan, end)
+                let length = scan.locals.length()
+                capture_local(scan, name)
+                capture_statements(checker, scan, body)
+                capture_scope_end(scan, length)
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn capture_control_statement(checker: Checker, scan: write CaptureScan, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                body;
+                capture_scoped(checker, scan, statement)
+            }
+            frontend::StatementLock(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                body;
+                capture_scoped(checker, scan, statement)
+            }
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                arena;
+                handle;
+                alias;
+                body;
+                capture_scoped(checker, scan, statement)
+            }
+            frontend::StatementIf(condition, then_body, else_body) => {
+                condition;
+                then_body;
+                else_body;
+                capture_if(checker, scan, statement)
+            }
+            frontend::StatementMatch(value) => {
+                capture_match(checker, scan, value)
+            }
+            frontend::StatementThreadScope(body) => {
+                capture_block(checker, scan, body)
+            }
+            frontend::StatementUnsafe(body) => {
+                capture_block(checker, scan, body)
+            }
+            _ => {
+                capture_loop(checker, scan, statement)
+            }
+        }
+    }
+}

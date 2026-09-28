@@ -1,0 +1,41 @@
+module arm64 {
+    fn instrumentation_hit(output: write object::CompilerObject, profiling: bool) -> Result<void, Text> {
+        var compiler = runtime_compiler(0)
+        symbol_address(compiler, "crown_cov_data", 9)
+        runtime_memory(compiler, 9, 9, 0, true)
+        if profiling {
+            immediate(compiler, 15, 3)
+            shift_registers(compiler, ShiftOperation::Left(), 4, 0, 15)
+        } else {
+            immediate(compiler, 15, 6)
+            shift_registers(compiler, ShiftOperation::LogicalRight(), 4, 0, 15)
+            immediate(compiler, 15, 3)
+            shift_registers(compiler, ShiftOperation::Left(), 4, 4, 15)
+            immediate(compiler, 5, 1)
+            shift_registers(compiler, ShiftOperation::Left(), 5, 5, 0)
+        }
+        emit_registers(compiler, 2332033024, 9, 9, 4)
+        runtime_label(compiler, 0)
+        emit(compiler, 3370122540)
+        if profiling {
+            runtime_compare(compiler, 12, 18446744073709551615)
+            runtime_condition(compiler, 0, 1)
+            emit_encoding(compiler, add_immediate(11, 12, 1, false))
+        } else {
+            emit_registers(compiler, 2852126720, 11, 12, 5)
+            emit_encoding(compiler, compare_word(11, 12))
+            runtime_condition(compiler, 0, 1)
+        }
+        runtime_move(compiler, 10, 12)
+        atomic_compare(compiler)
+        runtime_condition(compiler, 1, 0)
+        runtime_label(compiler, 1)
+        emit(compiler, 3596551104)
+        return runtime_export(output, compiler, if profiling {
+                "crown_profile_hit"
+            } else {
+                "crown_cov_hit"
+            })
+    }
+
+}

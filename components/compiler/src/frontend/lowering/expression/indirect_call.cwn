@@ -1,0 +1,98 @@
+module lowering {
+    struct IndirectCallState {
+        target: usize
+        environment: Option<usize>
+        parameters: Vec<sema::ParameterType>
+        result: sema::Type
+    }
+
+    fn indirect_call_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        let state = indirect_call_state(compiler, analysis, expression)?
+        var values = Vec<usize>.new()
+        let result_address = prepare_call_result(compiler, analysis.checker.symbols, state.result, values)?
+        match state.environment {
+            Some(value) => {
+                values.push(value)
+            }
+            None => {
+            }
+        }
+        match read expression.kind {
+            frontend::ExpressionCall(name, arguments) => {
+                name
+                if arguments.length() != state.parameters.length() {
+                    return Err(318)
+                }
+                append_call_arguments(compiler, analysis, state.parameters, arguments, values)?
+            }
+            _ => {
+                return Err(319)
+            }
+        }
+        let signature = indirect_call_signature(state, analysis.checker.symbols)?
+        let call = function_append(compiler, ir::InstructionCallIndirect(state.target, move signature, move values))?
+        return call_value(call, result_address, state.result)
+    }
+
+    fn indirect_call_signature(state: IndirectCallState, symbols: sema::Symbols) -> Result<ir::Signature, u32> {
+        var signature = callable_signature(state.parameters, state.result, symbols)?
+        match state.environment {
+            Some(value) => {
+                value;
+                signature = signature_with_environment(signature, closure_environment_slot(symbols, state.result)?)
+            }
+            None => {
+            }
+        }
+        return Ok(move signature)
+    }
+
+    fn indirect_binding(compiler: FunctionCompiler, source: Shared<Vec<u8>>, name: frontend::Name) -> Result<Binding, u32> {
+        match function_binding_index(compiler, source, name) {
+            None => {
+                return Err(317)
+            }
+            Some(index) => {
+                loan read compiler.bindings[index] as binding {
+                    return Ok(binding_copy(binding))
+                }
+            }
+        }
+    }
+
+    fn indirect_call_state(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<IndirectCallState, u32> {
+        var state = IndirectCallState {
+            target: 0, environment: None(), parameters: Vec<sema::ParameterType>.new(), result: sema::Invalid()
+        }
+        match read expression.kind {
+            frontend::ExpressionCall(name, arguments) => {
+                arguments
+                let binding = indirect_binding(compiler, analysis.checker.symbols.source, name)?
+                load_indirect_binding(compiler, binding, state)?
+            }
+            _ => {
+                return Err(315)
+            }
+        }
+        return Ok(move state)
+    }
+    fn load_indirect_binding(compiler: write FunctionCompiler, binding: Binding, state: write IndirectCallState) -> Result<void, u32> {
+        let callable = sema::callable_type(binding.value_type)
+        match read callable {
+            sema::FunctionType(parameters, result) => {
+                state.target = function_load_pointer(compiler, binding.address)?
+                if sema::type_is_scoped_function(binding.value_type) {
+                    state.environment = Some(function_load_pointer_field(compiler, binding.address, 8)?)
+                }
+                state.parameters = sema::parameter_types_copy(parameters)
+                loan read result as value {
+                    state.result = sema::type_copy(value)
+                }
+            }
+            _ => {
+                return Err(314)
+            }
+        }
+        return Ok(())
+    }
+}

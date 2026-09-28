@@ -1,0 +1,48 @@
+fn analyze_source(text: take Text) -> u32 {
+    let source = frontend_test_source(move text)
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            return u32.from(diagnostics.length())
+        }
+        Ok(program) => {
+            let analysis = sema::analyze(source.bytes.share(), program)
+            return analysis.errors
+        }
+    }
+}
+
+fn valid_analysis() -> bool {
+    let errors = analyze_source("fn identity<T>(value: take T) -> T { return move value }\nfn minimum() -> i32 { return -2147483648 }\nfn main() -> u32 {\nlet first: u32 = 1\nvar second = first + 2\nsecond = identity(3)\nif minimum() != -2147483648 { return 0 }\nreturn second\n}\n")
+    return errors == 0
+}
+
+fn invalid_analysis() -> bool {
+    let errors = analyze_source("fn broken(value: read Text) -> Text {\nlet alias = value\nreturn value\n}\nfn missing() -> u32 { let value = 1 }\n")
+    return errors >= 3
+}
+
+fn borrowed_spawn_is_invalid() -> bool {
+    let errors = analyze_source("fn main() -> u32 {\nlet text = \"worker\"\nloan read text as borrowed {\nlet thread = spawn move { borrowed.length() }\nthread\n}\nreturn 0\n}\n")
+    return errors != 0
+}
+
+fn channel_capture_is_moved() -> bool {
+    let errors = analyze_source("fn main() -> u32 {\nlet channel = Channel<u32>.new()\nlet worker = channel.share()\nlet thread = spawn move { worker.send(1) }\nworker.try_receive()\nthread\nreturn 0\n}\n")
+    return errors != 0
+}
+
+fn main() -> u32 {
+    if valid_analysis() == false {
+        return 1
+    }
+    if invalid_analysis() == false {
+        return 2
+    }
+    if borrowed_spawn_is_invalid() == false {
+        return 3
+    }
+    if channel_capture_is_moved() == false {
+        return 4
+    }
+    return 42
+}

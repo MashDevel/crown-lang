@@ -1,0 +1,159 @@
+module lowering {
+    fn utf8_encoding(compiler: write FunctionCompiler, character: usize) -> Result<Utf8Encoding, u32> {
+        let boundaries = Utf8Boundaries {
+            one: character_below(compiler, character, 128)?
+            two: character_below(compiler, character, 2048)?
+            three: character_below(compiler, character, 65536)?
+        }
+        let length = utf8_width(compiler, boundaries)?
+        let first = utf8_lead(compiler, character, boundaries)?
+        let second = utf8_second(compiler, character, boundaries)?
+        let third = utf8_third(compiler, character, boundaries.three)?
+        let fourth_value = continuation_byte(compiler, character, 0)?
+        let fourth = truncate_text_byte(compiler, fourth_value)?
+        return Ok(Utf8Encoding {
+                length: length, first: first, second: second, third: third, fourth: fourth
+            })
+    }
+
+    fn character_below(compiler: write FunctionCompiler, character: usize, boundary: u64) -> Result<usize, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth32())
+        let limit = function_integer(compiler, value_type, boundary)
+        return function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), character, limit))
+    }
+
+    fn utf8_width(compiler: write FunctionCompiler, boundaries: Utf8Boundaries) -> Result<usize, u32> {
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let two_type = ir::TypeInteger(ir::IntegerWidth64())
+        let two = function_integer(compiler, two_type, 2)
+        let three_type = ir::TypeInteger(ir::IntegerWidth64())
+        let three = function_integer(compiler, three_type, 3)
+        let four_type = ir::TypeInteger(ir::IntegerWidth64())
+        let four = function_integer(compiler, four_type, 4)
+        let long = function_append_value(compiler, ir::InstructionSelect(boundaries.three, three, four))?
+        let multibyte = function_append_value(compiler, ir::InstructionSelect(boundaries.two, two, long))?
+        return function_append_value(compiler, ir::InstructionSelect(boundaries.one, one, multibyte))
+    }
+
+    fn utf8_lead(compiler: write FunctionCompiler, character: usize, boundaries: Utf8Boundaries) -> Result<usize, u32> {
+        let two_request = CharacterPrefix {
+            shift: 6, prefix: 192
+        }
+        let lead_two = prefixed_character(compiler, character, two_request)?
+        let three_request = CharacterPrefix {
+            shift: 12, prefix: 224
+        }
+        let lead_three = prefixed_character(compiler, character, three_request)?
+        let four_request = CharacterPrefix {
+            shift: 18, prefix: 240
+        }
+        let lead_four = prefixed_character(compiler, character, four_request)?
+        let long = function_append_value(compiler, ir::InstructionSelect(boundaries.three, lead_three, lead_four))?
+        let multibyte = function_append_value(compiler, ir::InstructionSelect(boundaries.two, lead_two, long))?
+        let lead = function_append_value(compiler, ir::InstructionSelect(boundaries.one, character, multibyte))?
+        return truncate_text_byte(compiler, lead)
+    }
+
+    fn utf8_second(compiler: write FunctionCompiler, character: usize, boundaries: Utf8Boundaries) -> Result<usize, u32> {
+        let two = continuation_byte(compiler, character, 0)?
+        let three = continuation_byte(compiler, character, 6)?
+        let four = continuation_byte(compiler, character, 12)?
+        let long = function_append_value(compiler, ir::InstructionSelect(boundaries.three, three, four))?
+        let multibyte = function_append_value(compiler, ir::InstructionSelect(boundaries.two, two, long))?
+        let zero_type = ir::TypeInteger(ir::IntegerWidth32())
+        let zero = function_integer(compiler, zero_type, 0)
+        let selected = function_append_value(compiler, ir::InstructionSelect(boundaries.one, zero, multibyte))?
+        return truncate_text_byte(compiler, selected)
+    }
+
+    fn utf8_third(compiler: write FunctionCompiler, character: usize, three: usize) -> Result<usize, u32> {
+        let direct = continuation_byte(compiler, character, 0)?
+        let long = continuation_byte(compiler, character, 6)?
+        let selected = function_append_value(compiler, ir::InstructionSelect(three, direct, long))?
+        return truncate_text_byte(compiler, selected)
+    }
+
+    struct CharacterPrefix {
+        shift: u64
+        prefix: u64
+    }
+
+    fn prefixed_character(compiler: write FunctionCompiler, character: usize, request: CharacterPrefix) -> Result<usize, u32> {
+        let payload = shift_character(compiler, character, request.shift)?
+        let prefix_type = ir::TypeInteger(ir::IntegerWidth32())
+        let prefix = function_integer(compiler, prefix_type, request.prefix)
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryOr(), payload, prefix))
+    }
+
+    fn continuation_byte(compiler: write FunctionCompiler, character: usize, shift: u64) -> Result<usize, u32> {
+        let shifted = shift_character(compiler, character, shift)?
+        let mask_type = ir::TypeInteger(ir::IntegerWidth32())
+        let mask = function_integer(compiler, mask_type, 63)
+        let payload = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), shifted, mask))?
+        let prefix_type = ir::TypeInteger(ir::IntegerWidth32())
+        let prefix = function_integer(compiler, prefix_type, 128)
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryOr(), payload, prefix))
+    }
+
+    fn shift_character(compiler: write FunctionCompiler, character: usize, shift: u64) -> Result<usize, u32> {
+        if shift == 0 {
+            return Ok(character)
+        }
+        let value_type = ir::TypeInteger(ir::IntegerWidth32())
+        let amount = function_integer(compiler, value_type, shift)
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryShiftRightUnsigned(), character, amount))
+    }
+
+    fn truncate_text_byte(compiler: write FunctionCompiler, value: usize) -> Result<usize, u32> {
+        return function_append_value(compiler, ir::InstructionCast(ir::CastTruncate(), value, ir::TypeInteger(ir::IntegerWidth8())))
+    }
+
+    struct Utf8Storage {
+        state: TextPushState
+        encoding: Utf8Encoding
+    }
+
+    struct TextByte {
+        address: usize
+        value: usize
+    }
+
+    fn store_utf8(compiler: write FunctionCompiler, symbols: sema::Symbols, storage: Utf8Storage) -> Result<void, u32> {
+        let data = function_load_pointer(compiler, storage.state.address)?
+        let target = function_append_value(compiler, ir::InstructionOffset(data, storage.state.length))?
+        let first = TextByte {
+            address: target, value: storage.encoding.first
+        }
+        store_text_byte(compiler, symbols, first)?
+        let second = function_offset(compiler, target, 1)?
+        let second_value = TextByte {
+            address: second, value: storage.encoding.second
+        }
+        store_text_byte(compiler, symbols, second_value)?
+        let third = function_offset(compiler, target, 2)?
+        let third_value = TextByte {
+            address: third, value: storage.encoding.third
+        }
+        store_text_byte(compiler, symbols, third_value)?
+        let fourth = function_offset(compiler, target, 3)?
+        let fourth_value = TextByte {
+            address: fourth, value: storage.encoding.fourth
+        }
+        store_text_byte(compiler, symbols, fourth_value)?
+        return Ok(())
+    }
+
+    fn store_text_byte(compiler: write FunctionCompiler, symbols: sema::Symbols, request: TextByte) -> Result<void, u32> {
+        let store = StoreRequest {
+            address: request.address, value: request.value, value_type: sema::builtin_leaf(sema::U8())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn utf8_encoding_copy(value: Utf8Encoding) -> Utf8Encoding {
+        return Utf8Encoding {
+            length: value.length, first: value.first, second: value.second, third: value.third, fourth: value.fourth
+        }
+    }
+}

@@ -1,0 +1,153 @@
+module lowering {
+    fn function_statements(compiler: write FunctionCompiler, analysis: sema::Analysis, statements: Vec<frontend::Statement>) -> Result<void, u32> {
+        var index: usize = 0
+        while index < statements.length() {
+            match read compiler.block {
+                None => {
+                    return Ok(())
+                }
+                Some(value) => {
+                    value
+                }
+            }
+            loan read statements[index] as statement {
+                function_statement(compiler, analysis, statement)?
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn function_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        coverage_line(compiler, statement.span)?
+        let outcome = statement_node(compiler, analysis, statement)
+        return statement_outcome(compiler, outcome)
+    }
+
+    fn statement_node(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementDestructure(mutable_value, bindings, expression) => {
+                mutable_value;
+                bindings;
+                expression;
+                return destructure_statement(compiler, analysis, statement)
+            }
+            frontend::StatementUpdate(target, operator, value) => {
+                target;
+                operator;
+                value;
+                return update_statement(compiler, analysis, statement)
+            }
+            frontend::StatementBind(name, mutable_value, annotation, expression) => {
+                name;
+                mutable_value;
+                annotation;
+                expression;
+                return bind_statement(compiler, analysis, statement)
+            }
+            frontend::StatementReturn(expression, implicit) => {
+                expression;
+                implicit;
+                return return_node(compiler, analysis, statement)
+            }
+            frontend::StatementPrint(expression) => {
+                return print_statement(compiler, analysis, expression)
+            }
+            frontend::StatementExpression(expression) => {
+                return discard_statement(compiler, analysis, expression)
+            }
+            frontend::StatementAssign(target, value) => {
+                target;
+                value;
+                return assign_statement(compiler, analysis, statement)
+            }
+            _ => {
+                return scoped_statement(compiler, analysis, statement)
+            }
+        }
+    }
+
+    fn scope_statements(compiler: write FunctionCompiler, analysis: sema::Analysis, statements: Vec<frontend::Statement>) -> Result<void, u32> {
+        function_push_scope(compiler)
+        match function_statements(compiler, analysis, statements) {
+            Err(error) => {
+                return Err(error)
+            }
+            Ok(value) => {
+                value
+            }
+        }
+        return function_pop_scope(compiler)
+    }
+
+    fn control_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementIf(condition, then_body, else_body) => {
+                condition;
+                then_body;
+                else_body;
+                return if_statement(compiler, analysis, statement)
+            }
+            frontend::StatementWhile(condition, body) => {
+                condition;
+                body;
+                return while_statement(compiler, analysis, statement)
+            }
+            frontend::StatementFor(name, start, end, body) => {
+                name;
+                start;
+                end;
+                body;
+                return range_statement(compiler, analysis, statement)
+            }
+            frontend::StatementBreak => {
+                return loop_exit(compiler, false)
+            }
+            frontend::StatementContinue => {
+                return loop_exit(compiler, true)
+            }
+            frontend::StatementMatch(value) => {
+                return match_statement(compiler, analysis, value)
+            }
+            _ => {
+                return Err(72)
+            }
+        }
+    }
+
+    fn scoped_statement(compiler: write FunctionCompiler, analysis: sema::Analysis, statement: frontend::Statement) -> Result<void, u32> {
+        match read statement.kind {
+            frontend::StatementThreadScope(body) => {
+                return thread_region_statements(compiler, analysis, body)
+            }
+            frontend::StatementUnsafe(body) => {
+                return scope_statements(compiler, analysis, body)
+            }
+            frontend::StatementLoan(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                body;
+                return loan_scope(compiler, analysis, statement)
+            }
+            frontend::StatementLock(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                body;
+                return lock_scope(compiler, analysis, statement)
+            }
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                arena;
+                handle;
+                alias;
+                body;
+                return arena_scope(compiler, analysis, statement)
+            }
+            _ => {
+                return control_statement(compiler, analysis, statement)
+            }
+        }
+    }
+}

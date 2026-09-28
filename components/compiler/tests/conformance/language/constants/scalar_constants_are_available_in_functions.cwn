@@ -1,0 +1,10 @@
+const MASK: u8 = 0b1111_0000
+const OFFSET: i8 = -8
+const ENABLED: bool = true
+const LETTER: char = 'A'
+fn main() -> u32 {
+    if ENABLED {
+        return u32.from(MASK) + u32.from(OFFSET) + u32.from(LETTER)
+    }
+    return 0
+}

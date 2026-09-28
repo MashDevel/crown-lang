@@ -1,0 +1,102 @@
+module macho {
+    struct InputSymbol {
+        string: usize, flags: u64, section: usize, value: u64
+    }
+
+    fn read_symbols(reader: write ObjectReader) -> Result<void, Text> {
+        if reader.strings > reader.bytes.length() || reader.string_size > reader.bytes.length() - reader.strings {
+            return Err("truncated Mach-O strings")
+        }
+        if reader.symbol_offset > reader.bytes.length() || reader.symbol_count >(reader.bytes.length() - reader.symbol_offset) / 16 {
+            return Err("truncated Mach-O symbols")
+        }
+        for index in 0..reader.symbol_count {
+            read_symbol(reader, reader.symbol_offset + index * 16)?
+        }
+        return Ok(())
+    }
+
+    fn input_symbol(bytes: Vec<u8>, offset: usize) -> Result<InputSymbol, Text> {
+        return Ok(InputSymbol {
+                string: usize.from(link_binary::number(bytes, offset, 4)?),
+                flags: link_binary::number(bytes, offset + 4, 1)?,
+                section: usize.from(link_binary::number(bytes, offset + 5, 1)?),
+                value: link_binary::number(bytes, offset + 8, 8)?
+            })
+    }
+
+    fn symbol_name(reader: ObjectReader, string: usize) -> Result<Text, Text> {
+        if string >= reader.string_size {
+            return Err("invalid Mach-O symbol name")
+        }
+        let name = link_binary::terminated(reader.bytes, reader.strings + string)?
+        if name.length() >= reader.string_size - string {
+            return Err("unterminated Mach-O symbol name")
+        }
+        if std::text::starts(name, "_") {
+            return Ok(std::text::slice(name, 1, name.length()))
+        }
+        return Ok(move name)
+    }
+
+    fn validate_input_symbol(reader: ObjectReader, symbol: InputSymbol) -> Result<bool, Text> {
+        let defined = (symbol.flags & 14) == 14
+        if (symbol.flags & 224) != 0 ||(defined == false &&(symbol.flags & 14) != 0) {
+            return Err("unsupported Mach-O symbol type")
+        }
+        if defined {
+            validate_symbol_address(reader, symbol)?
+        } else {
+            if symbol.value != 0 {
+                return Err("Mach-O common symbols require explicit zero-fill definitions")
+            }
+        }
+        return Ok(defined)
+    }
+
+    fn validate_symbol_address(reader: ObjectReader, symbol: InputSymbol) -> Result<void, Text> {
+        if symbol.section == 0 || symbol.section > reader.addresses.length() {
+            return Err("invalid Mach-O symbol section")
+        }
+        if symbol.value < reader.addresses[symbol.section - 1] {
+            return Err("Mach-O symbol precedes its section")
+        }
+        return Ok(())
+    }
+
+    fn read_symbol(reader: write ObjectReader, offset: usize) -> Result<void, Text> {
+        let symbol = input_symbol(reader.bytes, offset)?
+        let name = symbol_name(reader, symbol.string)?
+        let defined = validate_input_symbol(reader, symbol)?
+        let placement = if defined {
+            Some(symbol.section - 1)
+        } else {
+            None()
+        }
+        let relative: u64 = if defined {
+            symbol.value - reader.addresses[symbol.section - 1]
+        } else {
+            0
+        }
+        let kind = if defined && object::section_is_executable(reader.output.sections[symbol.section - 1].kind) {
+            object::SymbolFunction()
+        } else {
+            object::SymbolData()
+        }
+        let binding = symbol_binding(symbol.flags, defined)
+        reader.output.symbols.push(object::Symbol {
+                name: move name, kind: kind, binding: move binding, section: placement, offset: relative, size: 0
+            })
+        return Ok(())
+    }
+
+    fn symbol_binding(flags: u64, defined: bool) -> object::SymbolBinding {
+        if defined == false {
+            return object::SymbolImport()
+        }
+        if (flags & 1) != 0 {
+            return object::SymbolGlobal()
+        }
+        return object::SymbolLocal()
+    }
+}

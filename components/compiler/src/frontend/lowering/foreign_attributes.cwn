@@ -1,0 +1,50 @@
+module lowering {
+    copy struct ForeignArgument {
+        value: usize, value_type: ir::Type
+    }
+    fn foreign_signature_attributes(signature: write ir::Signature, function: sema::Function) -> void {
+        signature.variadic_start = function.variadic_start
+        signature.result_signed = sema::type_is_signed(function.result)
+        for index in 0..function.parameters.length() {
+            if sema::mode_is_write(function.parameters[index].mode) == false && sema::type_is_signed(function.parameters[index].value_type) {
+                signature.signed_parameters.push(index)
+            }
+        }
+    }
+    fn sema_variadic(start: Option<usize>, index: usize) -> bool {
+        match start {
+            Some(value) => index >= value,
+            None => false
+        }
+    }
+    fn promoted_foreign_argument(compiler: write FunctionCompiler, semantic: sema::Type, argument: ForeignArgument, variadic: bool) -> Result<ForeignArgument, u32> {
+        if variadic == false {
+            return Ok(argument)
+        }
+        let promoted = match argument.value_type {
+            ir::TypeInteger(width) => {
+                if ir::integer_width_bits(width) >= 32 {
+                    return Ok(argument)
+                }
+                ir::TypeInteger(ir::IntegerWidth32())
+            }
+            ir::TypeFloat(ir::FloatWidth32) => ir::TypeFloat(ir::FloatWidth64())
+            _ => {
+                return Ok(argument)
+            }
+        }
+        let operation = if ir::type_is_float(promoted) {
+            ir::CastFloatExtend()
+        } else {
+            if sema::type_is_signed(semantic) {
+                ir::CastSignExtend()
+            } else {
+                ir::CastZeroExtend()
+            }
+        }
+        let value = function_append_value(compiler, ir::InstructionCast(operation, argument.value, promoted))?
+        return Ok(ForeignArgument {
+                value: value, value_type: promoted
+            })
+    }
+}

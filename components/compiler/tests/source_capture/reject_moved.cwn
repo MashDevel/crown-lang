@@ -1,0 +1,8 @@
+fn forward(site: SourceSite, value: take Text) -> Text { site; return move value }
+fn main() -> u32 {
+    let value: Text = "owned"
+    let first = source_call(forward, move value)
+    let second = source_call(forward, move value)
+    first; second;
+    return 0
+}

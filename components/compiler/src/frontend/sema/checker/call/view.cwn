@@ -1,0 +1,77 @@
+module sema {
+    fn parameter_uses_view(parameter: ParameterType) -> bool {
+        let builtin = type_builtin(parameter.value_type)
+        return mode_is_take(parameter.mode) == false &&(builtin == TextView() || builtin == Slice())
+    }
+
+    fn expression_is_slice(expression: frontend::Expression) -> bool {
+        match read expression.kind {
+            frontend::ExpressionSlice(target, start, end) => {
+                target;
+                start;
+                end;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn checker_view_argument(checker: write Checker, argument: frontend::Expression, parameter: ParameterType) -> Option<ExpressionInfo> {
+        var usage = ReadPath()
+        if mode_is_write(parameter.mode) {
+            usage = WritePath()
+        }
+        if expression_is_slice(argument) {
+            match checker_loan_source(checker, argument, usage) {
+                None => {
+                    return None()
+                }
+                Some(value_type) => {
+                    let info = copy_info(move value_type)
+                    checker_record(checker, argument, info)
+                    return Some(move info)
+                }
+            }
+        }
+        let hint = view_argument_hint(checker.symbols, argument, parameter.value_type)
+        let result = if mode_is_write(parameter.mode) {
+            checker_place(checker, argument, usage)
+        } else {
+            checker_expression_expected(checker, argument, hint)
+        }
+        match move result {
+            None => {
+                return None()
+            }
+            Some(info) => {
+                if mode_is_write(parameter.mode) {
+                    checker_record(checker, argument, info)
+                }
+                if types_equal(parameter.value_type, info.value_type) {
+                    return Some(move info)
+                }
+                let view_type = loan_view(info.value_type)
+                if view_argument_owner(info.value_type) && type_builtin(parameter.value_type) == type_builtin(view_type) {
+                    return Some(copy_info(move view_type))
+                }
+                return Some(move info)
+            }
+        }
+    }
+
+    fn view_argument_owner(value_type: Type) -> bool {
+        match read value_type {
+            ArrayType(element, length) => {
+                element;
+                length;
+                return true
+            }
+            _ => {
+                let builtin = type_builtin(value_type);
+                return builtin == Text() || builtin == Vec()
+            }
+        }
+    }
+}

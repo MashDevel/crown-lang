@@ -1,0 +1,81 @@
+fn identity_program(initial: u64) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    let word = ir::TypeInteger(ir::IntegerWidth64())
+    let imported = ir::function_new("crown_arena_identity", ir::signature_new(Vec<ir::Type>.new(), word), ir::LinkageImport())
+    let identity = ir::program_add_function(program, move imported)
+    var entry = ir::function_new("arena_identity_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(entry)?
+    var valid = ir::function_constant(entry, ir::TypeInteger(ir::IntegerWidth1()), ir::ConstantInteger(1))
+    var expected = initial
+    for index in 0..3 {
+        index
+        let value = safety_append(entry, block, ir::InstructionCall(identity, Vec<usize>.new(), word))?
+        let next: u64 = if expected == 18446744073709551615 {
+            0
+        } else {
+            expected + 1
+        }
+        let constant = safety_integer(entry, ir::IntegerWidth64(), next)
+        let equal = safety_append(entry, block, ir::InstructionCompare(ir::CompareEqual(), value, constant))?
+        valid = safety_append(entry, block, ir::InstructionBinary(ir::BinaryAnd(), valid, equal))?
+        if next != 0 {
+            expected = next
+        }
+    }
+    let zero = safety_integer(entry, ir::IntegerWidth32(), 0)
+    let one = safety_integer(entry, ir::IntegerWidth32(), 1)
+    let status = safety_append(entry, block, ir::InstructionSelect(valid, zero, one))?
+    safety_terminate(entry, block, ir::TerminatorReturn(Some(status)))?
+    program.entry = Some(ir::program_add_function(program, move entry))
+    return Ok(move program)
+}
+
+fn identity_object(initial: u64) -> Result<object::CompilerObject, u32> {
+    let program = identity_program(initial)?
+    if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+        return match arm64::codegen(move program, safety_arm_variant()) {
+            Ok(value) => Ok(move value)
+            Err(error) => {
+                error;
+                Err(1)
+            }
+        }
+    }
+    return match x86::codegen(move program) {
+        Ok(value) => Ok(move value)
+        Err(error) => {
+            error;
+            Err(2)
+        }
+    }
+}
+
+fn check_identity(initial: u64) -> Result<void, u32> {
+    var object = identity_object(initial)?
+    let symbol = match link_object::existing_symbol(object, "__compiler_arena_identity_counter") {
+        Some(value) => value
+        None => {
+            return Err(3)
+        }
+    }
+    let section = match object.symbols[symbol].section {
+        Some(value) => value
+        None => {
+            return Err(4)
+        }
+    }
+    object.sections[section].kind = object::SectionData()
+    object.sections[section].data = std::bytes::filled(8, 0)
+    link_binary::put(object.sections[section].data, 0, initial, 8)
+    return safety_execute_object(move object)
+}
+
+fn run() -> Result<void, u32> {
+    check_identity(0)?
+    check_identity(18446744073709551614)?
+    return check_identity(18446744073709551615)
+}
+
+fn main() -> u32 {
+    return safety_status(run())
+}

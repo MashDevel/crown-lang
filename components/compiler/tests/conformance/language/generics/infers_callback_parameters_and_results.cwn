@@ -1,0 +1,29 @@
+fn apply<T, R>(action: fn(read T) -> R, value: T) -> R {
+    return action(value)
+}
+fn transform(value: u32) -> Text {
+    value;
+    return "owned result"
+}
+fn nested(value: u32) -> Result<Text, u32> {
+    value;
+    return Err(7)
+}
+fn main() -> u32 {
+    let value = apply(transform, 42)
+    if value.length() != 12 {
+        return 1
+    }
+    match apply(nested, 0) {
+        Ok(text) => {
+            text;
+            return 2
+        }
+        Err(error) => {
+            if error != 7 {
+                return 3
+            }
+        }
+    }
+    return 0
+}

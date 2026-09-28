@@ -1,0 +1,22 @@
+module frontend {
+    fn text_push_usize(output: write Text, value: usize) -> void {
+        var remaining = value
+        var digits = Vec<u8>.new()
+        if remaining == 0 {
+            digits.push(0)
+        }
+        while remaining != 0 {
+            digits.push(u8.from(remaining % 10))
+            remaining = remaining / 10
+        }
+        while digits.length() != 0 {
+            match digits.pop() {
+                Some(digit) => {
+                    output.push(char.from(u32.from(digit) + 48))
+                }
+                None => {
+                }
+            }
+        }
+    }
+}

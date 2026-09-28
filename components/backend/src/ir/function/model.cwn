@@ -1,0 +1,96 @@
+module ir {
+    struct Instruction {
+        result: Option<usize>
+        kind: InstructionKind
+    }
+
+    struct BasicBlock {
+        frequency: u64
+        instructions: Vec<Instruction>
+        terminator: Option<Terminator>
+    }
+
+    struct ConstantEntry {
+        id: usize
+        value_type: Type
+        value: Constant
+    }
+
+    struct Function {
+        name: Text
+        signature: Signature
+        linkage: Linkage
+        parameters: Vec<usize>
+        exclusive_parameters: Vec<usize>
+        constants: Vec<ConstantEntry>
+        constant_indices: Vec<usize>
+        values: Vec<Type>
+        blocks: Vec<BasicBlock>
+    }
+
+    fn basic_block_new() -> BasicBlock {
+        return BasicBlock {
+            frequency: 0, instructions: Vec<Instruction>.new(), terminator: None()
+        }
+    }
+
+    fn function_new(name: take Text, signature: take Signature, linkage: take Linkage) -> Function {
+        var parameters = Vec<usize>.with_capacity(signature.parameters.length())
+        var values = Vec<Type>.with_capacity(signature.parameters.length())
+        var constant_indices = Vec<usize>.with_capacity(signature.parameters.length())
+        var index: usize = 0
+        while index < signature.parameters.length() {
+            parameters.push(index)
+            constant_indices.push(18446744073709551615)
+            loan read signature.parameters[index] as parameter {
+                values.push(parameter)
+            }
+            index = index + 1
+        }
+        return Function {
+            name: move name
+            signature: move signature
+            linkage: linkage
+            parameters: move parameters
+            exclusive_parameters: Vec<usize>.new()
+            constants: Vec<ConstantEntry>.new()
+            constant_indices: move constant_indices
+            values: move values
+            blocks: Vec<BasicBlock>.new()
+        }
+    }
+
+    fn function_value_type(function: Function, value: usize) -> Option<Type> {
+        if value >= function.values.length() {
+            return None()
+        }
+        loan read function.values[value] as value_type {
+            return Some(value_type)
+        }
+    }
+
+    fn function_is_import(function: Function) -> bool {
+        match read function.linkage {
+            LinkageImport => {
+                return true
+            }
+            LinkageLocal => {
+                return false
+            }
+            LinkageExport => {
+                return false
+            }
+        }
+    }
+
+    fn function_export(function: write Function) -> void {
+        if function_is_import(function) == false {
+            function.linkage = LinkageExport()
+        }
+    }
+
+    fn function_take(function: write Function) -> Function {
+        let empty = function_new("", signature_new(Vec<Type>.new(), TypeVoid()), LinkageLocal())
+        return replace(function, move empty)
+    }
+}

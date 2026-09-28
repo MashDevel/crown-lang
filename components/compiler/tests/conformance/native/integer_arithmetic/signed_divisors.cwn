@@ -1,0 +1,91 @@
+fn bytes(salt: i8) -> bool {
+    let minimum: i8 = -128 ^ salt
+    let nearby: i8 = -127 ^ salt
+    let negative: i8 = -1 ^ salt
+    let one: i8 = 1
+    if minimum / minimum != one {
+        return false
+    }
+    if nearby / nearby != one {
+        return false
+    }
+    if nearby / negative != -nearby {
+        return false
+    }
+    if one / negative != negative {
+        return false
+    }
+    if negative % negative != 0 {
+        return false
+    }
+    if nearby % minimum != nearby {
+        return false
+    }
+    true
+}
+
+fn words(salt: i16) -> bool {
+    let minimum: i16 = -32768 ^ salt
+    let nearby: i16 = -32767 ^ salt
+    let negative: i16 = -1 ^ salt
+    let one: i16 = 1
+    if minimum / minimum != one {
+        return false
+    }
+    if nearby / nearby != one {
+        return false
+    }
+    if nearby / negative != -nearby {
+        return false
+    }
+    if one / negative != negative {
+        return false
+    }
+    if negative % negative != 0 {
+        return false
+    }
+    if nearby % minimum != nearby {
+        return false
+    }
+    true
+}
+
+fn double_words(salt: i32) -> bool {
+    let minimum: i32 = -2147483648 ^ salt
+    let nearby: i32 = -2147483647 ^ salt
+    let negative: i32 = -1 ^ salt
+    let one: i32 = 1
+    if minimum / minimum != one {
+        return false
+    }
+    if nearby / nearby != one {
+        return false
+    }
+    if nearby / negative != -nearby {
+        return false
+    }
+    if one / negative != negative {
+        return false
+    }
+    if negative % negative != 0 {
+        return false
+    }
+    if nearby % minimum != nearby {
+        return false
+    }
+    true
+}
+
+fn main(arguments: Arguments) -> u32 {
+    let salt = arguments.length() - 1
+    if bytes(i8.from(salt)) == false {
+        return 1
+    }
+    if words(i16.from(salt)) == false {
+        return 2
+    }
+    if double_words(i32.from(salt)) == false {
+        return 3
+    }
+    42
+}

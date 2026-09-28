@@ -1,0 +1,131 @@
+module frontend {
+    fn parser_match(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        let value = parser_match_value(parser, start.span)
+        let span = value.span
+        return statement(StatementMatch(move value), span)
+    }
+
+    fn parser_match_expression(parser: write Parser, start: Span) -> Expression {
+        var value = parser_match_value(parser, start)
+        parser_value_arms(value.arms)
+        let span = value.span
+        return expression(ExpressionMatch(Box.new(move value)), span)
+    }
+
+    fn parser_match_value(parser: write Parser, start: Span) -> MatchExpression {
+        var access: Option<LoanMode> = None()
+        if parser_consumed(parser, TokenRead()) {
+            access = Some(LoanRead())
+        }
+        if parser_consumed(parser, TokenWrite()) {
+            access = Some(LoanWrite())
+        }
+        let value = parser_condition(parser)
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var arms = Vec<MatchArm>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            arms.push(parser_match_arm(parser))
+            parser_consumed(parser, TokenComma())
+            parser_skip_breaks(parser)
+        }
+        let end = parser_expect(parser, TokenRightBrace())
+        return MatchExpression {
+            access: access, value: move value, arms: move arms, span: span_through(start, end.span)
+        }
+    }
+
+    fn parser_match_arm(parser: write Parser) -> MatchArm {
+        var pattern = parser_pattern(parser)
+        while parser_consumed(parser, TokenPipe()) {
+            var alternative = parser_pattern(parser)
+            if semantic_names_match(parser.source, pattern.bindings, alternative.bindings) == false {
+                parser_report(parser, UnexpectedToken())
+            }
+            while alternative.choices.length() > 0 {
+                match alternative.choices.pop() {
+                    Some(kind) => {
+                        pattern.choices.push(move kind)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        parser_expect(parser, TokenFatArrow())
+        let body = parser_arm_body(parser)
+        let span = span_through(pattern.span, parser_previous_span(parser))
+        return MatchArm {
+            pattern: move pattern, body: move body, span: span
+        }
+    }
+
+    fn parser_pattern(parser: write Parser) -> Pattern {
+        let token = parser_token_at(parser, parser.offset)
+        let start = token.span
+        var bindings = Vec<Name>.new()
+        var choices = Vec<PatternKind>.new()
+        choices.push(parser_pattern_kind(parser, bindings))
+        return Pattern {
+            choices: move choices, bindings: move bindings, span: span_through(start, parser_previous_span(parser))
+        }
+    }
+
+    fn parser_pattern_kind(parser: write Parser, bindings: write Vec<Name>) -> PatternKind {
+        if parser_at(parser, TokenText()) {
+            let token = parser_advance(parser)
+            return PatternText(token.span)
+        }
+        if parser_at(parser, TokenInteger()) || parser_at(parser, TokenMinus()) {
+            let negative = parser_consumed(parser, TokenMinus())
+            let token = parser_expect(parser, TokenInteger())
+            return PatternInteger(token.integer, negative)
+        }
+        let name = parser_identifier(parser)
+        if parser_consumed(parser, TokenLeftParen()) {
+            while parser_at(parser, TokenRightParen()) == false && parser_at(parser, TokenEnd()) == false {
+                bindings.push(parser_identifier(parser))
+                if parser_consumed(parser, TokenComma()) == false {
+                    break
+                }
+            }
+            parser_expect(parser, TokenRightParen())
+        }
+        if parser_name_is(parser, name, "_") {
+            return PatternWildcard()
+        }
+        return PatternVariant(move name)
+    }
+
+    fn semantic_names_match(source: Shared<Vec<u8>>, left: Vec<Name>, right: Vec<Name>) -> bool {
+        if left.length() != right.length() {
+            return false
+        }
+        for index in 0..left.length() {
+            if sema::names_equal(source, left[index], right[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn parser_arm_body(parser: write Parser) -> Vec<Statement> {
+        if parser_at(parser, TokenLeftBrace()) {
+            return parser_block(parser)
+        }
+        let value = parser_expression(parser)
+        let span = value.span
+        var body = Vec<Statement>.new()
+        body.push(statement(StatementExpression(move value), span))
+        return move body
+    }
+
+    fn parser_value_arms(arms: write Vec<MatchArm>) -> void {
+        var index: usize = 0
+        while index < arms.length() {
+            parser_promote_tail(arms[index].body)
+            index = index + 1
+        }
+    }
+}

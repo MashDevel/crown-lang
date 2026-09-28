@@ -1,0 +1,28 @@
+module x86 {
+    struct WideFloatBoundLabels {
+        zero: LocalLabel
+        minimum: LocalLabel
+        maximum: LocalLabel
+        convert: LocalLabel
+    }
+
+    struct WideFloatBoundInput {
+        width: FloatWidth
+        signed: bool
+        labels: WideFloatBoundLabels
+    }
+
+    struct WideFloatConstant {
+        width: FloatWidth
+        target: FloatRegister
+        exponent: i32
+        negative: bool
+        zero: bool
+    }
+
+    struct WideFloatToU64 {
+        width: FloatWidth
+        source: FloatRegister
+        destination: Register
+    }
+}

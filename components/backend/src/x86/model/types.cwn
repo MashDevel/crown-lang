@@ -1,0 +1,291 @@
+module x86 {
+    copy struct Condition {
+        code: u8
+    }
+
+    fn Overflow() -> Condition {
+        Condition {
+            code: 0
+        }
+    }
+
+    fn NotOverflow() -> Condition {
+        Condition {
+            code: 1
+        }
+    }
+
+    fn Equal() -> Condition {
+        Condition {
+            code: 4
+        }
+    }
+
+    fn NotEqual() -> Condition {
+        Condition {
+            code: 5
+        }
+    }
+
+    fn Less() -> Condition {
+        Condition {
+            code: 12
+        }
+    }
+
+    fn LessOrEqual() -> Condition {
+        Condition {
+            code: 14
+        }
+    }
+
+    fn Greater() -> Condition {
+        Condition {
+            code: 15
+        }
+    }
+
+    fn GreaterOrEqual() -> Condition {
+        Condition {
+            code: 13
+        }
+    }
+
+    fn Below() -> Condition {
+        Condition {
+            code: 2
+        }
+    }
+
+    fn BelowOrEqual() -> Condition {
+        Condition {
+            code: 6
+        }
+    }
+
+    fn Above() -> Condition {
+        Condition {
+            code: 7
+        }
+    }
+
+    fn AboveOrEqual() -> Condition {
+        Condition {
+            code: 3
+        }
+    }
+
+    fn Parity() -> Condition {
+        Condition {
+            code: 10
+        }
+    }
+
+    fn NotParity() -> Condition {
+        Condition {
+            code: 11
+        }
+    }
+
+    copy enum FloatWidth {
+        Float32
+        Float64
+    }
+
+    enum FloatBinaryOperator {
+        FloatAdd
+        FloatSubtract
+        FloatMultiply
+        FloatDivide
+    }
+
+    enum MemoryBinaryOperator {
+        MemoryAdd
+        MemorySubtract
+        MemoryMultiply
+        MemoryAnd
+        MemoryOr
+        MemoryXor
+        MemoryCompare
+    }
+
+    enum ImmediateOperator {
+        ImmediateAdd
+        ImmediateAnd
+        ImmediateOr
+        ImmediateSubtract
+        ImmediateXor
+        ImmediateCompare
+    }
+
+    enum FloatUnaryOperator {
+        FloatSquareRoot
+    }
+
+    enum FloatStackUnaryOperator {
+        FloatStackSine
+        FloatStackCosine
+        FloatStackTangent
+        FloatStackExponential
+    }
+
+    copy enum Extension {
+        SignExtend
+        ZeroExtend
+    }
+
+    copy enum Width {
+        Byte
+        Word
+        Dword
+        Qword
+    }
+
+    enum ControlRegister {
+        Cr0
+        Cr2
+        Cr3
+        Cr4
+    }
+
+    enum PortWidth {
+        PortByte
+        PortWord
+        PortDword
+    }
+
+    enum LocalLabel {
+        BlockLabel(usize)
+        InternalLabel(usize)
+    }
+
+    fn local_label_copy(label: LocalLabel) -> LocalLabel {
+        match read label {
+            BlockLabel(value) => {
+                return BlockLabel(value)
+            }
+            InternalLabel(value) => {
+                return InternalLabel(value)
+            }
+        }
+    }
+
+    fn local_label_equal(left: LocalLabel, right: LocalLabel) -> bool {
+        match read left {
+            BlockLabel(value) => {
+                match read right {
+                    BlockLabel(other) => {
+                        return value == other
+                    }
+                    InternalLabel(other) => {
+                        other;
+                        return false
+                    }
+                }
+            }
+            InternalLabel(value) => {
+                match read right {
+                    InternalLabel(other) => {
+                        return value == other
+                    }
+                    BlockLabel(other) => {
+                        other;
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    fn width_is_word(width: Width) -> bool {
+        match read width {
+            Word => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn width_is_byte(width: Width) -> bool {
+        match read width {
+            Byte => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn width_is_qword(width: Width) -> bool {
+        match read width {
+            Qword => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn width_code(width: Width) -> u8 {
+        match read width {
+            Byte => {
+                return 0
+            }
+            Word => {
+                return 1
+            }
+            Dword => {
+                return 2
+            }
+            Qword => {
+                return 3
+            }
+        }
+    }
+
+    fn float_width_code(width: FloatWidth) -> u8 {
+        match read width {
+            Float32 => {
+                return 0
+            }
+            Float64 => {
+                return 1
+            }
+        }
+    }
+
+    fn control_register_code(register: ControlRegister) -> u8 {
+        match read register {
+            Cr0 => {
+                return 0
+            }
+            Cr2 => {
+                return 2
+            }
+            Cr3 => {
+                return 3
+            }
+            Cr4 => {
+                return 4
+            }
+        }
+    }
+
+    fn port_width_code(width: PortWidth) -> u8 {
+        match read width {
+            PortByte => {
+                return 0
+            }
+            PortWord => {
+                return 1
+            }
+            PortDword => {
+                return 2
+            }
+        }
+    }
+}

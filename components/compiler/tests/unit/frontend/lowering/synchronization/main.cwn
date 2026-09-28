@@ -1,0 +1,65 @@
+fn sync_check(fixture: SyncCase, status: u64, optimized: bool) -> Result<void, Text> {
+    var program = sync_lower(sync_source(fixture.body))?
+    if optimized {
+        optimize::generated(program)
+    }
+    if status != 0 {
+        sync_inject(program, fixture.operation, status)?
+    }
+    let result = match sync_execute(move program) {
+        Ok(value) => move value
+        Err(error) => {
+            return Err(sync_failure(fixture, status, optimized, error))
+        }
+    }
+    if sync_expected(result, status != 0) {
+        return Ok(())
+    }
+    return Err(sync_failure(fixture, status, optimized, std::text::joined(result.stdout, result.stderr)))
+}
+
+fn sync_failure(fixture: SyncCase, status: u64, optimized: bool, details: Text) -> Text {
+    var message = std::text::joined("synchronization regression: ", fixture.operation)
+    std::text::append(message, std::text::joined(" status ", std::text::decimal(status)))
+    std::text::append(message, if optimized {
+            " optimized"
+        } else {
+            " unoptimized"
+        })
+    std::text::append(message, std::text::joined("\n", fixture.body))
+    std::text::append(message, std::text::joined("\n", details))
+    return move message
+}
+
+fn sync_expected(result: toolchain::ProcessResult, failed: bool) -> bool {
+    if failed {
+        return result.status != 0 && result.stdout.length() == 0 && std::text::equal(result.stderr, "synchronization failed\n")
+    }
+    return result.status == 0 && result.stderr.length() == 0 && std::text::contains(result.stdout, "continued\n")
+}
+
+fn run() -> Result<void, Text> {
+    let cases = sync_cases()
+    let statuses = [u64.from(0), u64.from(1), u64.from(11), u64.from(2147483648), u64.from(4294967295)]
+    for optimized in 0..2 {
+        for index in 0..cases.length() {
+            for status in 0..5 {
+                sync_check(cases[index], statuses[status], optimized == 1)?
+            }
+        }
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(done) => {
+            done;
+            42
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

@@ -1,0 +1,7 @@
+fn main() -> u32 {
+    let values = [1, 2]
+    loan read values as view {
+        let stored = [view]
+    }
+    return 0
+}

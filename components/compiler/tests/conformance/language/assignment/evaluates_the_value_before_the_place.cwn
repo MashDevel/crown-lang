@@ -1,0 +1,14 @@
+struct Item {
+    value: u64
+}
+fn refresh(item: take Item) -> Item {
+    return move item
+}
+fn main() -> u32 {
+    var item = Item {
+        value: 1
+    }
+    item = refresh(move item)
+    item.value = item.value + 1
+    return u32.from(item.value)
+}

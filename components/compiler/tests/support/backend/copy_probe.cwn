@@ -1,0 +1,74 @@
+struct CopyProbe {
+    size: u64
+    source_base: x86::Register
+    source_offset: i32
+    destination_base: x86::Register
+    destination_offset: i32
+}
+
+fn probe_load(input: x86::LoadSizedArgs, probe: CopyProbe, source: Vec<u8>) -> Result<Vec<u8>, u32> {
+    safety_require(x86::register_code(input.base) == x86::register_code(probe.source_base), 30)?
+    safety_require(input.offset >= probe.source_offset, 31)?
+    let offset = usize.from(input.offset - probe.source_offset)
+    let bytes = usize.from(1) << usize.from(x86::width_code(input.width))
+    safety_require(u64.from(offset + bytes) <= probe.size, 32)?
+    var loaded = Vec<u8>.new()
+    for index in 0..bytes {
+        loaded.push(source[offset + index + 1])
+    }
+    return Ok(move loaded)
+}
+
+fn probe_store(input: x86::StoreSizedArgs, probe: CopyProbe, output: write Vec<u8>, loaded: Vec<u8>) -> Result<void, u32> {
+    safety_require(x86::register_code(input.base) == x86::register_code(probe.destination_base), 33)?
+    safety_require(input.offset >= probe.destination_offset, 34)?
+    let offset = usize.from(input.offset - probe.destination_offset)
+    let bytes = usize.from(1) << usize.from(x86::width_code(input.width))
+    safety_require(u64.from(offset + bytes) <= probe.size && bytes == loaded.length(), 35)?
+    for index in 0..bytes {
+        output[offset + index + 1] = loaded[index]
+    }
+    return Ok(())
+}
+
+fn probe_copy_instruction(instruction: x86::Instruction, probe: CopyProbe, source: Vec<u8>, output: write Vec<u8>, loaded: write Vec<u8>) -> Result<void, u32> {
+    match read instruction {
+        x86::LoadSized(input) => {
+            loaded = probe_load(input, probe, source)?
+        }
+        x86::StoreSized(input) => {
+            probe_store(input, probe, output, loaded)?
+        }
+        x86::Move(destination, input) => {
+            safety_require(x86::register_code(destination) == x86::register_code(input), 36)?
+        }
+        x86::MoveSized(input) => {
+            safety_require(x86::register_code(input.destination) == x86::register_code(input.source), 36)?
+        }
+        _ => {
+            return Err(37)
+        }
+    }
+    return Ok(())
+}
+
+fn probe_copy(instructions: Vec<x86::Instruction>, probe: CopyProbe) -> Result<void, u32> {
+    var source = Vec<u8>.new()
+    var output = Vec<u8>.new()
+    source.push(165)
+    output.push(165)
+    for index in 0..usize.from(probe.size) {
+        source.push(u8.from(index + 1))
+        output.push(0)
+    }
+    source.push(165)
+    output.push(165)
+    var loaded = Vec<u8>.new()
+    for index in 0..instructions.length() {
+        probe_copy_instruction(instructions[index], probe, source, output, loaded)?
+    }
+    for index in 0..source.length() {
+        safety_require(output[index] == source[index], 38)?
+    }
+    return Ok(())
+}

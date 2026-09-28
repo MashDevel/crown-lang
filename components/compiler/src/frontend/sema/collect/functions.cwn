@@ -1,0 +1,79 @@
+module sema {
+    fn collect_functions(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.functions.length() {
+            loan read program.functions[index] as function {
+                let context = FunctionContext {
+                    resolution: Resolution {
+                        parameters: names_copy(function.type_parameters), self_symbol: None()
+                    }
+                    kind: FreeFunction()
+                    foreign: false
+                    symbol: function.name.span
+                }
+                collect_function(symbols, function, move context)
+            }
+            index = index + 1
+        }
+        collect_foreign_functions(symbols, program)
+        collect_interface_functions(symbols, program)
+        collect_implementation_functions(symbols, program)
+    }
+
+    fn collect_foreign_functions(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.foreign_functions.length() {
+            loan read program.foreign_functions[index] as function {
+                let context = FunctionContext {
+                    resolution: resolution_new()
+                    kind: FreeFunction()
+                    foreign: true
+                    symbol: function.symbol
+                }
+                collect_foreign_function(symbols, function, move context)
+            }
+            index = index + 1
+        }
+    }
+
+    fn collect_interface_functions(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.interfaces.length() {
+            loan read program.interfaces[index] as declaration {
+                match find_symbol(symbols, declaration.name) {
+                    None => {
+                    }
+                    Some(owner) => {
+                        collect_interface_methods(symbols, declaration, owner)
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn collect_interface_methods(symbols: write Symbols, declaration: frontend::InterfaceDecl, owner: usize) -> void {
+        var index: usize = 0
+        while index < declaration.methods.length() {
+            loan read declaration.methods[index] as method {
+                let context = Resolution {
+                    parameters: Vec<frontend::Name>.new(), self_symbol: Some(owner)
+                }
+                let parameters = resolve_parameters(symbols, context, method.parameters)
+                let result = resolve_type(symbols, context, method.result)
+                symbols.functions.push(Function {
+                        name: frontend::name_copy(method.name)
+                        type_parameters: Vec<frontend::Name>.new()
+                        parameters: move parameters
+                        result: move result
+                        kind: InterfaceFunction(owner)
+                        unsafe_value: false
+                        variadic_start: None()
+                        foreign: false
+                        symbol: method.name.span
+                    })
+            }
+            index = index + 1
+        }
+    }
+}

@@ -1,0 +1,6 @@
+copy struct Owner<T> {
+    value: T
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,8 @@
+struct Record { value: u32, text: Text }
+fn main() -> u32 {
+    let value: u32 = 7
+    let text = "hello"
+    let record = Record { value, move text }
+    if record.value != 7 || record.text.length() != 5 { return 1 }
+    return 0
+}

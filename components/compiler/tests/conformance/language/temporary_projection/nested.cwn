@@ -1,0 +1,38 @@
+resource Element {
+    text: Text, code: u32, drop {
+        print(code)
+    }
+}
+struct Wrapper<T> {
+    value: T
+}
+fn elements() -> Vec<Element> {
+    var values = Vec<Element>.new()
+    values.push(Element {
+            text: "abc", code: 51
+        })
+    values.push(Element {
+            text: "de", code: 52
+        })
+    return move values
+}
+fn wrapped<T>(value: take T) -> Wrapper<T> {
+    return Wrapper<T> {
+        value: move value
+    }
+}
+fn inspect(text: Text) -> u32 {
+    print(u32.from(text.length()))
+    return u32.from(text.length())
+}
+fn main() -> u32 {
+    if inspect(elements()[0].text) != 3 {
+        return 1
+    }
+    if inspect(wrapped(Element {
+                text: "fghi", code: 53
+            }).value.text) != 4 {
+        return 2
+    }
+    return 0
+}

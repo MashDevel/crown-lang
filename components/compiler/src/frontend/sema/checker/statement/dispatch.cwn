@@ -1,0 +1,207 @@
+module sema {
+    fn checker_statement(checker: write Checker, statement: frontend::Statement) -> void {
+        let previous = replace(checker.current_span, statement.span)
+        checker_statement_dispatch(checker, statement)
+        checker.current_span = previous
+    }
+
+    fn checker_statements(checker: write Checker, statements: Vec<frontend::Statement>) -> void {
+        var index: usize = 0
+        while index < statements.length() && checker.continuing {
+            loan read statements[index] as statement {
+                checker_statement(checker, statement)
+            }
+            index = index + 1
+        }
+    }
+
+    fn checker_statement_dispatch(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementDestructure(mutable_value, bindings, expression) => {
+                mutable_value;
+                bindings;
+                expression;
+                checker_destructure(checker, statement)
+            }
+            frontend::StatementUpdate(target, operator, value) => {
+                checker_update(checker, target, operator, value)
+            }
+            frontend::StatementBind(name, mutable_value, annotation, value) => {
+                name;
+                mutable_value;
+                annotation;
+                value;
+                return checker_binding(checker, statement)
+            }
+            frontend::StatementAssign(target, value) => {
+                checker_assignment(checker, target, value)
+            }
+            frontend::StatementReturn(value, implicit) => {
+                value;
+                implicit;
+                checker_return_node(checker, statement)
+            }
+            frontend::StatementPrint(value) => {
+                checker_print(checker, value)
+            }
+            frontend::StatementExpression(value) => {
+                checker_discarded_expression(checker, value)
+            }
+            _ => {
+                checker_scoped_statement(checker, statement)
+            }
+        }
+    }
+
+    struct BindingResult {
+        name: frontend::Name
+        mutable_value: bool
+        span: frontend::Span
+        info: ExpressionInfo
+        expected: Type
+        annotated: bool
+    }
+
+    fn checker_binding(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementBind(name, mutable_value, annotation, value) => {
+                var expected = Infer()
+                var annotated = false
+                match read annotation {
+                    None => {
+                    }
+                    Some(reference) => {
+                        expected = checker_resolve_type(checker, reference);
+                        annotated = true
+                    }
+                }
+                match checker_expression_expected(checker, value, expected) {
+                    None => {
+                    }
+                    Some(info) => {
+                        let result = BindingResult {
+                            name: frontend::name_copy(name)
+                            mutable_value: mutable_value
+                            span: statement.span
+                            info: move info
+                            expected: type_copy(expected)
+                            annotated: annotated
+                        }
+                        checker_store_binding(checker, move result)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "invalid binding or statement")
+            }
+        }
+    }
+
+    fn checker_store_binding(checker: write Checker, result: take BindingResult) -> void {
+        checker.current_span = result.span
+        var value_type = concrete(result.info.value_type)
+        if result.annotated {
+            if assignable(checker.symbols, result.expected, result.info.value_type) == false {
+                checker_type_error(checker, result.expected, result.info.value_type)
+                return
+            }
+            value_type = type_copy(result.expected)
+        }
+        if type_is_view(checker.symbols, value_type) == false && checker_require_storable(checker, value_type) == false {
+            return
+        }
+        if type_is_copy_with_symbols(checker.symbols, value_type) == false && value_is_borrowed(result.info.value) {
+            checker_error(checker, "binding an owned value requires move")
+            return
+        }
+        var access = OwnedAccess()
+        if type_is_view(checker.symbols, value_type) {
+            access = ReadAccess()
+            if result.mutable_value {
+                access = WriteAccess()
+            }
+        }
+        let variable = Variable {
+            name: frontend::name_copy(result.name)
+            copy_value: type_is_copy_with_symbols(checker.symbols, value_type)
+            value_type: move value_type
+            mutable_value: result.mutable_value
+            state: Available()
+            access: access
+            state_span: result.span
+            span: result.span
+        }
+        checker_add_variable(checker, move variable)
+    }
+
+    fn checker_control_statement(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementIf(condition, then_body, else_body) => {
+                condition;
+                then_body;
+                else_body;
+                checker_if(checker, statement)
+            }
+            frontend::StatementWhile(condition, body) => {
+                condition;
+                body;
+                checker_while(checker, statement)
+            }
+            frontend::StatementFor(name, start, end, body) => {
+                name;
+                start;
+                end;
+                body;
+                checker_range(checker, statement)
+            }
+            frontend::StatementBreak => {
+                checker_break(checker)
+            }
+            frontend::StatementContinue => {
+                checker_continue(checker)
+            }
+            frontend::StatementMatch(value) => {
+                checker_match(checker, value)
+            }
+            _ => {
+                checker_error(checker, "invalid binding or statement")
+            }
+        }
+    }
+
+    fn checker_scoped_statement(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementLoan(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                body;
+                checker_loan(checker, statement)
+            }
+            frontend::StatementLock(mode, source, alias, body) => {
+                mode;
+                source;
+                alias;
+                body;
+                checker_lock(checker, statement)
+            }
+            frontend::StatementArenaAccess(mode, arena, handle, alias, body) => {
+                mode;
+                arena;
+                handle;
+                alias;
+                body;
+                checker_arena_access(checker, statement)
+            }
+            frontend::StatementThreadScope(body) => {
+                checker_thread_scope(checker, body)
+            }
+            frontend::StatementUnsafe(body) => {
+                checker_unsafe(checker, body)
+            }
+            _ => {
+                checker_control_statement(checker, statement)
+            }
+        }
+    }
+}

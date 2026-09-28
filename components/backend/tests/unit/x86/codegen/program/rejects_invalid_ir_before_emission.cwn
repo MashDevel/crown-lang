@@ -1,0 +1,20 @@
+fn main() -> u32 {
+    var program = ir::program_new()
+    ir::program_set_entry(program, 0)
+    match x86::codegen(move program) {
+        Ok(object) => {
+            object;
+            return 1
+        }
+        Err(error) => {
+            match read error.kind {
+                x86::CodegenInvalidIr => {
+                    return 42
+                }
+                _ => {
+                    return 2
+                }
+            }
+        }
+    }
+}

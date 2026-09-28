@@ -1,0 +1,66 @@
+module lowering {
+    struct ImportedCall {
+        name: Text
+        signature: ir::Signature
+        arguments: Vec<usize>
+    }
+
+    fn function_imported_call(compiler: write FunctionCompiler, request: ImportedCall) -> Result<Option<usize>, u32> {
+        var target: Option<usize> = None()
+        var index: usize = 0
+        while index < compiler.tables.runtime_imports.length() {
+            loan read compiler.tables.runtime_imports[index] as binding {
+                if std::text::equal(binding.name, request.name) {
+                    target = Some(binding.function)
+                }
+            }
+            match read target {
+                Some(value) => {
+                    value;
+                    index = compiler.tables.runtime_imports.length()
+                }
+                None => {
+                    index = index + 1
+                }
+            }
+        }
+        var function: usize = 0
+        match target {
+            Some(value) => {
+                function = value
+            }
+            None => {
+                return Err(93)
+            }
+        }
+        let address = function_append_value(compiler, ir::InstructionFunctionAddress(function))?
+        let call = ir::InstructionCallIndirect(address, ir::signature_copy(request.signature), ir::usize_values_copy(request.arguments))
+        return function_append(compiler, move call)
+    }
+
+    fn function_named_id(values: Vec<NamedFunction>, name: Text) -> Option<usize> {
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as binding {
+                if std::text::equal(binding.name, name) {
+                    return Some(binding.function)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+
+    fn function_global_id(compiler: FunctionCompiler, name: Text) -> Option<usize> {
+        var index: usize = 0
+        while index < compiler.tables.globals.length() {
+            loan read compiler.tables.globals[index] as binding {
+                if std::text::equal(binding.name, name) {
+                    return Some(binding.global)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+}

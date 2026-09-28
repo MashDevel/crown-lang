@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let value = "x";
+    for index in 0..3 {
+        let taken = move value;
+        break
+    }
+    return 0
+}

@@ -1,0 +1,17 @@
+module frontend {
+    fn parser_path(parser: write Parser) -> Path {
+        let name = parser_identifier(parser)
+        let start = name.span
+        var end = name.span
+        var segments = Vec<Name>.new()
+        segments.push(move name)
+        while parser_consumed(parser, TokenDot()) {
+            let segment = parser_identifier(parser)
+            end = segment.span
+            segments.push(move segment)
+        }
+        return Path {
+            segments: move segments, span: span_through(start, end)
+        }
+    }
+}

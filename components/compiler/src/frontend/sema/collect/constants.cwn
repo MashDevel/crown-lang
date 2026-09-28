@@ -1,0 +1,35 @@
+module sema {
+    fn collect_constants(symbols: write Symbols, program: frontend::Program) -> void {
+        var index: usize = 0
+        while index < program.constants.length() {
+            loan read program.constants[index] as constant {
+                symbols.current_span = constant.name.span
+                match find_constant(symbols, constant.name) {
+                    Some(existing) => {
+                        existing;
+                        symbols_error(symbols, "constant requires a unique name and a scalar type")
+                    }
+                    None => {
+                        let resolution = resolution_new()
+                        let value_type = initial_constant_type(symbols, resolution, constant.value_type)
+                        if constant_type_valid(value_type) == false && constant_is_array_declaration(constant.value_type) == false {
+                            symbols_error(symbols, "constant requires a unique name and a scalar type")
+                        }
+                        symbols.constants.push(Constant {
+                                name: frontend::name_copy(constant.name)
+                                value_type: move value_type
+                                value: ConstantPending()
+                                elements: Vec<ConstantScalar>.new()
+                            })
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+
+    fn constant_type_valid(value_type: Type) -> bool {
+        let kind = type_builtin(value_type)
+        return builtin_is_constant(kind)
+    }
+}

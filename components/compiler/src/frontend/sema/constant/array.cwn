@@ -1,0 +1,84 @@
+module sema {
+    const MAX_CONSTANT_ARRAY_BYTES: usize = 16777216
+
+    fn evaluate_array_constants(checker: write Checker, program: frontend::Program) -> void {
+        if checker.errors != 0 || checker.symbols.errors != 0 {
+            return
+        }
+        loan read program.constants as declarations {
+            loan read checker.expressions as expressions {
+                let context = ConstantContext {
+                    declarations: declarations, expressions: expressions
+                }
+                for index in 0..declarations.length() {
+                    if scalar_array_type(checker.symbols.constants[index].value_type) {
+                        evaluate_array_constant(checker.symbols, context, index)
+                    }
+                }
+            }
+        }
+    }
+
+    fn evaluate_array_constant(symbols: write Symbols, context: ConstantContext, index: usize) -> void {
+        symbols.current_span = context.declarations[index].name.span
+        if constant_array_within_limit(symbols.constants[index].value_type) == false {
+            symbols_error(symbols, "constant array exceeds the 16 MiB data limit")
+            return
+        }
+        match constant_array_elements(symbols, context, context.declarations[index].value) {
+            Ok(elements) => {
+                symbols.constants[index].elements = move elements
+                symbols.constants[index].value = ConstantArrayResolved()
+            }
+            Err(error) => {
+                symbols_error(symbols, move error)
+            }
+        }
+    }
+
+    fn constant_array_elements(symbols: write Symbols, context: ConstantContext, expression: frontend::Expression) -> Result<Vec<ConstantScalar>, Text> {
+        match read expression.kind {
+            frontend::ExpressionArray(values) => {
+                var elements = Vec<ConstantScalar>.new()
+                for index in 0..values.length() {
+                    elements.push(constant_expression(symbols, context, values[index])?)
+                }
+                return Ok(move elements)
+            }
+            frontend::ExpressionArrayRepeat(value, length) => {
+                return constant_array_repeat(symbols, context, value, length)
+            }
+            _ => {
+            }
+        }
+        return Err("array constant requires a scalar array literal or repetition")
+    }
+    fn constant_array_repeat(symbols: write Symbols, context: ConstantContext, value: Box<frontend::Expression>, length: frontend::ArrayLength) -> Result<Vec<ConstantScalar>, Text> {
+        let count = resolve_array_length(symbols, length)
+        loan read value as item {
+            let scalar = constant_expression(symbols, context, item)?
+            var elements = Vec<ConstantScalar>.new()
+            for index in 0..count {
+                index;
+                elements.push(scalar)
+            }
+            return Ok(move elements)
+        }
+    }
+    fn constant_array_within_limit(value_type: Type) -> bool {
+        match read value_type {
+            ArrayType(element, length) => {
+                loan read element as value {
+                    var bytes = usize.from(builtin_width(type_builtin(value)) / 8)
+                    if bytes == 0 {
+                        bytes = 1
+                    }
+                    return length <= MAX_CONSTANT_ARRAY_BYTES / bytes
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

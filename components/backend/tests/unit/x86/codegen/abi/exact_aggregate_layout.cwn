@@ -1,0 +1,58 @@
+fn fallback_layout(size: u64, alignment: u32, occupied: usize) -> Result<void, u32> {
+    var assignment = x86::abi_assignment_new()
+    assignment.integer = occupied
+    assignment.float = 8
+    assignment.stack = 1
+    let aggregate = ir::AggregateRegisters(size, alignment, safety_components(size))
+    let location = match x86::abi_aggregate(aggregate, assignment) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err(1)
+        }
+    }
+    match move location {
+        x86::ArgumentMemory(slot, slots, copied) => {
+            safety_require(copied == size, 2)?
+            safety_require(u64.from(slots) ==(size + 7) / 8, 3)?
+            safety_require(u64.from(slot * 8) % u64.from(alignment) == 0, 4)?
+            safety_require(assignment.stack == slot + slots, 5)?
+        }
+        _ => {
+            return Err(6)
+        }
+    }
+    return safety_require(assignment.integer == occupied && assignment.float == 8, 7)
+}
+
+fn exact_aggregate_layout() -> Result<void, u32> {
+    let sizes: [u64; 6] = [1, 3, 5, 7, 12, 15]
+    for index in 0..6 {
+        fallback_layout(sizes[index], 1, 6)?
+        fallback_layout(sizes[index], 16, 6)?
+    }
+    fallback_layout(12, 4, 5)?
+    var assignment = x86::abi_assignment_new()
+    let aggregate = ir::AggregateRegisters(12, 4, safety_components(12))
+    match x86::abi_aggregate(aggregate, assignment) {
+        Ok(location) => {
+            match move location {
+                x86::ArgumentRegisters(parts) => {
+                    safety_require(parts.length() == 2, 8)?
+                }
+                _ => {
+                    return Err(9)
+                }
+            }
+        }
+        Err(error) => {
+            error;
+            return Err(10)
+        }
+    }
+    return safety_require(assignment.integer == 2 && assignment.stack == 0, 11)
+}
+
+fn main() -> u32 {
+    return safety_status(exact_aggregate_layout())
+}

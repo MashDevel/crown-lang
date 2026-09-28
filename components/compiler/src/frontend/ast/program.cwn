@@ -1,0 +1,112 @@
+module frontend {
+    struct NamespaceModule {
+        name: Text
+        span: Span
+    }
+
+    struct Program {
+        modules: Vec<NamespaceModule>
+        constants: Vec<ConstDecl>
+        structs: Vec<StructDecl>
+        enums: Vec<EnumDecl>
+        resources: Vec<ResourceDecl>
+        interfaces: Vec<InterfaceDecl>
+        implementations: Vec<ImplDecl>
+        foreign_functions: Vec<ForeignFunction>
+        functions: Vec<Function>
+    }
+
+    struct ConstDecl {
+        name: Name
+        value_type: TypeRef
+        value: Expression
+        span: Span
+    }
+
+    struct ResourceDecl {
+        name: Name
+        parameters: Vec<Name>
+        opaque_value: bool
+        transferable: bool
+        fields: Vec<Field>
+        drop_body: Vec<Statement>
+        span: Span
+    }
+
+    struct InterfaceDecl {
+        name: Name
+        methods: Vec<InterfaceMethod>
+        span: Span
+    }
+
+    struct InterfaceMethod {
+        name: Name
+        parameters: Vec<Parameter>
+        result: TypeRef
+        span: Span
+    }
+
+    struct ImplDecl {
+        interface_name: Name
+        target: TypeRef
+        methods: Vec<Function>
+        span: Span
+    }
+
+    struct StructDecl {
+        view_value: bool
+        name: Name
+        copy_value: bool
+        parameters: Vec<Name>
+        fields: Vec<Field>
+        span: Span
+    }
+
+    struct EnumDecl {
+        name: Name
+        copy_value: bool
+        parameters: Vec<Name>
+        variants: Vec<Variant>
+        span: Span
+    }
+
+    struct Variant {
+        name: Name
+        fields: Vec<TypeRef>
+        span: Span
+    }
+
+    struct Function {
+        name: Name
+        unsafe_value: bool
+        type_parameters: Vec<Name>
+        parameters: Vec<Parameter>
+        result: TypeRef
+        body: Vec<Statement>
+        span: Span
+    }
+
+    struct ForeignFunction {
+        variadic_start: Option<usize>
+        abi: Span
+        name: Name
+        symbol: Span
+        parameters: Vec<Parameter>
+        result: TypeRef
+        span: Span
+    }
+
+    fn program_new() -> Program {
+        return Program {
+            modules: Vec<NamespaceModule>.new()
+            constants: Vec<ConstDecl>.new()
+            structs: Vec<StructDecl>.new()
+            enums: Vec<EnumDecl>.new()
+            resources: Vec<ResourceDecl>.new()
+            interfaces: Vec<InterfaceDecl>.new()
+            implementations: Vec<ImplDecl>.new()
+            foreign_functions: Vec<ForeignFunction>.new()
+            functions: Vec<Function>.new()
+        }
+    }
+}

@@ -1,0 +1,40 @@
+fn trap() -> bool {
+    let zero = 0
+    return 1 / zero == 0
+}
+fn short_circuit() -> u32 {
+    if false && trap() {
+        return 1
+    }
+    if true || trap() {
+    } else {
+        return 2
+    }
+    return 0
+}
+
+fn truth_table() -> u32 {
+    if true && true {
+    } else {
+        return 3
+    }
+    if false || true {
+    } else {
+        return 4
+    }
+    if true && false {
+        return 5
+    }
+    if false || false {
+        return 6
+    }
+    return 0
+}
+
+fn main() -> u32 {
+    let result = short_circuit()
+    if result != 0 {
+        return result
+    }
+    truth_table()
+}

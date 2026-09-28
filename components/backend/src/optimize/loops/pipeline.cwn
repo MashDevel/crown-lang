@@ -1,0 +1,12 @@
+module optimize {
+    fn optimize_loops(function: write ir::Function) -> usize {
+        if function.blocks.length() > 256 || inline_cost(function) > 2048 {
+            return 0
+        }
+        let unrolled = unroll(function)
+        if unrolled != 0 {
+            return unrolled
+        }
+        return unswitch(function)
+    }
+}

@@ -1,0 +1,59 @@
+module arm64 {
+    fn append_root_runtime(output: write object::CompilerObject) -> Result<void, Text> {
+        let names = std::text::split("crown_root_register|crown_root_acquire|crown_root_close|crown_root_release|crown_root_declare|crown_root_declare_publish", 124)
+        var required = false
+        for index in 0..names.length() {
+            required = required || runtime_required(output, names[index])
+        }
+        if required == false {
+            return Ok(())
+        }
+        runtime_zero(output, "__compiler_root_entries", 40960)
+        runtime_zero(output, "__compiler_root_declarations", 40960)
+        runtime_zero(output, "__compiler_root_declaration_lock", 8)
+        root_ownership(output)?
+        root_declare(output)?
+        root_publish(output)?
+        return Ok(())
+    }
+    fn root_entry(compiler: write Compiler, token: u32, invalid: usize) -> void {
+        runtime_memory(compiler, 4, token, 0, true)
+        runtime_compare(compiler, 4, 1024)
+        runtime_condition(compiler, 2, invalid)
+        runtime_memory(compiler, 5, token, 8, true)
+        runtime_compare(compiler, 5, 0)
+        runtime_condition(compiler, 0, invalid)
+        symbol_address(compiler, "__compiler_root_entries", 9)
+        immediate(compiler, 15, 40)
+        emit_registers(compiler, 2600500224, 4, 4, 15)
+        return emit_registers(compiler, 2332033024, 9, 9, 4)
+    }
+    fn root_success(compiler: write Compiler) -> void {
+        immediate(compiler, 0, 0)
+        return epilogue(compiler)
+    }
+    fn root_abort(compiler: write Compiler) -> void {
+        call_symbol(compiler, "abort")
+        emit(compiler, 3558866944)
+        return
+    }
+    fn root_failure(output: write object::CompilerObject) -> Result<void, Text> {
+        var compiler = runtime_compiler(0)
+        runtime_memory(compiler, 31, 0, 0, false)
+        runtime_memory(compiler, 1, 0, 8, false)
+        runtime_memory(compiler, 31, 0, 16, false)
+        runtime_move(compiler, 0, 1)
+        emit(compiler, 3596551104)
+        return runtime_finish(output, compiler, "__compiler_root_failure")
+    }
+
+    fn root_ownership(output: write object::CompilerObject) -> Result<void, Text> {
+        root_register(output)?
+        root_destroy(output)?
+        root_acquire(output)?
+        root_close(output)?
+        root_release(output)?
+        return root_failure(output)
+    }
+
+}

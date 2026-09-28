@@ -1,0 +1,9 @@
+fn main() -> u32 {
+    let text = "value"
+    loan read text as bytes {
+        loan write bytes[0..1] as writable {
+            writable[0] = 0
+        }
+    }
+    return 0
+}

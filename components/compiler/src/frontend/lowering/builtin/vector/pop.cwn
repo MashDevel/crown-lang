@@ -1,0 +1,78 @@
+module lowering {
+    fn vector_pop(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method;
+                arguments
+                var state = VectorState {
+                    address: 0, element: sema::Invalid(), length_address: 0, capacity_address: 0, length: 0, capacity: 0
+                }
+                loan read receiver as value {
+                    state = vector_state(compiler, analysis, value)?
+                }
+                let result_type = function_expression_type(compiler, analysis, expression)?
+                let result = function_stack(compiler, analysis.checker.symbols, result_type)?
+                let zero = Place {
+                    address: result, value_type: sema::type_copy(result_type)
+                }
+                function_zero(compiler, analysis.checker.symbols, zero)?
+                let pop = VectorPop {
+                    state: vector_state_copy(state), result: result
+                }
+                branch_vector_pop(compiler, analysis.checker.symbols, pop)?
+                return Ok(AddressValue(result, move result_type))
+            }
+            _ => {
+                return Err(158)
+            }
+        }
+    }
+
+    struct VectorPop {
+        state: VectorState
+        result: usize
+    }
+
+    fn branch_vector_pop(compiler: write FunctionCompiler, symbols: sema::Symbols, request: VectorPop) -> Result<void, u32> {
+        let zero_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, zero_type, 0)
+        let present = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), request.state.length, zero))?
+        let some = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(present, some, ready))?
+        function_select_block(compiler, some)
+        pop_vector_item(compiler, symbols, request)?
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, ready)
+        return Ok(())
+    }
+
+    fn pop_vector_item(compiler: write FunctionCompiler, symbols: sema::Symbols, request: VectorPop) -> Result<void, u32> {
+        let one_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, one_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), request.state.length, one))?
+        let length_store = StoreRequest {
+            address: request.state.length_address, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, length_store)?
+        let data = function_load_pointer(compiler, request.state.address)?
+        let layout = layout(symbols, request.state.element)?
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, size_type, layout.size)
+        let offset = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), next, size))?
+        let source = function_append_value(compiler, ir::InstructionOffset(data, offset))?
+        let tag_type = ir::TypeInteger(ir::IntegerWidth32())
+        let tag = function_integer(compiler, tag_type, 1)
+        let tag_store = StoreRequest {
+            address: request.result, value: tag, value_type: sema::builtin_leaf(sema::U32())
+        }
+        function_store(compiler, symbols, tag_store)?
+        let field_offset = align_to(4, layout.alignment)
+        let target = function_offset(compiler, request.result, field_offset)?
+        let value = AddressValue(source, sema::type_copy(request.state.element))
+        let transfer = CopyRequest {
+            destination: target, value: move value
+        }
+        return function_copy(compiler, symbols, transfer)
+    }
+}

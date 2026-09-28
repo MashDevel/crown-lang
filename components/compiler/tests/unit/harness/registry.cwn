@@ -1,0 +1,158 @@
+fn registry_case(extra: Text) -> Text {
+    return std::text::joined(std::text::joined("{\"name\":\"example\",\"mode\":\"run\",\"source\":\"components/compiler/tests/unit/example.cwn\",", extra), "}")
+}
+
+fn load(root: Text, source: Text) -> Result<Vec<harness::Case>, Text> {
+    let path = testing::write_file(root, "components/compiler/tests/cases.json", source)?
+    return harness::load_cases(path, root)
+}
+
+fn valid_registry(root: Text) -> Result<void, Text> {
+    let source = testing::write_file(root, "components/compiler/tests/unit/example.cwn", "fn main() -> u32 { 42 }")?
+    let value = registry_case("\"status\":42")
+    let array = std::text::joined(std::text::joined("[", value), "]")
+    let initial = load(root, array)?
+    testing::expect(initial.length() == 1, "registered test")?
+    testing::error(load(root, "[]"))?;
+    testing::error(load(root, "{}"))?
+    testing::error(load(root, std::text::joined(std::text::joined(std::text::joined("[", value), std::text::joined(",", value)), "]")))?
+    supported_registry(root, array)?
+    toolchain::remove_file(source)?
+    testing::error(load(root, array))?
+    return Ok(())
+}
+
+fn invalid_expectations() -> Result<void, Text> {
+    let values = testing::list("\"status\":-1|\"status\":256|\"status\":true|\"status\":\"failure\"|\"status\":42,\"skip\":true|\"status\":42,\"arguments\":\"text\"|\"status\":42,\"stdout\":1|\"status\":42,\"timeout_ms\":0|\"status\":42,\"timeout_ms\":900001|\"status\":42,\"max_instances\":0|\"status\":42,\"max_instances\":18446744073709551616")
+    for index in 0..values.length() {
+        let document = toolchain::json(registry_case(values[index]))?
+        testing::error(harness::case(document, document.root, ""))?
+    }
+    let panic = toolchain::json(registry_case("\"status\":\"failure\",\"stderr\":[\"integer overflow\"]"))?
+    let expected_panic = harness::case(panic, panic.root, "")?
+    testing::expect(expected_panic.status == -6, "panic expectations")?
+    let invalid = testing::list("{\"name\":\"\",\"mode\":\"check\",\"source\":\"file.cwn\"}|{\"name\":\"x\",\"mode\":\"typo\",\"source\":\"file.cwn\"}|{\"name\":\"x\",\"mode\":\"check\",\"source\":\"file.txt\"}|{\"name\":\"x\",\"mode\":\"reject\",\"source\":\"file.cwn\"}")
+    for index in 0..invalid.length() {
+        let document = toolchain::json(invalid[index].clone())?;
+        testing::error(harness::case(document, document.root, ""))?
+    }
+    return Ok(())
+}
+
+fn project_registry(root: Text) -> Result<void, Text> {
+    project_fixture(root)?
+    let registry = "[{\"name\":\"project\",\"mode\":\"check\",\"source\":\"fixture\"}]"
+    let cases = load(root, registry)?
+    testing::expect(cases.length() == 1, "project fixture registered")?
+    let sources = harness::case_sources(cases[0], root)?
+    testing::expect(sources.length() == 2, "manifest selects sources and exclusions")?
+    testing::expect(std::text::list_contains(sources, toolchain::path_join(root, "shared.cwn")), "external manifest source retained")?
+    invalid_source_paths(root)?
+    return invalid_project_manifest(root, registry)
+}
+
+fn invalid_project_manifest(root: Text, registry: Text) -> Result<void, Text> {
+    testing::write_file(root, "fixture/Crown.toml", "not a manifest")?
+    testing::error(load(root, registry))?
+    toolchain::remove_file(toolchain::path_join(root, "fixture/Crown.toml"))?
+    testing::error(load(root, registry))?
+    toolchain::make_directory(toolchain::path_join(root, "fixture/Crown.toml"))?
+    testing::error(load(root, registry))?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    valid_registry(toolchain::temporary_path(temporary))?;
+    invalid_expectations()?
+    host_expectations()?
+    target_registration()?
+    project_registry(toolchain::temporary_path(temporary))?
+    return Ok(())
+}
+
+fn target_registry_case(platform: Text) -> Text {
+    let source = std::text::joined("components/compiler/tests/unit/example.", std::text::joined(platform, ".cwn"))
+    return std::text::joined(std::text::joined("{\"name\":", toolchain::json_quoted(platform)), std::text::joined(std::text::joined(",\"mode\":\"run\",\"status\":42,\"source\":", toolchain::json_quoted(source)), std::text::joined(",\"hosts\":[", std::text::joined(toolchain::json_quoted(std::text::joined("x86_64-", platform)), "]}"))))
+}
+
+fn target_registration() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    testing::write_file(root, "components/compiler/tests/unit/example.linux.cwn", "fn main() -> u32 { 42 }")?;
+    testing::write_file(root, "components/compiler/tests/unit/example.macos.cwn", "fn main() -> u32 { 42 }")?;
+    let registry = std::text::joined("[", std::text::joined(target_registry_case("linux"), std::text::joined(",", std::text::joined(target_registry_case("macos"), "]"))))
+    let cases = load(root, registry)?
+    testing::expect(cases.length() == 2, "registration audits sources for each declared host")?
+    testing::write_file(root, "components/compiler/tests/unit/orphan.linux.cwn", "fn main() -> u32 { 42 }")?;
+    return testing::error(load(root, registry))
+}
+
+fn host_expectations() -> Result<void, Text> {
+    let mac = toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos())
+    let linux = toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux())
+    let unrestricted = toolchain::json(registry_case("\"status\":42"))?
+    let normal = harness::case(unrestricted, unrestricted.root, "")?
+    testing::expect(harness::case_applies(normal, mac) && harness::case_applies(normal, linux), "tests apply to every host by default")?
+    let document = toolchain::json(registry_case("\"status\":42,\"hosts\":[\"x86_64-macos\"]"))?
+    let selected = harness::case(document, document.root, "")?
+    testing::expect(harness::case_applies(selected, mac) && harness::case_applies(selected, linux) == false, "native executable tests require their declared host")?
+    host_audit(selected, linux)?
+    return invalid_hosts()
+}
+
+fn host_audit(selected: harness::Case, linux: toolchain::Target) -> Result<void, Text> {
+    let audit = toolchain::json(harness::applicability_json(selected, linux))?
+    let required = toolchain::json_optional_strings(audit, audit.root, "required_hosts")?
+    return testing::expect(testing::equal_lists(required, selected.hosts), "applicability audit preserves the required hosts")
+}
+
+fn invalid_hosts() -> Result<void, Text> {
+    let values = testing::list("[]|[\"unknown\"]|[\"x86_64-linux\",\"x86_64-linux\"]|\"x86_64-linux\"")
+    for index in 0..values.length() {
+        let document = toolchain::json(registry_case(std::text::joined("\"status\":42,\"hosts\":", values[index])))?
+        testing::error(harness::case(document, document.root, ""))?
+    }
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn supported_registry(root: Text, array: Text) -> Result<void, Text> {
+    let orphan = testing::write_file(root, "components/compiler/tests/unit/forgotten.cwn", "fn answer() -> u32 { 42 }")?
+    testing::error(load(root, array))?
+    let support = registry_case("\"status\":42,\"roots\":[\"components/compiler/tests/unit/forgotten.cwn\"]")
+    let supported = load(root, std::text::joined(std::text::joined("[", support), "]"))?
+    testing::expect(supported.length() == 1, "support roots registered")?
+    toolchain::remove_file(orphan)?;
+    return backend_registration(root, array)
+}
+
+fn invalid_source_paths(root: Text) -> Result<void, Text> {
+    testing::error(harness::validate_case_source("", root))?
+    testing::error(harness::validate_case_source("bad\0name.cwn", root))?
+    testing::error(harness::validate_case_source("missing", root))?
+    toolchain::make_directory(toolchain::path_join(root, "unmanifested"))?
+    testing::error(harness::validate_case_source("unmanifested", root))?
+    testing::write_file(root, "not-project", "ordinary file")?
+    testing::error(harness::validate_case_source("not-project", root))?
+    return Ok(())
+}
+
+fn project_fixture(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "fixture/src/main.cwn", "fn main() -> u32 { 42 }")?
+    testing::write_file(root, "fixture/src/ignored.cwn", "invalid excluded source")?
+    testing::write_file(root, "shared.cwn", "fn answer() -> u32 { 42 }")?
+    let manifest = "[package]\nname = \"fixture\"\nsources = [\"src\", \"../shared.cwn\"]\nexclude = [\"src/ignored.cwn\"]\n"
+    testing::write_file(root, "fixture/Crown.toml", manifest)?
+    return Ok(())
+}
+
+fn backend_registration(root: Text, array: Text) -> Result<void, Text> {
+    let orphan = testing::write_file(root, "components/backend/tests/unit/orphan.cwn", "fn helper() -> u32 { 7 }")?
+    testing::error(load(root, array))?
+    toolchain::remove_file(orphan)?
+    let cases = load(root, array)?
+    return testing::expect(cases.length() == 1, "backend test registration restored")
+}

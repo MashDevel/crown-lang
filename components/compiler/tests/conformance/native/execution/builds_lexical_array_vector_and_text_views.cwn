@@ -1,0 +1,16 @@
+fn add(values: read Slice<u32>) -> u32 {
+    return values[0] + values[1]
+}
+fn main() -> u32 {
+    var values = [1, 2, 3]
+    loan write values[1..3] as tail {
+        tail[0] = 4
+    }
+    let text = "ok"
+    loan read text as view {
+        print(view[0] == 111)
+    }
+    loan read values[1..3] as tail {
+        return add(tail)
+    }
+}

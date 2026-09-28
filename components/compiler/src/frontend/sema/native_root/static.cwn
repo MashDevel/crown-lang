@@ -1,0 +1,56 @@
+module sema {
+    fn checker_root_static(checker: write Checker, kind: frontend::ExpressionKind, builtin: Builtin) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                if builtin == NativeRoot() && name_is(checker.symbols.source, method, "new") {
+                    let result = checker_owning_static(checker, kind, builtin)
+                    return validate_root_owner(checker, move result)
+                }
+                if builtin == RootToken() && name_is(checker.symbols.source, method, "declare") {
+                    return checker_root_declaration(checker, reference, arguments)
+                }
+                if builtin == RootToken() && name_is(checker.symbols.source, method, "from_parts") {
+                    return checker_root_token(checker, reference, arguments)
+                }
+            },
+            _ => {
+            }
+        }
+        checker_error(checker, "invalid native root constructor")
+        return None()
+    }
+    fn validate_root_owner(checker: write Checker, result: take Option<ExpressionInfo>) -> Option<ExpressionInfo> {
+        match move result {
+            None => {
+                return None()
+            },
+            Some(info) => {
+                var visiting = Vec<usize>.new()
+                if type_transferable(checker.symbols, info.value_type, visiting) == false && type_is_concrete(info.value_type) {
+                    checker_error(checker, "native roots require transferable owned payloads")
+                    return None()
+                }
+                return Some(move info)
+            }
+        }
+    }
+    fn checker_root_token(checker: write Checker, reference: frontend::TypeRef, arguments: Vec<frontend::Expression>) -> Option<ExpressionInfo> {
+        if arguments.length() != 2 {
+            checker_error(checker, "native root tokens require slot and generation")
+            return None()
+        }
+        let element = match static_type_argument(checker, reference) {
+            None => {
+                return None()
+            },
+            Some(value) => move value
+        }
+        loan read arguments[0] as value {
+            checker_value(checker, value, builtin_leaf(USize()))
+        }
+        loan read arguments[1] as value {
+            checker_value(checker, value, builtin_leaf(U64()))
+        }
+        return Some(copy_info(root_wrapper(RootToken(), element)))
+    }
+}

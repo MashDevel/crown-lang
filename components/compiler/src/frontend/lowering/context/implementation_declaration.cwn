@@ -1,0 +1,79 @@
+module lowering {
+    struct ImplementationDeclaration {
+        implementation: sema::Implementation
+        owner: usize
+    }
+
+    fn declare_implementations(compiler: write Compiler, symbols: sema::Symbols) -> Result<void, u32> {
+        var index: usize = 0
+        while index < symbols.implementations.length() {
+            loan read symbols.implementations[index] as implementation {
+                match sema::implementation_owner(symbols, implementation.target) {
+                    None => {
+                        return Err(343)
+                    }
+                    Some(owner) => {
+                        let request = ImplementationDeclaration {
+                            implementation: semantic_implementation_copy(implementation)
+                            owner: owner
+                        }
+                        declare_implementation(compiler, symbols, request)?
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn declare_implementation(compiler: write Compiler, symbols: sema::Symbols, request: ImplementationDeclaration) -> Result<void, u32> {
+        var index: usize = 0
+        while index < symbols.functions.length() {
+            loan read symbols.functions[index] as function {
+                if implementation_function_matches(function, request) {
+                    let declaration = DeclarationRequest {
+                        semantic_function: index
+                        arguments: Vec<sema::Type>.new()
+                        indirect_receiver: true
+                        name: declared_function_name(symbols, function)
+                    }
+                    declare_function(compiler, symbols, move declaration)?
+                }
+            }
+            index = index + 1
+        }
+        declare_interface_drop(compiler, symbols, request.implementation)
+        return Ok(())
+    }
+
+    fn implementation_function_matches(function: sema::Function, request: ImplementationDeclaration) -> bool {
+        if function.foreign || function.type_parameters.length() != 0 {
+            return false
+        }
+        return implementation_member(function, request.owner, request.implementation.interface_symbol)
+    }
+
+    fn implementation_member(function: sema::Function, expected_owner: usize, expected_interface: usize) -> bool {
+        match read function.kind {
+            sema::ImplementationFunction(owner, interface_symbol) => {
+                return owner == expected_owner && interface_symbol == expected_interface
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn declare_interface_drop(compiler: write Compiler, symbols: sema::Symbols, implementation: sema::Implementation) -> void {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypeVoid())
+        let key = implementation_drop_key(implementation.interface_symbol, implementation.target)
+        let name = implementation_drop_name(symbols, implementation.interface_symbol, implementation.target)
+        let function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+        let id = ir::program_add_function(compiler.output, move function)
+        compiler.tables.generated_functions.push(NamedFunction {
+                name: move key, function: id
+            })
+    }
+}

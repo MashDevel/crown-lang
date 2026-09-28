@@ -1,0 +1,9 @@
+fn f(value: TextView) -> u32 {
+    match value {
+        "a" | "a" => 0,
+        _ => 1
+    }
+}
+fn main() -> u32 {
+    0
+}

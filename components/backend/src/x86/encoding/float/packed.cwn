@@ -1,0 +1,46 @@
+module x86 {
+    fn encode_packed_float(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            ShufflePacked(register, mask) => {
+                emit_packed_registers(output, register, register, 112)
+                output.push(mask)
+                return true
+            }
+            PackedIntegerBinary(values) => {
+                emit_packed_registers(output, values.destination, values.source, packed_integer_opcode(values.operator, values.width))
+                return true
+            }
+            MovePacked(destination, source) => {
+                emit_packed_registers(output, destination, source, 40)
+                return true
+            }
+            PackedFloatBinary(values) => {
+                let registers = float_registers(values.width, values.destination, values.source)
+                if registers.width == 1 {
+                    output.push(102)
+                }
+                emit_float_rex(output, false, u16.from(registers.destination) |(u16.from(registers.source) << 8))
+                output.push(15)
+                output.push(float_binary_opcode(values.operator))
+                output.push(modrm(3, registers.destination, registers.source))
+                return true
+            }
+            LoadPackedFloat(values) => {
+                emit_packed_transfer(output, values.base, values.offset, values.destination, 16)
+                return true
+            }
+            StorePackedFloat(values) => {
+                emit_packed_transfer(output, values.base, values.offset, values.source, 17)
+                return true
+            }
+            _ => false
+        }
+    }
+
+    fn emit_packed_transfer(output: write Vec<u8>, base: Register, offset: i32, register: FloatRegister, opcode: u8) -> void {
+        emit_float_memory_raw(output, FloatMemoryEncoding {
+                prefix: Some(102), first_opcode: 15, second_opcode: opcode
+                register: register.code, base: base.code, offset: offset
+            })
+    }
+}

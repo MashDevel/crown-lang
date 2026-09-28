@@ -1,0 +1,130 @@
+module optimize {
+    enum PhiState {
+        PhiUnknown
+        PhiConstant(ir::Constant)
+        PhiOverdefined
+    }
+
+    enum PhiReplacement {
+        PhiValue(usize)
+        PhiConstantValue(ir::Type, ir::Constant)
+    }
+
+    struct PhiRewrite {
+        result: usize
+        replacement: PhiReplacement
+    }
+
+    struct PhiConstantRewrite {
+        result: usize
+        value_type: ir::Type
+        constant: ir::Constant
+    }
+
+    fn phi_state_copy(state: PhiState) -> PhiState {
+        match read state {
+            PhiUnknown => {
+                return PhiUnknown()
+            }
+            PhiConstant(value) => {
+                return PhiConstant(ir::constant_copy(value))
+            }
+            PhiOverdefined => {
+                return PhiOverdefined()
+            }
+        }
+    }
+
+    fn phi_state_equal(left: PhiState, right: PhiState) -> bool {
+        match read left {
+            PhiUnknown => {
+                return phi_state_is_unknown(right)
+            }
+            PhiOverdefined => {
+                return phi_state_is_overdefined(right)
+            }
+            PhiConstant(value) => {
+                match read right {
+                    PhiConstant(other) => {
+                        return ir::constant_equal(value, other)
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    fn phi_state_is_unknown(state: PhiState) -> bool {
+        match read state {
+            PhiUnknown => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn phi_state_is_overdefined(state: PhiState) -> bool {
+        match read state {
+            PhiOverdefined => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn phi_join(left: PhiState, right: PhiState) -> PhiState {
+        if phi_state_is_unknown(left) {
+            return phi_state_copy(right)
+        }
+        if phi_state_is_unknown(right) {
+            return phi_state_copy(left)
+        }
+        match read left {
+            PhiConstant(value) => {
+                match read right {
+                    PhiConstant(other) => {
+                        if ir::constant_equal(value, other) {
+                            return PhiConstant(ir::constant_copy(value))
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return PhiOverdefined()
+    }
+
+    fn phi_replacement_equal(left: PhiReplacement, right: PhiReplacement) -> bool {
+        match read left {
+            PhiValue(value) => {
+                match read right {
+                    PhiValue(other) => {
+                        return value == other
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            PhiConstantValue(value_type, constant) => {
+                match read right {
+                    PhiConstantValue(other_type, other) => {
+                        return ir::type_equal(value_type, other_type) && ir::constant_equal(constant, other)
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+}

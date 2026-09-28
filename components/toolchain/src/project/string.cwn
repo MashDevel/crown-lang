@@ -1,0 +1,156 @@
+module toolchain {
+    struct TomlString {
+        quote: u8, multiline: bool
+    }
+
+    fn toml_string(input: write Cursor) -> Result<Text, Text> {
+        let quote = peek(input)
+        input.position = input.position + 1
+        let repeated = quote_run(input, quote)
+        if repeated == 1 {
+            input.position = input.position + 1;
+            return Ok("")
+        }
+        let mode = TomlString {
+            quote: quote, multiline: repeated >= 2
+        }
+        if mode.multiline {
+            input.position = input.position + 2;
+            string_newline(input)
+        }
+        return toml_string_body(input, mode)
+    }
+
+    fn quote_run(input: Cursor, quote: u8) -> usize {
+        var count: usize = 0
+        loan read input.source as bytes {
+            while input.position + count < bytes.length() && bytes[input.position + count] == quote {
+                count = count + 1
+            }
+        }
+        return count
+    }
+
+    fn toml_string_body(input: write Cursor, mode: TomlString) -> Result<Text, Text> {
+        var output = ""
+        var start = input.position
+        while input.position < input.source.length() {
+            if peek(input) == mode.quote {
+                std::text::append(output, std::text::slice(input.source, start, input.position))
+                if string_end(input, mode, output)? {
+                    return Ok(move output)
+                }
+                start = input.position
+                continue
+            }
+            if string_special(input, mode) {
+                std::text::append(output, std::text::slice(input.source, start, input.position))
+                string_character(input, mode, output)?
+                start = input.position
+            } else {
+                input.position = input.position + 1
+            }
+        }
+        return Err("unterminated TOML string")
+    }
+
+    fn string_end(input: write Cursor, mode: TomlString, output: write Text) -> Result<bool, Text> {
+        if mode.multiline == false {
+            input.position = input.position + 1;
+            return Ok(true)
+        }
+        let count = quote_run(input, mode.quote)
+        if count > 5 {
+            return Err("too many consecutive quotes in TOML string")
+        }
+        let content = if count >= 3 {
+            count - 3
+        } else {
+            count
+        }
+        for index in 0..content {
+            index;
+            output.push(char.from(u32.from(mode.quote)))
+        }
+        input.position = input.position + count
+        return Ok(count >= 3)
+    }
+
+    fn string_special(input: Cursor, mode: TomlString) -> bool {
+        let byte = peek(input)
+        return byte < 32 || byte == 127 || byte == 92 && mode.quote == 34
+    }
+
+    fn string_character(input: write Cursor, mode: TomlString, output: write Text) -> Result<void, Text> {
+        if consumed(input, 9) {
+            output.push('\t');
+            return Ok(())
+        }
+        if mode.multiline && string_newline(input) {
+            output.push('\n');
+            return Ok(())
+        }
+        if mode.quote != 34 || consumed(input, 92) == false {
+            return Err("control byte in TOML string")
+        }
+        if mode.multiline && string_continuation(input)? {
+            return Ok(())
+        }
+        output.push(toml_escape(input)?)
+        return Ok(())
+    }
+
+    fn string_newline(input: write Cursor) -> bool {
+        if consumed(input, 10) {
+            return true
+        }
+        if peek(input) != 13 {
+            return false
+        }
+        input.position = input.position + 1
+        if consumed(input, 10) {
+            return true
+        }
+        input.position = input.position - 1
+        return false
+    }
+
+    fn string_continuation(input: write Cursor) -> Result<bool, Text> {
+        let start = input.position
+        horizontal_space(input)
+        if string_newline(input) {
+            whitespace(input);
+            return Ok(true)
+        }
+        if input.position != start {
+            return Err("TOML line continuation requires a newline")
+        }
+        return Ok(false)
+    }
+
+    fn toml_escape(input: write Cursor) -> Result<char, Text> {
+        if consumed(input, 117) {
+            return toml_unicode(input, 4)
+        }
+        if consumed(input, 85) {
+            return toml_unicode(input, 8)
+        }
+        if peek(input) == 47 {
+            return Err("invalid TOML escape")
+        }
+        return escaped_scalar(input)
+    }
+
+    fn toml_unicode(input: write Cursor, count: usize) -> Result<char, Text> {
+        var value: u32 = 0
+        for index in 0..count {
+            index
+            value = value * 16 + hex_digit(peek(input))?
+            input.position = input.position + 1
+        }
+        if value > 1114111 || value >= 55296 && value <= 57343 {
+            return Err("invalid Unicode scalar in TOML string")
+        }
+        return Ok(char.from(value))
+    }
+}

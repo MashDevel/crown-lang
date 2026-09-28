@@ -1,0 +1,12 @@
+struct State {
+    value: u32
+}
+fn main() -> u32 {
+    let state = Mutex.new(State {
+            value: 1
+        })
+    state.lock read as current {
+        print(current.value)
+    }
+    return 0
+}

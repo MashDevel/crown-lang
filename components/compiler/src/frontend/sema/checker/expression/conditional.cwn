@@ -1,0 +1,146 @@
+module sema {
+    fn checker_conditional(checker: write Checker, expression: frontend::ConditionalExpression, expected: Type) -> Option<ExpressionInfo> {
+        let boolean = builtin_leaf(Bool())
+        loan read expression.condition as value {
+            checker_value(checker, value, boolean)
+        }
+        let before = scopes_copy(checker.scopes)
+        let region_before = thread_regions_copy(checker.thread_regions)
+        let then_info = checker_value_block(checker, expression.then_body, expected)
+        let then_state = scopes_copy(checker.scopes)
+        let region_then = thread_regions_copy(checker.thread_regions)
+        let then_continuing = checker.continuing
+        checker.scopes = scopes_copy(before)
+        checker.thread_regions = thread_regions_copy(region_before)
+        checker.continuing = true
+        var hint = type_copy(expected)
+        var inferred = false
+        match read expected {
+            Infer => {
+                inferred = true
+            }
+            _ => {
+            }
+        }
+        if inferred {
+            match read then_info {
+                Some(info) => {
+                    hint = type_copy(info.value_type)
+                }
+                None => {
+                }
+            }
+        }
+        let else_info = checker_value_block(checker, expression.else_body, hint)
+        let merge = BranchMerge {
+            before: move before, then_state: move then_state, region_then: move region_then, then_continuing: then_continuing, else_continuing: checker.continuing
+        }
+        checker_apply_branch_merge(checker, move merge)
+
+        return conditional_result(checker, then_info, else_info)
+    }
+
+    fn conditional_result(checker: write Checker, left: Option<ExpressionInfo>, right: Option<ExpressionInfo>) -> Option<ExpressionInfo> {
+        var value_type = Invalid()
+        match read left {
+            Some(info) => {
+                value_type = type_copy(info.value_type)
+            }
+            None => {
+            }
+        }
+        match read right {
+            Some(info) => {
+                conditional_same_type(checker, left, info.value_type)
+                value_type = type_copy(info.value_type)
+            }
+            None => {
+            }
+        }
+        match read value_type {
+            Invalid => {
+                checker_error(checker, "conditional expression needs a continuing value branch");
+                return None()
+            }
+            _ => {
+            }
+        }
+        if type_is_copy_with_symbols(checker.symbols, value_type) {
+            return Some(copy_info(move value_type))
+        }
+        return Some(owned_info(move value_type))
+    }
+
+    fn checker_value_block(checker: write Checker, body: Vec<frontend::Statement>, expected: Type) -> Option<ExpressionInfo> {
+        checker_push_scope(checker)
+        let result = checker_value_block_contents(checker, body, expected)
+        checker_pop_scope(checker)
+        return move result
+    }
+
+    fn checker_value_block_contents(checker: write Checker, body: Vec<frontend::Statement>, expected: Type) -> Option<ExpressionInfo> {
+        if body.length() == 0 {
+            return Some(copy_info(builtin_leaf(Unit())))
+        }
+        let last = body.length() - 1
+        for index in 0..last {
+            if checker.continuing == false {
+                return None()
+            }
+            loan read body[index] as statement {
+                checker_statement(checker, statement)
+            }
+        }
+        if checker.continuing == false {
+            return None()
+        }
+        loan read body[last] as statement {
+            return checker_conditional_last(checker, statement, expected)
+        }
+    }
+
+    fn checker_conditional_last(checker: write Checker, statement: frontend::Statement, expected: Type) -> Option<ExpressionInfo> {
+        match read statement.kind {
+            frontend::StatementExpression(value) => {
+                return checker_conditional_tail(checker, value, expected)
+            }
+            _ => {
+                checker_statement(checker, statement)
+            }
+        }
+        if checker.continuing {
+            return Some(copy_info(builtin_leaf(Unit())))
+        }
+        return None()
+    }
+
+    fn conditional_same_type(checker: write Checker, left: Option<ExpressionInfo>, right: Type) -> void {
+        match read left {
+            Some(previous) => {
+                if types_equal(previous.value_type, right) == false {
+                    checker_type_error(checker, previous.value_type, right)
+                }
+            }
+            None => {
+            }
+        }
+    }
+
+    fn checker_conditional_tail(checker: write Checker, value: frontend::Expression, expected: Type) -> Option<ExpressionInfo> {
+        match checker_expression_expected(checker, value, expected) {
+            None => {
+                return None()
+            }
+            Some(info) => {
+                checker.current_span = value.span
+                if value_is_borrowed(info.value) && type_is_copy_with_symbols(checker.symbols, info.value_type) == false {
+                    checker_error(checker, "conditional branch requires move for an owned result")
+                }
+                if type_contains_view(checker.symbols, info.value_type) {
+                    checker_error(checker, "conditional values cannot return a borrowed view")
+                }
+                return Some(move info)
+            }
+        }
+    }
+}

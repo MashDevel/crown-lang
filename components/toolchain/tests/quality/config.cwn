@@ -1,0 +1,58 @@
+fn defaults() -> Result<void, Text> {
+    let rules = toolchain::quality_defaults()
+    testing::expect(rules.limits.file_lines == 300 && rules.limits.function_lines == 60, "line limits")?
+    testing::expect(rules.limits.cyclomatic == 10 && rules.limits.cognitive == 15, "complexity limits")?
+    testing::expect(rules.limits.nesting == 4 && rules.limits.parameters == 5, "scope limits")?
+    return query_defaults(rules)
+}
+
+fn query_defaults(rules: toolchain::QualityRules) -> Result<void, Text> {
+    testing::expect(rules.duplication.max_percent == 3 && rules.duplication.min_lines == 6 && rules.duplication.min_tokens == 50, "clone limits")?
+    return testing::expect(rules.format.indent_width == 4 && rules.format.max_blank_lines == 1 && rules.format.final_newline, "format defaults")
+}
+
+fn inheritance(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "Crown.toml", "[quality]\nmax_file_lines=20\nmax_parameters=0\n[format]\nindent_width=2\nfinal_newline=false\n")?
+    let path = testing::write_file(root, "child/Crown.toml", "[package]\nname='child'\nsource='src'\n[quality]\nmax_function_lines=8\n[quality.duplication]\nmax_percent=0\nmin_tokens=10\n")?
+    let source = testing::write_file(root, "child/src/main.cwn", "fn main() -> u32 { 0 }")?
+    let rules = toolchain::quality_rules(source)?
+    inherited_values(rules)?
+    let project = toolchain::load_project(path, toolchain::host_target())?
+    return testing::expect(project.sources.length() == 1, "build accepts quality settings")
+}
+
+fn inherited_values(rules: toolchain::QualityRules) -> Result<void, Text> {
+    testing::expect(rules.limits.file_lines == 20 && rules.limits.function_lines == 8 && rules.limits.parameters == 0, "inherit and override")?
+    testing::expect(rules.format.indent_width == 2 && rules.format.final_newline == false, "inherit format")?
+    testing::expect(rules.duplication.max_percent == 0 && rules.duplication.min_tokens == 10, "inherit clone configuration")?
+    return Ok(())
+}
+
+fn invalid(root: Text) -> Result<void, Text> {
+    let values = testing::list("[quality]\nmax_file_lines=-1|[quality]\nmax_function_lines=1.5|[quality]\nmax_cyclomatic='10'|[quality]\nmax_cognitive='bad'|[quality]\nmax_nesting='bad'|[quality]\nmax_parameters='bad'|[quality]\nunknown=1|[quality.duplication]\nmax_percent=101|[quality.duplication]\nmax_percent='bad'|[quality.duplication]\nmin_tokens=0|[quality.duplication]\nmin_tokens='bad'|[quality.duplication]\nmin_lines=0|[quality.duplication]\nmin_lines='bad'|[format]\nindent_width=0|[format]\nindent_width=33|[format]\nmax_blank_lines=1001|[format]\nmax_blank_lines='bad'|[format]\nfinal_newline=1|[format.unknown]")
+    for index in 0..values.length() {
+        let path = testing::write_file(root, "Crown.toml", values[index])?
+        testing::error(toolchain::quality_rules(path))?
+    }
+    return Ok(())
+}
+
+fn boundaries(root: Text) -> Result<void, Text> {
+    let path = testing::write_file(root, "Crown.toml", "[quality]\nmax_file_lines=0\nmax_function_lines=0\nmax_cyclomatic=0\nmax_cognitive=0\nmax_nesting=0\nmax_parameters=0\n[quality.duplication]\nmax_percent=100\nmin_lines=1\nmin_tokens=1\n[format]\nindent_width=32\nmax_blank_lines=0\n")?
+    let rules = toolchain::quality_rules(path)?
+    testing::expect(rules.limits.cognitive == 0 && rules.limits.nesting == 0, "zero structural maxima")?
+    return testing::expect(rules.duplication.max_percent == 100 && rules.format.indent_width == 32, "upper boundaries")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    defaults()?
+    inheritance(root)?
+    invalid(root)?
+    return boundaries(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

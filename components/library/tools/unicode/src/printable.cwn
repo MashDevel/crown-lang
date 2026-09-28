@@ -1,0 +1,100 @@
+module unicode_tables {
+    fn fill(values: write Vec<u8>, start: usize, end: usize, value: u8) -> Result<void, Text> {
+        if start > end || end > values.length() {
+            return Err("Unicode range outside table")
+        }
+        for index in start..end {
+            values[index] = value
+        }
+        return Ok(())
+    }
+
+    fn plane_runs(source: Text, plane: Text) -> Result<Vec<u8>, Text> {
+        let normal = array(source, std::text::joined("NORMAL", plane))?
+        var values = Vec<u8>.new()
+        for index in 0..65536 {
+            index;
+            values.push(1)
+        }
+        var offset: usize = 0
+        var current: u8 = 1
+        var index: usize = 0
+        while index < normal.length() {
+            var length = usize.from(normal[index])
+            index = index + 1
+            if length >= 128 {
+                if index >= normal.length() {
+                    return Err("truncated Unicode run")
+                }
+                length = ((length & 127) << 8) | usize.from(normal[index])
+                index = index + 1
+            }
+            let end = if offset + length > 65536 {
+                usize.from(65536)
+            } else {
+                offset + length
+            }
+            fill(values, offset, end, current)?
+            offset = end
+            current = 1 - current
+        }
+        fill(values, offset, 65536, current)?
+        return Ok(move values)
+    }
+
+    fn plane(source: Text, name: Text) -> Result<Vec<u8>, Text> {
+        var values = plane_runs(source, name)?
+        let prefix = std::text::joined("SINGLETONS", name)
+        let upper = array(source, std::text::joined(prefix, "U"))?
+        let lower = array(source, std::text::joined(prefix, "L"))?
+        if upper.length() % 2 != 0 {
+            return Err("unpaired Unicode singleton run")
+        }
+        var offset: usize = 0
+        for pair in 0..upper.length() / 2 {
+            let index = pair * 2
+            for count in 0..usize.from(upper[index + 1]) {
+                count;
+                if offset >= lower.length() {
+                    return Err("truncated Unicode singletons")
+                }
+                let point = usize.from((upper[index] << 8) | lower[offset])
+                if point >= values.length() {
+                    return Err("Unicode singleton outside plane")
+                }
+                values[point] = 0
+                offset = offset + 1
+            }
+        }
+        return Ok(move values)
+    }
+
+    fn printable(source: Text) -> Result<Vec<u8>, Text> {
+        var values = plane(source, "0")?
+        let second = plane(source, "1")?
+        for index in 0..second.length() {
+            values.push(second[index])
+        }
+        while values.length() < 0x110000 {
+            values.push(1)
+        }
+        exclusions(values, source)?
+        fill(values, 0, 32, 0)?
+        fill(values, 32, 127, 1)?
+        return Ok(move values)
+    }
+    fn exclusions(values: write Vec<u8>, source: Text) -> Result<void, Text> {
+        let lines = std::text::split(source, 10)
+        for index in 0..lines.length() {
+            if std::text::contains(lines[index], "<= x && x <") {
+                let points = integers(lines[index])?
+                if points.length() != 2 {
+                    return Err("invalid Unicode exclusion range")
+                }
+                fill(values, usize.from(points[0]), usize.from(points[1]), 0)?
+            }
+        }
+        return Ok(())
+    }
+
+}

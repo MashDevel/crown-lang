@@ -1,0 +1,16 @@
+struct Pair {
+    left: u32, right: u32
+}
+fn main() -> u32 {
+    var pair = Pair {
+        left: 1, right: 2
+    }
+    loan write pair.left as left {
+        loan write pair.right as right {
+            left = 20
+            right = 22
+        }
+        pair.right = 22
+    }
+    return pair.left + pair.right
+}

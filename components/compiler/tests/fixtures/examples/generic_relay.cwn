@@ -1,0 +1,3 @@
+fn identity<T>(value: take T) -> T { return move value }
+fn relay<T>(value: take T) -> T { return identity(move value) }
+fn main() -> u32 { return relay(42) }

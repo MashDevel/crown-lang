@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    let value: u8 = 1
+    let amount: u32 = 2
+    return u32.from(value << amount)
+}

@@ -1,0 +1,37 @@
+module optimize {
+    struct Folded {
+        result: usize
+        value_type: ir::Type
+        constant: ir::Constant
+    }
+
+    struct BinaryInput {
+        operator: ir::BinaryOperator
+        left: u64
+        right: u64
+    }
+
+    struct CompareInput {
+        operator: ir::CompareOperator
+        left: u64
+        right: u64
+    }
+
+    struct CastInput {
+        operator: ir::CastOperator
+        value: usize
+        target: ir::Type
+    }
+
+    fn binary_input(operator: ir::BinaryOperator, left: u64, right: u64) -> BinaryInput {
+        return BinaryInput {
+            operator: operator, left: left, right: right
+        }
+    }
+
+    fn compare_input(operator: ir::CompareOperator, left: u64, right: u64) -> CompareInput {
+        return CompareInput {
+            operator: operator, left: left, right: right
+        }
+    }
+}

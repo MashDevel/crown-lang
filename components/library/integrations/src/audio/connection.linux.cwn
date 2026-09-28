@@ -1,0 +1,91 @@
+module integration::audio {
+    copy struct Configuration {
+        name: RawPtr<u8>, properties: RawPtr<u8>, events: RawPtr<u8>, data: RawPtr<u8>, rate: u32
+    }
+
+    opaque resource Connection {
+        library: std::dylib::Library, main_loop: RawPtr<u8>, loop: RawPtr<u8>, stream: RawPtr<u8>
+        drop {
+            unsafe {
+                if stream != null() {
+                    native::pipewire::stream_destroy(library, stream)
+                }
+                if loop != null() {
+                    native::pipewire::leave(library, loop)
+                }
+                if main_loop != null() {
+                    native::pipewire::main_loop_destroy(library, main_loop)
+                }
+                native::pipewire::deinitialize(library)
+            }
+        }
+    }
+
+    fn null() -> RawPtr<u8> {
+        unsafe {
+            return RawPtr<u8>.from_address(0)
+        }
+    }
+
+    unsafe fn connect(library: take std::dylib::Library, configuration: Configuration) -> Result<Connection, u32> {
+        unsafe {
+            native::pipewire::initialize(library, null(), null())
+            let main_loop = native::pipewire::main_loop_new(library, null())
+            var output = Connection {
+                library: move library, main_loop: main_loop, loop: null(), stream: null()
+            }
+            if main_loop == null() {
+                return Err(91)
+            }
+            output.loop = native::pipewire::main_loop_get_loop(output.library, main_loop)
+            native::pipewire::enter(output.library, output.loop)
+            configure_stream(output, configuration)?
+            return Ok(move output)
+        }
+    }
+
+    unsafe fn configure_stream(connection: write Connection, configuration: Configuration) -> Result<void, u32> {
+        unsafe {
+            let properties = native::pipewire::properties_new(connection.library, configuration.properties)
+            if properties == null() {
+                return Err(92)
+            }
+            connection.stream = native::pipewire::stream_new(connection.library, native::pipewire::StreamNew {
+                    loop: connection.loop, name: configuration.name, properties: properties
+                    events: configuration.events, data: configuration.data
+                })
+            if connection.stream == null() {
+                return Err(93)
+            }
+            let format = audio_format(configuration.rate)
+            var parameters = Vec<RawPtr<u32>>.new()
+            parameters.push(format.as_raw())
+            let status = native::pipewire::stream_connect(connection.library, native::pipewire::StreamConnect {
+                    stream: connection.stream, direction: 1, target: 4294967295, flags: 1 | 4, parameters: parameters.as_raw(), count: 1
+                })
+            if status < 0 {
+                return Err(94)
+            }
+        }
+        return Ok(())
+    }
+
+    unsafe fn poll(connection: Connection, timeout: i32) -> Result<i32, u32> {
+        unsafe {
+            if native::pipewire::iterate(connection.library, connection.loop, timeout) < 0 {
+                return Err(95)
+            }
+            let state = native::pipewire::stream_state(connection.library, connection.stream, null())
+            if state < 0 {
+                return Err(97)
+            }
+            return Ok(state)
+        }
+    }
+
+    unsafe fn stream(connection: Connection) -> RawPtr<u8> {
+        unsafe {
+            return connection.stream
+        }
+    }
+}

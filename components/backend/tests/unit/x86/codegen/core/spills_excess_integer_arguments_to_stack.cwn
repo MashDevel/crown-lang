@@ -1,0 +1,41 @@
+fn main() -> u32 {
+    var parameters = Vec<ir::Type>.new()
+    var index: usize = 0
+    while index < 8 {
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        index = index + 1
+    }
+    let signature = ir::signature_new(move parameters, ir::TypeVoid())
+    match x86::abi_locations(signature) {
+        Err(error) => {
+            error;
+            return 1
+        }
+        Ok(locations) => {
+            if x86::abi_stack_count(locations) != 2 {
+                return 2
+            }
+            match read locations[6] {
+                x86::ArgumentStack(slot) => {
+                    if slot != 0 {
+                        return 3
+                    }
+                }
+                _ => {
+                    return 4
+                }
+            }
+            match read locations[7] {
+                x86::ArgumentStack(slot) => {
+                    if slot != 1 {
+                        return 5
+                    }
+                }
+                _ => {
+                    return 6
+                }
+            }
+        }
+    }
+    return 42
+}

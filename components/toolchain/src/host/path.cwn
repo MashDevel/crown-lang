@@ -1,0 +1,90 @@
+module toolchain {
+    extern "c" {
+        fn raw_realpath(path: RawPtr<u8>, output: RawPtr<u8>) -> RawPtr<u8> = "realpath"
+        fn raw_getcwd(output: RawPtr<u8>, length: usize) -> RawPtr<u8> = "getcwd"
+    }
+
+    fn path_join(parent: Text, child: Text) -> Text {
+        if std::text::starts(child, "/") {
+            return child.clone()
+        }
+        if parent.length() == 0 {
+            return child.clone()
+        }
+        if std::text::ends(parent, "/") {
+            return std::text::joined(parent, child)
+        }
+        return std::text::joined(std::text::joined(parent, "/"), child)
+    }
+
+    fn parent_path(path: Text) -> Text {
+        var end = path.length()
+        loan read path as bytes {
+            while end > 1 && bytes[end - 1] == 47 {
+                end = end - 1
+            }
+            while end > 0 {
+                end = end - 1;
+                if bytes[end] == 47 {
+                    break
+                }
+            }
+            if end == 0 {
+                if std::text::starts(path, "/") {
+                    return "/"
+                };
+                return "."
+            }
+        }
+        return std::text::slice(path, 0, end)
+    }
+
+    fn file_name(path: Text) -> Text {
+        var start = path.length()
+        loan read path as bytes {
+            while start > 0 {
+                if bytes[start - 1] == 47 {
+                    break
+                };
+                start = start - 1
+            }
+        }
+        return std::text::slice(path, start, path.length())
+    }
+
+    fn current_directory() -> Result<Text, Text> {
+        unsafe {
+            let pointer = raw_getcwd(null(), 0)
+            if pointer == null() {
+                return Err("could not read working directory")
+            }
+            let output = pointer_text(pointer)
+            raw_free(pointer)
+            return Ok(move output)
+        }
+    }
+
+    fn absolute(path: Text) -> Result<Text, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            let pointer = raw_realpath(std::cstr::as_raw(encoded), null())
+            if pointer != null() {
+                let output = pointer_text(pointer)
+                raw_free(pointer)
+                return Ok(move output)
+            }
+        }
+        if std::text::equal(path, "/") {
+            return Ok("/")
+        }
+        let parent = parent_path(path)
+        if std::text::equal(parent, ".") {
+            return Ok(path_join(current_directory()?, file_name(path)))
+        }
+        return Ok(path_join(absolute(parent)?, file_name(path)))
+    }
+
+    fn below(path: Text, directory: Text) -> bool {
+        return std::text::equal(path, directory) || std::text::starts(path, path_join(directory, ""))
+    }
+}

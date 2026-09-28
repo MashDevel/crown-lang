@@ -1,0 +1,13 @@
+view struct Parser {
+    data: Slice<u32>
+}
+fn main() -> u32 {
+    var source = [42]
+    loan write source[0..1] as values {
+        let parser = Parser {
+            data: values
+        }
+        values[0] = 0
+        return parser.data[0]
+    }
+}

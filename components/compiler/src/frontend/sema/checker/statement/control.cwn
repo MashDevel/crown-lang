@@ -1,0 +1,95 @@
+module sema {
+    fn checker_if(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementIf(condition, then_body, else_body) => {
+                let boolean = builtin_leaf(Bool())
+                checker_value(checker, condition, boolean)
+                let before = scopes_copy(checker.scopes)
+                let region_before = thread_regions_copy(checker.thread_regions)
+                let initial_continuing = checker.continuing
+                checker_branch(checker, then_body)
+                let then_state = scopes_copy(checker.scopes)
+                let region_then = thread_regions_copy(checker.thread_regions)
+                let then_continuing = checker.continuing
+                checker.scopes = scopes_copy(before)
+                checker.thread_regions = thread_regions_copy(region_before)
+                checker.continuing = initial_continuing
+                checker_branch(checker, else_body)
+                let else_continuing = checker.continuing
+                let merge = BranchMerge {
+                    before: move before
+                    then_state: move then_state
+                    region_then: move region_then
+                    then_continuing: then_continuing
+                    else_continuing: else_continuing
+                }
+                checker_apply_branch_merge(checker, move merge)
+
+            }
+            _ => {
+                checker_error(checker, "control-flow branches leave ownership in different states")
+            }
+        }
+    }
+
+    fn checker_branch(checker: write Checker, body: Vec<frontend::Statement>) -> void {
+        checker_push_scope(checker)
+        checker_statements(checker, body)
+        checker_pop_scope(checker)
+    }
+
+    struct BranchMerge {
+        before: Vec<Scope>
+        then_state: Vec<Scope>
+        region_then: Vec<ThreadRegion>
+        then_continuing: bool
+        else_continuing: bool
+    }
+
+    fn checker_apply_branch_merge(checker: write Checker, merge: take BranchMerge) -> void {
+        if merge.then_continuing && merge.else_continuing {
+            merge_thread_region_loans(checker.thread_regions, merge.region_then)
+            if scopes_equal(merge.then_state, checker.scopes) == false {
+                checker_error(checker, "control-flow branches leave ownership in different states")
+                checker.scopes = scopes_copy(merge.before)
+            }
+        } else {
+            if merge.then_continuing {
+                checker.scopes = scopes_copy(merge.then_state)
+                checker.thread_regions = thread_regions_copy(merge.region_then)
+            }
+        }
+        checker.continuing = merge.then_continuing || merge.else_continuing
+    }
+
+    fn checker_while(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementWhile(condition, body) => {
+                let boolean = builtin_leaf(Bool())
+                let entry = scopes_copy(checker.scopes)
+                checker.loop_states.push(loop_state(checker.scopes))
+                checker_value(checker, condition, boolean)
+                checker.loop_states.pop()
+                if checker.continuing && scopes_equal(entry, checker.scopes) == false {
+                    checker_error(checker, "loop condition leaves ownership in a different state")
+                    checker.scopes = move entry
+                    return
+                }
+                let before = scopes_copy(checker.scopes)
+                checker.loop_states.push(loop_state(checker.scopes))
+                checker.continuing = true
+                checker_branch(checker, body)
+                let breaks = checker.loop_states[checker.loop_states.length() - 1].breaks
+                checker.loop_states.pop()
+                if checker.continuing && scopes_equal(before, checker.scopes) == false {
+                    checker_error(checker, "control-flow branches leave ownership in different states")
+                }
+                checker.scopes = move before
+                checker.continuing = frontend::expression_is_true(condition) == false || breaks
+            }
+            _ => {
+                checker_error(checker, "control-flow branches leave ownership in different states")
+            }
+        }
+    }
+}

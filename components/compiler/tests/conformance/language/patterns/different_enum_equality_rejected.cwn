@@ -1,0 +1,12 @@
+copy enum First {
+    A
+}
+copy enum Second {
+    B
+}
+fn main() -> u32 {
+    if First::A() == Second::B() {
+        return 1
+    }
+    return 0
+}

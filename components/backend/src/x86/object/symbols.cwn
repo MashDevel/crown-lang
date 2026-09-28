@@ -1,0 +1,61 @@
+module x86 {
+    fn add_function_symbols(object: write object::CompilerObject, state: write ObjectState, encoded: Vec<EncodedFunction>) -> Result<void, EncodeError> {
+        var index: usize = 0
+        while index < encoded.length() {
+            loan read encoded[index] as function {
+                var binding = object::SymbolLocal()
+                if function.exported {
+                    binding = object::SymbolGlobal()
+                }
+                let symbol = object::Symbol {
+                    name: function.name.clone()
+                    kind: object::SymbolFunction()
+                    binding: move binding
+                    section: Some(state.text_section)
+                    offset: function.offset
+                    size: u64.from(function.bytes.length())
+                }
+                match object::add_symbol(object, move symbol) {
+                    Ok(id) => {
+                        state.symbols.push(ObjectSymbolName {
+                                name: function.name.clone(), symbol: id
+                            })
+                    }
+                    Err(error) => {
+                        return Err(object_error(move error))
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn add_import_symbols(program: Program, object: write object::CompilerObject, state: write ObjectState) -> Result<void, EncodeError> {
+        var index: usize = 0
+        while index < program.imports.length() {
+            loan read program.imports[index] as imported {
+                let symbol = object::Symbol {
+                    name: imported.name.clone()
+                    kind: imported.kind
+                    binding: object::SymbolImport()
+                    section: None()
+                    offset: 0
+                    size: 0
+                }
+                match object::add_symbol(object, move symbol) {
+                    Ok(id) => {
+                        state.symbols.push(ObjectSymbolName {
+                                name: imported.name.clone(), symbol: id
+                            })
+                    }
+                    Err(error) => {
+                        return Err(object_error(move error))
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+}

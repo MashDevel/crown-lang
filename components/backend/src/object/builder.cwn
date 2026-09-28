@@ -1,0 +1,63 @@
+module object {
+    fn add_section(object: write CompilerObject, section: take Section) -> Result<usize, Error> {
+        var index: usize = 0
+        while index < object.sections.length() {
+            loan read object.sections[index] as existing {
+                if std::text::equal(existing.name, section.name) {
+                    return Err(error(ErrorDuplicateSection(), index))
+                }
+            }
+            index = index + 1
+        }
+        let id = object.sections.length()
+        object.sections.push(move section)
+        return Ok(id)
+    }
+
+    fn add_symbol(object: write CompilerObject, symbol: take Symbol) -> Result<usize, Error> {
+        var index: usize = 0
+        while index < object.symbols.length() {
+            loan read object.symbols[index] as existing {
+                if std::text::equal(existing.name, symbol.name) {
+                    return Err(error(ErrorDuplicateSymbol(), index))
+                }
+            }
+            index = index + 1
+        }
+        let id = object.symbols.length()
+        object.symbols.push(move symbol)
+        return Ok(id)
+    }
+
+    fn add_relocation(object: write CompilerObject, relocation: take Relocation) -> void {
+        object.relocations.push(move relocation)
+    }
+
+    fn set_entry(object: write CompilerObject, entry: usize) -> void {
+        object.entry = Some(entry)
+    }
+
+    fn finish(object: take CompilerObject) -> Result<CompilerObject, Error> {
+        match validate(object) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value;
+                return Ok(move object)
+            }
+        }
+    }
+
+    fn finish_relocatable(object: take CompilerObject) -> Result<CompilerObject, Error> {
+        match validate_relocatable(object) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value) => {
+                value;
+                return Ok(move object)
+            }
+        }
+    }
+}

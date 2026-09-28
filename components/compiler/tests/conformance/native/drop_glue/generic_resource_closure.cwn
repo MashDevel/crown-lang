@@ -1,0 +1,38 @@
+resource Scoped<T> {
+    value: T
+    marker: u32
+    drop {
+        visit(value, fn(item) {
+                inspect(item)
+            })
+        let counter = marker
+        visit(value, fn[read counter](item) {
+                item;
+                print(counter)
+            })
+    }
+}
+fn visit<T>(value: T, action: scoped fn(T) -> void) -> void {
+    action(value)
+}
+fn inspect<T>(value: T) -> void {
+    value;
+    print(8)
+}
+fn first() -> void {
+    let value = Scoped<Text> {
+        value: "owned", marker: 11
+    };
+    value
+}
+fn second() -> void {
+    let value = Scoped<u32> {
+        value: 1, marker: 22
+    };
+    value
+}
+fn main() -> u32 {
+    first();
+    second();
+    return 0
+}

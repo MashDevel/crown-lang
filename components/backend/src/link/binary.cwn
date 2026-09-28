@@ -1,0 +1,58 @@
+module link_binary {
+    fn number(bytes: Vec<u8>, offset: usize, width: usize) -> Result<u64, Text> {
+        if width > 8 || offset > bytes.length() || width > bytes.length() - offset {
+            return Err("invalid binary bounds")
+        }
+        var value: u64 = 0
+        for index in 0..width {
+            value = value |(u64.from(bytes[offset + index]) << u64.from(index * 8))
+        }
+        return Ok(value)
+    }
+
+    fn put(bytes: write Vec<u8>, offset: usize, value: u64, width: usize) -> void {
+        for index in 0..width {
+            bytes[offset + index] = u8.from((value >> u64.from(index * 8)) & 255)
+        }
+    }
+
+    fn aligned(value: usize, alignment: usize) -> usize {
+        return ((value + alignment - 1) / alignment) * alignment
+    }
+
+    fn pad(bytes: write Vec<u8>, length: usize) -> void {
+        while bytes.length() < length {
+            bytes.push(0)
+        }
+    }
+
+    fn append(bytes: write Vec<u8>, source: Vec<u8>) -> void {
+        loan read source as view {
+            std::bytes::append(bytes, view)
+        }
+    }
+
+    fn part(bytes: Vec<u8>, offset: usize, length: usize) -> Result<Vec<u8>, Text> {
+        if offset > bytes.length() || length > bytes.length() - offset {
+            return Err("invalid binary section bounds")
+        }
+        var output = Vec<u8>.with_capacity(length)
+        for index in 0..length {
+            output.push(bytes[offset + index])
+        }
+        return Ok(move output)
+    }
+
+    fn terminated(bytes: Vec<u8>, offset: usize) -> Result<Text, Text> {
+        var output = Vec<u8>.new()
+        var index = offset
+        while index < bytes.length() {
+            if bytes[index] == 0 {
+                return std::text::from_bytes(output)
+            }
+            output.push(bytes[index])
+            index = index + 1
+        }
+        return Err("unterminated binary string")
+    }
+}

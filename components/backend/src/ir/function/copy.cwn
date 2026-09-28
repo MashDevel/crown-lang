@@ -1,0 +1,75 @@
+module ir {
+    fn function_copy(function: Function) -> Function {
+        return Function {
+            name: function.name.clone()
+            signature: signature_copy(function.signature)
+            linkage: function.linkage
+            parameters: usize_values_copy(function.parameters)
+            exclusive_parameters: usize_values_copy(function.exclusive_parameters)
+            constants: constant_entries_copy(function.constants)
+            constant_indices: usize_values_copy(function.constant_indices)
+            values: types_copy(function.values)
+            blocks: basic_blocks_copy(function.blocks)
+        }
+    }
+
+    fn constant_entries_copy(values: Vec<ConstantEntry>) -> Vec<ConstantEntry> {
+        var output = Vec<ConstantEntry>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(ConstantEntry {
+                        id: value.id, value_type: value.value_type, value: constant_copy(value.value)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn types_copy(values: Vec<Type>) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(value)
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn basic_blocks_copy(values: Vec<BasicBlock>) -> Vec<BasicBlock> {
+        var output = Vec<BasicBlock>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(basic_block_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn basic_block_copy(value: BasicBlock) -> BasicBlock {
+        var instructions = Vec<Instruction>.with_capacity(value.instructions.length())
+        var index: usize = 0
+        while index < value.instructions.length() {
+            loan read value.instructions[index] as instruction {
+                instructions.push(instruction_copy(instruction))
+            }
+            index = index + 1
+        }
+        var terminator: Option<Terminator> = None()
+        match read value.terminator {
+            Some(item) => {
+                terminator = Some(terminator_copy(item))
+            }
+            None => {
+            }
+        }
+        return BasicBlock {
+            frequency: value.frequency, instructions: move instructions, terminator: move terminator
+        }
+    }
+}

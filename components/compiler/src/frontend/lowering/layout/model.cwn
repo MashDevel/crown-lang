@@ -1,0 +1,23 @@
+module lowering {
+    struct Layout {
+        size: u64
+        alignment: u32
+    }
+
+    fn layout_new(size: u64, alignment: u32) -> Layout {
+        return Layout {
+            size: size, alignment: alignment
+        }
+    }
+
+    fn align_to(value: u64, alignment: u32) -> u64 {
+        let mask = u64.from(alignment) - 1
+        return (value + mask) & ~mask
+    }
+
+    fn layout_copy(layout: Layout) -> Layout {
+        return Layout {
+            size: layout.size, alignment: layout.alignment
+        }
+    }
+}

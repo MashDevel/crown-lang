@@ -1,0 +1,9 @@
+fn launch(value: Text) -> Option<usize> {
+    unsafe {
+        return spawn(0, 0) move { value }
+    }
+}
+fn main() -> u32 {
+    launch("borrowed")
+    return 0
+}

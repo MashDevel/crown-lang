@@ -1,0 +1,134 @@
+module optimize {
+    fn branch(function: write ir::Function) -> usize {
+        var replacements = Vec<Option<ir::Terminator>>.with_capacity(function.blocks.length())
+        var count: usize = 0
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var replacement: Option<ir::Terminator> = None()
+            match read function.blocks[block].terminator {
+                Some(terminator) => {
+                    replacement = branch_replacement(function, terminator)
+                }
+                None => {
+                }
+            }
+            match read replacement {
+                Some(value) => {
+                    value;
+                    count = count + 1
+                }
+                None => {
+                }
+            }
+            replacements.push(move replacement)
+            block = block + 1
+        }
+        if count == 0 {
+            return 0
+        }
+        block = 0
+        while block < function.blocks.length() {
+            match read replacements[block] {
+                Some(terminator) => {
+                    function.blocks[block].terminator = Some(ir::terminator_copy(terminator))
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        prune_phi_inputs(function)
+        return count
+    }
+
+    fn branch_replacement(function: ir::Function, terminator: ir::Terminator) -> Option<ir::Terminator> {
+        match read terminator {
+            ir::TerminatorConditional(condition, then_block, else_block) => {
+                match integer_constant(function, condition) {
+                    Some(value) => {
+                        if value == 0 {
+                            return Some(ir::TerminatorBranch(else_block))
+                        };
+                        return Some(ir::TerminatorBranch(then_block))
+                    }
+                    None => {
+                        return None()
+                    }
+                }
+            }
+            ir::TerminatorSwitch(value, cases, default) => {
+                return constant_switch(function, value, cases, default)
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn constant_switch(function: ir::Function, value: usize, cases: Vec<ir::SwitchCase>, default: usize) -> Option<ir::Terminator> {
+        match integer_constant(function, value) {
+            None => {
+                return None()
+            }
+            Some(constant) => {
+                var index: usize = 0
+                while index < cases.length() {
+                    if cases[index].value == constant {
+                        return Some(ir::TerminatorBranch(cases[index].block))
+                    }
+                    index = index + 1
+                }
+                return Some(ir::TerminatorBranch(default))
+            }
+        }
+    }
+
+    fn prune_phi_inputs(function: write ir::Function) -> void {
+        let predecessors = ir::predecessors(function)
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read predecessors[block] as incoming {
+                    loan write function.blocks[block].instructions[index].kind as kind {
+                        prune_phi_kind(kind, incoming)
+                    }
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn prune_phi_kind(kind: write ir::InstructionKind, predecessors: Slice<usize>) -> void {
+        match write kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                var output = Vec<ir::PhiIncoming>.new()
+                var index: usize = 0
+                while index < incoming.length() {
+                    if usize_contains(predecessors, incoming[index].block) {
+                        output.push(ir::PhiIncoming {
+                                block: incoming[index].block, value: incoming[index].value
+                            })
+                    }
+                    index = index + 1
+                }
+                incoming = move output
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn usize_contains(values: Slice<usize>, expected: usize) -> bool {
+        var index: usize = 0
+        while index < values.length() {
+            if values[index] == expected {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+}

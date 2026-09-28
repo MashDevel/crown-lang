@@ -1,0 +1,111 @@
+module frontend {
+    copy struct CaptureLocation {
+        file: usize, line: usize, column: usize
+    }
+    fn capture_location(context: SourceCapture, span: Span) -> CaptureLocation {
+        var file: usize = 0
+        while file + 1 < context.files.length() && span.start >= context.files[file + 1].start {
+            file = file + 1
+        }
+        var line: usize = 1
+        var column: usize = 1
+        var index = context.files[file].start
+        loan read context.source as bytes {
+            while index < span.start && index < context.files[file].end {
+                let byte = bytes[index]
+                if byte == 10 {
+                    line = line + 1;
+                    column = 1
+                }
+                else {
+                    if byte & 192 != 128 {
+                        column = column + 1
+                    }
+                }
+                index = index + 1
+            }
+        }
+        return CaptureLocation {
+            file: file, line: line, column: column
+        }
+    }
+    fn capture_byte(output: write Vec<u8>, byte: u8) -> void {
+        if byte == 34 || byte == 92 {
+            output.push(92);
+            output.push(byte);
+            return
+        }
+        if byte == 10 {
+            output.push(92);
+            output.push(110);
+            return
+        }
+        if byte == 13 {
+            output.push(92);
+            output.push(114);
+            return
+        }
+        if byte == 9 {
+            output.push(92);
+            output.push(116);
+            return
+        }
+        output.push(byte)
+    }
+    fn capture_text(context: write SourceCapture, text: Text) -> Expression {
+        let start = context.base + context.generated.length()
+        context.generated.push(34)
+        loan read text as bytes {
+            for index in 0..bytes.length() {
+                capture_byte(context.generated, bytes[index])
+            }
+        }
+        context.generated.push(34)
+        return capture_literal(context, start)
+    }
+    fn capture_expression_text(context: write SourceCapture, span: Span) -> Expression {
+        let start = context.base + context.generated.length()
+        context.generated.push(34)
+        loan read context.source as bytes {
+            for index in span.start..span.end {
+                capture_byte(context.generated, bytes[index])
+            }
+        }
+        context.generated.push(34)
+        return capture_literal(context, start)
+    }
+    fn capture_literal(context: write SourceCapture, start: usize) -> Expression {
+        let span = Span {
+            source: 0, start: start, end: context.base + context.generated.length(), line: 1, column: 1
+        }
+        context.generated.push(10)
+        return expression(ExpressionText(span), span)
+    }
+    fn capture_site(context: write SourceCapture, site: Span, value: Span) -> Expression {
+        let location = capture_location(context, site)
+        let path = context.files[location.file].path.clone()
+        var fields = Vec<FieldValue>.new()
+        fields.push(capture_value("file", capture_text(context, path), site))
+        fields.push(capture_value("line", capture_number(context, location.line), site))
+        fields.push(capture_value("column", capture_number(context, location.column), site))
+        fields.push(capture_value("expression", capture_expression_text(context, value), site))
+        let generated = capture_marker(context)
+        return expression(ExpressionStruct(capture_type("SourceSite", generated), move fields), generated)
+    }
+    fn capture_marker(context: write SourceCapture) -> Span {
+        let start = context.base + context.generated.length()
+        context.generated.push(48)
+        context.generated.push(10)
+        return Span {
+            source: 0, start: start, end: start + 1, line: 1, column: 1
+        }
+    }
+    fn capture_number(context: write SourceCapture, value: usize) -> Expression {
+        return expression(ExpressionInteger(u64.from(value)), capture_marker(context))
+    }
+    fn capture_value(name: take Text, value: take Expression, span: Span) -> FieldValue {
+        return FieldValue {
+            name: capture_name(move name, span), value: move value, span: span
+        }
+    }
+}

@@ -1,0 +1,98 @@
+module optimize {
+    struct InlineSearch {
+        eligibility: InlineEligibility
+        caller_cost: usize
+        block: usize
+        instruction: usize
+        loops: Vec<bool>
+        loops_ready: bool
+        invalid: bool
+        best: Option<InlineSite>
+    }
+
+    fn find_inline_site(caller: ir::Function, caller_id: usize, candidates: Vec<InlineCandidate>) -> Option<InlineSite> {
+        let cost = inline_cost(caller)
+        if cost >= 1600 {
+            return None()
+        }
+        var search = InlineSearch {
+            eligibility: InlineEligibility {
+                caller: caller_id, callee: 0, inside_loop: false, constant_argument: false
+            }
+            caller_cost: cost
+            block: 0
+            instruction: 0
+            loops: Vec<bool>.new()
+            loops_ready: false
+            invalid: false
+            best: None()
+        }
+        while search.block < caller.blocks.length() {
+            search.instruction = 0
+            while search.instruction < caller.blocks[search.block].instructions.length() {
+                consider_inline_site(caller, candidates, search)
+                if search.invalid {
+                    return None()
+                }
+                search.instruction = search.instruction + 1
+            }
+            search.block = search.block + 1
+        }
+        return replace(search.best, None())
+    }
+
+    fn consider_inline_site(caller: ir::Function, candidates: Vec<InlineCandidate>, search: write InlineSearch) -> void {
+        match read caller.blocks[search.block].instructions[search.instruction].kind {
+            ir::InstructionCall(callee, arguments, result) => {
+                result
+                search.eligibility.callee = callee
+                search.eligibility.constant_argument = any_constant_argument(caller, arguments)
+            }
+            _ => {
+                return
+            }
+        }
+        if search.eligibility.callee >= candidates.length() {
+            search.invalid = true;
+            return
+        }
+        loan read candidates[search.eligibility.callee] as candidate {
+            consider_inline_candidate(caller, candidate, search)
+        }
+    }
+
+    fn consider_inline_candidate(caller: ir::Function, candidate: InlineCandidate, search: write InlineSearch) -> void {
+        if search.caller_cost + candidate.cost > 1600 {
+            return
+        }
+        match read search.best {
+            Some(best) => {
+                if candidate.cost >= best.cost {
+                    return
+                }
+            }
+            None => {
+            }
+        }
+        search.eligibility.inside_loop = false
+        if inline_eligible(candidate, search.eligibility) == false {
+            search.eligibility.inside_loop = true
+            if inline_eligible(candidate, search.eligibility) == false {
+                return
+            }
+            if search.loops_ready == false {
+                search.loops = blocks_in_loops(caller)
+                search.loops_ready = true
+            }
+            if search.loops[search.block] == false {
+                return
+            }
+        }
+        search.best = Some(InlineSite {
+                block: search.block
+                instruction: search.instruction
+                callee: search.eligibility.callee
+                cost: candidate.cost
+            })
+    }
+}

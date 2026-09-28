@@ -1,0 +1,177 @@
+module optimize {
+    fn inline_call(caller: write ir::Function, site: InlineSite, callee: ir::Function) -> bool {
+        match inline_call_parts(caller, site) {
+            None => {
+                return false
+            }
+            Some(call) => {
+                if inlineable_call(call, callee) == false {
+                    return false
+                }
+                let continuation = split_inline_call(caller, site)
+                let mapping = prepare_inline_mapping(caller, call, callee)
+                let returns = clone_inline_blocks(caller, callee, mapping, continuation)
+                caller.blocks[site.block].terminator = Some(ir::TerminatorBranch(mapping.blocks[0]))
+                return insert_inline_result(caller, call.result, returns, continuation)
+            }
+        }
+    }
+
+    fn inline_call_parts(caller: ir::Function, site: InlineSite) -> Option<InlineCallSite> {
+        if site.block >= caller.blocks.length() {
+            return None()
+        }
+        if site.instruction >= caller.blocks[site.block].instructions.length() {
+            return None()
+        }
+        match read caller.blocks[site.block].instructions[site.instruction].kind {
+            ir::InstructionCall(function, arguments, result) => {
+                function;
+                result
+                return Some(InlineCallSite {
+                        result: caller.blocks[site.block].instructions[site.instruction].result
+                        arguments: ir::usize_values_copy(arguments)
+                    })
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn inlineable_call(call: InlineCallSite, callee: ir::Function) -> bool {
+        if callee.blocks.length() == 0 || call.arguments.length() != callee.parameters.length() {
+            return false
+        }
+        if ir::value_present(call.result) == false {
+            return true
+        }
+        var block: usize = 0
+        while block < callee.blocks.length() {
+            match read callee.blocks[block].terminator {
+                Some(terminator) => {
+                    match read terminator {
+                        ir::TerminatorReturn(value) => {
+                            if ir::value_present(value) {
+                                return true
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                }
+                None => {
+                }
+            }
+            block = block + 1
+        }
+        return false
+    }
+
+    fn split_inline_call(caller: write ir::Function, site: InlineSite) -> usize {
+        var before = Vec<ir::Instruction>.new()
+        var after = Vec<ir::Instruction>.new()
+        var terminator: Option<ir::Terminator> = None()
+        loan read caller.blocks[site.block] as source {
+            var index: usize = 0
+            while index < source.instructions.length() {
+                loan read source.instructions[index] as instruction {
+                    if index < site.instruction {
+                        before.push(ir::instruction_copy(instruction))
+                    }
+                    if index > site.instruction {
+                        after.push(ir::instruction_copy(instruction))
+                    }
+                }
+                index = index + 1
+            }
+            match read source.terminator {
+                Some(value) => {
+                    terminator = Some(ir::terminator_copy(value))
+                }
+                None => {
+                }
+            }
+        }
+        caller.blocks[site.block].instructions = move before
+        caller.blocks[site.block].terminator = None()
+        let continuation = caller.blocks.length()
+        caller.blocks.push(ir::BasicBlock {
+                frequency: 0,
+                instructions: move after, terminator: move terminator
+            })
+        replace_inline_phi_source(caller, site.block, continuation)
+        return continuation
+    }
+
+    fn replace_inline_phi_source(function: write ir::Function, source: usize, replacement: usize) -> void {
+        let targets = match read function.blocks[replacement].terminator {
+            Some(terminator) => ir::terminator_targets(terminator)
+            None() => Vec<usize>.new()
+        }
+        for block in 0..targets.length() {
+            let target = targets[block]
+            var index: usize = 0
+            while index < function.blocks[target].instructions.length() {
+                replace_phi_predecessor(function.blocks[target].instructions[index].kind, source, replacement)
+                index = index + 1
+            }
+        }
+    }
+
+    fn insert_inline_result(caller: write ir::Function, result: Option<usize>, returns: Vec<InlineReturn>, continuation: usize) -> bool {
+        match read result {
+            None => {
+                return true
+            }
+            Some(value) => {
+                var incoming = Vec<ir::PhiIncoming>.new()
+                var index: usize = 0
+                while index < returns.length() {
+                    match read returns[index].value {
+                        Some(returned) => {
+                            incoming.push(ir::PhiIncoming {
+                                    block: returns[index].block, value: returned
+                                })
+                        }
+                        None => {
+                            return false
+                        }
+                    }
+                    index = index + 1
+                }
+                match ir::function_value_type(caller, value) {
+                    Some(value_type) => {
+                        let phi = ir::Instruction {
+                            result: Some(value), kind: ir::InstructionPhi(value_type, move incoming)
+                        }
+                        loan write caller.blocks[continuation] as block {
+                            prepend_instruction(block, move phi)
+                        }
+                        return true
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    fn replace_phi_predecessor(kind: write ir::InstructionKind, source: usize, replacement: usize) -> void {
+        match write kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type
+                var incoming_index: usize = 0
+                while incoming_index < incoming.length() {
+                    if incoming[incoming_index].block == source {
+                        incoming[incoming_index].block = replacement
+                    }
+                    incoming_index = incoming_index + 1
+                }
+            }
+            _ => {
+            }
+        }
+    }
+}

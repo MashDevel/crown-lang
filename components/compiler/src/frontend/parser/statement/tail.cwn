@@ -1,0 +1,62 @@
+module frontend {
+    fn parser_function_tail(body: write Vec<Statement>) -> void {
+        if body.length() == 0 {
+            return
+        }
+        loan write body[body.length() - 1] as statement {
+            let kind = replace(statement.kind, StatementContinue())
+            statement.kind = parser_return_tail(move kind)
+        }
+    }
+
+    fn parser_return_tail(kind: take StatementKind) -> StatementKind {
+        if parser_returns_tail(kind) == false {
+            return move kind
+        }
+        match move kind {
+            StatementExpression(value) => {
+                return StatementReturn(move value, true)
+            }
+            StatementUnsafe(values) => {
+                var body = move values
+                parser_function_tail(body)
+                return StatementUnsafe(move body)
+            }
+            StatementIf(condition, left, right) => {
+                var then_body = move left
+                var else_body = move right
+                parser_function_tail(then_body)
+                parser_function_tail(else_body)
+                return StatementIf(move condition, move then_body, move else_body)
+            }
+            StatementMatch(value) => {
+                var expression = move value
+                parser_return_arms(expression.arms)
+                return StatementMatch(move expression)
+            }
+            _ => {
+                return StatementContinue()
+            }
+        }
+    }
+
+    fn parser_returns_tail(kind: StatementKind) -> bool {
+        match read kind {
+            StatementExpression(value) => {
+                value;
+                return true
+            }
+            _ => {
+                return parser_is_conditional(kind)
+            }
+        }
+    }
+
+    fn parser_return_arms(arms: write Vec<MatchArm>) -> void {
+        var index: usize = 0
+        while index < arms.length() {
+            parser_function_tail(arms[index].body)
+            index = index + 1
+        }
+    }
+}

@@ -1,0 +1,96 @@
+module lowering {
+    struct DropLoop {
+        data: usize
+        index: usize
+        header: usize
+        body: usize
+        exit: usize
+    }
+
+    fn drop_vector(compiler: write FunctionCompiler, symbols: sema::Symbols, request: BufferOwner) -> Result<void, u32> {
+        let data = function_load_pointer(compiler, request.address)?
+        if sema::type_is_copy_with_symbols(symbols, request.element) == false {
+            let length_address = function_offset(compiler, request.address, 8)?
+            let load = Place {
+                address: length_address, value_type: sema::builtin_leaf(sema::USize())
+            }
+            let length = function_load(compiler, symbols, load)?
+            let buffer = DropBuffer {
+                data: data, length: length, element: sema::type_copy(request.element)
+            }
+            drop_buffer(compiler, symbols, buffer)?
+        }
+        return free_pointer(compiler, data)
+    }
+
+    struct DropBuffer {
+        data: usize
+        length: usize
+        element: sema::Type
+    }
+
+    fn drop_buffer(compiler: write FunctionCompiler, symbols: sema::Symbols, request: DropBuffer) -> Result<void, u32> {
+        let flow = drop_buffer_loop(compiler, symbols, request)?
+        function_finish(compiler, ir::TerminatorBranch(flow.header))?
+        function_select_block(compiler, flow.header)
+        let load = Place {
+            address: flow.index, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let current = function_load(compiler, symbols, load)?
+        let zero_type = ir::TypeInteger(ir::IntegerWidth64())
+        let zero = function_integer(compiler, zero_type, 0)
+        let remaining = function_append_value(compiler, ir::InstructionCompare(ir::CompareNotEqual(), current, zero))?
+        function_finish(compiler, ir::TerminatorConditional(remaining, flow.body, flow.exit))?
+        function_select_block(compiler, flow.body)
+        let item = DropBufferItem {
+            flow: drop_loop_copy(flow), current: current, element: sema::type_copy(request.element)
+        }
+        drop_buffer_item(compiler, symbols, item)?
+        function_finish(compiler, ir::TerminatorBranch(flow.header))?
+        function_select_block(compiler, flow.exit)
+        return Ok(())
+    }
+
+    struct DropBufferItem {
+        flow: DropLoop
+        current: usize
+        element: sema::Type
+    }
+
+    fn drop_buffer_item(compiler: write FunctionCompiler, symbols: sema::Symbols, request: DropBufferItem) -> Result<void, u32> {
+        let one_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, one_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), request.current, one))?
+        let store = StoreRequest {
+            address: request.flow.index, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, store)?
+        let layout = layout(symbols, request.element)?
+        let size_type = ir::TypeInteger(ir::IntegerWidth64())
+        let size = function_integer(compiler, size_type, layout.size)
+        let bytes = function_append_value(compiler, ir::InstructionBinary(ir::BinaryMultiply(), next, size))?
+        let item = function_append_value(compiler, ir::InstructionOffset(request.flow.data, bytes))?
+        let item_drop = Place {
+            address: item, value_type: sema::type_copy(request.element)
+        }
+        return drop_value(compiler, item_drop)
+    }
+
+    fn drop_loop_copy(flow: DropLoop) -> DropLoop {
+        return DropLoop {
+            data: flow.data, index: flow.index, header: flow.header, body: flow.body, exit: flow.exit
+        }
+    }
+    fn drop_buffer_loop(compiler: write FunctionCompiler, symbols: sema::Symbols, request: DropBuffer) -> Result<DropLoop, u32> {
+        let index_type = sema::builtin_leaf(sema::USize())
+        let index = function_stack(compiler, symbols, index_type)?
+        let store = StoreRequest {
+            address: index, value: request.length, value_type: move index_type
+        }
+        function_store(compiler, symbols, store)?
+        return Ok(DropLoop {
+                data: request.data, index: index, header: function_new_block(compiler)?, body: function_new_block(compiler)?, exit: function_new_block(compiler)?
+            })
+    }
+
+}

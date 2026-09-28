@@ -1,0 +1,50 @@
+module frontend {
+    fn parser_finish_arena_access(parser: write Parser, value: take Expression) -> Statement {
+        let start = value.span
+        let {
+            kind, span, depth
+        } = move value
+        match move kind {
+            ExpressionMethodCall(receiver, method, arguments) => {
+                let call = ArenaCall {
+                    receiver: move receiver
+                    method: move method
+                    arguments: move arguments
+                    start: start
+                }
+                return parser_finish_arena_call(parser, move call)
+            }
+            _ => {
+            }
+        }
+        parser_report(parser, UnexpectedToken())
+        return statement(StatementBreak(), start)
+    }
+
+    struct ArenaCall {
+        receiver: Box<Expression>
+        method: Name
+        arguments: Vec<Expression>
+        start: Span
+    }
+
+    fn parser_finish_arena_call(parser: write Parser, input: take ArenaCall) -> Statement {
+        var {
+            receiver, method, arguments, start
+        } = move input
+        let valid = parser_name_is(parser, method, "with") && arguments.length() == 1
+        if !valid {
+            parser_report(parser, UnexpectedToken())
+        }
+        let handle = match arguments.pop() {
+            Some(value) => move value
+            None => expression(ExpressionUnit(), start)
+        }
+        parser_expect(parser, TokenAs())
+        let mode = parser_loan_mode(parser)
+        let alias = parser_identifier(parser)
+        let body = parser_block(parser)
+        let end = parser_previous_span(parser)
+        return statement(StatementArenaAccess(mode, move receiver, Box.new(move handle), move alias, move body), span_through(start, end))
+    }
+}

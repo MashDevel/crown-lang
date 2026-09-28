@@ -1,0 +1,99 @@
+copy struct Utf8Case {
+    bytes: [u8; 4], length: usize, valid: bool
+}
+
+fn utf8_validation_cases() -> [Utf8Case; 11] {
+    return [
+        Utf8Case {
+            bytes: [0, 0, 0, 0], length: 0, valid: true
+        },
+        Utf8Case {
+            bytes: [0, 65, 0, 0], length: 2, valid: true
+        },
+        Utf8Case {
+            bytes: [0xc2, 0x80, 0, 0], length: 2, valid: true
+        },
+        Utf8Case {
+            bytes: [0xef, 0xbf, 0xbd, 0], length: 3, valid: true
+        },
+        Utf8Case {
+            bytes: [0xf4, 0x8f, 0xbf, 0xbf], length: 4, valid: true
+        },
+        Utf8Case {
+            bytes: [0xf4, 0x90, 0x80, 0x80], length: 4, valid: false
+        },
+        Utf8Case {
+            bytes: [0xed, 0xa0, 0x80, 0], length: 3, valid: false
+        },
+        Utf8Case {
+            bytes: [0xc0, 0x80, 0, 0], length: 2, valid: false
+        },
+        Utf8Case {
+            bytes: [0xe0, 0x80, 0x80, 0], length: 3, valid: false
+        },
+        Utf8Case {
+            bytes: [0xed, 0xa0, 0, 0], length: 2, valid: false
+        },
+        Utf8Case {
+            bytes: [0xc2, 65, 0, 0], length: 2, valid: false
+        }
+    ]
+}
+
+fn test_utf8_validation() -> u32 {
+    let cases = utf8_validation_cases()
+    for index in 0..11 {
+        let sample = cases[index]
+        loan read sample.bytes[0..sample.length] as bytes {
+            let valid = match std::text::validate_bytes(bytes) {
+                Ok(value) => {
+                    value;
+                    true
+                }
+                Err(error) => {
+                    error;
+                    false
+                }
+            }
+            if valid != sample.valid {
+                return u32.from(index + 1)
+            }
+        }
+    }
+    let truncated: [u8; 2] = [0xed, 0xa0]
+    loan read truncated as bytes {
+        let lossy = std::text::from_bytes_lossy(std::bytes::clone(bytes))
+        if std::text::equal(lossy, "��") == false {
+            return 12
+        }
+    }
+    return test_utf8_restricted_second()
+}
+
+fn test_utf8_restricted_second() -> u32 {
+    let prefixes: [u8; 4] = [224, 237, 240, 244]
+    let second: [u8; 4] = [128, 160, 128, 144]
+    for sample in 0..4 {
+        let input: [u8; 4] = [prefixes[sample], second[sample], 128, 128]
+        loan read input as bytes {
+            var index: usize = 0
+            match std::text::decode_scalar_checked(bytes, index) {
+                Ok(value) => {
+                    value;
+                    return 20
+                },
+                Err(error) => {
+                    error;
+                }
+            }
+            if index != 1 {
+                return 21
+            }
+            let lossy = std::text::from_bytes_lossy(std::bytes::clone(bytes))
+            if std::text::equal(lossy, "����") == false {
+                return 22
+            }
+        }
+    }
+    return test_decoded_characters()
+}

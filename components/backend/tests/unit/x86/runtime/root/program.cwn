@@ -1,0 +1,82 @@
+fn add_runtime(program: write x86::Program) -> Result<void, u32> {
+    return match x86::codegen_add_root_runtime(program) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            error;
+            Err(7)
+        }
+    }
+}
+
+fn empty_runtime() -> Result<void, u32> {
+    var program = x86::program_relocatable()
+    add_runtime(program)?
+    if program.functions.length() != 0 || program.data.length() != 0 {
+        return Err(1)
+    }
+    return Ok(())
+}
+
+fn verify() -> Result<void, u32> {
+    var program = x86::program_relocatable()
+    match x86::program_add_import(program, "crown_root_acquire") {
+        Err(error) => {
+            error;
+            return Err(2)
+        },
+        Ok(value) => {
+            value
+        }
+    }
+    add_runtime(program)?
+    if x86::program_has_import(program, "crown_root_acquire") {
+        return Err(3)
+    }
+    let object = match x86::encode_program(program) {
+        Err(error) => {
+            error;
+            return Err(4)
+        },
+        Ok(value) => move value
+    }
+    verify_symbols(object)?
+    let count = program.functions.length()
+    add_runtime(program)?
+    if program.functions.length() != count {
+        return Err(6)
+    }
+    return Ok(())
+}
+
+fn verify_symbols(object: object::CompilerObject) -> Result<void, u32> {
+    for index in 0..object.symbols.length() {
+        loan read object.symbols[index] as symbol {
+            if x86::root_runtime_name(symbol.name) {
+                match read symbol.binding {
+                    object::SymbolImport => {
+                        return Err(5)
+                    },
+                    _ => {
+                    }
+                }
+            }
+        }
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, u32> {
+    empty_runtime()?
+    verify()?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return match run() {
+        Ok(value) => {
+            value;
+            42
+        },
+        Err(error) => error
+    }
+}

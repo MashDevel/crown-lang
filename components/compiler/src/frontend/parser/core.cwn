@@ -1,0 +1,160 @@
+module frontend {
+    fn parse(source: take Shared<Vec<u8>>, length: usize, source_id: usize) -> Result<Program, Vec<Diagnostic>> {
+        let parser_source = source.share()
+        match lex(move source, length, source_id) {
+            Err(diagnostics) => {
+                return Err(move diagnostics)
+            }
+            Ok(tokens) => {
+                var parser = parser_new(move parser_source, move tokens)
+                var program = parser_program(parser)
+                let diagnostics = parser_take_diagnostics(parser)
+                if diagnostics.length() != 0 {
+                    return Err(move diagnostics)
+                }
+                namespace_resolve(parser.source.share(), program)
+                return Ok(move program)
+            }
+        }
+    }
+
+    fn parser_current_kind(parser: Parser) -> TokenKind {
+        if parser.pending_greater > 0 {
+            return TokenGreater()
+        }
+        let token = parser_token_at(parser, parser.offset)
+        return token.kind
+    }
+
+    fn parser_at(parser: Parser, expected: take TokenKind) -> bool {
+        let current = parser_current_kind(parser)
+        return token_kind_equal(current, expected)
+    }
+
+    fn parser_advance(parser: write Parser) -> Token {
+        if parser.pending_greater > 0 {
+            parser.pending_greater = parser.pending_greater - 1
+            var token = parser_token_at(parser, parser.offset - 1)
+            token.kind = TokenGreater()
+            return move token
+        }
+        let token = parser_token_at(parser, parser.offset)
+        if parser_at(parser, TokenEnd()) == false {
+            parser.offset = parser.offset + 1
+        }
+        return move token
+    }
+
+    fn parser_take(parser: write Parser, expected: take TokenKind) -> Option<Token> {
+        if parser_at(parser, expected) {
+            return Some(parser_advance(parser))
+        }
+        return None()
+    }
+
+    fn parser_consumed(parser: write Parser, expected: take TokenKind) -> bool {
+        match parser_take(parser, expected) {
+            Some(token) => {
+                token;
+                return true
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn parser_expect(parser: write Parser, expected: take TokenKind) -> Token {
+        match parser_take(parser, expected) {
+            Some(token) => {
+                return move token
+            }
+            None => {
+            }
+        }
+        parser_report(parser, MissingToken())
+        if parser_at(parser, TokenEnd()) == false {
+            return parser_advance(parser)
+        }
+        return parser_token_at(parser, parser.offset)
+    }
+
+    fn parser_report(parser: write Parser, kind: take DiagnosticKind) -> void {
+        if parser.stopped {
+            return
+        }
+        var diagnostics = parser_take_diagnostics(parser)
+        let token = parser_token_at(parser, parser.offset)
+        diagnostics.push(Diagnostic {
+                kind: move kind, span: token.span
+            })
+        parser.diagnostics = Some(move diagnostics)
+    }
+
+    fn parser_identifier(parser: write Parser) -> Name {
+        let token = parser_expect(parser, TokenIdentifier())
+        return Name {
+            text: "", span: token.span
+        }
+    }
+
+    fn parser_name_from_token(token: Token) -> Name {
+        return Name {
+            text: "", span: token.span
+        }
+    }
+
+    fn parser_member_name(parser: write Parser) -> Name {
+        let kind = parser_current_kind(parser)
+        if token_kind_equal(kind, TokenIdentifier()) || token_kind_equal(kind, TokenRead()) || token_kind_equal(kind, TokenWrite()) || token_kind_equal(kind, TokenTake()) {
+            let token = parser_advance(parser)
+            return parser_name_from_token(token)
+        }
+        return parser_identifier(parser)
+    }
+
+    fn parser_previous_span(parser: Parser) -> Span {
+        if parser.offset == 0 {
+            let first = parser_token_at(parser, 0)
+            return first.span
+        }
+        let previous = parser_token_at(parser, parser.offset - 1)
+        return previous.span
+    }
+
+    fn parser_token_at(parser: Parser, index: usize) -> Token {
+        loan read parser.tokens[index] as token {
+            return token_copy(token)
+        }
+    }
+
+    fn parser_skip_breaks(parser: write Parser) -> void {
+        while parser_at(parser, TokenNewline()) || parser_at(parser, TokenSemicolon()) {
+            parser_advance(parser)
+        }
+    }
+
+    fn parser_expect_type_close(parser: write Parser) -> Token {
+        if parser_at(parser, TokenGreater()) {
+            return parser_advance(parser)
+        }
+        if parser_at(parser, TokenShiftRight()) {
+            let token = parser_advance(parser)
+            parser.pending_greater = 1
+            return move token
+        }
+        return parser_expect(parser, TokenGreater())
+    }
+
+    fn parser_at_any(parser: Parser, expected: Slice<TokenKind>) -> bool {
+        let current = parser_current_kind(parser)
+        var index: usize = 0
+        while index < expected.length() {
+            if token_kind_equal(current, expected[index]) {
+                return true
+            }
+            index = index + 1
+        }
+        false
+    }
+}

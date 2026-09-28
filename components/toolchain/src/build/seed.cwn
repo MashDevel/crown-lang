@@ -1,0 +1,30 @@
+module toolchain {
+    fn seed_relative(name: Text) -> Text {
+        return path_join(path_join("bootstrap", target_name(host_target())), name)
+    }
+
+    fn bootstrap_stage(request: BootstrapRequest, seed: Text, sources: Vec<Text>, directory: Text) -> Result<Text, Text> {
+        if request.verify == false {
+            return native_bootstrap_stage(request, seed, sources, directory)
+        }
+        if request.force == false && seed_matches_sources(request.root, sources)? {
+            let binary = path_join(directory, "compiler")
+            bootstrap_link(seed, binary)?
+            return Ok(move binary)
+        }
+        let stage = rebuild(request.compiler, sources, directory)?
+        return Ok(stage.binary.clone())
+    }
+
+    fn seed_matches_sources(root: Text, sources: Vec<Text>) -> Result<bool, Text> {
+        let path = path_join(root, seed_relative("manifest.json"))
+        let document = json(read_text(path)?)?
+        let host = json_optional_text(document, document.root, "host")?
+        if std::text::equal(host, target_name(host_target())) == false {
+            return Ok(false)
+        }
+        let expected = json_optional_text(document, document.root, "source_sha256")?
+        let actual = digest_text(source_record(root, sources)?)?
+        return Ok(std::text::equal(expected, actual))
+    }
+}

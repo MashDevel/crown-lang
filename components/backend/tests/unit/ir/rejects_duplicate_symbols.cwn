@@ -1,0 +1,23 @@
+fn make_import() -> ir::Function {
+    var parameters = Vec<ir::Type>.new()
+    let signature = ir::signature_new(move parameters, ir::TypeVoid())
+    return ir::function_new("same", move signature, ir::LinkageImport())
+}
+fn main() -> u32 {
+    var program = ir::program_new()
+    ir::program_add_function(program, make_import())
+    ir::program_add_function(program, make_import())
+    match ir::validate_program(program) {
+        Ok(item) => {
+            item;
+            return 1
+        }
+        Err(error) => {
+            let expected = ir::ValidationDuplicateSymbol()
+            if error.kind.code == expected.code {
+                return 42
+            }
+            return 2
+        }
+    }
+}

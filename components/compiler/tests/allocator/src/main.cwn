@@ -1,0 +1,74 @@
+module auditor {
+    fn add(program: write x86::Program, function: take x86::Function) -> Result<void, u32> {
+        var value = move function
+        x86::function_export(value)
+        return match x86::program_add_function(program, move value) {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                error;
+                Err(1)
+            }
+        }
+    }
+
+    fn add_wrappers(program: write x86::Program) -> Result<void, u32> {
+        add(program, begin())?
+        add(program, acquired())?
+        add(program, allocate("malloc"))?
+        add(program, allocate("calloc"))?
+        add(program, reallocate())?
+        add(program, release())?
+        add(program, counter("crown_test_live", 0))?
+        add(program, counter("crown_test_allocated", 8))?
+        return Ok(())
+    }
+
+    fn runtime_object() -> Result<object::CompilerObject, Text> {
+        if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+            return arm_runtime_object()
+        }
+        return match runtime_x86_object() {
+            Ok(value) => Ok(move value)
+            Err(error) => {
+                error;
+                Err("could not generate allocation auditor")
+            }
+        }
+    }
+
+    fn runtime_x86_object() -> Result<object::CompilerObject, u32> {
+        var program = x86::program_relocatable()
+        var data = x86::data_zero_fill("crown_test_counters", 24)
+        x86::data_align(data, 8)
+        match x86::program_add_data(program, move data) {
+            Ok(value) => {
+                value
+            },
+            Err(error) => {
+                error;
+                return Err(2)
+            }
+        }
+        let names = std::text::split("malloc|calloc|realloc|free", 124)
+        for index in 0..names.length() {
+            match x86::program_add_import(program, names[index].clone()) {
+                Ok(value) => {
+                    value
+                },
+                Err(error) => {
+                    error;
+                    return Err(3)
+                }
+            }
+        }
+        add_wrappers(program)?
+        let object = match x86::encode_program(program) {
+            Ok(value) => move value,
+            Err(error) => {
+                error;
+                return Err(4)
+            }
+        }
+        return Ok(move object)
+    }
+}

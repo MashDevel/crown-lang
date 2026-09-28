@@ -1,0 +1,36 @@
+module unicode_tests {
+    fn same(actual: Vec<u32>, expected: Text) -> Result<void, Text> {
+        let values = unicode_tables::integers(expected)?
+        testing::expect(actual.length() == values.length(), "integer count")?
+        for index in 0..values.length() {
+            testing::expect(actual[index] == values[index], "integer value")?
+        }
+        return Ok(())
+    }
+
+    fn input() -> Result<void, Text> {
+        same(unicode_tables::integers("[0, 17, 0x2a, 0xFF]")?, "0,17,42,255")?
+        same(unicode_tables::array("static DATA: &[u8] = &[1, 0xff];", "DATA")?, "1,255")?
+        same(unicode_tables::array("const DATA: [u8; 0] = [];", "DATA")?, "")?
+        testing::error(unicode_tables::array("const DATA_SUFFIX: [u8; 0] = [];", "DATA"))?
+        testing::error(unicode_tables::integers("4294967296"))?
+        testing::error(unicode_tables::integers("0x"))?
+        return testing::error(unicode_tables::array("const DATA: [u8; 0] = [", "DATA"))
+    }
+
+    fn printable_source() -> Text {
+        var source = ""
+        for plane in 0..2 {
+            let name = std::text::decimal(u64.from(plane))
+            std::text::append(source, std::text::joined("const NORMAL", std::text::joined(name, ": [u8; 0] = [];\n")))
+            std::text::append(source, std::text::joined("const SINGLETONS", std::text::joined(name, "U: [u8; 0] = [];\n")))
+            std::text::append(source, std::text::joined("const SINGLETONS", std::text::joined(name, "L: [u8; 0] = [];\n")))
+        }
+        std::text::append(source, "if 0x20000 <= x && x < 0x20002\n")
+        return move source
+    }
+
+    fn grapheme_source(first: Text) -> Text {
+        return std::text::joined(std::text::joined("pub mod grapheme_extend {\nShortOffsetRunHeader::new(0, ", first), "), ShortOffsetRunHeader::new(2, 1114112)\nconst OFFSETS: [u32; 5] = [0, 0, 1, 1, 1114112];\n} pub mod lowercase {}")
+    }
+}

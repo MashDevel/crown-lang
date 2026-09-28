@@ -1,0 +1,12 @@
+struct Item {
+    value: u32
+}
+fn mixed(first: read Item, second: take Item) -> u32 {
+    return first.value
+}
+fn main() -> u32 {
+    let item = Item {
+        value: 1
+    }
+    return mixed(item, move item)
+}

@@ -1,0 +1,6 @@
+view struct Saved {
+    action: scoped fn() -> void
+}
+fn main() -> u32 {
+    return 0
+}

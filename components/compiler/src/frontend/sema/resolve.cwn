@@ -1,0 +1,145 @@
+module sema {
+    fn resolve_type(symbols: write Symbols, context: Resolution, reference: frontend::TypeRef) -> Type {
+        let previous = replace(symbols.current_span, reference.span)
+        let result = resolve_type_dispatch(symbols, context, reference)
+        symbols.current_span = previous
+        return move result
+    }
+
+    fn resolve_type_dispatch(symbols: write Symbols, context: Resolution, reference: frontend::TypeRef) -> Type {
+        match read reference.kind {
+            frontend::TypeNamed(name, arguments) => {
+                name;
+                arguments;
+                return resolve_named(symbols, context, reference.kind)
+            }
+            frontend::TypeArray(element, length) => {
+                loan read element as value {
+                    let count = resolve_array_length(symbols, length)
+                    return ArrayType(Box.new(resolve_type(symbols, context, value)), count)
+                }
+            }
+            frontend::TypeFunction(parameters, result) => {
+                parameters;
+                result
+                return resolve_function_type(symbols, context, reference.kind)
+            }
+            frontend::TypeScoped(value) => {
+                loan read value as inner {
+                    return ScopedFunction(Box.new(resolve_type(symbols, context, inner)))
+                }
+            }
+            frontend::TypeDynamic(interface_name) => {
+                match find_symbol(symbols, interface_name) {
+                    Some(symbol) => {
+                        match read symbols.types[symbol].kind {
+                            Interface => {
+                                return DynamicType(symbol)
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    None => {
+                    }
+                }
+                symbols_error(symbols, "unknown type or incorrect number of type arguments")
+                return Invalid()
+            }
+        }
+    }
+
+    fn resolve_named(symbols: write Symbols, context: Resolution, kind: frontend::TypeRefKind) -> Type {
+        match read kind {
+            frontend::TypeNamed(name, arguments) => {
+                let resolved = resolve_arguments(symbols, context, arguments)
+                resolve_name(symbols, context, name, move resolved)
+            }
+            _ => {
+                symbols_error(symbols, "unknown type or incorrect number of type arguments");
+                Invalid()
+            }
+        }
+    }
+
+    fn resolve_name(symbols: write Symbols, context: Resolution, name: frontend::Name, resolved: take Vec<Type>) -> Type {
+        match builtin(symbols.source, name) {
+            Some(builtin) => {
+                check_type_arity(symbols, builtin_type_arity(builtin), resolved.length())
+                return BuiltinType(builtin, move resolved)
+            }
+            None => {
+            }
+        }
+        if name_is(symbols.source, name, "Self") {
+            match context.self_symbol {
+                Some(symbol) => {
+                    return implementation_self_type(symbols, symbol, move resolved)
+                }
+                None => {
+                }
+            }
+        }
+        match find_name(symbols.source, context.parameters, name) {
+            Some(parameter) => {
+                check_type_arity(symbols, 0, resolved.length())
+                return ParameterType(parameter)
+            }
+            None => {
+            }
+        }
+        match find_symbol(symbols, name) {
+            Some(symbol) => {
+                check_type_arity(symbols, symbols.types[symbol].type_parameters.length(), resolved.length())
+                NamedType(symbol, move resolved)
+            }
+            None => {
+                symbols_error(symbols, "unknown type or incorrect number of type arguments");
+                Invalid()
+            }
+        }
+    }
+
+    fn check_type_arity(symbols: write Symbols, expected: usize, actual: usize) -> void {
+        if expected != actual {
+            symbols_error(symbols, "unknown type or incorrect number of type arguments")
+        }
+    }
+
+    fn resolve_arguments(symbols: write Symbols, context: Resolution, arguments: Vec<frontend::TypeRef>) -> Vec<Type> {
+        var output = Vec<Type>.with_capacity(arguments.length())
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as argument {
+                output.push(resolve_type(symbols, context, argument))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn resolve_function_type(symbols: write Symbols, context: Resolution, kind: frontend::TypeRefKind) -> Type {
+        match read kind {
+            frontend::TypeFunction(parameters, result) => {
+                var output = Vec<ParameterType>.with_capacity(parameters.length())
+                var index: usize = 0
+                while index < parameters.length() {
+                    loan read parameters[index] as parameter {
+                        output.push(ParameterType {
+                                mode: parameter.mode
+                                value_type: resolve_type(symbols, context, parameter.value_type)
+                            })
+                    }
+                    index = index + 1
+                }
+                loan read result as value {
+                    return FunctionType(move output, Box.new(resolve_type(symbols, context, value)))
+                }
+            }
+            _ => {
+                symbols_error(symbols, "unknown type or incorrect number of type arguments");
+                return Invalid()
+            }
+        }
+    }
+}

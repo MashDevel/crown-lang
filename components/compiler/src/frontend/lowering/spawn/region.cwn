@@ -1,0 +1,71 @@
+module lowering {
+    fn thread_region_statements(compiler: write FunctionCompiler, analysis: sema::Analysis, body: Vec<frontend::Statement>) -> Result<void, u32> {
+        function_push_scope(compiler)
+        let pointer = sema::builtin_leaf(sema::USize())
+        let head = function_stack(compiler, analysis.checker.symbols, pointer)?
+        let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+        function_store_pointer(compiler, head, null)?
+        function_add_exit(compiler, "thread_scope", head)
+        function_statements(compiler, analysis, body)?
+        return function_pop_scope(compiler)
+    }
+    fn thread_region_head(compiler: FunctionCompiler) -> Option<usize> {
+        var index = compiler.exits.length()
+        while index != 0 {
+            index = index - 1
+            if std::text::equal(compiler.exits[index].name, "thread_scope") {
+                return Some(compiler.exits[index].argument)
+            }
+        }
+        return None()
+    }
+    fn cleanup_thread_regions(compiler: write FunctionCompiler, depth: usize) -> Result<void, u32> {
+        var index = compiler.exits.length()
+        while index != 0 {
+            index = index - 1
+            if compiler.exits[index].depth == depth && std::text::equal(compiler.exits[index].name, "thread_scope") {
+                let head = compiler.exits[index].argument
+                cleanup_thread_region(compiler, head)?
+            }
+        }
+        return Ok(())
+    }
+    fn cleanup_thread_region(compiler: write FunctionCompiler, head: usize) -> Result<void, u32> {
+        let check = function_new_block(compiler)?
+        let join = function_new_block(compiler)?
+        let done = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorBranch(check))?
+        function_select_block(compiler, check)
+        let node = function_load_pointer(compiler, head)?
+        let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+        let empty = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), node, null))?
+        function_finish(compiler, ir::TerminatorConditional(empty, done, join))?
+        function_select_block(compiler, join)
+        release_region_head(compiler, head, node)?
+        function_finish(compiler, ir::TerminatorBranch(check))?
+        function_select_block(compiler, done)
+        return Ok(())
+    }
+    fn release_region_head(compiler: write FunctionCompiler, head: usize, node: usize) -> Result<void, u32> {
+        let next = function_load_pointer_field(compiler, node, 16)?
+        drop_scoped_thread(compiler, node)?
+        release_scoped_node(compiler, node)?
+        function_store_pointer(compiler, head, next)?
+        return Ok(())
+    }
+    fn drop_scoped_thread(compiler: write FunctionCompiler, node: usize) -> Result<void, u32> {
+        let handle = function_append_value(compiler, ir::InstructionLoad(node, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+        let null = ir::function_constant(compiler.ir, ir::TypePointer(), ir::ConstantNull())
+        let zero = function_integer(compiler, ir::TypeInteger(ir::IntegerWidth64()), 0)
+        let empty = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), handle, zero))?
+        let done = function_new_block(compiler)?
+        let join = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(empty, done, join))?
+        function_select_block(compiler, join)
+        join_native_thread(compiler, handle)?
+        function_store_pointer(compiler, node, null)?
+        function_finish(compiler, ir::TerminatorBranch(done))?
+        function_select_block(compiler, done)
+        return Ok(())
+    }
+}

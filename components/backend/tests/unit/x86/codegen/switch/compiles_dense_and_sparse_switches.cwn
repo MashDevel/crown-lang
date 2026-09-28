@@ -1,0 +1,82 @@
+fn compile_switch(values: take Vec<u64>) -> Result<Vec<x86::Instruction>, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    let signature = ir::signature_new(move parameters, value_type)
+    var function = ir::function_new("switch", move signature, ir::LinkageLocal())
+    let result_value = ir::ConstantInteger(u64.from(42))
+    let result = ir::function_constant(function, value_type, result_value)
+    let entry = backend_test::checked(ir::function_add_block(function), 1)?
+    var cases = Vec<ir::SwitchCase>.with_capacity(values.length())
+    for index in 0..values.length() {
+        let block = backend_test::checked(ir::function_add_block(function), 2)?
+        cases.push(ir::SwitchCase {
+                value: values[index], block: block
+            })
+        backend_test::checked(ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))), 3)?
+    }
+    let default = backend_test::checked(ir::function_add_block(function), 4)?
+    backend_test::checked(ir::function_terminate(function, default, ir::TerminatorReturn(Some(result))), 5)?
+    backend_test::checked(ir::function_terminate(function, entry, ir::TerminatorSwitch(0, move cases, default)), 6)?
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Err(7)
+        }
+        Ok(instructions) => {
+            return Ok(move instructions)
+        }
+    }
+}
+
+fn jump_table_entries(instructions: read Vec<x86::Instruction>) -> usize {
+    var count: usize = 0
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::JumpTableEntry(target) => {
+                target;
+                count = count + 1
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    return count
+}
+
+fn main() -> u32 {
+    var dense = Vec<u64>.new()
+    dense.push(u64.from(7))
+    dense.push(u64.from(4))
+    dense.push(u64.from(6))
+    dense.push(u64.from(5))
+    match compile_switch(move dense) {
+        Err(error) => {
+            return error
+        }
+        Ok(instructions) => {
+            if jump_table_entries(instructions) != 4 {
+                return 8
+            }
+        }
+    }
+    var sparse = Vec<u64>.new()
+    sparse.push(u64.from(1000))
+    sparse.push(u64.from(1))
+    sparse.push(u64.from(100))
+    match compile_switch(move sparse) {
+        Err(error) => {
+            return error + 10
+        }
+        Ok(instructions) => {
+            if jump_table_entries(instructions) != 0 {
+                return 9
+            }
+        }
+    }
+    return 42
+}

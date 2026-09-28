@@ -1,0 +1,89 @@
+module arm64 {
+    fn value_size(value_type: ir::Type) -> Result<u32, Text> {
+        let size = match ir::type_size(value_type) {
+            Some(value) => value,
+            None => 0
+        }
+        if size == 0 || size > 16 {
+            return Err("ARM64 value has an unsupported size")
+        }
+        return Ok(u32.from(size))
+    }
+    fn value_load(compiler: write Compiler, value: usize, register: u32) -> void {
+        if load_constant(compiler, value, register, false) {
+            return
+        }
+        let allocated = frame_register(compiler.frame, value)
+        if allocated != REGISTER_SPILLED {
+            register_move(compiler, register, allocated)
+            return
+        }
+        let offset = value_offset(compiler, value)
+        return frame_access(compiler, register, offset, 8, true)
+    }
+    fn value_high(compiler: write Compiler, value: usize, register: u32) -> void {
+        if load_constant(compiler, value, register, true) {
+            return
+        }
+        if frame_register(compiler.frame, value) != REGISTER_SPILLED {
+            immediate(compiler, register, 0)
+            return
+        }
+        let offset = value_offset(compiler, value)
+        return frame_access(compiler, register, offset + 8, 8, true)
+    }
+    fn value_store(compiler: write Compiler, value: usize, register: u32) -> void {
+        let allocated = frame_register(compiler.frame, value)
+        if allocated != REGISTER_SPILLED {
+            register_move(compiler, allocated, register)
+            return
+        }
+        let offset = value_offset(compiler, value)
+        return frame_access(compiler, register, offset, 8, false)
+    }
+
+    fn register_move(compiler: write Compiler, destination: u32, source: u32) -> void {
+        if destination != source {
+            emit_registers(compiler, 2852126720, destination, 31, source)
+        }
+    }
+
+    fn value_register(compiler: write Compiler, value: usize, fallback: u32) -> u32 {
+        let allocated = frame_register(compiler.frame, value)
+        if allocated != REGISTER_SPILLED {
+            return allocated
+        }
+        value_load(compiler, value, fallback)
+        return fallback
+    }
+    fn store_result(function: ir::Function, compiler: write Compiler, result: Option<usize>) -> Result<void, Text> {
+        match result {
+            None => Ok(())
+            Some(value) => {
+                let register = compiler.result_register
+                if compiler.normalized == false {
+                    normalize(compiler, function.values[value], register, false)
+                }
+                value_store(compiler, value, register)
+                if value_size(function.values[value])? == 16 {
+                    let offset = value_offset(compiler, value)
+                    frame_access(compiler, 10, offset + 8, 8, false)
+                }
+                Ok(())
+            }
+        }
+    }
+    fn normalize(compiler: write Compiler, value_type: ir::Type, register: u32, signed: bool) -> void {
+        match value_type {
+            ir::TypeInteger(width) => {
+                let bits = ir::integer_width_bits(width)
+                if bits < 64 {
+                    emit_encoding(compiler, extend_word(register, register, bits, signed))
+                }
+            }
+            _ => {
+            }
+        }
+        return
+    }
+}

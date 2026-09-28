@@ -1,0 +1,6 @@
+module frontend {
+    struct FloatMagnitude {
+        zero: bool
+        value: isize
+    }
+}

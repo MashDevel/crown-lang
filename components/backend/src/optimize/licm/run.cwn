@@ -1,0 +1,190 @@
+module optimize {
+    fn licm(function: write ir::Function) -> usize {
+        let loops = find_loops(function)
+        var output: usize = 0
+        var index: usize = 0
+        while index < loops.length() {
+            loan read loops[index] as natural_loop {
+                output = output + licm_loop(function, natural_loop)
+            }
+            index = index + 1
+        }
+        return output
+    }
+
+    fn licm_loop(function: write ir::Function, natural_loop: NaturalLoop) -> usize {
+        let inside = licm_definitions(function, natural_loop.blocks)
+        var selected = false_values(function.values.length())
+        var positions = Vec<LicmPosition>.new()
+        var changed = true
+        while changed {
+            changed = licm_select(function, natural_loop.blocks, inside, selected, positions)
+        }
+        if positions.length() == 0 {
+            return 0
+        }
+        let instructions = licm_instructions(function, positions)
+        remove_results(function, selected, result_marked)
+        licm_append(function, natural_loop.preheader, instructions)
+        return positions.length()
+    }
+
+    fn licm_definitions(function: ir::Function, blocks: Vec<bool>) -> Vec<bool> {
+        var output = false_values(function.values.length())
+        var block: usize = 0
+        while block < function.blocks.length() {
+            if blocks[block] {
+                var index: usize = 0
+                while index < function.blocks[block].instructions.length() {
+                    match read function.blocks[block].instructions[index].result {
+                        Some(result) => {
+                            output[result] = true
+                        }
+                        None => {
+                        }
+                    }
+                    index = index + 1
+                }
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn licm_select(function: ir::Function, blocks: Vec<bool>, inside: Vec<bool>, selected: write Vec<bool>, positions: write Vec<LicmPosition>) -> bool {
+        var changed = false
+        var block: usize = 0
+        while block < function.blocks.length() {
+            if blocks[block] {
+                var index: usize = 0
+                while index < function.blocks[block].instructions.length() {
+                    if licm_select_instruction(function.blocks[block].instructions[index], inside, selected) {
+                        positions.push(LicmPosition {
+                                block: block, instruction: index
+                            })
+                        changed = true
+                    }
+                    index = index + 1
+                }
+            }
+            block = block + 1
+        }
+        return changed
+    }
+
+    fn licm_invariant(kind: ir::InstructionKind, inside: Vec<bool>, selected: Vec<bool>) -> bool {
+        let operands = ir::instruction_operands(kind)
+        var index: usize = 0
+        while index < operands.length() {
+            if inside[operands[index]] && selected[operands[index]] == false {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn licm_can_hoist(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionBinary(operator, left, right) => {
+                left;
+                right;
+                return ir::binary_may_trap(operator) == false
+            }
+            ir::InstructionUnary(operator, value) => {
+                operator;
+                value;
+                return true
+            }
+            ir::InstructionCompare(operator, left, right) => {
+                operator;
+                left;
+                right;
+                return true
+            }
+            ir::InstructionCast(operator, value, target) => {
+                operator;
+                value;
+                target;
+                return true
+            }
+            ir::InstructionMemory(memory) => licm_memory(memory)
+
+            ir::InstructionSelect(condition, then_value, else_value) => {
+                condition;
+                then_value;
+                else_value;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn licm_instructions(function: ir::Function, positions: Vec<LicmPosition>) -> Vec<ir::Instruction> {
+        var output = Vec<ir::Instruction>.with_capacity(positions.length())
+        var index: usize = 0
+        while index < positions.length() {
+            let block = positions[index].block
+            let instruction = positions[index].instruction
+            loan read function.blocks[block].instructions[instruction] as value {
+                output.push(ir::instruction_copy(value))
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn licm_append(function: write ir::Function, block: usize, instructions: Vec<ir::Instruction>) -> void {
+        var index: usize = 0
+        while index < instructions.length() {
+            loan read instructions[index] as instruction {
+                function.blocks[block].instructions.push(ir::instruction_copy(instruction))
+            }
+            index = index + 1
+        }
+    }
+
+    fn licm_select_instruction(instruction: ir::Instruction, inside: Vec<bool>, selected: write Vec<bool>) -> bool {
+        let result = match read instruction.result {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        if selected[result] || licm_can_hoist(instruction.kind) == false {
+            return false
+        }
+        if licm_invariant(instruction.kind, inside, selected) == false {
+            return false
+        }
+        selected[result] = true
+        true
+    }
+
+    fn licm_memory(memory: ir::MemoryInstruction) -> bool {
+        match read memory {
+            ir::MemoryOffset(base, offset) => {
+                base;
+                offset;
+                return true
+            }
+            ir::MemoryGlobalAddress(global) => {
+                global;
+                return true
+            }
+            ir::MemorySymbolAddress(symbol) => {
+                symbol;
+                return true
+            }
+            ir::MemoryFunctionAddress(function) => {
+                function;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+}

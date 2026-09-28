@@ -1,0 +1,46 @@
+module arm64 {
+    fn memory_word(register: u32, base: u32, offset: u32, bytes: u32, load: bool) -> Result<u32, Text> {
+        let size = match bytes {
+            1 => 0
+            2 => 1
+            4 => 2
+            8 => 3
+            _ => {
+                return Err("ARM64 integer access must be 1, 2, 4, or 8 bytes")
+            }
+        }
+        let direction: u32 = if load {
+            4194304
+        } else {
+            0
+        }
+        return scaled_memory_word(956301312 |(size << 30) | direction, register, base, offset, bytes)
+    }
+
+    fn simd_memory_word(register: u32, base: u32, offset: u32, bytes: u32, load: bool) -> Result<u32, Text> {
+        let opcode: u32 = match bytes {
+            4 => 3170893824
+            8 => 4244635648
+            16 => 1031798784
+            _ => {
+                return Err("ARM64 SIMD access must be 4, 8, or 16 bytes")
+            }
+        }
+        let direction: u32 = if load {
+            4194304
+        } else {
+            0
+        }
+        return scaled_memory_word(opcode | direction, register, base, offset, bytes)
+    }
+
+    fn scaled_memory_word(opcode: u32, register: u32, base: u32, offset: u32, bytes: u32) -> Result<u32, Text> {
+        if register > 31 || base > 31 {
+            return Err("ARM64 register index exceeds 31")
+        }
+        if bytes == 0 || offset % bytes != 0 || offset / bytes > 4095 {
+            return Err("ARM64 memory offset must fit an aligned 12-bit scaled immediate")
+        }
+        return Ok(opcode |((offset / bytes) << 10) |(base << 5) | register)
+    }
+}

@@ -1,0 +1,130 @@
+module optimize {
+    fn hoist_loads(function: write ir::Function, effects: Shared<Vec<MemoryEffect>>) -> usize {
+        let loops = find_loops(function)
+        let offsets = load_offsets(function)
+        let scan = load_scan_state(function, offsets, false, effects)
+        var count: usize = 0
+        for index in 0..loops.length() {
+            count = count + hoist_loop_loads(function, loops[index], scan)
+        }
+        return count
+    }
+
+    fn hoist_loop_loads(function: write ir::Function, natural_loop: NaturalLoop, scan: LoadScan) -> usize {
+        let header = memory_loop_header(function, natural_loop.preheader)
+        if header >= function.blocks.length() {
+            return 0
+        }
+        let inside = licm_definitions(function, natural_loop.blocks)
+        var selected = false_values(function.values.length())
+        var positions = Vec<LicmPosition>.new()
+        let limit = hoist_prefix_length(function.blocks[header])
+        for index in 0..limit {
+            loan read function.blocks[header].instructions[index] as instruction {
+                let access = match memory_load_access(instruction.kind) {
+                    Some(value) => value
+                    None => {
+                        continue
+                    }
+                }
+                if inside[access.address] || loop_preserves_load(function, natural_loop, scan, access) == false {
+                    break
+                }
+                let result = match instruction.result {
+                    Some(value) => value,
+                    None => {
+                        continue
+                    }
+                }
+                selected[result] = true
+                positions.push(LicmPosition {
+                        block: header, instruction: index
+                    })
+            }
+        }
+        let instructions = licm_instructions(function, positions)
+        remove_results(function, selected, result_marked)
+        licm_append(function, natural_loop.preheader, instructions)
+        return positions.length()
+    }
+
+    fn memory_loop_header(function: ir::Function, preheader: usize) -> usize {
+        match read function.blocks[preheader].terminator {
+            Some(terminator) => {
+                match read terminator {
+                    ir::TerminatorBranch(target) => target
+                    _ => function.blocks.length()
+                }
+            }
+            None => function.blocks.length()
+        }
+    }
+
+    fn memory_load_access(kind: ir::InstructionKind) -> Option<LoadAccess> {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        alignment;
+                        if volatile {
+                            return None()
+                        }
+                        return memory_typed_access(address, value_type)
+                    }
+                    _ => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn memory_hoist_prefix(kind: ir::InstructionKind) -> bool {
+        match read kind {
+            ir::InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                true
+            }
+            _ => licm_can_hoist(kind)
+        }
+    }
+
+    fn loop_preserves_load(function: ir::Function, natural_loop: NaturalLoop, scan: LoadScan, access: LoadAccess) -> bool {
+        for block in 0..function.blocks.length() {
+            if natural_loop.blocks[block] && memory_block_preserves(function, function.blocks[block], scan, access) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn memory_block_preserves(function: ir::Function, block: ir::BasicBlock, scan: LoadScan, access: LoadAccess) -> bool {
+        for index in 0..block.instructions.length() {
+            if memory_instruction_preserves(function, block.instructions[index].kind, scan, access) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn memory_instruction_preserves(function: ir::Function, kind: ir::InstructionKind, scan: LoadScan, access: LoadAccess) -> bool {
+        return memory_instruction_touches(function, scan, access, kind, 2) == false
+    }
+
+    fn hoist_prefix_length(block: ir::BasicBlock) -> usize {
+        for index in 0..block.instructions.length() {
+            let eligible = match memory_load_access(block.instructions[index].kind) {
+                Some(access) => {
+                    access;
+                    true
+                }
+                None => memory_hoist_prefix(block.instructions[index].kind)
+            }
+            if eligible == false {
+                return index
+            }
+        }
+        return block.instructions.length()
+    }
+
+}

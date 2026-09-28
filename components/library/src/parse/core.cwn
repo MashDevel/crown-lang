@@ -1,0 +1,186 @@
+module std {
+    module parse {
+        view struct Parser {
+            data: TextView, position: usize
+        }
+        copy struct Span {
+            start: usize, end: usize
+        }
+        copy enum ErrorKind {
+            EndOfInput, ExpectedByte, ExpectedInteger, ExpectedIdentifier, Overflow, InvalidSpan
+        }
+        copy struct Error {
+            kind: ErrorKind, offset: usize
+        }
+
+        fn with_parser<R>(source: TextView, action: scoped fn(write Parser) -> R) -> R {
+            var parser = Parser {
+                data: source, position: 0
+            }
+            return action(parser)
+        }
+
+        fn peek(parser: Parser) -> Option<u8> {
+            if parser.position >= parser.data.length() {
+                return None()
+            }
+            return Some(parser.data[parser.position])
+        }
+
+        fn read_byte(parser: write Parser) -> Result<u8, Error> {
+            match peek(parser) {
+                None => {
+                    return Err(Error {
+                            kind: EndOfInput(), offset: parser.position
+                        })
+                }
+                Some(value) => {
+                    parser.position = parser.position + 1;
+                    return Ok(value)
+                }
+            }
+        }
+
+        fn expect(parser: write Parser, expected: u8) -> Result<void, Error> {
+            match peek(parser) {
+                None => {
+                    return Err(Error {
+                            kind: EndOfInput(), offset: parser.position
+                        })
+                }
+                Some(value) => {
+                    if value != expected {
+                        return Err(Error {
+                                kind: ExpectedByte(), offset: parser.position
+                            })
+                    }
+                    parser.position = parser.position + 1
+                    return Ok(())
+                }
+            }
+        }
+
+        fn skip_space(parser: write Parser) -> void {
+            while parser.position < parser.data.length() {
+                let value = parser.data[parser.position]
+                if value != 32 && value != 9 && value != 10 && value != 13 {
+                    return
+                }
+                parser.position = parser.position + 1
+            }
+        }
+
+        fn take_bytes(parser: write Parser, count: usize) -> Result<Span, Error> {
+            let start = parser.position
+            if start > parser.data.length() {
+                return Err(Error {
+                        kind: EndOfInput(), offset: start
+                    })
+            }
+            if count > parser.data.length() - start {
+                return Err(Error {
+                        kind: EndOfInput(), offset: parser.data.length()
+                    })
+            }
+            parser.position = start + count
+            return Ok(Span {
+                    start: start, end: parser.position
+                })
+        }
+
+        fn until(parser: write Parser, delimiter: u8) -> Result<Span, Error> {
+            let start = parser.position
+            var end = start
+            while end < parser.data.length() {
+                if parser.data[end] == delimiter {
+                    parser.position = end
+                    return Ok(Span {
+                            start: start, end: end
+                        })
+                }
+                end = end + 1
+            }
+            return Err(Error {
+                    kind: EndOfInput(), offset: end
+                })
+        }
+
+        fn unsigned(parser: write Parser) -> Result<u64, Error> {
+            let start = parser.position
+            var end = start
+            var value: u64 = 0
+            while end < parser.data.length() {
+                let byte = parser.data[end]
+                if byte < 48 || byte > 57 {
+                    break
+                }
+                let digit = u64.from(byte - 48)
+                if value >(18446744073709551615 - digit) / 10 {
+                    return Err(Error {
+                            kind: Overflow(), offset: end
+                        })
+                }
+                value = value * 10 + digit
+                end = end + 1
+            }
+            if start == end {
+                return Err(Error {
+                        kind: ExpectedInteger(), offset: start
+                    })
+            }
+            parser.position = end
+            return Ok(value)
+        }
+
+        fn identifier(parser: write Parser) -> Result<Span, Error> {
+            let start = parser.position
+            match peek(parser) {
+                None => {
+                    return Err(Error {
+                            kind: ExpectedIdentifier(), offset: start
+                        })
+                }
+                Some(value) => {
+                    if identifier_start(value) == false {
+                        return Err(Error {
+                                kind: ExpectedIdentifier(), offset: start
+                            })
+                    }
+                }
+            }
+            var end = start + 1
+            while end < parser.data.length() {
+                let value = parser.data[end]
+                if identifier_start(value) == false &&(value < 48 || value > 57) {
+                    break
+                }
+                end = end + 1
+            }
+            parser.position = end
+            return Ok(Span {
+                    start: start, end: end
+                })
+        }
+
+        fn identifier_start(value: u8) -> bool {
+            if value == 95 {
+                return true
+            }
+            if value >= 65 && value <= 90 {
+                return true
+            }
+            return value >= 97 && value <= 122
+        }
+
+        fn with_span<R>(parser: Parser, span: Span, action: scoped fn(read Slice<u8>) -> R) -> Result<R, Error> {
+            if span.start > span.end || span.end > parser.data.length() {
+                return Err(Error {
+                        kind: InvalidSpan(), offset: span.start
+                    })
+            }
+            loan read parser.data[span.start..span.end] as bytes {
+                return Ok(action(bytes))
+            }
+        }
+    }
+}

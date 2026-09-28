@@ -1,0 +1,7 @@
+fn value() -> u32 {
+    return 11
+    missing()
+}
+fn main() -> u32 {
+    return value()
+}

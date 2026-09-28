@@ -1,0 +1,13 @@
+view struct Parser { data: TextView, cursor: usize }
+fn next(parser: write Parser) -> u8 {
+    let result = parser.data[parser.cursor]
+    parser.cursor = parser.cursor + 1
+    return result
+}
+fn main() -> u32 {
+    let source = "*"
+    loan read source as bytes {
+        var parser = Parser { data: bytes, cursor: 0 }
+        return u32.from(next(parser))
+    }
+}

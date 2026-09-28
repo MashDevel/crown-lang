@@ -1,0 +1,133 @@
+module arm64 {
+    fn compile_terminator(function: ir::Function, compiler: write Compiler, terminator: ir::Terminator) -> Result<void, Text> {
+        match read terminator {
+            ir::TerminatorBranch(target) => emit_edge(function, compiler, target)
+            ir::TerminatorConditional(value, yes, no) => {
+                value_load(compiler, value, 9)
+                emit_encoding(compiler, compare_word(9, 31))
+                emit_encoding(compiler, conditional_branch(8, 1))
+                let otherwise = compiler.bytes.length()
+                emit_encoding(compiler, branch_word(0, false))
+                emit_edge(function, compiler, yes)?
+                patch_branch(compiler, otherwise, compiler.bytes.length())
+                emit_edge(function, compiler, no)
+            }
+            ir::TerminatorSwitch(value, cases, fallback) => {
+                for index in 0..cases.length() {
+                    value_load(compiler, value, 9)
+                    immediate(compiler, 10, cases[index].value)
+                    emit_encoding(compiler, compare_word(9, 10))
+                    emit_encoding(compiler, conditional_branch(8, 0))
+                    let next = compiler.bytes.length()
+                    emit_encoding(compiler, branch_word(0, false))
+                    emit_edge(function, compiler, cases[index].block)?
+                    patch_branch(compiler, next, compiler.bytes.length())
+                }
+                emit_edge(function, compiler, fallback)
+            }
+            ir::TerminatorReturn(value) => compile_return(function, compiler, value)
+            ir::TerminatorUnreachable => {
+                emit(compiler, 3558866944);
+                Ok(())
+            }
+        }
+    }
+    fn emit_edge(function: ir::Function, compiler: write Compiler, target: usize) -> Result<void, Text> {
+        edge_copies(function, compiler, target, true)?
+        edge_copies(function, compiler, target, false)?
+        compiler.branches.push(BranchFixup {
+                offset: compiler.bytes.length(), block: target
+            })
+        emit_encoding(compiler, branch_word(0, false))
+        return Ok(())
+    }
+    fn edge_copies(function: ir::Function, compiler: write Compiler, target: usize, stage: bool) -> Result<void, Text> {
+        for index in 0..function.blocks[target].instructions.length() {
+            loan read function.blocks[target].instructions[index] as instruction {
+                match read instruction.kind {
+                    ir::InstructionPhi(value_type, incoming) => {
+                        let result = match instruction.result {
+                            Some(value) => value,
+                            None => {
+                                return Err("ARM64 phi has no result")
+                            }
+                        }
+                        phi_copy(compiler, incoming, result, value_type, stage)?
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+    fn phi_copy(compiler: write Compiler, incoming: Vec<ir::PhiIncoming>, result: usize, value_type: ir::Type, stage: bool) -> Result<void, Text> {
+        let value = phi_source(incoming, compiler.block)?
+        let staged = frame_copy(compiler.frame, result)?
+        let wide = value_size(value_type)? == 16
+        if stage {
+            value_load(compiler, value, 9)
+            frame_access(compiler, 9, staged, 8, false)
+            if wide {
+                value_high(compiler, value, 9)
+                frame_access(compiler, 9, staged + 8, 8, false)
+            }
+        } else {
+            frame_access(compiler, 9, staged, 8, true)
+            value_store(compiler, result, 9)
+            if wide {
+                frame_access(compiler, 9, staged + 8, 8, true)
+                frame_access(compiler, 9, frame_value(compiler.frame, result)? + 8, 8, false)
+            }
+        }
+        return Ok(())
+    }
+    fn phi_source(incoming: Vec<ir::PhiIncoming>, block: usize) -> Result<usize, Text> {
+        for index in 0..incoming.length() {
+            if incoming[index].block == block {
+                return Ok(incoming[index].value)
+            }
+        }
+        return Err("ARM64 phi is missing an incoming edge")
+    }
+
+    fn compile_return(function: ir::Function, compiler: write Compiler, value: Option<usize>) -> Result<void, Text> {
+        match signature_return(function.signature) {
+            Some(returned) => {
+                let location = abi_result(returned.shape)?
+                if location.indirect == false {
+                    value_load(compiler, function.parameters[returned.index], 16)
+                    aggregate_registers(compiler, returned.shape, location.location, true)?
+                }
+            }
+            None => {
+            }
+        }
+        match value {
+            Some(id) => {
+                scalar_return(function, compiler, id)?
+            },
+            None => {
+            }
+        }
+        epilogue(compiler)
+        return Ok(())
+    }
+    fn scalar_return(function: ir::Function, compiler: write Compiler, id: usize) -> Result<void, Text> {
+        if ir::type_is_vector(function.values[id]) {
+            return vector_load(compiler, id, 0)
+        }
+        value_load(compiler, id, 0)
+        if compiler.variant == AbiVariant::Darwin() {
+            normalize(compiler, function.values[id], 0, function.signature.result_signed)
+        }
+        if ir::type_is_float(function.values[id]) {
+            emit_encoding(compiler, float_move_bits(0, 0, true, ir::type_is_float64(function.values[id])))
+        }
+        if value_size(function.values[id])? == 16 {
+            value_high(compiler, id, 1)
+        }
+        return Ok(())
+    }
+
+}

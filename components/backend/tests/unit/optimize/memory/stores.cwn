@@ -1,0 +1,43 @@
+fn store_case(observed: bool, volatile: bool, narrow: bool) -> Result<void, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    var function = ir::function_new("stores", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let block = safety_block(function)?
+    store_operations(function, observed, volatile, narrow)?
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    let expected: usize = if observed || volatile || narrow {
+        0
+    } else {
+        1
+    }
+    safety_require(optimize::dead_stores(function, Shared.new(Vec<optimize::MemoryEffect>.new())) == expected, 1)?
+    return safety_require(optimize::dead_stores(function, Shared.new(Vec<optimize::MemoryEffect>.new())) == 0, 2)
+}
+
+fn stores() -> Result<void, u32> {
+    store_case(false, false, false)?
+    store_case(true, false, false)?
+    store_case(false, true, false)?
+    store_case(false, false, true)?
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(stores())
+}
+
+fn store_operations(function: write ir::Function, observed: bool, volatile: bool, narrow: bool) -> Result<void, u32> {
+    let block: usize = 0
+    let wide = safety_integer(function, ir::IntegerWidth64(), 123)
+    let small = safety_integer(function, ir::IntegerWidth8(), 7)
+    safety_append(function, block, ir::InstructionStore(0, wide, 8, volatile))?
+    if observed {
+        safety_append(function, block, ir::InstructionLoad(0, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    }
+    safety_append(function, block, ir::InstructionStore(0, if narrow {
+                small
+            } else {
+                wide
+            }, 1, false))?
+    return Ok(())
+}

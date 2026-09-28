@@ -1,0 +1,69 @@
+module ir {
+    copy struct IndexEntry {
+        group: u64
+        key: u64
+        value: usize
+    }
+
+    struct IndexHeap {
+        root: usize
+        end: usize
+    }
+
+    fn index_sort(entries: write Vec<IndexEntry>) -> void {
+        var start = entries.length() / 2
+        while start > 0 {
+            start = start - 1
+            index_sift(entries, IndexHeap {
+                    root: start, end: entries.length()
+                })
+        }
+        var end = entries.length()
+        while end > 1 {
+            end = end - 1
+            swap(entries[0], entries[end])
+            index_sift(entries, IndexHeap {
+                    root: 0, end: end
+                })
+        }
+    }
+
+    fn index_sift(entries: write Vec<IndexEntry>, heap: take IndexHeap) -> void {
+        var root = heap.root
+        while root < heap.end / 2 {
+            var child = root * 2 + 1
+            if child + 1 < heap.end && index_before(entries[child], entries[child + 1]) {
+                child = child + 1
+            }
+            if index_before(entries[root], entries[child]) == false {
+                return
+            }
+            swap(entries[root], entries[child])
+            root = child
+        }
+    }
+
+    fn index_before(left: IndexEntry, right: IndexEntry) -> bool {
+        if left.group != right.group {
+            return left.group < right.group
+        }
+        if left.key != right.key {
+            return left.key < right.key
+        }
+        return left.value < right.value
+    }
+
+    fn index_lower_bound(entries: Slice<IndexEntry>, group: u64, key: u64) -> usize {
+        var start: usize = 0
+        var end = entries.length()
+        while start < end {
+            let middle = start +(end - start) / 2
+            if entries[middle].group < group ||(entries[middle].group == group && entries[middle].key < key) {
+                start = middle + 1
+            } else {
+                end = middle
+            }
+        }
+        return start
+    }
+}

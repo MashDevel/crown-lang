@@ -1,0 +1,153 @@
+module lowering {
+    fn lower_panics(compiler: write Compiler) -> Result<void, u32> {
+        let definitions = panic_definitions()
+        for index in 0..definitions.length() {
+            lower_panic(compiler, definitions[index].name.clone(), definitions[index].message.clone())?
+        }
+        return Ok(())
+    }
+
+    fn lower_panic(compiler: write Compiler, message: take Text, text: take Text) -> Result<void, u32> {
+        var name = "crown_panic_"
+        std::text::append(name, message)
+        let bindings = panic_bindings(compiler, name, message)?
+        let signature = ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid())
+        var function = ir::function_new(move name, move signature, ir::LinkageLocal())
+        var block: usize = 0
+        match ir::function_add_block(function) {
+            Ok(value) => {
+                block = value
+            }
+            Err(error) => {
+                error;
+                return Err(87)
+            }
+        }
+        panic_body(function, block, bindings, text.length())?
+        if bindings.function_id >= compiler.output.functions.length() {
+            return Err(89)
+        }
+        compiler.output.functions[bindings.function_id] = move function
+        return Ok(())
+    }
+
+    struct PanicBindings {
+        function_id: usize
+        global: usize
+        write_function: usize
+        abort_function: usize
+    }
+
+    fn panic_bindings(compiler: Compiler, name: Text, message: Text) -> Result<PanicBindings, u32> {
+        var function_id: usize = 0
+        match find_generated_function(compiler, name) {
+            Some(value) => {
+                function_id = value
+            }
+            None => {
+                return Err(83)
+            }
+        }
+        var global: usize = 0
+        match find_global(compiler, message) {
+            Some(value) => {
+                global = value
+            }
+            None => {
+                return Err(84)
+            }
+        }
+        var write_function: usize = 0
+        let write_name = "write"
+        match find_runtime_import(compiler, write_name) {
+            Some(value) => {
+                write_function = value
+            }
+            None => {
+                return Err(85)
+            }
+        }
+        var abort_function: usize = 0
+        let abort_name = "abort"
+        match find_runtime_import(compiler, abort_name) {
+            Some(value) => {
+                abort_function = value
+            }
+            None => {
+                return Err(86)
+            }
+        }
+        return Ok(PanicBindings {
+                function_id: function_id, global: global, write_function: write_function, abort_function: abort_function
+            })
+    }
+
+    fn panic_body(function: write ir::Function, block: usize, bindings: PanicBindings, text_length: usize) -> Result<void, u32> {
+        let descriptor_type = ir::TypeInteger(ir::IntegerWidth32())
+        var descriptor_number: u64 = 2
+        let descriptor_value = ir::ConstantInteger(descriptor_number)
+        let descriptor = ir::function_constant(function, descriptor_type, descriptor_value)
+        let address = panic_append_value(function, block, ir::InstructionGlobalAddress(bindings.global))?
+        let length_type = ir::TypeInteger(ir::IntegerWidth64())
+        let length_value = ir::ConstantInteger(u64.from(text_length))
+        let length = ir::function_constant(function, length_type, length_value)
+        let write_value = panic_append_value(function, block, ir::InstructionFunctionAddress(bindings.write_function))?
+        let abort = panic_append_value(function, block, ir::InstructionFunctionAddress(bindings.abort_function))?
+        var arguments = Vec<usize>.new()
+        arguments.push(descriptor)
+        arguments.push(address)
+        arguments.push(length)
+        panic_append(function, block, ir::InstructionCallIndirect(write_value, write_signature(), move arguments))?
+        panic_append(function, block, ir::InstructionCallIndirect(abort, ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), Vec<usize>.new()))?
+        match ir::function_terminate(function, block, ir::TerminatorUnreachable()) {
+            Ok(value) => {
+                value
+            }
+            Err(error) => {
+                error;
+                return Err(88)
+            }
+        }
+        return Ok(())
+    }
+
+    fn write_signature() -> ir::Signature {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth32()))
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        return ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth64()))
+    }
+
+    fn panic_append(function: write ir::Function, block: usize, kind: take ir::InstructionKind) -> Result<void, u32> {
+        match ir::function_append(function, block, move kind) {
+            Ok(value) => {
+                value;
+                return Ok(())
+            }
+            Err(error) => {
+                error;
+                return Err(90)
+            }
+        }
+    }
+
+    fn panic_append_value(function: write ir::Function, block: usize, kind: take ir::InstructionKind) -> Result<usize, u32> {
+        match ir::function_append(function, block, move kind) {
+            Err(error) => {
+                error;
+                return Err(91)
+            }
+            Ok(result) => {
+                match result {
+                    Some(value) => {
+                        return Ok(value)
+                    }
+                    None => {
+                        return Err(92)
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,258 @@
+module ir {
+    enum SsaDefinition {
+        SsaMissing
+        SsaGlobal
+        SsaInstruction(usize, usize)
+    }
+
+    struct SsaLocation {
+        block: usize
+        instruction: usize
+    }
+
+    struct SsaValidator {
+        id: usize
+        definitions: Vec<SsaDefinition>
+        predecessors: Vec<Vec<usize>>
+        dominators: Dominators
+    }
+
+    struct SsaPhiRequest {
+        block: usize
+        found_regular: bool
+    }
+
+    fn validate_ssa(function: Function, id: usize) -> Result<void, ValidationError> {
+        let predecessors = predecessors(function)
+        let validator = SsaValidator {
+            id: id
+            definitions: ssa_definitions(function)
+            predecessors: move predecessors
+            dominators: dominators(function)
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            match validate_ssa_block(validator, function, block) {
+                Err(error) => {
+                    return Err(move error)
+                }
+                Ok(value) => {
+                    value
+                }
+            }
+            block = block + 1
+        }
+        return Ok(())
+    }
+
+    fn ssa_definitions(function: Function) -> Vec<SsaDefinition> {
+        var output = Vec<SsaDefinition>.with_capacity(function.values.length())
+        var index: usize = 0
+        while index < function.values.length() {
+            output.push(SsaMissing())
+            index = index + 1
+        }
+        index = 0
+        while index < function.parameters.length() {
+            output[function.parameters[index]] = SsaGlobal()
+            index = index + 1
+        }
+        index = 0
+        while index < function.constants.length() {
+            output[function.constants[index].id] = SsaGlobal()
+            index = index + 1
+        }
+        ssa_instruction_definitions(function, output)
+        return move output
+    }
+
+    fn ssa_instruction_definitions(function: Function, output: write Vec<SsaDefinition>) -> void {
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var instruction: usize = 0
+            while instruction < function.blocks[block].instructions.length() {
+                match read function.blocks[block].instructions[instruction].result {
+                    Some(value) => {
+                        output[value] = SsaInstruction(block, instruction)
+                    }
+                    None => {
+                    }
+                }
+                instruction = instruction + 1
+            }
+            block = block + 1
+        }
+    }
+
+    fn validate_ssa_block(validator: SsaValidator, function: Function, block: usize) -> Result<void, ValidationError> {
+        var found_regular = false
+        var instruction: usize = 0
+        while instruction < function.blocks[block].instructions.length() {
+            loan read function.blocks[block].instructions[instruction] as value {
+                if instruction_is_phi(value.kind) {
+                    match validate_ssa_phi(validator, value, SsaPhiRequest {
+                            block: block, found_regular: found_regular
+                        }) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(item) => {
+                            item
+                        }
+                    }
+                } else {
+                    found_regular = true
+                    match validate_ssa_uses(validator, instruction_operands(value.kind), SsaLocation {
+                            block: block, instruction: instruction
+                        }) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(item) => {
+                            item
+                        }
+                    }
+                }
+            }
+            instruction = instruction + 1
+        }
+        match read function.blocks[block].terminator {
+            Some(terminator) => {
+                return validate_ssa_uses(validator, terminator_operands(terminator), SsaLocation {
+                        block: block, instruction: instruction
+                    })
+            }
+            None => {
+                return Err(validation_block_error(ValidationMissingTerminator(), validator.id, block))
+            }
+        }
+    }
+
+    fn validate_ssa_phi(validator: SsaValidator, instruction: Instruction, request: take SsaPhiRequest) -> Result<void, ValidationError> {
+        match read instruction.kind {
+            InstructionPhi(value_type, incoming) => {
+                value_type
+                if request.found_regular || phi_predecessors_valid(validator, incoming, request.block) == false {
+                    return Err(validation_location_error(ValidationInvalidPhi(), ValidationLocation {
+                                function: validator.id, block: request.block
+                            }, instruction.result))
+                }
+                var index: usize = 0
+                while index < incoming.length() {
+                    if ssa_available_on_edge(validator, incoming[index].value, incoming[index].block) == false {
+                        return Err(validation_location_error(ValidationInvalidDominance(), ValidationLocation {
+                                    function: validator.id, block: request.block
+                                }, Some(incoming[index].value)))
+                    }
+                    index = index + 1
+                }
+                return Ok(())
+            }
+            _ => {
+            }
+        }
+        return Err(validation_location_error(ValidationInvalidPhi(), ValidationLocation {
+                    function: validator.id, block: request.block
+                }, instruction.result))
+    }
+
+    fn phi_predecessors_valid(validator: SsaValidator, incoming: Vec<PhiIncoming>, block: usize) -> bool {
+        if block >= validator.predecessors.length() {
+            return false
+        }
+        if incoming.length() != validator.predecessors[block].length() {
+            return false
+        }
+        var index: usize = 0
+        while index < incoming.length() {
+            if values_contains_phi_prefix(incoming, index, incoming[index].block) {
+                return false
+            }
+            var found = false
+            loan read validator.predecessors[block] as values {
+                found = values_contains(values, incoming[index].block)
+            }
+            if found == false {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn values_contains_phi_prefix(values: Vec<PhiIncoming>, end: usize, expected: usize) -> bool {
+        var index: usize = 0
+        while index < end {
+            if values[index].block == expected {
+                return true
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn validate_ssa_uses(validator: SsaValidator, operands: take Vec<usize>, location: take SsaLocation) -> Result<void, ValidationError> {
+        var index: usize = 0
+        while index < operands.length() {
+            if ssa_available_at(validator, operands[index], location) == false {
+                return Err(validation_location_error(ValidationInvalidDominance(), ValidationLocation {
+                            function: validator.id, block: location.block
+                        }, Some(operands[index])))
+            }
+            index = index + 1
+        }
+        return Ok(())
+    }
+
+    fn ssa_available_at(validator: SsaValidator, value: usize, location: SsaLocation) -> bool {
+        if value >= validator.definitions.length() {
+            return false
+        }
+        match read validator.definitions[value] {
+            SsaMissing => {
+                return false
+            }
+            SsaGlobal => {
+                return true
+            }
+            SsaInstruction(block, instruction) => {
+                if block == location.block {
+                    return instruction < location.instruction
+                }
+                return dominates(validator.dominators, location.block, block)
+            }
+        }
+    }
+
+    fn ssa_available_on_edge(validator: SsaValidator, value: usize, predecessor: usize) -> bool {
+        if value >= validator.definitions.length() {
+            return false
+        }
+        match read validator.definitions[value] {
+            SsaMissing => {
+                return false
+            }
+            SsaGlobal => {
+                return true
+            }
+            SsaInstruction(block, instruction) => {
+                instruction
+                if block == predecessor {
+                    return true
+                }
+                return dominates(validator.dominators, predecessor, block)
+            }
+        }
+    }
+
+    fn instruction_is_phi(kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionPhi(value_type, incoming) => {
+                value_type;
+                incoming;
+                true
+            }
+            _ => false
+        }
+    }
+}

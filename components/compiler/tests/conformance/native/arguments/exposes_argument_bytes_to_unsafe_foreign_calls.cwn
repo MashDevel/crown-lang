@@ -1,0 +1,14 @@
+extern "c" {
+    fn length(value: read RawPtr<u8>) -> usize = "strlen"
+}
+fn main(arguments: read Arguments) -> u32 {
+    unsafe {
+        if length(arguments[1].as_raw()) != arguments[1].length() {
+            return 1
+        }
+        if arguments[1].as_raw().offset(2).read() != 111 {
+            return 2
+        }
+    }
+    return 0
+}

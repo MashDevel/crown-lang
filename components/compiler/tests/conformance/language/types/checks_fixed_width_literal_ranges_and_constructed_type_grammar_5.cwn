@@ -1,0 +1,7 @@
+struct Values {
+    bytes: [u8; 32]
+    action: fn(u32, take Text) -> u32
+}
+fn main() -> u32 {
+    return 0
+}

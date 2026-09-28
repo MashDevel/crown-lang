@@ -1,0 +1,90 @@
+module lowering {
+    fn declare_closures(compiler: write Compiler, analysis: sema::Analysis) -> Result<void, u32> {
+        for index in 0..analysis.checker.closures.length() {
+            loan read analysis.checker.closures[index] as record {
+                declare_closure_record(compiler, analysis, record)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn declare_closure_record(compiler: write Compiler, analysis: sema::Analysis, record: sema::ClosureRecord) -> Result<void, u32> {
+        if sema::root_resource_call(analysis.checker.symbols, record.resource_owner) == false {
+            return declare_resource_closures(compiler, analysis, record)
+        }
+        match record.function {
+            Some(owner) => {
+                if analysis.checker.symbols.functions[owner].type_parameters.length() != 0 {
+                    return declare_function_closures(compiler, analysis, record)
+                }
+            }
+            None => {
+            }
+        }
+        return declare_closure_instance(compiler, analysis.checker.symbols, record, Vec<sema::Type>.new())
+    }
+
+    fn declare_function_closures(compiler: write Compiler, analysis: sema::Analysis, record: sema::ClosureRecord) -> Result<void, u32> {
+        let owner = match record.function {
+            Some(value) => value,
+            None => {
+                return Ok(())
+            }
+        }
+        for index in 0..analysis.instances.length() {
+            loan read analysis.instances[index] as instance {
+                if instance.function == owner {
+                    declare_closure_instance(compiler, analysis.checker.symbols, record, instance.arguments)?
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn declare_closure_instance(compiler: write Compiler, symbols: sema::Symbols, record: sema::ClosureRecord, arguments: Vec<sema::Type>) -> Result<void, u32> {
+        let value_type = sema::substitute(record.value_type, arguments)
+        let name = closure_function_name(record.span, arguments)
+        match function_named_id(compiler.tables.generated_functions, name) {
+            Some(value) => {
+                value;
+                return Ok(())
+            }
+            None => {
+            }
+        }
+        match sema::closure_signature(value_type) {
+            None => {
+                return Err(321)
+            }
+            Some(callable) => {
+                let closure = ClosureSignature {
+                    parameters: sema::parameter_types_copy(callable.parameters), result: sema::type_copy(callable.result)
+                }
+                let signature = closure_call_signature(closure, value_type, symbols)?
+                let function = ir::function_new(name.clone(), move signature, ir::LinkageLocal())
+                let id = ir::program_add_function(compiler.output, move function)
+                compiler.tables.generated_functions.push(NamedFunction {
+                        name: move name, function: id
+                    })
+                declare_scoped_type(compiler, symbols, value_type)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn closure_call_signature(closure: ClosureSignature, value_type: sema::Type, symbols: sema::Symbols) -> Result<ir::Signature, u32> {
+        let signature = callable_signature(closure.parameters, closure.result, symbols)?
+        if sema::type_is_scoped_function(value_type) {
+            let slot = closure_environment_slot(symbols, closure.result)?
+            return Ok(signature_with_environment(signature, slot))
+        }
+        return Ok(move signature)
+    }
+
+    fn closure_environment_slot(symbols: sema::Symbols, result: sema::Type) -> Result<usize, u32> {
+        if type_is_direct(symbols, result)? {
+            return Ok(0)
+        }
+        return Ok(1)
+    }
+}

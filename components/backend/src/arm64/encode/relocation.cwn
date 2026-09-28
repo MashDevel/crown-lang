@@ -1,0 +1,70 @@
+module arm64 {
+    fn arm_instruction_relocation(kind: object::RelocationKind) -> bool {
+        match kind {
+            object::RelocationArmBranch26 | object::RelocationArmPage21 | object::RelocationArmPageOffset12 | object::RelocationArmGotPage21 | object::RelocationArmGotLoadPageOffset12 => true
+            object::RelocationArmLoadPageOffset12(scale) => {
+                scale;
+                true
+            }
+            _ => false
+        }
+    }
+
+    fn arm_relocated_word(kind: object::RelocationKind, word: u32, value: i64, address: u64) -> Result<u32, Text> {
+        match kind {
+            object::RelocationArmBranch26 => arm_branch_relocation(word, value, address)
+            object::RelocationArmPage21 | object::RelocationArmGotPage21 => arm_page_relocation(word, value, address)
+            object::RelocationArmPageOffset12 => arm_add_relocation(word, value)
+            object::RelocationArmLoadPageOffset12(scale) => arm_load_relocation(word, value, scale)
+            object::RelocationArmGotLoadPageOffset12 => {
+                if (word & 4290772992) != 4181721088 {
+                    return Err("ARM64 GOT relocation requires a 64-bit LDR")
+                }
+                return arm_load_relocation(word, value, 3)
+            }
+            _ => Err("unsupported ARM64 instruction relocation")
+        }
+    }
+
+    fn arm_branch_relocation(word: u32, value: i64, address: u64) -> Result<u32, Text> {
+        if (word & 2080374784) != 335544320 {
+            return Err("ARM64 branch relocation requires B or BL")
+        }
+        let delta = link_binary::signed_subtract(value, i64.from(address))?
+        return arm64::branch_word(delta, (word & 2147483648) != 0)
+    }
+
+    fn arm_page_relocation(word: u32, value: i64, address: u64) -> Result<u32, Text> {
+        if (word & 2667577344) != 2415919104 {
+            return Err("ARM64 page relocation requires ADRP")
+        }
+        let delta = link_binary::signed_subtract(value & -4096, i64.from(address & 18446744073709547520))?
+        return arm64::page_address(word & 31, delta)
+    }
+
+    fn arm_add_relocation(word: u32, value: i64) -> Result<u32, Text> {
+        if (word & 4290772992) != 2432696320 {
+            return Err("ARM64 page offset relocation requires an unshifted 64-bit ADD")
+        }
+        return Ok((word & 4290774015) |(u32.from(value & 4095) << 10))
+    }
+
+    fn arm_load_relocation(word: u32, value: i64, scale: u32) -> Result<u32, Text> {
+        if scale > 4 ||(word & 989855744) != 956301312 {
+            return Err("ARM64 load offset relocation requires an unsigned-offset load or store")
+        }
+        let encoded_scale = if (word & 67108864) != 0 &&(word & 8388608) != 0 {
+            4
+        } else {
+            word >> 30
+        }
+        if encoded_scale != scale {
+            return Err("ARM64 load relocation does not match the access size")
+        }
+        let alignment: i64 = 1 << i64.from(scale)
+        if value % alignment != 0 {
+            return Err("ARM64 load relocation target is misaligned")
+        }
+        return Ok((word & 4290774015) |(u32.from((value & 4095) / alignment) << 10))
+    }
+}

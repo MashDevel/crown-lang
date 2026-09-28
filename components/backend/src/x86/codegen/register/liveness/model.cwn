@@ -1,0 +1,37 @@
+module x86 {
+    struct RegisterAnalysis {
+        used: Vec<bool>
+        graph: Vec<ir::BitSet>
+        forbidden: Vec<u16>
+        preferred: Vec<Option<Register>>
+    }
+
+    struct InterferenceState {
+        eligible: Vec<bool>
+        blocks: Vec<ir::BlockLiveness>
+        graph: Vec<ir::BitSet>
+        forbidden: Vec<u16>
+        live: ir::BitSet
+    }
+
+    fn codegen_empty_forbidden(length: usize) -> Vec<u16> {
+        var output = Vec<u16>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(0);
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_forbidden_copy(values: Vec<u16>) -> Vec<u16> {
+        var output = Vec<u16>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            output.push(values[index]);
+            index = index + 1
+        }
+        return move output
+    }
+
+}

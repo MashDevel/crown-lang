@@ -1,0 +1,8 @@
+fn main() -> u32 {
+    let text = "value"
+    while true {
+        let owned = move text
+        break
+    }
+    return 0
+}

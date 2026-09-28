@@ -1,0 +1,41 @@
+fn exported_program() -> Result<object::CompilerObject, Text> {
+    var output = sample_object()
+    let instructions = std::text::split("83|49|255|190|2|0|0|0|232|0|0|0|0|72|137|199|72|141|53|0|0|0|0|232|0|0|0|0|72|133|192|116|7|184|42|0|0|0|91|195|184|1|0|0|0|91|195", 124)
+    var bytes = Vec<u8>.new()
+    for index in 0..instructions.length() {
+        bytes.push(u8.from(std::text::unsigned(instructions[index])?))
+    }
+    output.sections[0].memory_size = u64.from(bytes.length())
+    output.symbols[0].size = u64.from(bytes.length())
+    output.sections[0].data = move bytes
+    let imports = std::text::split("dlopen|dlsym", 124)
+    for index in 0..imports.length() {
+        output.symbols.push(object::Symbol {
+                name: imports[index].clone(), kind: object::SymbolFunction(), binding: object::SymbolImport(),
+                section: None(), offset: 0, size: 0
+            })
+    }
+    var name = toolchain::text_bytes("main")
+    name.push(0)
+    output.sections.push(object::Section {
+            name: ".rodata", kind: object::SectionReadOnlyData(), alignment: 1, memory_size: 5, data: move name
+        })
+    output.symbols.push(object::Symbol {
+            name: "name", kind: object::SymbolData(), binding: object::SymbolLocal(), section: Some(1), offset: 0, size: 5
+        })
+    export_reference(output, 9, 1)
+    export_reference(output, 24, 2)
+    export_reference(output, 19, 3)
+    return Ok(move output)
+}
+
+fn export_reference(output: write object::CompilerObject, offset: u64, symbol: usize) -> void {
+    output.relocations.push(object::Relocation {
+            section: 0, offset: offset, kind: object::RelocationPcRelative32(), symbol: symbol, subtract: None(), addend: -4
+        })
+}
+
+fn missing_library() -> Result<void, Text> {
+    let libraries = std::text::split("/usr/lib/libCrownMissingLinkerLibrary.dylib", 124)
+    return rejected(macho::executable(sample_object(), libraries))
+}

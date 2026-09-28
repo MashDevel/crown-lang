@@ -1,0 +1,110 @@
+module x86 {
+    fn codegen_location_equal(left: ValueLocation, right: ValueLocation) -> bool {
+        match read left {
+            ValueFloatRegister(register) => {
+                match read right {
+                    ValueFloatRegister(other) => register.code == other.code
+                    _ => false
+                }
+            }
+            ValueSlot(offset) => {
+                return codegen_location_is_slot(right, offset)
+            }
+            ValueRegister(register) => {
+                return codegen_location_is_register(right, register)
+            }
+            ValueStackAddress(offset) => {
+                return codegen_location_is_stack(right, offset)
+            }
+            ValueGlobalAddress(global) => {
+                return codegen_location_is_global(right, global)
+            }
+            ValueSymbolAddress => {
+                match read right {
+                    ValueSymbolAddress => {
+                        return true
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            ValueFunctionAddress(function) => {
+                return codegen_location_is_function(right, function)
+            }
+        }
+    }
+
+    fn codegen_location_is_slot(location: ValueLocation, offset: i32) -> bool {
+        match read location {
+            ValueSlot(value) => {
+                return value == offset
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_location_is_register(location: ValueLocation, register: Register) -> bool {
+        match read location {
+            ValueRegister(value) => {
+                return register_equal(value, register)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_location_is_stack(location: ValueLocation, offset: i32) -> bool {
+        match read location {
+            ValueStackAddress(value) => {
+                return value == offset
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_location_is_global(location: ValueLocation, global: usize) -> bool {
+        match read location {
+            ValueGlobalAddress(value) => {
+                return value == global
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_location_is_function(location: ValueLocation, function: usize) -> bool {
+        match read location {
+            ValueFunctionAddress(value) => {
+                return value == function
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn codegen_same_phi_location(compiler: FunctionCompiler, transfer: PhiCopy) -> bool {
+        match codegen_frame_location(compiler.frame, transfer.result) {
+            Some(left) => {
+                match codegen_frame_location(compiler.frame, transfer.source) {
+                    Some(right) => {
+                        return codegen_location_equal(left, right)
+                    }
+                    None => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+}

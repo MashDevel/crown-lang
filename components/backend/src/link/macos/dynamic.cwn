@@ -1,0 +1,146 @@
+module macho {
+    fn uleb(bytes: write Vec<u8>, value: u64) -> void {
+        var remaining = value
+        while true {
+            let byte = u8.from(remaining & 127)
+            remaining = remaining >> 7
+            bytes.push(if remaining == 0 {
+                    byte
+                } else {
+                    byte | 128
+                })
+            if remaining == 0 {
+                return
+            }
+        }
+    }
+
+    fn bind(image: write Image, name: Text, address: u64, ordinal: usize) -> Result<void, Text> {
+        if address < image.data_base {
+            return Err("dynamic binding requires writable data")
+        }
+        image.bindings.push(32)
+        uleb(image.bindings, u64.from(ordinal))
+        image.bindings.push(81)
+        image.bindings.push(64)
+        image.bindings.push(95)
+        link_binary::append(image.bindings, toolchain::text_bytes(name))
+        image.bindings.push(0)
+        image.bindings.push(114)
+        uleb(image.bindings, address - image.data_base)
+        image.bindings.push(144)
+        return Ok(())
+    }
+
+    fn rebase(image: write Image, address: u64) -> Result<void, Text> {
+        if address < image.data_base {
+            return Err("absolute address in executable text cannot be rebased")
+        }
+        image.rebases.push(17)
+        image.rebases.push(34)
+        uleb(image.rebases, address - image.data_base)
+        image.rebases.push(81)
+        return Ok(())
+    }
+
+    fn validate_libraries(libraries: Vec<Text>) -> Result<void, Text> {
+        for index in 0..libraries.length() {
+            if system_library_path(libraries[index]) == false {
+                return Err(std::text::joined("invalid system library path: ", libraries[index]))
+            }
+            match unsafe {
+                std::dylib::open(libraries[index], Vec<Text>.new())
+            } {
+                Ok(library) => {
+                    library
+                }
+                Err(error) => {
+                    error;
+                    return Err(std::text::joined("cannot load link library: ", libraries[index]))
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn import_ordinals(object: object::CompilerObject, libraries: Vec<Text>) -> Result<Vec<usize>, Text> {
+        var output = Vec<usize>.new()
+        for index in 0..object.symbols.length() {
+            if object::symbol_is_import(object.symbols[index].binding) {
+                output.push(import_ordinal(object.symbols[index].name, libraries)?)
+            } else {
+                output.push(0)
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn import_ordinal(name: Text, libraries: Vec<Text>) -> Result<usize, Text> {
+        for index in 0..libraries.length() {
+            if exports_symbol(libraries[index], name) {
+                return Ok(index + 1)
+            }
+        }
+        return Err(std::text::joined("undefined symbol: ", name))
+    }
+
+    fn exports_symbol(path: Text, name: Text) -> bool {
+        match probe_export(path, name) {
+            Ok(found) => {
+                return found
+            }
+            Err(error) => {
+                error;
+                return false
+            }
+        }
+    }
+
+    fn probe_export(path: Text, name: Text) -> Result<bool, std::dylib::Error> {
+        if system_library_path(path) == false {
+            return Err(std::dylib::Error::InvalidName())
+        }
+        let encoded_path = std::dylib::encoded(path)?
+        let encoded_name = std::dylib::encoded(name)?
+        unsafe {
+            let handle = std::dylib::raw_open(std::cstr::as_raw(encoded_path), 258)
+            if handle == RawPtr<u8>.from_address(0) {
+                return Err(std::dylib::Error::Open())
+            }
+            let symbol = std::dylib::raw_symbol(handle, std::cstr::as_raw(encoded_name))
+            std::dylib::raw_close(handle)
+            return Ok(symbol != RawPtr<u8>.from_address(0))
+        }
+    }
+
+    fn libraries(options: Vec<Text>) -> Result<Vec<Text>, Text> {
+        var output = Vec<Text>.new()
+        output.push("/usr/lib/libSystem.B.dylib")
+        var index: usize = 0
+        while index < options.length() {
+            let option = options[index].clone()
+            if std::text::equal(option, "-framework") {
+                index = index + 1
+                if index == options.length() {
+                    return Err("missing framework name")
+                }
+                let name = options[index].clone()
+                toolchain::valid_link_name(name)?
+                output.push(std::text::joined(std::text::joined("/System/Library/Frameworks/", name), std::text::joined(std::text::joined(".framework/", name), "")))
+            } else {
+                output.push(library_path(option)?)
+            }
+            index = index + 1
+        }
+        return Ok(move output)
+    }
+
+    fn library_path(option: Text) -> Result<Text, Text> {
+        if std::text::starts(option, "-l") == false {
+            return Err(std::text::joined("unsupported native link option: ", option))
+        }
+        let name = std::text::slice(option, 2, option.length())
+        toolchain::valid_link_name(name)?
+        return Ok(std::text::joined(std::text::joined("/usr/lib/lib", name), ".dylib"))
+    }
+}

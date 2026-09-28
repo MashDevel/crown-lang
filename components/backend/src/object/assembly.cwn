@@ -1,0 +1,8 @@
+module object {
+    fn assembly_byte(output: write Text, value: u8) -> void {
+        output.push('\\')
+        output.push(char.from(48 + u32.from(value >> 6)))
+        output.push(char.from(48 + u32.from((value >> 3) & 7)))
+        output.push(char.from(48 + u32.from(value & 7)))
+    }
+}

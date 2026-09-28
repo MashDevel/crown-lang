@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+directory=${1:?expected assets directory}
+tag=${RELEASE_TAG:?expected release tag}
+commit=${RELEASE_COMMIT:?expected release commit}
+repository=${GH_REPO:?expected GitHub repository}
+cd "$directory"
+for host in x86_64-macos arm64-macos x86_64-linux arm64-linux; do
+    for file in "crown-$host.tar.gz" "crown-bootstrap-$host.s.gz" "crown-bootstrap-$host.json" "crown-bootstrap-$host.lock.json"; do
+        test -s "$file"
+    done
+    sha256sum --check "SHA256SUMS-$host"
+done
+cat SHA256SUMS-* > SHA256SUMS
+test "$(gh api "repos/$repository/commits/$tag" --jq .sha)" = "$commit"
+prerelease=false
+case "$tag" in *-*) prerelease=true ;; esac
+gh release create "$tag" --repo "$repository" --verify-tag --draft --prerelease="$prerelease" --title "Crown $tag" --generate-notes crown-*.tar.gz crown-bootstrap-*.s.gz crown-bootstrap-*.json SHA256SUMS
+gh release edit "$tag" --repo "$repository" --draft=false

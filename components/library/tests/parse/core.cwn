@@ -1,0 +1,42 @@
+fn parse_count(bytes: Slice<u8>) -> usize {
+    return bytes.length()
+}
+
+fn test_parse() -> u32 {
+    let input = "  count_2 = 18446744073709551615\n"
+    loan read input as bytes {
+        var parser = std::parse::Parser {
+            data: bytes, position: 0
+        }
+        match test_parse_record(parser) {
+            Ok(value) => {
+                if value != 18446744073709551615 {
+                    return 1
+                }
+            }
+            Err(error) => {
+                error;
+                return 2
+            }
+        }
+        if parser.position != input.length() {
+            return 3
+        }
+    }
+    return 0
+}
+
+fn test_parse_record(parser: write std::parse::Parser) -> Result<u64, std::parse::Error> {
+    std::parse::skip_space(parser)
+    let name = std::parse::identifier(parser)?
+    let count = std::parse::with_span(parser, name, parse_count)?
+    if count != 7 {
+        return Ok(0)
+    }
+    std::parse::skip_space(parser)
+    std::parse::expect(parser, 61)?
+    std::parse::skip_space(parser)
+    let value = std::parse::unsigned(parser)?
+    std::parse::skip_space(parser)
+    return Ok(value)
+}

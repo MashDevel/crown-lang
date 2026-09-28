@@ -1,0 +1,39 @@
+module frontend {
+    fn parser_foreign_block(parser: write Parser, program: write Program) -> void {
+        let block = parser_expect(parser, TokenExtern())
+        let abi = parser_expect(parser, TokenText())
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            program.foreign_functions.push(parser_foreign_function(parser, abi.span, block.span))
+            parser_line_end(parser)
+        }
+        parser_expect(parser, TokenRightBrace())
+    }
+
+    fn parser_foreign_function(parser: write Parser, abi: Span, block: Span) -> ForeignFunction {
+        let start = parser_expect(parser, TokenFn())
+        let name = parser_identifier(parser)
+        parser_expect(parser, TokenLeftParen())
+        var parameters = parser_parameter_list(parser, true)
+        parser_expect(parser, TokenArrow())
+        let result = parser_type(parser)
+        var symbol = name.span
+        if parser_consumed(parser, TokenEqual()) {
+            let value = parser_expect(parser, TokenText())
+            symbol = value.span
+        }
+        let span = Span {
+            source: start.span.source, start: start.span.start, end: result.span.end, line: block.line, column: block.column
+        }
+        return ForeignFunction {
+            abi: abi
+            name: move name
+            symbol: symbol
+            parameters: replace(parameters.values, Vec<Parameter>.new())
+            variadic_start: parameters.variadic_start
+            result: move result
+            span: span
+        }
+    }
+}

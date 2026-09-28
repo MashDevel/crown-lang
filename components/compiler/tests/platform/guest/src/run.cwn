@@ -1,0 +1,46 @@
+module guest {
+    fn stream(descriptor: i32, bytes: Vec<u8>) -> Result<void, Text> {
+        var offset: usize = 0
+        while offset < bytes.length() {
+            unsafe {
+                let count = toolchain::raw_write(descriptor, bytes.as_raw().offset(offset), bytes.length() - offset)
+                if count <= 0 {
+                    return Err("could not write guest output")
+                }
+                offset = offset + usize.from(count)
+            }
+        }
+        return Ok(())
+    }
+
+    fn output(document: toolchain::Json, key: Text) -> Result<Vec<u8>, Text> {
+        return unbase64(toolchain::json_optional_text(document, document.root, key)?)
+    }
+
+    fn run(options: Options, exchange: scoped fn(read Text) -> Result<Text, Text>) -> Result<u32, Text> {
+        if options.upload.length() != 0 {
+            upload(options.upload, options.destination, exchange)?
+        }
+        var pid = options.pid
+        if options.execute {
+            pid = execute(options.command, exchange)?
+        }
+        if options.execute == false && pid == 0 {
+            return Ok(0)
+        }
+        let result = wait(pid, options.timeout, exchange, fn() {
+                return toolchain::milliseconds()
+            }, fn() {
+                unsafe {
+                    toolchain::raw_usleep(200000)
+                }
+            })?
+        return finish(result)
+    }
+    fn finish(result: toolchain::Json) -> Result<u32, Text> {
+        stream(1, output(result, "out-data")?)?
+        stream(2, output(result, "err-data")?)?
+        return status(result)
+    }
+
+}

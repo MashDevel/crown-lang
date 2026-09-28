@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value: i8 = 1 << -1
+    return u32.from(value)
+}

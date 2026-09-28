@@ -1,0 +1,17 @@
+opaque resource Secret {
+    code: u32
+    drop {
+    }
+}
+fn make() -> Secret {
+    unsafe {
+        return Secret {
+            code: 1
+        }
+    }
+}
+fn main() -> u32 {
+    var secret = make()
+    secret.code = 2
+    return 0
+}

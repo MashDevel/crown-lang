@@ -1,0 +1,26 @@
+copy struct Coordinate { value: u32 }
+copy struct Position { coordinate: Option<Coordinate> }
+
+fn consume(value: take Option<Coordinate>) -> u32 {
+    match value { Some(point) => { return point.value } None => { return 0 } }
+}
+
+fn relay(value: read Result<Option<Coordinate>, u32>) -> Result<Option<Coordinate>, u32> {
+    return value
+}
+
+fn main() -> u32 {
+    let source = Position { coordinate: Some(Coordinate { value: 21 }) }
+    let duplicate = source
+    let first = consume(duplicate.coordinate)
+    let second = consume(source.coordinate)
+    let result: Result<Option<Coordinate>, u32> = Ok(source.coordinate)
+    let relayed = relay(result)
+    match relayed { Ok(point) => { if consume(point) != 21 { return 1 } } Err(error) => { return error } }
+    match result { Ok(point) => { if consume(point) != 21 { return 2 } } Err(error) => { return error } }
+    let missing: Option<u32> = None()
+    let empty = missing
+    match empty { None => {} Some(value) => { return value } }
+    match missing { None => {} Some(value) => { return value } }
+    return first + second
+}

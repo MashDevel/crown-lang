@@ -1,0 +1,95 @@
+module x86 {
+    fn codegen_cycle_phis(program: ir::Program, compiler: write FunctionCompiler, state: write PhiState) -> Result<void, CodegenError> {
+        var index: usize = 0
+        while index < state.copies.length() {
+            if state.active[index] {
+                loan read state.copies[index] as transfer {
+                    match codegen_push_phi_value(program, compiler, transfer.source) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        index = state.copies.length()
+        while index > 0 {
+            index = index - 1
+            if state.active[index] {
+                loan read state.copies[index] as transfer {
+                    match codegen_pop_phi_value(program, compiler, transfer) {
+                        Err(error) => {
+                            return Err(move error)
+                        }
+                        Ok(done) => {
+                            done
+                        }
+                    }
+                }
+                state.active[index] = false
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_copy_phi_value(program: ir::Program, compiler: write FunctionCompiler, transfer: PhiCopy) -> Result<void, CodegenError> {
+        if codegen_value_is_vector(program, compiler, transfer.source) {
+            return codegen_copy_vector(compiler, transfer)
+        }
+        match codegen_value_type(program, compiler, transfer.source) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(value_type) => {
+                if codegen_type_is_wide(value_type) {
+                    return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+                }
+            }
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: transfer.source, register: Rax()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        return codegen_store_value(program, compiler, ValueAccess {
+                value: transfer.result, register: Rax()
+            })
+    }
+
+    fn codegen_push_phi_value(program: ir::Program, compiler: write FunctionCompiler, source: usize) -> Result<void, CodegenError> {
+        if codegen_value_is_vector(program, compiler, source) {
+            return codegen_push_vector(compiler, source)
+        }
+        match codegen_load_value(program, compiler, ValueAccess {
+                value: source, register: Rax()
+            }) {
+            Err(error) => {
+                return Err(move error)
+            }
+            Ok(done) => {
+                done
+            }
+        }
+        codegen_emit(compiler, Push(Rax()))
+        return Ok(())
+    }
+
+    fn codegen_pop_phi_value(program: ir::Program, compiler: write FunctionCompiler, transfer: PhiCopy) -> Result<void, CodegenError> {
+        if codegen_value_is_vector(program, compiler, transfer.result) {
+            return codegen_pop_vector(compiler, transfer.result)
+        }
+        codegen_emit(compiler, Pop(Rax()))
+        return codegen_store_value(program, compiler, ValueAccess {
+                value: transfer.result, register: Rax()
+            })
+    }
+}

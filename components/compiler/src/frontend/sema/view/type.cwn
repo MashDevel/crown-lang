@@ -1,0 +1,148 @@
+module sema {
+    fn type_is_view(symbols: Symbols, value_type: Type) -> bool {
+        if type_builtin(value_type) == ScopedThread() {
+            return true
+        }
+        match read value_type {
+            NamedType(symbol, arguments) => {
+                arguments;
+                return symbols.types[symbol].view_value
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_direct_view(symbols: Symbols, value_type: Type) -> bool {
+        if type_is_scoped_function(value_type) || type_is_view(symbols, value_type) {
+            return true
+        }
+        let kind = type_builtin(value_type)
+        return kind == TextView() || kind == Arguments() || kind == Slice()
+    }
+
+    fn type_contains_view(symbols: Symbols, value_type: Type) -> bool {
+        if type_direct_view(symbols, value_type) {
+            return true
+        }
+        match read value_type {
+            NamedType(symbol, arguments) => {
+                symbol;
+                return arguments_contain_view(symbols, arguments)
+            }
+            BuiltinType(builtin, arguments) => {
+                builtin;
+                return arguments_contain_view(symbols, arguments)
+            }
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return type_contains_view(symbols, value)
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn arguments_contain_view(symbols: Symbols, arguments: Vec<Type>) -> bool {
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as value {
+                if type_contains_view(symbols, value) {
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        return false
+    }
+
+    fn view_field_valid(symbols: Symbols, value_type: Type) -> bool {
+        if type_is_scoped_function(value_type) {
+            return false
+        }
+        let arguments = type_arguments(value_type)
+        if arguments_contain_view(symbols, arguments) {
+            return false
+        }
+        if type_direct_view(symbols, value_type) {
+            return true
+        }
+        return type_is_copy_with_symbols(symbols, value_type) && type_contains_view(symbols, value_type) == false
+    }
+
+    fn callable_views_valid(symbols: Symbols, value_type: Type) -> bool {
+        match read value_type {
+            ScopedFunction(inner) => {
+                loan read inner as value {
+                    return callable_views_valid(symbols, value)
+                }
+            }
+            FunctionType(parameters, result) => {
+                if callable_result_valid(symbols, result) == false {
+                    return false
+                }
+                return view_parameters_valid(symbols, parameters)
+            }
+            ArrayType(element, length) => {
+                length;
+                loan read element as value {
+                    return callable_views_valid(symbols, value)
+                }
+            }
+            _ => {
+                let arguments = type_arguments(value_type)
+                return callable_arguments_valid(symbols, arguments)
+            }
+        }
+        return true
+    }
+
+    fn view_result_valid(symbols: Symbols, value_type: Type) -> bool {
+        return type_contains_view(symbols, value_type) == false && callable_views_valid(symbols, value_type)
+    }
+
+    fn view_parameters_valid(symbols: Symbols, parameters: Vec<ParameterType>) -> bool {
+        var index: usize = 0
+        while index < parameters.length() {
+            loan read parameters[index] as parameter {
+                if view_parameter_valid(symbols, parameter) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn view_parameter_valid(symbols: Symbols, parameter: ParameterType) -> bool {
+        if type_contains_view(symbols, parameter.value_type) {
+            if mode_is_take(parameter.mode) || type_direct_view(symbols, parameter.value_type) == false {
+                return false
+            }
+        }
+        return callable_views_valid(symbols, parameter.value_type)
+    }
+
+    fn callable_arguments_valid(symbols: Symbols, arguments: Vec<Type>) -> bool {
+        var index: usize = 0
+        while index < arguments.length() {
+            loan read arguments[index] as argument {
+                if callable_views_valid(symbols, argument) == false {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn callable_result_valid(symbols: Symbols, result: Box<Type>) -> bool {
+        loan read result as value {
+            return view_result_valid(symbols, value)
+        }
+    }
+}

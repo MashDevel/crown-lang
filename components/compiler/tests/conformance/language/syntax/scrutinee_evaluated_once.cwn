@@ -1,0 +1,14 @@
+fn produce(counter: write u32) -> Text {
+    counter = counter + 1
+    "compile"
+}
+fn main() -> u32 {
+    var count: u32 = 0
+    let result = match produce(count) {
+        "parse" => 0,
+        "check" => 0,
+        "compile" => 41,
+        _ => 0
+    }
+    result + count
+}

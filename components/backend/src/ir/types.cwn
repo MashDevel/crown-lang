@@ -1,0 +1,269 @@
+module ir {
+    copy enum IntegerWidth {
+        IntegerWidth1
+        IntegerWidth8
+        IntegerWidth16
+        IntegerWidth32
+        IntegerWidth64
+        IntegerWidth128
+    }
+
+    copy enum FloatWidth {
+        FloatWidth32
+        FloatWidth64
+    }
+
+    copy enum Type {
+        TypeVoid
+        TypeInteger(IntegerWidth)
+        TypeFloat(FloatWidth)
+        TypePointer
+        TypeAggregate(u64, u32)
+        TypeVector(VectorLane)
+    }
+
+    struct AbiComponent {
+        offset: u64
+        value_type: Type
+    }
+
+    enum AggregateAbi {
+        AggregateMemory(u64, u32)
+        AggregateRegisters(u64, u32, Vec<AbiComponent>)
+    }
+
+    enum ParameterAbi {
+        ParameterDirect
+        ParameterAggregate(AggregateAbi)
+        ParameterReturn(AggregateAbi)
+    }
+
+    struct Signature {
+        parameters: Vec<Type>
+        result: Type
+        parameter_abi: Vec<ParameterAbi>
+        signed_parameters: Vec<usize>
+        result_signed: bool
+        variadic_start: Option<usize>
+    }
+
+    copy enum Linkage {
+        LinkageImport
+        LinkageLocal
+        LinkageExport
+    }
+
+    fn integer_width_bits(width: IntegerWidth) -> u32 {
+        match read width {
+            IntegerWidth1 => {
+                return 1
+            }
+            IntegerWidth8 => {
+                return 8
+            }
+            IntegerWidth16 => {
+                return 16
+            }
+            IntegerWidth32 => {
+                return 32
+            }
+            IntegerWidth64 => {
+                return 64
+            }
+            IntegerWidth128 => {
+                return 128
+            }
+        }
+    }
+
+    fn integer_width_bytes(width: IntegerWidth) -> u64 {
+        let bits = integer_width_bits(width)
+        if bits == 1 {
+            return 1
+        }
+        return u64.from(bits / 8)
+    }
+
+    fn type_has_value(value_type: Type) -> bool {
+        match read value_type {
+            TypeVoid => {
+                return false
+            }
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn type_is_integer(value_type: Type) -> bool {
+        match read value_type {
+            TypeInteger(width) => {
+                width;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_float(value_type: Type) -> bool {
+        match read value_type {
+            TypeFloat(width) => {
+                width;
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_size(value_type: Type) -> Option<u64> {
+        match read value_type {
+            TypeVector(lane) => {
+                lane;
+                return Some(16)
+            }
+            TypeVoid => {
+                return Some(0)
+            }
+            TypeInteger(width) => {
+                return Some(integer_width_bytes(width))
+            }
+            TypeFloat(width) => {
+                match read width {
+                    FloatWidth32 => {
+                        return Some(4)
+                    }
+                    FloatWidth64 => {
+                        return Some(8)
+                    }
+                }
+            }
+            TypePointer => {
+                return Some(8)
+            }
+            TypeAggregate(size, alignment) => {
+                alignment;
+                return Some(size)
+            }
+        }
+    }
+
+    fn type_equal(left: Type, right: Type) -> bool {
+        match read left {
+            TypeVector(lane) => {
+                match right {
+                    TypeVector(other) => lane == other
+                    _ => false
+                }
+            }
+            TypeVoid => {
+                return type_is_void(right)
+            }
+            TypeInteger(width) => {
+                return integer_type_equal(width, right)
+            }
+            TypeFloat(width) => {
+                return float_type_equal(width, right)
+            }
+            TypePointer => {
+                return type_is_pointer(right)
+            }
+            TypeAggregate(size, alignment) => {
+                return aggregate_type_equal(size, alignment, right)
+            }
+        }
+    }
+
+    fn type_is_void(value_type: Type) -> bool {
+        match read value_type {
+            TypeVoid => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn type_is_pointer(value_type: Type) -> bool {
+        match read value_type {
+            TypePointer => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn integer_type_equal(width: IntegerWidth, value_type: Type) -> bool {
+        match read value_type {
+            TypeInteger(other) => {
+                return integer_width_bits(width) == integer_width_bits(other)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn float_type_equal(width: FloatWidth, value_type: Type) -> bool {
+        match read value_type {
+            TypeFloat(other) => {
+                return float_width_equal(width, other)
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn float_width_equal(left: FloatWidth, right: FloatWidth) -> bool {
+        match read left {
+            FloatWidth32 => {
+                return float_width_is_32(right)
+            }
+            FloatWidth64 => {
+                return float_width_is_32(right) == false
+            }
+        }
+    }
+
+    fn float_width_is_32(width: FloatWidth) -> bool {
+        match read width {
+            FloatWidth32 => {
+                return true
+            }
+            FloatWidth64 => {
+                return false
+            }
+        }
+    }
+
+    fn aggregate_type_equal(size: u64, alignment: u32, value_type: Type) -> bool {
+        match read value_type {
+            TypeAggregate(other_size, other_alignment) => {
+                return size == other_size && alignment == other_alignment
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn signature_new(parameters: take Vec<Type>, result: take Type) -> Signature {
+        var parameter_abi = Vec<ParameterAbi>.with_capacity(parameters.length())
+        var index: usize = 0
+        while index < parameters.length() {
+            parameter_abi.push(ParameterDirect())
+            index = index + 1
+        }
+        return Signature {
+            parameters: move parameters, result: result, parameter_abi: move parameter_abi,
+            signed_parameters: Vec<usize>.new(), result_signed: false, variadic_start: None()
+        }
+    }
+}

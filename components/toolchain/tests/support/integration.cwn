@@ -1,0 +1,22 @@
+module testing {
+    fn project_fixture(root: Text) -> Result<Text, Text> {
+        write_file(root, "Crown.toml", "[package]\nname='demo'\nsource='src'\n")?
+        return write_file(root, "src/main.cwn", "fn main() -> u32 { 0 }")
+    }
+
+    fn clean_call(root: Text, arguments: Text) -> Result<void, Text> {
+        let result = invoke(list(arguments), root)?
+        if toolchain::clean_result(result) {
+            return Ok(())
+        }
+        return Err(std::text::joined("unexpected command failure: ", std::text::joined(result.stdout, result.stderr)))
+    }
+
+    fn failed_call(root: Text, arguments: Text) -> Result<toolchain::ProcessResult, Text> {
+        let result = invoke(list(arguments), root)?
+        if result.status == 0 || result.stderr.length() == 0 {
+            return Err("expected command failure and diagnostic")
+        }
+        return Ok(move result)
+    }
+}

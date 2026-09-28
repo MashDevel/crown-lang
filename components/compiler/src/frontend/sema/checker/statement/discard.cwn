@@ -1,0 +1,14 @@
+module sema {
+    fn checker_discarded_expression(checker: write Checker, expression: frontend::Expression) -> void {
+        match checker_expression(checker, expression) {
+            Some(info) => {
+                if type_builtin(info.value_type) == Result() {
+                    checker.current_span = expression.span
+                    checker_error(checker, "Result value must be handled or explicitly discarded with std::discard")
+                }
+            }
+            None => {
+            }
+        }
+    }
+}

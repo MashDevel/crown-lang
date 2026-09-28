@@ -1,0 +1,56 @@
+module x86 {
+    fn codegen_allocate_float_registers(function: ir::Function, analysis: RegisterAnalysis) -> Vec<Option<Register>> {
+        var eligible = ir::flags_new(function.values.length())
+        for index in 0..function.values.length() {
+            eligible[index] = ir::type_is_float(function.values[index]) || ir::type_is_vector(function.values[index])
+        }
+        let order_analysis = OrderAnalysis {
+            degrees: codegen_graph_degrees(analysis.graph)
+            costs: codegen_spill_costs(function)
+        }
+        let order = codegen_order_values(eligible, analysis.used, order_analysis)
+        var values = codegen_empty_registers(function.values.length())
+        for index in 0..order.length() {
+            let value = order[index]
+            if analysis.forbidden[value] & codegen_caller_mask() != codegen_caller_mask() {
+                values[value] = codegen_choose_float(value, analysis.graph, values)
+            }
+        }
+        return move values
+    }
+
+    fn codegen_choose_float(value: usize, graph: Vec<ir::BitSet>, values: Vec<Option<Register>>) -> Option<Register> {
+        var forbidden: u16 = 0
+        for index in 0..values.length() {
+            if ir::bitset_contains(graph[value], index) {
+                match values[index] {
+                    Some(register) => {
+                        forbidden = forbidden | codegen_register_bit(register)
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        for code in 8..16 {
+            if forbidden & codegen_code_bit(u8.from(code)) == 0 {
+                return Some(Register {
+                        code: u8.from(code)
+                    })
+            }
+        }
+        return None()
+    }
+
+    fn codegen_frame_float(frame: Frame, value: usize) -> Option<FloatRegister> {
+        match codegen_frame_location(frame, value) {
+            Some(location) => {
+                match read location {
+                    ValueFloatRegister(register) => Some(register)
+                    _ => None()
+                }
+            }
+            None => None()
+        }
+    }
+}

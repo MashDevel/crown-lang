@@ -1,0 +1,145 @@
+module elf {
+    fn read_object_relocations(reader: write ObjectReader) -> Result<void, Text> {
+        for index in 0..reader.headers.length() {
+            if reader.headers[index].kind == 4 || reader.headers[index].kind == 9 {
+                read_relocation_table(reader, index)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn read_relocation_table(reader: write ObjectReader, index: usize) -> Result<void, Text> {
+        let section = match relocation_section(reader, index)? {
+            Some(section) => section
+            None => {
+                return Ok(())
+            }
+        }
+        let count = object_table(reader, index, 24)?
+        for entry in 0..count {
+            let offset = reader.headers[index].offset + entry * 24
+            read_object_relocation(reader, section, offset)?
+        }
+        return Ok(())
+    }
+
+    fn relocation_section(reader: ObjectReader, index: usize) -> Result<Option<usize>, Text> {
+        if reader.headers[index].kind != 4 && reader.headers[index].kind != 9 {
+            return Ok(None())
+        }
+        let target = reader.headers[index].info
+        if target >= reader.sections.length() {
+            return Err("invalid ELF relocation section")
+        }
+        let section = match read reader.sections[target] {
+            Some(section) => section
+            None => {
+                return Ok(None())
+            }
+        }
+        if reader.headers[index].kind != 4 || reader.headers[index].link != reader.symbol_table {
+            return Err("unsupported ELF relocation table")
+        }
+        return Ok(Some(section))
+    }
+
+    fn read_object_relocation(reader: write ObjectReader, section: usize, offset: usize) -> Result<void, Text> {
+        let info = link_binary::number(reader.bytes, offset + 8, 8)?
+        if (info & 4294967295) == 0 {
+            return Ok(())
+        }
+        let source = usize.from(info >> 32)
+        if source >= reader.symbols.length() {
+            return Err("ELF relocation references an invalid symbol")
+        }
+        let symbol = match read reader.symbols[source] {
+            Some(symbol) => symbol
+            None => {
+                return Err("ELF relocation references an unavailable symbol")
+            }
+        }
+        let kind = architecture_relocation_kind(info & 4294967295, reader.output.architecture)?
+        if kind == object::RelocationPcRelativeCall32() || kind == object::RelocationArmBranch26() {
+            reader.output.symbols[symbol].kind = object::SymbolFunction()
+        }
+        reader.output.relocations.push(object::Relocation {
+                section: section, offset: link_binary::number(reader.bytes, offset, 8)?, kind: kind,
+                symbol: symbol, subtract: None(), addend: i64.from_bits(link_binary::number(reader.bytes, offset + 16, 8)?)
+            })
+        return Ok(())
+    }
+
+    fn architecture_relocation_kind(kind: u64, architecture: object::Architecture) -> Result<object::RelocationKind, Text> {
+        if architecture == object::ArchitectureArm64() {
+            return arm_relocation_kind(kind)
+        }
+        return object_relocation_kind(kind)
+    }
+
+    fn arm_relocation_kind(kind: u64) -> Result<object::RelocationKind, Text> {
+        match kind {
+            257 => Ok(object::RelocationAbsolute64())
+            258 => Ok(object::RelocationAbsolute32())
+            261 => Ok(object::RelocationPcRelative32())
+            275 => Ok(object::RelocationArmPage21())
+            277 => Ok(object::RelocationArmPageOffset12())
+            282 | 283 => Ok(object::RelocationArmBranch26())
+            311 => Ok(object::RelocationArmGotPage21())
+            312 => Ok(object::RelocationArmGotLoadPageOffset12())
+            _ => arm_memory_relocation_kind(kind)
+        }
+    }
+
+    fn arm_memory_relocation_kind(kind: u64) -> Result<object::RelocationKind, Text> {
+        match kind {
+            278 => Ok(object::RelocationArmLoadPageOffset12(0))
+            284 => Ok(object::RelocationArmLoadPageOffset12(1))
+            285 => Ok(object::RelocationArmLoadPageOffset12(2))
+            286 => Ok(object::RelocationArmLoadPageOffset12(3))
+            299 => Ok(object::RelocationArmLoadPageOffset12(4))
+            _ => Err("unsupported ARM64 ELF relocation type")
+        }
+    }
+
+    fn object_relocation_kind(kind: u64) -> Result<object::RelocationKind, Text> {
+        match kind {
+            1 => Ok(object::RelocationAbsolute64())
+            2 => Ok(object::RelocationPcRelative32())
+            4 => Ok(object::RelocationPcRelativeCall32())
+            9 | 41 | 42 => Ok(object::RelocationGotPcRelative32())
+            10 => Ok(object::RelocationAbsolute32())
+            11 => Ok(object::RelocationDifference32())
+            _ => Err("unsupported x86-64 ELF relocation type")
+        }
+    }
+
+    fn mark_object_references(reader: write ObjectReader) -> Result<void, Text> {
+        for index in 0..reader.headers.length() {
+            match relocation_section(reader, index)? {
+                Some(section) => {
+                    section;
+                    mark_relocation_symbols(reader, index)?
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn mark_relocation_symbols(reader: write ObjectReader, index: usize) -> Result<void, Text> {
+        let count = object_table(reader, index, 24)?
+        for entry in 0..count {
+            let offset = reader.headers[index].offset + entry * 24
+            let info = link_binary::number(reader.bytes, offset + 8, 8)?
+            let symbol = usize.from(info >> 32)
+            if symbol >= reader.required_symbols.length() {
+                return Err("invalid ELF relocation symbol index")
+            }
+            if (info & 4294967295) != 0 {
+                reader.required_symbols[symbol] = true
+            }
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,64 @@
+fn lifecycle(root: Text) -> Result<void, Text> {
+    let source = testing::project_fixture(root)?
+    testing::clean_call(root, std::text::joined("check|", root))?
+    testing::clean_call(root, std::text::joined("build|", root))?
+    let binary = toolchain::path_join(root, "target/debug/demo")
+    repeated_build(root, binary)?
+    project_rebuild(root, source, binary)?
+    return Ok(())
+}
+
+fn forwarded_arguments(root: Text) -> Result<void, Text> {
+    let source = "fn main(arguments: Arguments) -> u32 { if arguments.length() != 4 { return 1 }; if arguments[1].length() != 0 { return 2 }; if arguments[2].length() != 2 { return 3 }; if arguments[3].length() != 11 { return 4 }; 0 }"
+    testing::write_file(root, "src/main.cwn", source)?
+    testing::clean_call(root, std::text::joined(std::text::joined("run|", root), "|--||é|hello world"))?
+    return Ok(())
+}
+
+fn assembly(root: Text) -> Result<void, Text> {
+    let source = testing::write_file(root, "unused.cwn", "fn unused_regression() -> u32 { 123 }\nfn main() -> u32 { 0 }")?
+    testing::clean_call(root, std::text::joined("parse|", source))?
+    let assembly = toolchain::path_join(root, "output.s")
+    testing::clean_call(root, std::text::joined(std::text::joined("compile|", assembly), std::text::joined("|", source)))?
+    let text = toolchain::read_text(assembly)?
+    let symbol = if toolchain::host_target().platform == toolchain::Platform::Macos() {
+        "_main"
+    } else {
+        "main"
+    }
+    testing::expect(std::text::contains(text, symbol), "assembly entry point")?
+    testing::expect(std::text::contains(text, "crown_source_17_756e757365645f72656772657373696f6e") == false, "dead function is absent")?
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    lifecycle(root)?;
+    forwarded_arguments(root)?;
+    assembly(root)?
+    return Ok(())
+}
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn repeated_build(root: Text, binary: Text) -> Result<void, Text> {
+    let checksum = toolchain::digest(binary)?
+    let cache = toolchain::read_text(std::text::joined(binary, ".crown-build"))?
+    testing::clean_call(root, std::text::joined("build|", root))?
+    testing::expect(std::text::equal(checksum, toolchain::digest(binary)?), "repeat build binary")?
+    testing::expect(std::text::equal(cache, toolchain::read_text(std::text::joined(binary, ".crown-build"))?), "repeat build cache")?
+    return Ok(())
+}
+
+fn project_rebuild(root: Text, source: Text, binary: Text) -> Result<void, Text> {
+    toolchain::write_text(source, "fn main() -> u32 { answer() }")?
+    testing::write_file(root, "src/nested/answer.cwn", "fn answer() -> u32 { 19 }")?
+    let result = testing::invoke(testing::list(std::text::joined("run|", root)), root)?
+    testing::expect(result.status == 19, "source addition rebuild")?
+    toolchain::remove_file(binary)?
+    let recovered = testing::invoke(testing::list(std::text::joined("run|", root)), root)?
+    testing::expect(recovered.status == 19, "deleted output recovery")?
+    return Ok(())
+}

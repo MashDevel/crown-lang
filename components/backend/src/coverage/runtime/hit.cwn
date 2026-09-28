@@ -1,0 +1,29 @@
+module coverage {
+    fn runtime_hit() -> x86::Function {
+        var instructions = Vec<x86::Instruction>.new()
+        instructions.push(x86::LoadSymbolAddress(x86::R8(), "crown_cov_data"))
+        instructions.push(x86::Load(x86::R8(), x86::R8(), 0))
+        instructions.push(x86::Move(x86::R9(), x86::Rdi()))
+        instructions.push(x86::ShiftRightLogicalImmediate(x86::R9(), 6))
+        instructions.push(x86::ShiftLeftImmediate(x86::R9(), 3))
+        instructions.push(x86::Add(x86::R8(), x86::R9()))
+        instructions.push(x86::Move(x86::Rcx(), x86::Rdi()))
+        instructions.push(x86::MoveImmediate(x86::R10(), 1))
+        instructions.push(x86::ShiftLeft(x86::R10()))
+        instructions.push(x86::Load(x86::Rax(), x86::R8(), 0))
+        instructions.push(x86::Label(x86::InternalLabel(0)))
+        instructions.push(x86::Test(x86::Rax(), x86::R10()))
+        instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(1)))
+        instructions.push(x86::Move(x86::R9(), x86::Rax()))
+        instructions.push(x86::Or(x86::R9(), x86::R10()))
+        instructions.push(x86::CompareExchangeMemory(x86::CompareExchangeMemoryArgs {
+                    address: x86::R8(), value: x86::R9(), width: x86::Qword()
+                }))
+        instructions.push(x86::JumpIf(x86::NotEqual(), x86::InternalLabel(0)))
+        instructions.push(x86::Label(x86::InternalLabel(1)))
+        instructions.push(x86::Return())
+        var function = x86::function_new("crown_cov_hit", move instructions)
+        x86::function_export(function)
+        return move function
+    }
+}

@@ -1,0 +1,10 @@
+fn observe<T>(value: read T) -> void {
+    value
+}
+fn main() -> u32 {
+    let data = [1];
+    loan read data as view {
+        observe(view)
+    };
+    return 0
+}

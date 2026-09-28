@@ -1,0 +1,74 @@
+module macho {
+    fn object_relocations(output: write ObjectOutput, object: object::CompilerObject) -> Result<void, Text> {
+        for section in 0..object.sections.length() {
+            link_binary::pad(output.bytes, link_binary::aligned(output.bytes.length(), 4))
+            let start = output.bytes.length()
+            object_section_relocations(output, object, section)?
+            let header: usize = 104 + section * 80
+            link_binary::put(output.bytes, header + 56, u64.from(start), 4)
+            link_binary::put(output.bytes, header + 60, u64.from((output.bytes.length() - start) / 8), 4)
+        }
+        return Ok(())
+    }
+
+    fn object_relocation(output: write ObjectOutput, relocation: object::Relocation) -> Result<void, Text> {
+        let code = object_relocation_code(relocation.kind)?
+        let width = usize.from(object::relocation_width(relocation.kind))
+        let length: u64 = if width == 8 {
+            3
+        } else {
+            2
+        }
+        let relative: u64 = if code >= 1 && code <= 4 {
+            16777216
+        } else {
+            0
+        }
+        let prefix: u64 = 134217728 |(length << 25) | relative
+        match read relocation.subtract {
+            Some(symbol) => {
+                relocation_record(output.bytes, relocation.offset, prefix |(u64.from(5) << 28) | u64.from(symbol))
+            }
+            None => {
+            }
+        }
+        relocation_record(output.bytes, relocation.offset, prefix |(code << 28) | u64.from(relocation.symbol))
+        let addend = relocation.addend + if relative == 0 {
+            i64.from(0)
+        } else {
+            i64.from(4)
+        }
+        link_binary::put(output.bytes, output.offsets[relocation.section] + usize.from(relocation.offset), u64.from_bits(addend), width)
+        return Ok(())
+    }
+
+    fn relocation_record(bytes: write Vec<u8>, address: u64, info: u64) -> void {
+        let offset = bytes.length()
+        link_binary::pad(bytes, offset + 8)
+        link_binary::put(bytes, offset, address, 4)
+        link_binary::put(bytes, offset + 4, info, 4)
+    }
+
+    fn object_relocation_code(kind: object::RelocationKind) -> Result<u64, Text> {
+        return match read kind {
+            object::RelocationAbsolute32 | object::RelocationAbsolute64 | object::RelocationDifference32 | object::RelocationDifference64 => Ok(0)
+            object::RelocationPcRelative32 => Ok(1)
+            object::RelocationPcRelativeCall32 => Ok(2)
+            object::RelocationGotLoadPcRelative32 => Ok(3)
+            object::RelocationGotPcRelative32 => Ok(4)
+            _ => Err("unsupported Mach-O object relocation")
+        }
+    }
+    fn object_section_relocations(output: write ObjectOutput, object: object::CompilerObject, section: usize) -> Result<void, Text> {
+        for index in 0..object.relocations.length() {
+            if object.relocations[index].section == section {
+                if object.architecture == object::ArchitectureArm64() {
+                    arm_object_relocation(output, object.relocations[index])?
+                } else {
+                    object_relocation(output, object.relocations[index])?
+                }
+            }
+        }
+        return Ok(())
+    }
+}

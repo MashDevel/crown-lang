@@ -1,0 +1,113 @@
+module sema {
+    fn checker_place(checker: write Checker, expression: frontend::Expression, usage: PathUse) -> Option<ExpressionInfo> {
+        return checker_place_kind(checker, expression.kind, usage)
+    }
+
+    fn checker_place_kind(checker: write Checker, kind: frontend::ExpressionKind, usage: PathUse) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionPath(path) => {
+                return checker_path(checker, path, usage)
+            }
+            frontend::ExpressionIndex(target, index) => {
+                target;
+                index;
+                return checker_index_place(checker, kind, usage)
+            }
+            frontend::ExpressionField(target, name) => {
+                target;
+                name;
+                return checker_field_place(checker, kind, usage)
+            }
+            _ => {
+                checker_error(checker, "operation requires an accessible variable, field, or index");
+                return None()
+            }
+        }
+    }
+
+    fn checker_index_place(checker: write Checker, kind: frontend::ExpressionKind, usage: PathUse) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionIndex(target, index) => {
+                var container: Option<ExpressionInfo> = None()
+                loan read target as value {
+                    container = checker_place(checker, value, usage)
+                }
+                match move container {
+                    None => {
+                        return None()
+                    }
+                    Some(info) => {
+                        check_boxed_index(checker, target, index)
+                        return place_element(checker, info.value_type)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "operation requires an accessible variable, field, or index");
+                return None()
+            }
+        }
+    }
+
+    fn check_boxed_index(checker: write Checker, target: Box<frontend::Expression>, index: Box<frontend::Expression>) -> void {
+        loan read index as index_value {
+            loan read target as value {
+                check_index_value(checker, value, index_value)
+            }
+        }
+    }
+
+    fn place_element(checker: write Checker, container: Type) -> Option<ExpressionInfo> {
+        match indexed_element(container) {
+            None => {
+                checker_error(checker, "operation requires an accessible variable, field, or index");
+                return None()
+            }
+            Some(element) => {
+                return Some(place_info(checker, move element))
+            }
+        }
+    }
+
+    fn checker_field_place(checker: write Checker, kind: frontend::ExpressionKind, usage: PathUse) -> Option<ExpressionInfo> {
+        match read kind {
+            frontend::ExpressionField(target, name) => {
+                var container: Option<ExpressionInfo> = None()
+                loan read target as value {
+                    container = checker_place(checker, value, usage)
+                }
+                match move container {
+                    None => {
+                        return None()
+                    }
+                    Some(info) => {
+                        if checker_require_field_access(checker, info.value_type) == false {
+                            return None()
+                        }
+                        match checker_field_type(checker, info.value_type, name) {
+                            None => {
+                                return None()
+                            }
+                            Some(value_type) => {
+                                return Some(place_info(checker, move value_type))
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "operation requires an accessible variable, field, or index");
+                return None()
+            }
+        }
+    }
+
+    fn place_info(checker: Checker, value_type: take Type) -> ExpressionInfo {
+        if type_is_copy_with_symbols(checker.symbols, value_type) {
+            return copy_info(move value_type)
+        }
+        return ExpressionInfo {
+            value_type: move value_type, value: BorrowedValue()
+        }
+    }
+}

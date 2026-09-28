@@ -1,0 +1,35 @@
+module campaign {
+    struct Random {
+        state: u64
+    }
+
+    fn random(seed: u64) -> Random {
+        return Random {
+            state: seed ^ 11400714819323198485
+        }
+    }
+
+    fn next(random: write Random) -> u64 {
+        random.state = random.state.wrapping_add(11400714819323198485)
+        var value = random.state
+        value = value ^(value >> 30)
+        value = value.wrapping_mul(13787848793156543929)
+        value = value ^(value >> 27)
+        value = value.wrapping_mul(10723151780598845931)
+        return value ^(value >> 31)
+    }
+
+    fn choice(random: write Random, maximum: usize) -> usize {
+        return usize.from(next(random) % u64.from(maximum))
+    }
+
+    fn random_bytes(random: write Random) -> Vec<u8> {
+        let count = choice(random, 129)
+        var output = Vec<u8>.new()
+        for index in 0..count {
+            index;
+            output.push(u8.from(next(random) & 255))
+        }
+        return move output
+    }
+}

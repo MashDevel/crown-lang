@@ -1,0 +1,100 @@
+module toolchain {
+    fn quality_rules(path: Text) -> Result<QualityRules, Text> {
+        var directory = absolute(path)?
+        if is_directory(directory) == false {
+            directory = parent_path(directory)
+        }
+        var manifests = Vec<Text>.new()
+        while true {
+            let manifest = path_join(directory, "Crown.toml")
+            if exists(manifest) {
+                manifests.push(manifest.clone())
+            }
+            let parent = parent_path(directory)
+            if std::text::equal(directory, parent) {
+                break
+            }
+            directory = move parent
+        }
+        var rules = quality_defaults()
+        while manifests.length() != 0 {
+            match manifests.pop() {
+                Some(manifest) => {
+                    apply_quality_manifest(manifest, rules)?
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(rules)
+    }
+
+    fn apply_quality_manifest(path: Text, rules: write QualityRules) -> Result<void, Text> {
+        let configuration = toml(read_text(path)?)?
+        validate_sections(configuration.sections)?
+        json_known_fields(configuration.document, configuration.document.root, manifest_fields())?
+        return apply_quality(configuration.document, rules)
+    }
+
+    fn quality_integer(document: Json, field: Text, fallback: usize) -> Result<usize, Text> {
+        match json_field(document, document.root, field) {
+            None => Ok(fallback)
+            Some(index) => {
+                match json_integer(document, index) {
+                    Ok(value) => Ok(usize.from(value))
+                    Err(error) => Err(std::text::joined(std::text::joined(field, ": "), error))
+                }
+            }
+        }
+    }
+
+    fn apply_quality(document: Json, rules: write QualityRules) -> Result<void, Text> {
+        rules.limits.file_lines = quality_integer(document, "quality.max_file_lines", rules.limits.file_lines)?
+        rules.limits.function_lines = quality_integer(document, "quality.max_function_lines", rules.limits.function_lines)?
+        rules.limits.cyclomatic = quality_integer(document, "quality.max_cyclomatic", rules.limits.cyclomatic)?
+        rules.limits.cognitive = quality_integer(document, "quality.max_cognitive", rules.limits.cognitive)?
+        rules.limits.nesting = quality_integer(document, "quality.max_nesting", rules.limits.nesting)?
+        rules.limits.parameters = quality_integer(document, "quality.max_parameters", rules.limits.parameters)?
+        apply_format(document, rules.format)?
+        return apply_duplication(document, rules.duplication)
+    }
+
+    fn apply_format(document: Json, rules: write FormatRules) -> Result<void, Text> {
+        rules.indent_width = quality_integer(document, "format.indent_width", rules.indent_width)?
+        rules.max_blank_lines = quality_integer(document, "format.max_blank_lines", rules.max_blank_lines)?
+        match json_field(document, document.root, "format.final_newline") {
+            None => {
+            }
+            Some(index) => {
+                match read document.values[index] {
+                    JsonBool(value) => {
+                        rules.final_newline = value
+                    }
+                    _ => {
+                        return Err("format.final_newline must be a boolean")
+                    }
+                }
+            }
+        }
+        if rules.indent_width == 0 || rules.indent_width > 32 {
+            return Err("format.indent_width must be from 1 to 32")
+        }
+        if rules.max_blank_lines > 1000 {
+            return Err("format.max_blank_lines must be at most 1000")
+        }
+        return Ok(())
+    }
+
+    fn apply_duplication(document: Json, rules: write DuplicationRules) -> Result<void, Text> {
+        rules.max_percent = quality_integer(document, "quality.duplication.max_percent", rules.max_percent)?
+        rules.min_lines = quality_integer(document, "quality.duplication.min_lines", rules.min_lines)?
+        rules.min_tokens = quality_integer(document, "quality.duplication.min_tokens", rules.min_tokens)?
+        if rules.max_percent > 100 {
+            return Err("quality.duplication.max_percent must be from 0 to 100")
+        }
+        if rules.min_lines == 0 || rules.min_tokens == 0 {
+            return Err("duplication minimum lines and tokens must be positive")
+        }
+        return Ok(())
+    }
+}

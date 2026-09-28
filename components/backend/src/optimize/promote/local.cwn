@@ -1,0 +1,149 @@
+module optimize {
+    fn promote_local(function: ir::Function, analysis: PromotionAnalysis) -> Vec<Promotion> {
+        var states = Vec<PromotionState>.with_capacity(analysis.candidates.length())
+        var rewrites = Vec<PromotionRewrite>.with_capacity(analysis.candidates.length())
+        var failed = false_values(analysis.candidates.length())
+        var index: usize = 0
+        while index < analysis.candidates.length() {
+            states.push(PromotionEmpty())
+            rewrites.push(promotion_rewrite_new())
+            index = index + 1
+        }
+        var local = LocalPromotionState {
+            states: move states, rewrites: move rewrites, failed: move failed
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            promote_local_block(function, analysis, block, local)
+            block = block + 1
+        }
+        return collect_local_promotions(analysis, local.rewrites, local.failed)
+    }
+
+    struct LocalPromotionState {
+        states: Vec<PromotionState>
+        rewrites: Vec<PromotionRewrite>
+        failed: Vec<bool>
+    }
+
+    fn promote_local_block(function: ir::Function, analysis: PromotionAnalysis, block: usize, local: write LocalPromotionState) -> void {
+        var index: usize = 0
+        while index < function.blocks[block].instructions.length() {
+            loan read function.blocks[block].instructions[index] as instruction {
+                promote_local_instruction(function, analysis, instruction, local)
+            }
+            index = index + 1
+        }
+    }
+
+    fn promote_local_instruction(function: ir::Function, analysis: PromotionAnalysis, instruction: ir::Instruction, local: write LocalPromotionState) -> void {
+        match read instruction.kind {
+            ir::InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    ir::MemoryStore(address, value, alignment, volatile) => {
+                        alignment;
+                        volatile
+                        match read analysis.slots[address] {
+                            Some(candidate) => {
+                                if analysis.candidates[candidate].accesses.length() == 1 {
+                                    local.states[candidate] = PromotionValue(value)
+                                }
+                            }
+                            None => {
+                            }
+                        }
+                    }
+                    ir::MemoryLoad(address, value_type, alignment, volatile) => {
+                        value_type;
+                        alignment;
+                        volatile
+                        promote_local_load(function, analysis, instruction.result, address, local)
+                    }
+                    _ => {
+                    }
+                }
+            }
+
+            _ => {
+            }
+        }
+    }
+
+    fn promote_local_load(function: ir::Function, analysis: PromotionAnalysis, result: Option<usize>, address: usize, local: write LocalPromotionState) -> void {
+        match read analysis.slots[address] {
+            None => {
+            }
+            Some(candidate) => {
+                if analysis.candidates[candidate].accesses.length() != 1 {
+                    return
+                }
+                match read result {
+                    None => {
+                        local.failed[candidate] = true
+                    }
+                    Some(output) => {
+                        let current = promotion_state_copy(local.states[candidate])
+                        match move current {
+                            PromotionValue(value) => {
+                                let pair = ir::ValueRewrite {
+                                    result: output, replacement: value
+                                }
+                                if promotion_record_load(function, local.rewrites[candidate], pair) == false {
+                                    local.failed[candidate] = true
+                                }
+                            }
+                            PromotionEmpty => {
+                                local.failed[candidate] = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_local_promotions(analysis: PromotionAnalysis, rewrites: Vec<PromotionRewrite>, failed: Vec<bool>) -> Vec<Promotion> {
+        var output = Vec<Promotion>.new()
+        var index: usize = 0
+        while index < analysis.candidates.length() {
+            loan read analysis.candidates[index] as candidate {
+                if candidate.valid && candidate.accesses.length() == 1 && failed[index] == false {
+                    loan read rewrites[index] as rewrite {
+                        output.push(Promotion {
+                                slot: candidate.slot, rewrite: promotion_rewrite_copy(rewrite)
+                            })
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn promotion_rewrite_copy(rewrite: PromotionRewrite) -> PromotionRewrite {
+        var replacements = Vec<ir::ValueRewrite>.with_capacity(rewrite.replacements.length())
+        var conversions = Vec<Conversion>.with_capacity(rewrite.conversions.length())
+        var index: usize = 0
+        while index < rewrite.replacements.length() {
+            replacements.push(ir::ValueRewrite {
+                    result: rewrite.replacements[index].result, replacement: rewrite.replacements[index].replacement
+                })
+            index = index + 1
+        }
+        index = 0
+        while index < rewrite.conversions.length() {
+            loan read rewrite.conversions[index] as value {
+                conversions.push(Conversion {
+                        result: value.result
+                        value: value.value
+                        operator: value.operator
+                        target: value.target
+                    })
+            }
+            index = index + 1
+        }
+        return PromotionRewrite {
+            replacements: move replacements, conversions: move conversions
+        }
+    }
+}

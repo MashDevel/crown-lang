@@ -1,0 +1,7 @@
+fn value() -> u32 {
+    return 1
+}
+fn main() -> u32 {
+    let action = move value
+    return 0
+}

@@ -1,0 +1,89 @@
+module campaign {
+    fn mutation_seeds() -> Vec<Text> {
+        var values = Vec<Text>.new()
+        values.push("fn main() -> u32 { 42 }")
+        values.push("fn main() -> u32 { var values = Vec<u32>.new(); values.push(42); values[0] }")
+        values.push("fn identity<T>(value: take T) -> T { move value }\nfn main() -> u32 { identity(42) }")
+        values.push("resource Item { value: u32, drop { print(value) } }\nfn main() -> u32 { let item = Item { value: 42 }; item.value }")
+        values.push("fn main() -> u32 { match Some(42) { Some(value) => value None => 0 } }")
+        return move values
+    }
+
+    fn insertions() -> Vec<Vec<u8>> {
+        let values = std::text::split("{|}|(|)|<|>|;|\n|\0|\"|move |read |fn |/*|//", 124)
+        var output = Vec<Vec<u8>>.new()
+        for index in 0..values.length() {
+            output.push(toolchain::text_bytes(values[index]))
+        }
+        var invalid = Vec<u8>.new();
+        invalid.push(255);
+        output.push(move invalid)
+        return move output
+    }
+
+    fn mutate(source: Vec<u8>, random: write Random) -> Vec<u8> {
+        let fragments = insertions()
+        let count = choice(random, 4) + 1
+        var value = copy_bytes(source)
+        for index in 0..count {
+            index
+            let start = choice(random, value.length() + 1)
+            let requested = start + choice(random, 5)
+            let end = if requested < value.length() {
+                requested
+            } else {
+                value.length()
+            }
+            let fragment = choice(random, fragments.length())
+            var output = Vec<u8>.new()
+            for offset in 0..start {
+                output.push(value[offset])
+            }
+            for offset in 0..fragments[fragment].length() {
+                output.push(fragments[fragment][offset])
+            }
+            for offset in end..value.length() {
+                output.push(value[offset])
+            }
+            value = move output
+        }
+        return move value
+    }
+
+    fn copy_bytes(value: Vec<u8>) -> Vec<u8> {
+        var output = Vec<u8>.new()
+        for index in 0..value.length() {
+            output.push(value[index])
+        }
+        return move output
+    }
+
+    fn malformed_corpus(seed: u64, count: usize) -> Result<Vec<Vec<u8>>, Text> {
+        var random = random(seed)
+        let seeds = mutation_seeds()
+        var output = Vec<Vec<u8>>.new()
+        for index in 0..count {
+            if index % 4 == 0 {
+                output.push(random_bytes(random))
+            }
+            else {
+                let source = toolchain::text_bytes(seeds[choice(random, seeds.length())]);
+                output.push(mutate(source, random))
+            }
+        }
+        let depths = std::text::split("0 1 8 32 64 128 256", 32)
+        for index in 0..depths.length() {
+            let value = depth_shape("parentheses", usize.from(std::text::unsigned(depths[index])?));
+            output.push(toolchain::text_bytes(value.source))
+        }
+        let boundaries = std::text::split("|\0|/*|\"|fn|// eof", 124)
+        for index in 0..boundaries.length() {
+            output.push(toolchain::text_bytes(boundaries[index]))
+        }
+        var invalid = Vec<u8>.new();
+        invalid.push(255);
+        output.push(move invalid)
+        output.push(toolchain::text_bytes(std::text::repeat("a", 100000)))
+        return Ok(move output)
+    }
+}

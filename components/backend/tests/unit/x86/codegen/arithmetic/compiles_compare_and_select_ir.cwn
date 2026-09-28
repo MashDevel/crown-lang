@@ -1,0 +1,56 @@
+fn run() -> Result<u32, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    let signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var function = ir::function_new("choose", move signature, ir::LinkageLocal())
+    let one_value = ir::ConstantInteger(u64.from(1))
+    let two_value = ir::ConstantInteger(u64.from(2))
+    let one = ir::function_constant(function, value_type, one_value)
+    let two = ir::function_constant(function, value_type, two_value)
+    let block = backend_test::checked(ir::function_add_block(function), 1)?
+    let condition = backend_test::value(ir::function_append(function, block, ir::InstructionCompare(ir::CompareUnsignedLess(), one, two)), 2, 3)?
+    let result = backend_test::value(ir::function_append(function, block, ir::InstructionSelect(condition, two, one)), 4, 5)?
+    backend_test::checked(ir::function_terminate(function, block, ir::TerminatorReturn(Some(result))), 6)?
+    var program = ir::program_new()
+    let id = ir::program_add_function(program, move function)
+    match x86::codegen_compile_function(program, id) {
+        Err(error) => {
+            error;
+            return Ok(7)
+        }
+        Ok(instructions) => {
+            return Ok(check_generated_instructions(instructions))
+        }
+    }
+}
+
+fn check_generated_instructions(instructions: Vec<x86::Instruction>) -> u32 {
+    var set = false
+    var select = false
+    var index: usize = 0
+    while index < instructions.length() {
+        match read instructions[index] {
+            x86::Set(condition_code, register) => {
+                condition_code;
+                register;
+                set = true
+            }
+            x86::ConditionalMove(condition_code, destination, source) => {
+                condition_code;
+                destination;
+                source;
+                select = true
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if set == false || select == false {
+        return 8
+    }
+    42
+}
+
+fn main() -> u32 {
+    backend_test::finished(run())
+}

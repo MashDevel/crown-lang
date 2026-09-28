@@ -1,0 +1,10 @@
+fn call(action: fn() -> void) -> void {
+    action()
+}
+fn main() -> u32 {
+    let value = 1;
+    call(fn[read value]() {
+            print(value)
+        });
+    return 0
+}

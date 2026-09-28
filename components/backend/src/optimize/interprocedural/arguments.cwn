@@ -1,0 +1,105 @@
+module optimize {
+    struct ArgumentFact {
+        seen: bool
+        varying: bool
+        constant: Option<ir::Constant>
+    }
+
+    struct FunctionFacts {
+        arguments: Vec<ArgumentFact>
+    }
+
+    fn argument_facts(program: ir::Program) -> Vec<FunctionFacts> {
+        var facts = Vec<FunctionFacts>.new()
+        for index in 0..program.functions.length() {
+            var arguments = Vec<ArgumentFact>.new()
+            for parameter in 0..program.functions[index].parameters.length() {
+                arguments.push(ArgumentFact {
+                        seen: false, varying: false, constant: None()
+                    })
+            }
+            facts.push(FunctionFacts {
+                    arguments: move arguments
+                })
+        }
+        for caller in 0..program.functions.length() {
+            collect_function_facts(program.functions[caller], facts)
+        }
+        return move facts
+    }
+
+    fn collect_function_facts(function: ir::Function, facts: write Vec<FunctionFacts>) -> void {
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                collect_call_facts(function, function.blocks[block].instructions[index].kind, facts)
+            }
+        }
+    }
+
+    fn collect_call_facts(function: ir::Function, kind: ir::InstructionKind, facts: write Vec<FunctionFacts>) -> void {
+        match read kind {
+            ir::InstructionCall(target, arguments, result) => {
+                result;
+                if target >= facts.length() || arguments.length() != facts[target].arguments.length() {
+                    return
+                }
+                for index in 0..arguments.length() {
+                    let constant = ir::function_constant_value(function, arguments[index])
+                    merge_argument_fact(facts[target].arguments[index], move constant)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn merge_argument_fact(fact: write ArgumentFact, constant: take Option<ir::Constant>) -> void {
+        if fact.seen == false {
+            fact.seen = true
+            fact.constant = move constant
+            fact.varying = match read fact.constant {
+                Some(value) => {
+                    value;
+                    false
+                }
+                None => true
+            }
+            return
+        }
+        match read constant {
+            Some(value) => {
+                let same = match read fact.constant {
+                    Some(previous) => ir::constant_equal(value, previous)
+                    None => false
+                }
+                fact.varying = fact.varying || same == false
+            }
+            None => {
+                fact.varying = true
+            }
+        }
+    }
+
+    fn propagate_arguments(function: write ir::Function, facts: FunctionFacts) -> usize {
+        let uses = value_uses(function)
+        var count: usize = 0
+        for index in 0..facts.arguments.length() {
+            let parameter = function.parameters[index]
+            if uses[parameter] != 0 && facts.arguments[index].varying == false {
+                count = count + propagate_argument(function, parameter, facts.arguments[index])
+            }
+        }
+        return count
+    }
+
+    fn propagate_argument(function: write ir::Function, parameter: usize, fact: ArgumentFact) -> usize {
+        match read fact.constant {
+            Some(constant) => {
+                let value = ir::function_constant(function, function.values[parameter], constant)
+                ir::function_replace_uses(function, parameter, value)
+                return 1
+            }
+            None => 0
+        }
+    }
+}

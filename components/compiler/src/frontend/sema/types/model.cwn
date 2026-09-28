@@ -1,0 +1,76 @@
+module sema {
+    copy enum Builtin {
+        I8
+        I16
+        I32
+        I64
+        ISize
+        U8
+        U16
+        U32
+        U64
+        USize
+        F32
+        F64
+        Bool
+        Char
+        Unit
+        Text
+        TextView
+        Arguments
+        Thread
+        ScopedThread
+        Vec
+        RawPtr
+        Slice
+        Box
+        Shared
+        Mutex
+        RwLock
+        Arena
+        Handle
+        Channel
+        Option
+        Result
+        NativeRoot
+        RootToken
+        RootLease
+        NotBuiltin
+    }
+
+    enum Type {
+        BuiltinType(Builtin, Vec<Type>)
+        NamedType(usize, Vec<Type>)
+        ArrayType(Box<Type>, usize)
+        FunctionType(Vec<ParameterType>, Box<Type>)
+        ScopedFunction(Box<Type>)
+        DynamicType(usize)
+        ParameterType(usize)
+        IntegerLiteral(u64)
+        FloatLiteral
+        Infer
+        Invalid
+    }
+
+    struct ParameterType {
+        mode: frontend::Mode
+        value_type: Type
+    }
+
+    struct Field {
+        private_value: bool
+        name: frontend::Name
+        value_type: Type
+    }
+
+    struct Variant {
+        name: frontend::Name
+        fields: Vec<Type>
+    }
+
+    fn parameter_type_copy(parameter: ParameterType) -> ParameterType {
+        return ParameterType {
+            mode: parameter.mode, value_type: type_copy(parameter.value_type)
+        }
+    }
+}

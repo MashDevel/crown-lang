@@ -1,0 +1,79 @@
+module toolchain {
+    struct SeedUpdate {
+        assembly: Text, digest: Text
+    }
+    fn source_record(root: Text, paths: Vec<Text>) -> Result<Text, Text> {
+        var output = "{"
+        for index in 0..paths.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            let relative = std::text::slice(paths[index], root.length() + 1, paths[index].length())
+            std::text::append(output, json_quoted(relative))
+            output.push(':')
+            std::text::append(output, json_quoted(digest(paths[index])?))
+        }
+        output.push('}')
+        return Ok(move output)
+    }
+
+    fn refresh_seed(root: Text, compiler: Text) -> Result<void, Text> {
+        let destination = path_join(root, seed_relative("compiler.s"))
+        make_directory(parent_path(destination))?
+        let lock = lock_file(path_join(root, "target/bootstrap/refresh.lock"))?
+        let sources = compiler_sources(root)?
+        let record = source_record(root, sources)?
+        let temporary = temporary(parent_path(destination))?
+        let directory = temporary_path(temporary)
+        let update = prepare_seed(compiler, sources, directory)?
+        verify_refresh_sources(root, record)?
+        publish_seed(update, destination, record)?
+        say(std::text::joined("Refreshed compiler.s: ", update.digest))
+        lock
+        return Ok(())
+    }
+
+    fn prepare_seed(compiler: Text, sources: Vec<Text>, directory: Text) -> Result<SeedUpdate, Text> {
+        let first = build_stage(compiler, sources, directory)?
+        let expected = digest(first.assembly)?
+        let second = CompileRequest {
+            compiler: first.binary.clone(), assembly: first.assembly.clone(), sources: std::text::clone_list(sources), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
+        }
+        compile(second)?
+        if std::text::equal(expected, digest(first.assembly)?) == false {
+            return Err("refreshed seed did not reproduce identical assembly")
+        }
+        return Ok(SeedUpdate {
+                assembly: first.assembly.clone(), digest: move expected
+            })
+    }
+
+    fn verify_refresh_sources(root: Text, record: Text) -> Result<void, Text> {
+        if std::text::equal(record, source_record(root, compiler_sources(root)?)?) == false {
+            return Err("compiler sources changed while refreshing the seed")
+        }
+        return Ok(())
+    }
+
+    fn publish_seed(update: SeedUpdate, destination: Text, record: Text) -> Result<void, Text> {
+        let manifest = seed_manifest(record, update.digest)?
+        let manifest_path = path_join(parent_path(update.assembly), "manifest.json")
+        write_text(manifest_path, manifest)?
+        rename_file(update.assembly, destination)?
+        rename_file(manifest_path, path_join(parent_path(destination), "manifest.json"))?
+        return Ok(())
+    }
+
+    fn seed_manifest(sources: Text, checksum: Text) -> Result<Text, Text> {
+        var output = "{\"format\":1,\"host\":"
+        std::text::append(output, json_quoted(target_name(host_target())))
+        std::text::append(output, ",\"assembly_sha256\":")
+        std::text::append(output, json_quoted(checksum))
+        std::text::append(output, ",\"source_sha256\":")
+        std::text::append(output, json_quoted(digest_text(sources)?))
+        std::text::append(output, ",\"source_files\":")
+        std::text::append(output, sources)
+        std::text::append(output, "}\n")
+        return Ok(move output)
+    }
+}

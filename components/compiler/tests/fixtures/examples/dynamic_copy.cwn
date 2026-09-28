@@ -1,0 +1,15 @@
+copy struct Point { x: u32, y: u32 }
+interface Snapshot { fn compare(self: read Self, before: take Point, after: write Point) -> u32 }
+struct Monitor { active: bool }
+impl Snapshot for Monitor {
+    fn compare(self: read Monitor, before: take Point, after: write Point) -> u32 {
+        self
+        after.x = 0
+        return before.x + before.y
+    }
+}
+fn main() -> u32 {
+    let monitor: dynamic Snapshot = Monitor { active: true }
+    var point = Point { x: 20, y: 22 }
+    return monitor.compare(point, point)
+}

@@ -1,0 +1,161 @@
+module elf {
+    struct LibraryReader {
+        bytes: Vec<u8>, headers: Vec<ObjectSection>, strings: Vec<u8>,
+        symbols: Vec<u8>, versions: Vec<u8>, definitions: Vec<u8>
+    }
+
+    fn library_reader(bytes: take Vec<u8>, architecture: object::Architecture) -> Result<LibraryReader, Text> {
+        validate_library_header(bytes, architecture)?
+        let headers = section_headers(bytes)?
+        var reader = LibraryReader {
+            bytes: move bytes, headers: move headers, strings: Vec<u8>.new(),
+            symbols: Vec<u8>.new(), versions: Vec<u8>.new(), definitions: Vec<u8>.new()
+        }
+        read_library_tables(reader)?
+        return Ok(move reader)
+    }
+
+    fn validate_library_header(bytes: Vec<u8>, architecture: object::Architecture) -> Result<void, Text> {
+        if link_binary::number(bytes, 0, 4)? != 1179403647 || link_binary::number(bytes, 4, 3)? != 65794 {
+            return Err("shared library must be little-endian ELF64")
+        }
+        let machine: u64 = if architecture == object::ArchitectureArm64() {
+            183
+        } else {
+            62
+        }
+        if link_binary::number(bytes, 16, 2)? != 3 || link_binary::number(bytes, 18, 2)? != machine {
+            return Err("shared library does not match the target architecture")
+        }
+        return validate_object_dimensions(bytes)
+    }
+
+    fn read_library_tables(reader: write LibraryReader) -> Result<void, Text> {
+        var symbol_table: usize = 0
+        for index in 0..reader.headers.length() {
+            loan read reader.headers[index] as header {
+                match header.kind {
+                    11 => {
+                        symbol_table = index
+                    }
+                    1879048191 => {
+                        reader.versions = link_binary::part(reader.bytes, header.offset, header.size)?
+                    }
+                    1879048189 => {
+                        reader.definitions = link_binary::part(reader.bytes, header.offset, header.size)?
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+        if symbol_table == 0 {
+            return Err("shared library has no dynamic symbols")
+        }
+        read_library_symbols(reader, symbol_table)?
+        return validate_library_versions(reader)
+    }
+
+    fn validate_library_versions(reader: LibraryReader) -> Result<void, Text> {
+        if reader.versions.length() != 0 && reader.versions.length() != reader.symbols.length() / 12 {
+            return Err("invalid shared library symbol versions")
+        }
+        return Ok(())
+    }
+
+    fn read_library_symbols(reader: write LibraryReader, symbol_table: usize) -> Result<void, Text> {
+        loan read reader.headers[symbol_table] as header {
+            if header.entry_size != 24 || header.size % 24 != 0 {
+                return Err("invalid shared library symbol table")
+            }
+            if header.link >= reader.headers.length() {
+                return Err("invalid shared library string table")
+            }
+            reader.symbols = link_binary::part(reader.bytes, header.offset, header.size)?
+            loan read reader.headers[header.link] as strings {
+                if strings.kind != 3 {
+                    return Err("invalid shared library strings")
+                }
+                reader.strings = link_binary::part(reader.bytes, strings.offset, strings.size)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn library_exports(reader: LibraryReader, name: Text) -> Result<Vec<SymbolVersion>, Text> {
+        var output = Vec<SymbolVersion>.new()
+        for index in 1..reader.symbols.length() / 24 {
+            match library_export(reader, index, name)? {
+                Some(symbol) => {
+                    output.push(move symbol)
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn library_export(reader: LibraryReader, index: usize, name: Text) -> Result<Option<SymbolVersion>, Text> {
+        let offset = index * 24
+        if exported_symbol(reader.symbols, offset)? == false {
+            return Ok(None())
+        }
+        let version: u64 = if reader.versions.length() == 0 {
+            1
+        } else {
+            link_binary::number(reader.versions, index * 2, 2)?
+        }
+        if version == 0 ||(version & 32768) != 0 {
+            return Ok(None())
+        }
+        let symbol = link_binary::number(reader.symbols, offset, 4)?
+        return Ok(Some(SymbolVersion {
+                    symbol: link_binary::terminated(reader.strings, usize.from(symbol))?,
+                    library: name.clone(), version: library_version(reader, version)?
+                }))
+    }
+
+    fn exported_symbol(bytes: Vec<u8>, offset: usize) -> Result<bool, Text> {
+        let binding = bytes[offset + 4] >> 4
+        let visibility = bytes[offset + 5] & 3
+        return Ok((binding == 1 || binding == 2 || binding == 10) &&(visibility == 0 || visibility == 3) && link_binary::number(bytes, offset + 6, 2)? != 0)
+    }
+
+    fn library_version(reader: LibraryReader, version: u64) -> Result<Text, Text> {
+        if version <= 1 {
+            return Ok("")
+        }
+        var offset: usize = 0
+        while offset < reader.definitions.length() {
+            if link_binary::number(reader.definitions, offset, 2)? != 1 {
+                return Err("unsupported ELF version definition")
+            }
+            if link_binary::number(reader.definitions, offset + 4, 2)? == version {
+                return library_version_name(reader, offset)
+            }
+            offset = next_version_definition(reader.definitions, offset)?
+        }
+        return Err("missing ELF symbol version definition")
+    }
+
+    fn library_version_name(reader: LibraryReader, offset: usize) -> Result<Text, Text> {
+        let auxiliary = usize.from(link_binary::number(reader.definitions, offset + 12, 4)?)
+        if auxiliary < 20 || auxiliary > reader.definitions.length() - offset {
+            return Err("invalid ELF version auxiliary offset")
+        }
+        let name = link_binary::number(reader.definitions, offset + auxiliary, 4)?
+        return link_binary::terminated(reader.strings, usize.from(name))
+    }
+
+    fn next_version_definition(bytes: Vec<u8>, offset: usize) -> Result<usize, Text> {
+        let next = usize.from(link_binary::number(bytes, offset + 16, 4)?)
+        if next == 0 {
+            return Ok(bytes.length())
+        }
+        if next < 20 || next > bytes.length() - offset {
+            return Err("invalid ELF version definition offset")
+        }
+        return Ok(offset + next)
+    }
+}

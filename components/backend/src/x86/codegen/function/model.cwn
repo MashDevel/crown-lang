@@ -1,0 +1,307 @@
+module x86 {
+    struct CachedValue {
+        value: usize
+        register: Register
+    }
+
+    struct FunctionCompiler {
+        id: usize
+        frame: Frame
+        instructions: Option<Vec<Instruction>>
+        block: Option<usize>
+        symbols: Vec<Option<Text>>
+        uses: Vec<usize>
+        cached_value: Option<CachedValue>
+        label_sequence: usize
+    }
+
+    struct ValueAccess {
+        value: usize
+        register: Register
+    }
+
+    struct FloatValueAccess {
+        value: usize
+        register: FloatRegister
+    }
+
+    struct ExtendedLoad {
+        value: usize
+        destination: Register
+        extension: Extension
+    }
+
+    struct LocationLoad {
+        value: usize
+        destination: Register
+        extension: Extension
+        location: ValueLocation
+    }
+
+    struct ResultStore {
+        result: Option<usize>
+        source: Register
+    }
+
+    struct FloatResultStore {
+        result: Option<usize>
+        width: FloatWidth
+    }
+
+    struct FloatUnsignedCast {
+        width: FloatWidth
+        destination: Register
+    }
+
+    struct SizedResultStore {
+        result: usize
+        source: Register
+        width: Width
+    }
+
+    struct ConstantLoad {
+        input: ExtendedLoad
+        constant: ir::Constant
+    }
+
+    struct AddressLoad {
+        id: usize
+        destination: Register
+    }
+
+    struct StoreLocation {
+        access: ValueAccess
+        location: ValueLocation
+    }
+
+    struct BlockOrderState {
+        visited: Vec<bool>
+        output: Vec<usize>
+    }
+
+    struct ParameterCapture {
+        value: usize
+        location: ArgumentLocation
+    }
+
+    struct PhiCopy {
+        result: usize
+        source: usize
+    }
+
+    struct PhiState {
+        copies: Vec<PhiCopy>
+        active: Vec<bool>
+    }
+
+    struct StackParameter {
+        value: usize
+        slot: usize
+    }
+
+    struct BinaryInput {
+        result: Option<usize>
+        operator: ir::BinaryOperator
+        left: usize
+        right: usize
+    }
+
+    struct UnaryInput {
+        result: Option<usize>
+        operator: ir::UnaryOperator
+        value: usize
+    }
+
+    struct CompareInput {
+        result: Option<usize>
+        operator: ir::CompareOperator
+        left: usize
+        right: usize
+    }
+
+    struct CastInput {
+        result: Option<usize>
+        operator: ir::CastOperator
+        value: usize
+    }
+
+    struct SelectInput {
+        result: Option<usize>
+        condition: usize
+        then_value: usize
+        else_value: usize
+    }
+
+    struct RegisterPair {
+        destination: Register
+        source: Register
+    }
+
+    struct WideRegisters {
+        low: Register
+        high: Register
+    }
+
+    struct WideValueAccess {
+        value: usize
+        registers: WideRegisters
+    }
+
+    struct BinaryMachine {
+        operator: ir::BinaryOperator
+        destination: Register
+        source: Register
+        width: Width
+    }
+
+    struct LoadInput {
+        result: Option<usize>
+        address: usize
+        value_type: ir::Type
+    }
+
+    struct StoreInput {
+        address: usize
+        value: usize
+    }
+
+    struct OffsetInput {
+        result: Option<usize>
+        base: usize
+        offset: usize
+    }
+
+    struct ConstantOffsetInput {
+        result: Option<usize>
+        base: usize
+        offset: i32
+    }
+
+    struct MemoryTriple {
+        first: usize
+        second: usize
+        third: usize
+    }
+
+    struct MemoryRepeatInput {
+        destination: usize
+        source: usize
+        element_size: usize
+        count: usize
+    }
+
+    struct CallInput {
+        result: Option<usize>
+        function: usize
+        arguments: Vec<usize>
+    }
+
+    struct IndirectCallInput {
+        result: Option<usize>
+        function: usize
+        signature: ir::Signature
+        arguments: Vec<usize>
+    }
+
+    struct ArgumentsInput {
+        values: Vec<usize>
+        signature: ir::Signature
+    }
+
+    struct RegisterArgument {
+        value: usize
+        value_type: ir::Type
+        location: ArgumentLocation
+    }
+
+    struct ArgumentState {
+        input: ArgumentsInput
+        locations: Vec<ArgumentLocation>
+    }
+
+    struct StackArgument {
+        value: usize
+        value_type: ir::Type
+        slot: usize
+    }
+
+    struct MemoryArgument {
+        value: usize
+        slot: usize
+        size: u64
+    }
+
+    struct AggregateCapture {
+        value: usize
+        slot: usize
+        size: u64
+    }
+
+    struct CallResult {
+        result: Option<usize>
+        arguments: Vec<usize>
+        signature: ir::Signature
+    }
+
+    struct ReturnAggregate {
+        value: usize
+        components: Vec<ir::AbiComponent>
+    }
+
+    fn codegen_emit(compiler: write FunctionCompiler, instruction: take Instruction) -> void {
+        var instructions = Vec<Instruction>.new()
+        match compiler.instructions.take() {
+            Some(value) => {
+                instructions = move value
+            }
+            None => {
+            }
+        }
+        instructions.push(move instruction)
+        compiler.instructions = Some(move instructions)
+    }
+
+    fn codegen_take_instructions(compiler: write FunctionCompiler) -> Vec<Instruction> {
+        match compiler.instructions.take() {
+            Some(instructions) => {
+                return move instructions
+            }
+            None => {
+                return Vec<Instruction>.new()
+            }
+        }
+    }
+
+    fn codegen_error_here(compiler: FunctionCompiler, kind: take CodegenErrorKind) -> CodegenError {
+        var error = codegen_error(move kind)
+        codegen_error_at(error, compiler.id, compiler.block)
+        return move error
+    }
+
+    fn codegen_label(block: usize) -> LocalLabel {
+        return BlockLabel(block)
+    }
+
+    fn codegen_internal_label(compiler: write FunctionCompiler) -> LocalLabel {
+        let label = InternalLabel(compiler.label_sequence)
+        compiler.label_sequence = compiler.label_sequence + 1
+        return move label
+    }
+
+    fn codegen_clear_cache(compiler: write FunctionCompiler) -> void {
+        compiler.cached_value = None()
+    }
+
+    fn codegen_cached_copy(value: Option<CachedValue>) -> Option<CachedValue> {
+        match read value {
+            Some(cached) => {
+                return Some(CachedValue {
+                        value: cached.value, register: cached.register
+                    })
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+}

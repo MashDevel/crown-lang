@@ -1,0 +1,72 @@
+module std {
+    module text {
+        fn decimal(value: u64) -> Text {
+            var remaining = value
+            var digits = Vec<u8>.new()
+            while remaining != 0 {
+                digits.push(u8.from(remaining % 10));
+                remaining = remaining / 10
+            }
+            if digits.length() == 0 {
+                return "0"
+            }
+            var output = ""
+            for index in 0..digits.length() {
+                output.push(char.from(u32.from(digits[digits.length() - index - 1]) + 48))
+            }
+            return move output
+        }
+
+        fn signed_decimal(value: i64) -> Text {
+            if value >= 0 {
+                return decimal(u64.from(value))
+            }
+            let inverse = ~u64.from_bits(value)
+            let magnitude = inverse.wrapping_add(1)
+            return joined("-", decimal(magnitude))
+        }
+
+        fn unsigned(value: TextView) -> Result<u64, Text> {
+            if value.length() == 0 {
+                return Err("expected an unsigned integer")
+            }
+            var result: u64 = 0
+            for index in 0..value.length() {
+                result = decimal_digit(result, value[index])?
+            }
+            return Ok(result)
+        }
+
+        fn decimal_digit(value: u64, byte: u8) -> Result<u64, Text> {
+            if byte < 48 || byte > 57 {
+                return Err("expected an unsigned integer")
+            }
+            let digit = u64.from(byte - 48)
+            if value >(18446744073709551615 - digit) / 10 {
+                return Err("unsigned integer is out of range")
+            }
+            return Ok(value * 10 + digit)
+        }
+
+        fn hex_byte(output: write Text, value: u8) -> void {
+            output.push(hex_digit(value / 16))
+            output.push(hex_digit(value % 16))
+        }
+
+        fn hex_digit(value: u8) -> char {
+            if value < 10 {
+                return char.from(u32.from(value) + 48)
+            }
+            return char.from(u32.from(value) + 87)
+        }
+
+        fn repeat(value: TextView, count: usize) -> Text {
+            var output = ""
+            for index in 0..count {
+                index;
+                append(output, value)
+            }
+            return move output
+        }
+    }
+}

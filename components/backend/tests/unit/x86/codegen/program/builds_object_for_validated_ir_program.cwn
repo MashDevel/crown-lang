@@ -1,0 +1,57 @@
+fn run() -> Result<u32, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var imported_parameters = Vec<ir::Type>.new()
+    imported_parameters.push(value_type)
+    let imported_signature = ir::signature_new(move imported_parameters, value_type)
+    let imported = ir::function_new("identity", move imported_signature, ir::LinkageImport())
+    let caller_signature = ir::signature_new(Vec<ir::Type>.new(), value_type)
+    var caller = ir::function_new("caller", move caller_signature, ir::LinkageExport())
+    let constant_value = ir::ConstantInteger(u64.from(42))
+    let constant = ir::function_constant(caller, value_type, constant_value)
+    let block = backend_test::checked(ir::function_add_block(caller), 1)?
+    var arguments = Vec<usize>.new()
+    arguments.push(constant)
+    let result = backend_test::value(ir::function_append(caller, block, ir::InstructionCall(0, move arguments, value_type)), 2, 3)?
+    backend_test::checked(ir::function_terminate(caller, block, ir::TerminatorReturn(Some(result))), 4)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move imported)
+    let caller_id = ir::program_add_function(program, move caller)
+    ir::program_set_entry(program, caller_id)
+    match x86::codegen(move program) {
+        Err(error) => {
+            error;
+            return Ok(5)
+        }
+        Ok(object) => {
+            return Ok(check_object(object))
+        }
+    }
+    return Ok(42)
+}
+
+fn check_object(object: object::CompilerObject) -> u32 {
+    if object.sections.length() != 1 {
+        return 6
+    }
+    if object.symbols.length() != 4 {
+        return 7
+    }
+    if object.relocations.length() != 2 {
+        return 8
+    }
+    match read object.entry {
+        Some(entry) => {
+            if entry != 2 {
+                return 9
+            }
+        }
+        None => {
+            return 10
+        }
+    }
+    return 42
+}
+
+fn main() -> u32 {
+    backend_test::finished(run())
+}

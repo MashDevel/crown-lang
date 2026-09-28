@@ -1,0 +1,42 @@
+module lowering {
+    struct ChannelRelease {
+        state: usize
+        mutex: usize
+        element: sema::Type
+    }
+
+    fn drop_channel(compiler: write FunctionCompiler, symbols: sema::Symbols, owner: BufferOwner) -> Result<void, u32> {
+        let state = function_load_pointer(compiler, owner.address)?
+        let mutex_address = function_offset(compiler, state, 8)?
+        let mutex = function_load_pointer(compiler, mutex_address)?
+        let reference = ReferenceRelease {
+            owner: state, mutex: mutex
+        }
+        let final_reference = release_reference(compiler, symbols, reference)?
+        let release = function_new_block(compiler)?
+        let ready = function_new_block(compiler)?
+        function_finish(compiler, ir::TerminatorConditional(final_reference, release, ready))?
+        function_select_block(compiler, release)
+        let request = ChannelRelease {
+            state: state, mutex: mutex, element: sema::type_copy(owner.element)
+        }
+        release_channel(compiler, symbols, request)?
+        function_finish(compiler, ir::TerminatorBranch(ready))?
+        function_select_block(compiler, ready)
+        return Ok(())
+    }
+
+    fn release_channel(compiler: write FunctionCompiler, symbols: sema::Symbols, request: ChannelRelease) -> Result<void, u32> {
+        destroy_mutex(compiler, request.mutex)?
+        let data_address = function_offset(compiler, request.state, 16)?
+        let data = function_load_pointer(compiler, data_address)?
+        if sema::type_is_copy_with_symbols(symbols, request.element) == false {
+            let buffers = channel_buffers(compiler, symbols, request.state, request.element)?
+            drop_buffer(compiler, symbols, buffers.back)?
+            drop_buffer(compiler, symbols, buffers.front)?
+        }
+        free_pointer(compiler, data)?
+        free_pointer(compiler, request.mutex)?
+        return free_pointer(compiler, request.state)
+    }
+}

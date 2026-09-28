@@ -1,0 +1,13 @@
+fn flags(first: bool, second: bool, third: bool) -> u8 {
+    return (if first { 1 } else { 0 }) | (if second { 2 } else { 0 }) | (if third { 4 } else { 0 })
+}
+fn matched(value: u32) -> u32 {
+    return ((match value { 0 => 7, 1 => 11, _ => 13 })) + 1
+}
+fn main() -> u32 {
+    if flags(false, false, false) != 0 { return 1 }
+    if flags(true, true, true) != 7 { return 2 }
+    if flags(false, true, false) != 2 { return 3 }
+    if matched(0) != 8 || matched(1) != 12 || matched(999) != 14 { return 4 }
+    return 42
+}

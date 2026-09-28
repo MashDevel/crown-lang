@@ -1,0 +1,29 @@
+module lowering {
+    struct Tables {
+        expressions: Vec<ir::IndexEntry>
+        functions: Vec<FunctionBinding>
+        imports: Vec<ImportBinding>
+        runtime_imports: Vec<NamedFunction>
+        generated_functions: Vec<NamedFunction>
+        globals: Vec<NamedGlobal>
+        copy_symbols: Vec<usize>
+        coverage: Option<Shared<CoverageLayout>>
+    }
+
+    fn tables_new() -> Tables {
+        return Tables {
+            expressions: Vec<ir::IndexEntry>.new()
+            functions: Vec<FunctionBinding>.new()
+            imports: Vec<ImportBinding>.new()
+            runtime_imports: Vec<NamedFunction>.new()
+            generated_functions: Vec<NamedFunction>.new()
+            globals: Vec<NamedGlobal>.new()
+            copy_symbols: Vec<usize>.new()
+            coverage: None()
+        }
+    }
+
+    fn take_function_ir(compiler: write FunctionCompiler) -> ir::Function {
+        return ir::function_take(compiler.ir)
+    }
+}

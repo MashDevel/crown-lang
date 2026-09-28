@@ -1,0 +1,40 @@
+fn layout_sizes() -> Result<void, Text> {
+    testing::expect(coverage::instrumentation_bytes(None()) == 0, "uninstrumented builds need no counter storage")?
+    var layout = coverage::layout(0, Vec<inspect::Node>.new())
+    testing::expect(coverage::bitset_size(layout) == 0, "empty coverage layout")?
+    for index in 0..65 {
+        index;
+        layout.points.push(lowering::CoveragePoint {
+                span: sema::empty_span(), kind: lowering::CoverageKind::Line(), next: 0
+            })
+        let expected: usize = if layout.points.length() <= 64 {
+            8
+        } else {
+            16
+        }
+        testing::expect(coverage::bitset_size(layout) == expected, "counter storage rounds to complete words")?
+    }
+    let shared = Some(Shared.new(move layout))
+    return testing::expect(coverage::instrumentation_bytes(shared) == 16, "runtime uses the prepared layout size")
+}
+
+fn assembly_runtime(root: Text) -> Result<void, Text> {
+    let assembly = testing::write_file(root, "program.s", ".text\n")?
+    let target = toolchain::host_target()
+    coverage::append_runtime(assembly, "", target, 8)?
+    testing::expect(std::text::equal(toolchain::read_text(assembly)?, ".text\n"), "uninstrumented assembly is unchanged")?
+    testing::write_file(root, "map.json", "not JSON")?
+    coverage::append_runtime(assembly, root, target, 8)?
+    let output = toolchain::read_text(assembly)?
+    return testing::expect(output.length() > 6, "runtime does not reparse coverage metadata")
+}
+
+fn run() -> Result<void, Text> {
+    layout_sizes()?
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    return assembly_runtime(toolchain::temporary_path(temporary))
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

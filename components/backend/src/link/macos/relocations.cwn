@@ -1,0 +1,122 @@
+module macho {
+    fn patch(image: write Image, address: u64, value: u64, width: usize) -> Result<void, Text> {
+        if address >= image.data_base {
+            let offset = usize.from(address - image.data_base)
+            link_binary::number(image.data, offset, width)?
+            link_binary::put(image.data, offset, value, width)
+        } else {
+            if address < 4294967296 {
+                return Err("relocation outside executable")
+            }
+            let offset = usize.from(address - 4294967296)
+            link_binary::number(image.text, offset, width)?
+            link_binary::put(image.text, offset, value, width)
+        }
+        return Ok(())
+    }
+
+    fn relocate(image: write Image, object: object::CompilerObject, ordinals: Vec<usize>) -> Result<void, Text> {
+        for index in 0..image.imports.length() {
+            let symbol = image.imports[index]
+            bind(image, object.symbols[symbol].name, image.slots[symbol], ordinals[symbol])?
+        }
+        for index in 0..object.relocations.length() {
+            relocate_one(image, object.relocations[index], object, ordinals)?
+        }
+        image.bindings.push(0)
+        image.rebases.push(0)
+        return Ok(())
+    }
+
+    fn relocate_one(image: write Image, relocation: object::Relocation, object: object::CompilerObject, ordinals: Vec<usize>) -> Result<void, Text> {
+        let address = section_address(image, relocation.section) + relocation.offset
+        var value = relocation_value(image, relocation)?
+        if arm64::arm_instruction_relocation(relocation.kind) {
+            return relocate_arm(image, relocation, address, value)
+        }
+        if relocation.kind == object::RelocationAbsolute64() && ordinals[relocation.symbol] != 0 {
+            if relocation.addend != 0 {
+                return Err("dynamic absolute relocation has an unsupported addend")
+            }
+            return bind(image, object.symbols[relocation.symbol].name, address, ordinals[relocation.symbol])
+        }
+        value = adjusted_relocation(image, relocation.kind, address, value)?
+        return patch(image, address, u64.from_bits(value), usize.from(object::relocation_width(relocation.kind)))
+    }
+
+    fn relocation_value(image: write Image, relocation: object::Relocation) -> Result<i64, Text> {
+        var target = image.symbols[relocation.symbol]
+        match read relocation.kind {
+            object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 | object::RelocationArmGotPage21 | object::RelocationArmGotLoadPageOffset12 => {
+                target = got_slot(image, relocation.symbol)?
+            }
+            _ => {
+            }
+        }
+        var value = link_binary::signed_add(i64.from(target), relocation.addend)?
+        match read relocation.subtract {
+            Some(symbol) => {
+                value = link_binary::signed_subtract(value, i64.from(image.symbols[symbol]))?
+            }
+            None => {
+            }
+        }
+        return Ok(value)
+    }
+
+    fn adjusted_relocation(image: write Image, kind: object::RelocationKind, address: u64, value: i64) -> Result<i64, Text> {
+        match read kind {
+            object::RelocationPcRelative32 | object::RelocationPcRelativeCall32 | object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 | object::RelocationArmGotPage21 | object::RelocationArmGotLoadPageOffset12 => {
+                return relative_value(value, address)
+            }
+            object::RelocationAbsolute64 => {
+                rebase(image, address)?
+            }
+            object::RelocationAbsolute32 => {
+                require_unsigned32(value)?
+            }
+            object::RelocationDifference32 => {
+                require_signed32(value)?
+            }
+            object::RelocationDifference64 => {
+            }
+            _ => {
+                return Err("unsupported Mach-O relocation")
+            }
+        }
+        return Ok(value)
+    }
+
+    fn relative_value(value: i64, address: u64) -> Result<i64, Text> {
+        let relative = link_binary::signed_subtract(value, i64.from(address))?
+        require_signed32(relative)?
+        return Ok(relative)
+    }
+
+    fn require_unsigned32(value: i64) -> Result<void, Text> {
+        if value < 0 || value > 4294967295 {
+            return Err("absolute relocation overflow")
+        }
+        return Ok(())
+    }
+
+    fn require_signed32(value: i64) -> Result<void, Text> {
+        if value < -2147483648 || value > 2147483647 {
+            return Err("relative relocation overflow")
+        }
+        return Ok(())
+    }
+
+    fn got_slot(image: write Image, symbol: usize) -> Result<u64, Text> {
+        if image.slots[symbol] != 0 {
+            return Ok(image.slots[symbol])
+        }
+        let offset = link_binary::aligned(image.data.length(), 8)
+        link_binary::pad(image.data, offset + 8)
+        let address = image.data_base + u64.from(offset)
+        image.slots[symbol] = address
+        patch(image, address, image.symbols[symbol], 8)?
+        rebase(image, address)?
+        return Ok(address)
+    }
+}

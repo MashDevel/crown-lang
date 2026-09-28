@@ -1,0 +1,248 @@
+module lowering {
+    struct ScalarOperation {
+        operator: frontend::BinaryOperator
+        left: usize
+        right: usize
+        value_type: sema::Type
+    }
+
+    fn binary_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                if binary_is_logical(operator) {
+                    return logical_expression(compiler, analysis, expression)
+                }
+                var value_type = sema::Invalid()
+                loan read left as value {
+                    value_type = function_expression_type(compiler, analysis, value)?
+                }
+                if binary_is_equality(operator) && type_is_direct(analysis.checker.symbols, value_type)? == false {
+                    return aggregate_comparison(compiler, analysis, expression.kind)
+                }
+                return scalar_binary_expression(compiler, analysis, expression.kind, move value_type)
+            }
+            _ => {
+                return Err(100)
+            }
+        }
+    }
+
+    fn scalar_binary_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, kind: frontend::ExpressionKind, value_type: take sema::Type) -> Result<Value, u32> {
+        match read kind {
+            frontend::ExpressionBinary(left, operator, right) => {
+                var left_value: usize = 0
+                loan read left as value {
+                    left_value = function_scalar_expression(compiler, analysis, value)?
+                }
+                var right_value: usize = 0
+                loan read right as value {
+                    right_value = function_scalar_expression(compiler, analysis, value)?
+                }
+                let operation = ScalarOperation {
+                    operator: operator, left: left_value, right: right_value, value_type: sema::type_copy(value_type)
+                }
+                let result = scalar_operation(compiler, analysis, operation)?
+                if binary_is_comparison(operator) {
+                    return Ok(ScalarValue(result, sema::builtin_leaf(sema::Bool())))
+                }
+                return Ok(ScalarValue(result, move value_type))
+            }
+            _ => {
+                return Err(100)
+            }
+        }
+    }
+
+    fn scalar_operation(compiler: write FunctionCompiler, analysis: sema::Analysis, operation: ScalarOperation) -> Result<usize, u32> {
+        if sema::type_is_integer(operation.value_type) {
+            return integer_binary(compiler, analysis.checker.symbols, operation)
+        }
+        if sema::type_is_float(operation.value_type) {
+            return float_binary(compiler, operation)
+        }
+        if binary_is_equality(operation.operator) {
+            let compare = equality_operator(operation.operator)
+            return function_append_value(compiler, ir::InstructionCompare(compare, operation.left, operation.right))
+        }
+        return Err(101)
+    }
+
+    fn float_binary(compiler: write FunctionCompiler, operation: ScalarOperation) -> Result<usize, u32> {
+        if binary_is_comparison(operation.operator) {
+            let compare = float_comparison_operator(operation.operator)?
+            return function_append_value(compiler, ir::InstructionCompare(compare, operation.left, operation.right))
+        }
+        let operator = float_operator(operation.operator)?
+        return function_append_value(compiler, ir::InstructionBinary(operator, operation.left, operation.right))
+    }
+
+    fn negate_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionNegate(value) => {
+                loan read value as item {
+                    return negate_value_expression(compiler, analysis, expression, item)
+                }
+            }
+            _ => {
+                return Err(102)
+            }
+        }
+    }
+
+    fn bitwise_not_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionBitwiseNot(value) => {
+                var source: usize = 0
+                loan read value as item {
+                    source = function_scalar_expression(compiler, analysis, item)?
+                }
+                let result = function_append_value(compiler, ir::InstructionUnary(ir::UnaryNot(), source))?
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                return Ok(ScalarValue(result, move value_type))
+            }
+            _ => {
+                return Err(104)
+            }
+        }
+    }
+
+    fn binary_is_logical(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryLogicalAnd => {
+                return true
+            }
+            frontend::BinaryLogicalOr => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_is_equality(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryEqual => {
+                return true
+            }
+            frontend::BinaryNotEqual => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn binary_is_comparison(operator: frontend::BinaryOperator) -> bool {
+        match read operator {
+            frontend::BinaryEqual => {
+                return true
+            }
+            frontend::BinaryNotEqual => {
+                return true
+            }
+            frontend::BinaryLess => {
+                return true
+            }
+            frontend::BinaryLessEqual => {
+                return true
+            }
+            frontend::BinaryGreater => {
+                return true
+            }
+            frontend::BinaryGreaterEqual => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn equality_operator(operator: frontend::BinaryOperator) -> ir::CompareOperator {
+        match read operator {
+            frontend::BinaryNotEqual => {
+                return ir::CompareNotEqual()
+            }
+            _ => {
+                return ir::CompareEqual()
+            }
+        }
+    }
+
+    fn float_operator(operator: frontend::BinaryOperator) -> Result<ir::BinaryOperator, u32> {
+        match read operator {
+            frontend::BinaryAdd => {
+                return Ok(ir::BinaryFloatAdd())
+            }
+            frontend::BinarySubtract => {
+                return Ok(ir::BinaryFloatSubtract())
+            }
+            frontend::BinaryMultiply => {
+                return Ok(ir::BinaryFloatMultiply())
+            }
+            frontend::BinaryDivide => {
+                return Ok(ir::BinaryFloatDivide())
+            }
+            frontend::BinaryRemainder => {
+                return Ok(ir::BinaryFloatRemainder())
+            }
+            _ => {
+                return Err(105)
+            }
+        }
+    }
+
+    fn float_comparison_operator(operator: frontend::BinaryOperator) -> Result<ir::CompareOperator, u32> {
+        match read operator {
+            frontend::BinaryEqual => {
+                return Ok(ir::CompareFloatOrderedEqual())
+            }
+            frontend::BinaryNotEqual => {
+                return Ok(ir::CompareFloatUnorderedNotEqual())
+            }
+            frontend::BinaryLess => {
+                return Ok(ir::CompareFloatOrderedLess())
+            }
+            frontend::BinaryLessEqual => {
+                return Ok(ir::CompareFloatOrderedLessEqual())
+            }
+            frontend::BinaryGreater => {
+                return Ok(ir::CompareFloatOrderedGreater())
+            }
+            frontend::BinaryGreaterEqual => {
+                return Ok(ir::CompareFloatOrderedGreaterEqual())
+            }
+            _ => {
+                return Err(106)
+            }
+        }
+    }
+    fn negate_value_expression(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression, item: frontend::Expression) -> Result<Value, u32> {
+        match frontend::expression_integer_value(item) {
+            Some(magnitude) => {
+                let value_type = function_expression_type(compiler, analysis, expression)?
+                let request = NegatedLiteral {
+                    magnitude: magnitude, value_type: move value_type
+                }
+                return negated_integer_literal(compiler, analysis.checker.symbols, request)
+            }
+            None => {
+            }
+        }
+        let source = function_scalar_expression(compiler, analysis, item)?
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        var result: usize = 0
+        if sema::type_is_integer(value_type) {
+            let request = IntegerValue {
+                value: source, value_type: sema::type_copy(value_type)
+            }
+            result = integer_negate(compiler, analysis.checker.symbols, request)?
+        } else {
+            result = function_append_value(compiler, ir::InstructionUnary(ir::UnaryFloatNegate(), source))?
+        }
+        return Ok(ScalarValue(result, move value_type))
+    }
+
+}

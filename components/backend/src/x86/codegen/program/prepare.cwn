@@ -1,0 +1,88 @@
+module x86 {
+    struct PreparationTask {
+        index: usize
+        function: ir::Function
+    }
+
+    struct PreparationWork {
+        pending: Vec<PreparationTask>
+        completed: Vec<PreparationTask>
+    }
+
+    fn codegen_prepare_functions(program: write ir::Program) -> void {
+        let workers = ir::parallel_workers(program.functions.length())
+        if workers == 1 {
+            for index in 0..program.functions.length() {
+                codegen_prepare_function(program.functions[index])
+            }
+            return
+        }
+        let work = Shared.new(Mutex.new(codegen_preparation_work(program)))
+        var threads = Vec<Thread>.new()
+        for index in 1..workers {
+            index;
+            let queue = work.share()
+            threads.push(spawn move {
+                    codegen_preparation_worker(queue)
+                })
+        }
+        codegen_preparation_worker(work)
+        for index in 0..threads.length() {
+            loan write threads[index] as thread {
+                thread.join()
+            }
+        }
+        work.lock write as state {
+            for index in 0..state.completed.length() {
+                loan write state.completed[index] as task {
+                    program.functions[task.index] = ir::function_take(task.function)
+                }
+            }
+        }
+    }
+
+    fn codegen_preparation_work(program: write ir::Program) -> PreparationWork {
+        var pending = Vec<PreparationTask>.new()
+        for index in 0..program.functions.length() {
+            loan write program.functions[index] as function {
+                if ir::function_is_import(function) == false {
+                    pending.push(PreparationTask {
+                            index: index, function: ir::function_take(function)
+                        })
+                }
+            }
+        }
+        return PreparationWork {
+            pending: move pending, completed: Vec<PreparationTask>.new()
+        }
+    }
+
+    fn codegen_prepare_function(function: write ir::Function) -> void {
+        if ir::function_is_import(function) {
+            return
+        }
+        ir::function_compact_values(function)
+        codegen_split_ranges(function)
+    }
+
+    fn codegen_preparation_worker(work: Shared<Mutex<PreparationWork>>) -> void {
+        while true {
+            var next: Option<PreparationTask> = None()
+            work.lock write as state {
+                next = state.pending.pop()
+            }
+            match move next {
+                Some(task) => {
+                    var current = move task
+                    codegen_prepare_function(current.function)
+                    work.lock write as state {
+                        state.completed.push(move current)
+                    }
+                }
+                None => {
+                    return
+                }
+            }
+        }
+    }
+}

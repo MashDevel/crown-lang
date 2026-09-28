@@ -1,0 +1,121 @@
+module sema {
+    struct ResourceExpansion {
+        symbol: usize, arguments: Vec<Type>
+    }
+    fn include_resource_type(checker: write Checker, state: write InstanceState, value: Type) -> void {
+        if type_is_concrete(value) == false {
+            return
+        }
+        for index in 0..state.types.length() {
+            if types_equal(state.types[index], value) {
+                return
+            }
+        }
+        if state.types.length() >= checker.max_instances {
+            checker_error(checker, "resource type expansion exceeds the configured instance limit");
+            return
+        }
+        state.types.push(type_copy(value))
+    }
+    fn initial_resource_types(checker: write Checker, state: write InstanceState) -> void {
+        for index in 0..checker.expressions.length() {
+            let value = type_copy(checker.expressions[index].value_type)
+            include_resource_type(checker, state, value)
+        }
+        for index in 0..checker.symbols.functions.length() {
+            let instance = FunctionInstance {
+                function: index, arguments: Vec<Type>.new()
+            }
+            instance_signature_types(checker, state, instance)
+        }
+    }
+    fn instance_resource_types(checker: write Checker, state: write InstanceState, instance: FunctionInstance) -> void {
+        instance_signature_types(checker, state, instance)
+        for index in 0..checker.expressions.length() {
+            var value = Invalid()
+            loan read checker.expressions[index] as expression {
+                match expression.function {
+                    Some(owner) => {
+                        if owner == instance.function {
+                            value = substitute(expression.value_type, instance.arguments)
+                        }
+                    },
+                    None => {
+                    }
+                }
+            }
+            include_resource_type(checker, state, value)
+        }
+    }
+    fn instance_signature_types(checker: write Checker, state: write InstanceState, instance: FunctionInstance) -> void {
+        let result = substitute(checker.symbols.functions[instance.function].result, instance.arguments)
+        include_resource_type(checker, state, result)
+        for index in 0..checker.symbols.functions[instance.function].parameters.length() {
+            let parameter = substitute(checker.symbols.functions[instance.function].parameters[index].value_type, instance.arguments)
+            include_resource_type(checker, state, parameter)
+        }
+    }
+    fn expand_resource_type(checker: write Checker, state: write InstanceState, value: Type) -> void {
+        match read value {
+            NamedType(symbol, arguments) => {
+                expand_named_resource(checker, state, value)
+            }
+            BuiltinType(builtin, arguments) => {
+                builtin;
+                include_resource_arguments(checker, state, arguments)
+            }
+            ArrayType(element, length) => {
+                length;
+                loan read element as item {
+                    include_resource_type(checker, state, item)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+    fn include_resource_arguments(checker: write Checker, state: write InstanceState, values: Vec<Type>) -> void {
+        for index in 0..values.length() {
+            include_resource_type(checker, state, values[index])
+        }
+    }
+    fn expand_named_resource(checker: write Checker, state: write InstanceState, value: Type) -> void {
+        match read value {
+            NamedType(symbol, arguments) => {
+                if symbol >= checker.symbols.types.length() {
+                    return
+                }
+                include_resource_arguments(checker, state, arguments)
+                let values = parameter_values(checker.symbols.types[symbol].type_parameters, arguments)
+                let request = ResourceExpansion {
+                    symbol: symbol, arguments: move values
+                }
+                expand_resource_fields(checker, state, request)
+                let is_resource = match read checker.symbols.types[symbol].kind {
+                    Resource(opaque_value, transferable) => {
+                        opaque_value;
+                        transferable;
+                        true
+                    }
+                    _ => false
+                }
+                if is_resource {
+                    checker.resource_instances.push(type_copy(value));
+                    expand_resource_body(checker, state, request)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+    fn expand_resource_fields(checker: write Checker, state: write InstanceState, request: ResourceExpansion) -> void {
+        for index in 0..checker.symbols.types[request.symbol].fields.length() {
+            let value = substitute(checker.symbols.types[request.symbol].fields[index].value_type, request.arguments)
+            include_resource_type(checker, state, value)
+        }
+        for variant in 0..checker.symbols.types[request.symbol].variants.length() {
+            let fields = substitute_types(checker.symbols.types[request.symbol].variants[variant].fields, request.arguments)
+            include_resource_arguments(checker, state, fields)
+        }
+    }
+}

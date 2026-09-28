@@ -1,0 +1,100 @@
+module sema {
+    struct LockPayload {
+        value_type: Type
+        mutex: bool
+    }
+
+    fn checker_lock(checker: write Checker, statement: frontend::Statement) -> void {
+        match read statement.kind {
+            frontend::StatementLock(mode, source, alias, body) => {
+                let usage = ReadPath()
+                match checker_path(checker, source, usage) {
+                    None => {
+                    }
+                    Some(info) => {
+                        match lock_payload(info.value_type) {
+                            None => {
+                                checker_error(checker, "lock access requires a matching scoped loan of a lock value")
+                            }
+                            Some(payload) => {
+                                checker_open_lock(checker, statement, move payload)
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "lock access requires a matching scoped loan of a lock value")
+            }
+        }
+    }
+
+    fn lock_payload(value_type: Type) -> Option<LockPayload> {
+        match read value_type {
+            BuiltinType(builtin, arguments) => {
+                let kind = builtin
+                if kind == Shared() && arguments.length() == 1 {
+                    loan read arguments[0] as inner {
+                        return lock_payload(inner)
+                    }
+                }
+                if (kind == Mutex() || kind == RwLock()) && arguments.length() == 1 {
+                    loan read arguments[0] as inner {
+                        return Some(LockPayload {
+                                value_type: type_copy(inner), mutex: kind == Mutex()
+                            })
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        return None()
+    }
+
+    fn checker_open_lock(checker: write Checker, statement: frontend::Statement, payload: take LockPayload) -> void {
+        match read statement.kind {
+            frontend::StatementLock(mode, source, alias, body) => {
+                if source.segments.length() == 0 {
+                    checker_error(checker, "lock access requires a matching scoped loan of a lock value");
+                    return
+                }
+                if payload.mutex && loan_is_read(mode) {
+                    checker_error(checker, "lock access requires a matching scoped loan of a lock value");
+                    return
+                }
+                var key: Option<VariableKey> = None()
+                loan read source.segments[0] as root {
+                    key = checker_find_variable(checker, root)
+                }
+                match key {
+                    None => {
+                        checker_error(checker, "lock access requires a matching scoped loan of a lock value")
+                    }
+                    Some(root_key) => {
+                        let write_mode = frontend::LoanWrite()
+                        checker_begin_loan(checker, root_key, write_mode)
+                        checker_push_scope(checker)
+                        let variable = Variable {
+                            name: frontend::name_copy(alias)
+                            value_type: type_copy(payload.value_type)
+                            copy_value: type_is_copy_with_symbols(checker.symbols, payload.value_type)
+                            mutable_value: loan_is_write(mode)
+                            state: Available()
+                            access: loan_access(mode)
+                            state_span: statement.span
+                            span: statement.span
+                        }
+                        checker_add_variable(checker, move variable)
+                        checker_statements(checker, body)
+                        checker_pop_scope(checker)
+                        checker_end_loan(checker, root_key, write_mode)
+                    }
+                }
+            }
+            _ => {
+                checker_error(checker, "lock access requires a matching scoped loan of a lock value")
+            }
+        }
+    }
+}

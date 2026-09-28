@@ -1,0 +1,95 @@
+fn test_values() -> u32 {
+    let unicode = std_unicode_tests::check()
+    if unicode != 0 {
+        return 240 + unicode
+    }
+    let scoped = test_scoped_library()
+    if scoped != 0 {
+        return 150 + scoped
+    }
+    let map_results = test_map_results()
+    if map_results != 0 {
+        return 210 + map_results
+    }
+    let views = test_text_views()
+    if views != 0 {
+        return 230 + views
+    }
+    let maps = test_map()
+    if maps != 0 {
+        return 40 + maps
+    }
+    let owned_maps = test_map_owned()
+    if owned_maps != 0 {
+        return 90 + owned_maps
+    }
+    let parser = test_parse()
+    if parser != 0 {
+        return 70 + parser
+    }
+    let errors = test_parse_errors()
+    if errors != 0 {
+        return 110 + errors
+    }
+    let spans = test_parse_spans()
+    if spans != 0 {
+        return 140 + spans
+    }
+    return test_library_values()
+}
+
+fn test_library_values() -> u32 {
+    let hashes = test_sha256()
+    if hashes != 0 {
+        return hashes
+    }
+    let sequence = test_sequence()
+    if sequence != 0 {
+        return sequence
+    }
+    let readers = test_text_readers()
+    if readers != 0 {
+        return readers
+    }
+
+    let discard = test_discard()
+    if discard != 0 {
+        return 200 + discard
+    }
+    let text = test_text()
+    if text != 0 {
+        return 170 + text
+    }
+    let bytes = test_bytes()
+    if bytes != 0 {
+        return bytes
+    }
+    let strings = test_c_strings()
+    if strings != 0 {
+        return 10 + strings
+    }
+    return 0
+}
+
+fn main(arguments: Arguments) -> u32 {
+    let native_libraries = test_dynamic_failures()
+    if native_libraries != 0 {
+        return native_libraries
+    }
+    let values = test_values()
+    if values != 0 {
+        return values
+    }
+    if arguments.length() != 2 {
+        return 20
+    }
+    match test_io(arguments[1]) {
+        Ok(value) => {
+            return value
+        }
+        Err(error) => {
+            error;
+            return 30
+        }
+    }
+}

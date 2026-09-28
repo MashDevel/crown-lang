@@ -1,0 +1,184 @@
+module sema {
+    fn checker_validate_arguments(checker: write Checker, state: CallState, arguments: Vec<frontend::Expression>) -> void {
+        for index in 0..state.checked.length() {
+            let previous = replace(checker.current_span, arguments[index].span)
+            let errors = checker.errors
+            loan read state.checked[index] as argument {
+                match read argument {
+                    InvalidArgument => {
+                    }
+                    ValidArgument(info) => {
+                        checker_validate_argument(checker, state, index, info)
+                    }
+                }
+            }
+            if checker.errors != errors {
+                call_parameter_note(checker, state.signature, index)
+            }
+            checker.current_span = previous
+        }
+    }
+
+    fn checker_validate_argument(checker: write Checker, state: CallState, index: usize, info: ExpressionInfo) -> void {
+        let expected = call_substitute(state, state.signature.parameters[index].value_type)
+        if assignable(checker.symbols, expected, info.value_type) == false {
+            checker_type_error(checker, expected, info.value_type)
+            return
+        }
+        if mode_is_take(state.signature.parameters[index].mode) && type_is_copy_with_symbols(checker.symbols, expected) == false {
+            if value_is_owned(info.value) == false {
+                checker_error(checker, "argument requires ownership; use move on a whole variable or an owning extraction operation")
+            }
+        }
+    }
+
+    fn mode_is_take(mode: frontend::Mode) -> bool {
+        match read mode {
+            frontend::ModeTake => {
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn checker_call_aliases(checker: write Checker, parameters: Vec<ParameterType>, arguments: Vec<frontend::Expression>) -> void {
+        let errors = checker.errors
+        for current in 0..arguments.length() {
+            for previous in 0..current {
+                let pair = CallConflict {
+                    previous: previous, current: current
+                }
+                checker_alias_pair(checker, parameters, arguments, pair)
+                if checker.errors != errors {
+                    return
+                }
+            }
+        }
+    }
+
+    fn argument_path(expression: frontend::Expression) -> Option<frontend::Path> {
+        match read expression.kind {
+            frontend::ExpressionMove(path) => {
+                return Some(frontend::path_copy(path))
+            }
+            _ => {
+            }
+        }
+        return place_path(expression)
+    }
+
+    fn paths_overlap(source: Shared<Vec<u8>>, left: frontend::Path, right: frontend::Path) -> bool {
+        var length = left.segments.length()
+        if right.segments.length() < length {
+            length = right.segments.length()
+        }
+        var index: usize = 0
+        while index < length {
+            var equal = false
+            loan read left.segments[index] as left_name {
+                loan read right.segments[index] as right_name {
+                    equal = names_equal(source, left_name, right_name)
+                }
+            }
+            if equal == false {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn modes_conflict(previous: frontend::Mode, next: frontend::Mode) -> bool {
+        match read previous {
+            frontend::ModeRead => {
+                match read next {
+                    frontend::ModeRead => {
+                        return false
+                    }
+                    _ => {
+                        return true
+                    }
+                }
+            }
+            _ => {
+                return true
+            }
+        }
+    }
+
+    fn checker_record_generic_call(checker: write Checker, state: CallState) -> void {
+        if state.signature.type_parameter_count == 0 {
+            return
+        }
+        match read state.signature.function {
+            None => {
+                return
+            }
+            Some(function) => {
+                checker.generic_calls.push(GenericCall {
+                        caller: checker.current_function
+                        resource_owner: checker.current_resource
+                        span: state.span
+                        function: function
+                        arguments: types_copy(state.values)
+                    })
+                var caller_option: Option<usize> = None()
+                match read checker.current_function {
+                    Some(value) => {
+                        caller_option = Some(value)
+                    }
+                    None => {
+                    }
+                }
+                match caller_option {
+                    None => {
+                    }
+                    Some(caller_function) => {
+                        checker.generic_uses.push(GenericUse {
+                                caller: caller_function
+                                callee: function
+                                arguments: types_copy(state.values)
+                                span: state.span
+                            })
+                    }
+                }
+            }
+        }
+    }
+
+    fn borrow_argument(symbols: Symbols, parameter: ParameterType, argument: frontend::Expression) -> Option<frontend::Path> {
+        if mode_is_write(parameter.mode) == false && type_is_copy_with_symbols(symbols, parameter.value_type) && type_contains_view(symbols, parameter.value_type) == false {
+            return None()
+        }
+        return argument_path(argument)
+    }
+
+    fn call_substitute(state: CallState, schema: Type) -> Type {
+        if state.signature.type_parameter_count == 0 {
+            return type_copy(schema)
+        }
+        return substitute(schema, state.values)
+    }
+
+    fn checker_resolved_call_aliases(checker: write Checker, state: CallState, arguments: Vec<frontend::Expression>) -> void {
+        var parameters = Vec<ParameterType>.new()
+        var index: usize = 0
+        while index < state.signature.parameters.length() {
+            loan read state.signature.parameters[index] as parameter {
+                let value_type = call_substitute(state, parameter.value_type)
+                var mode = parameter.mode
+                if type_is_scoped_function(value_type) {
+                    mode = frontend::ModeWrite()
+                }
+                parameters.push(ParameterType {
+                        mode: mode, value_type: move value_type
+                    })
+            }
+            index = index + 1
+        }
+        checker_call_aliases(checker, parameters, arguments)
+        checker_capture_aliases(checker, parameters, arguments)
+    }
+}

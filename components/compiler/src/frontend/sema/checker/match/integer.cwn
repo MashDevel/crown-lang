@@ -1,0 +1,93 @@
+module sema {
+    fn checker_integer_pattern(checker: write Checker, kind: frontend::PatternKind, context: write MatchContext) -> Option<Vec<Type>> {
+        match read kind {
+            frontend::PatternWildcard => {
+                context.wildcard = true;
+                return Some(Vec<Type>.new())
+            }
+            _ => {
+            }
+        }
+        match integer_pattern_value(checker.symbols, context.value_type, kind) {
+            Err(error) => {
+                checker_error(checker, move error);
+                return None()
+            }
+            Ok(bits) => {
+                for index in 0..context.integer_patterns.length() {
+                    if context.integer_patterns[index] == bits {
+                        checker_error(checker, "duplicate integer pattern");
+                        return None()
+                    }
+                }
+                context.integer_patterns.push(bits)
+                return Some(Vec<Type>.new())
+            }
+        }
+    }
+
+    fn integer_pattern_value(symbols: Symbols, value_type: Type, kind: frontend::PatternKind) -> Result<u64, Text> {
+        match read kind {
+            frontend::PatternInteger(value, negative) => {
+                match read value_type {
+                    BuiltinType(builtin, arguments) => {
+                        arguments
+                        let scalar = constant_encode(ConstantMagnitude {
+                                negative: negative, value: value
+                            }, builtin)?
+                        return Ok(scalar.bits)
+                    }
+                    _ => {
+                        return Err("integer patterns require an integer scrutinee")
+                    }
+                }
+            }
+            frontend::PatternVariant(name) => {
+                return integer_constant_pattern(symbols, value_type, name)
+            }
+            _ => {
+                return Err("integer match requires integer literals, constants, or a wildcard")
+            }
+        }
+    }
+
+    fn integer_constant_pattern(symbols: Symbols, value_type: Type, name: frontend::Name) -> Result<u64, Text> {
+        match find_pattern_constant(symbols, name) {
+            None => {
+                return Err("integer pattern requires a constant name")
+            }
+            Some(index) => {
+                if types_equal(value_type, symbols.constants[index].value_type) == false {
+                    return Err("integer pattern constant has the wrong type")
+                }
+                match symbols.constants[index].value {
+                    ConstantResolved(value) => {
+                        return Ok(value.bits)
+                    }
+                    _ => {
+                        return Err("integer pattern constant is not resolved")
+                    }
+                }
+            }
+        }
+    }
+
+    fn find_pattern_constant(symbols: Symbols, name: frontend::Name) -> Option<usize> {
+        let text = name_text(symbols.source, name)
+        var scope = frontend::namespace_module_at(symbols.modules, name.span)
+        while scope.length() != 0 {
+            let candidate = frontend::Name {
+                text: frontend::namespace_qualify(scope, text), span: name.span
+            }
+            match find_constant(symbols, candidate) {
+                Some(index) => {
+                    return Some(index)
+                }
+                None => {
+                }
+            }
+            scope = frontend::namespace_parent(scope)
+        }
+        return find_constant(symbols, name)
+    }
+}

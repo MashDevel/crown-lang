@@ -1,0 +1,46 @@
+module guest {
+    extern "c" {
+        fn raw_pair(domain: i32, kind: i32, protocol: i32, pair: RawPtr<i32>) -> i32 = "socketpair"
+    }
+
+    fn socket_tests() -> Result<void, Text> {
+        testing::error(socket_address(""))?
+        testing::error(socket_address(std::text::repeat("x", 108)))?
+        testing::error(socket_address("a\0b"))?
+        testing::error(connect("/nonexistent/crown-guest.sock"))?
+        return socket_pair_test()
+    }
+
+    fn socket_pair_test() -> Result<void, Text> {
+        var descriptors = Vec<i32>.new()
+        descriptors.push(-1)
+        descriptors.push(-1)
+        unsafe {
+            testing::expect(raw_pair(1, 1, 0, descriptors.as_raw()) == 0, "socket pair")?
+        }
+        unsafe {
+            var client = Socket {
+                descriptor: descriptors[0], buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+            }
+            var server = Socket {
+                descriptor: descriptors[1], buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+            }
+            return socket_responses(client, server)
+        }
+    }
+
+    fn socket_responses(client: write Socket, server: write Socket) -> Result<void, Text> {
+        unsafe {
+            socket_timeout(client)?
+            send(server, "{\"return\":1}\n{\"return\":2}\n")?
+            testing::expect(std::text::equal(exchange(client, "request\n")?, "{\"return\":1}"), "socket response")?
+            testing::expect(std::text::equal(exchange(client, "request\n")?, "{\"return\":2}"), "buffered response")?
+            unsafe {
+                raw_close(server.descriptor);
+                server.descriptor = -1
+            }
+            testing::error(send(client, "closed\n"))?
+            return testing::error(receive_byte(client))
+        }
+    }
+}

@@ -1,0 +1,2 @@
+transferable opaque resource NativeHandle { value: usize, drop { value } }
+fn main() -> u32 { return 0 }

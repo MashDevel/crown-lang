@@ -1,0 +1,56 @@
+module arm64 {
+    copy enum FloatOperation {
+        Add, Subtract, Multiply, Divide
+    }
+
+    fn float_word(operation: FloatOperation, registers: Registers, double: bool) -> Result<u32, Text> {
+        let opcode: u32 = match operation {
+            FloatOperation::Add => 505423872
+            FloatOperation::Subtract => 505427968
+            FloatOperation::Multiply => 505415680
+            FloatOperation::Divide => 505419776
+        }
+        return register_word(opcode | float_precision(double), registers)
+    }
+
+    fn float_compare(left: u32, right: u32, double: bool) -> Result<u32, Text> {
+        return register_word(505421824 | float_precision(double), Registers {
+                destination: 0, left: left, right: right
+            })
+    }
+
+    fn float_negate(destination: u32, source: u32, double: bool) -> Result<u32, Text> {
+        return immediate_word(505495552 | float_precision(double), destination, source, 0)
+    }
+
+    fn float_move_bits(destination: u32, source: u32, to_float: bool, double: bool) -> Result<u32, Text> {
+        let opcode: u32 = if double {
+            2657484800
+        } else {
+            505806848
+        }
+        let direction: u32 = if to_float {
+            65536
+        } else {
+            0
+        }
+        return immediate_word(opcode | direction, destination, source, 0)
+    }
+
+    fn float_convert(destination: u32, source: u32, to_double: bool) -> Result<u32, Text> {
+        let opcode: u32 = if to_double {
+            505593856
+        } else {
+            509755392
+        }
+        return immediate_word(opcode, destination, source, 0)
+    }
+
+    fn float_precision(double: bool) -> u32 {
+        return if double {
+            4194304
+        } else {
+            0
+        }
+    }
+}

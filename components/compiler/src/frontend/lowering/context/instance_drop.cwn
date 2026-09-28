@@ -1,0 +1,52 @@
+module lowering {
+    fn include_expression_drop_types(compiler: write Compiler, analysis: sema::Analysis, expression: sema::ExpressionRecord) -> void {
+        include_drop_type(compiler.drop_types, analysis.checker.symbols, expression.value_type)
+        if sema::type_is_concrete(expression.value_type) {
+            return
+        }
+        match expression.resource_owner {
+            Some(owner) => {
+                owner;
+                include_resource_expression_types(compiler, analysis, expression);
+                return
+            }
+            None => {
+            }
+        }
+        let owner = match expression.function {
+            Some(value) => value
+            None => {
+                return
+            }
+        }
+        for index in 0..analysis.instances.length() {
+            loan read analysis.instances[index] as instance {
+                if instance.function == owner {
+                    let concrete = sema::substitute(expression.value_type, instance.arguments)
+                    include_drop_type(compiler.drop_types, analysis.checker.symbols, concrete)
+                }
+            }
+        }
+    }
+
+    fn include_instance_drop_types(compiler: write Compiler, analysis: sema::Analysis) -> void {
+        for index in 0..analysis.instances.length() {
+            loan read analysis.instances[index] as instance {
+                if instance.function < analysis.checker.symbols.functions.length() {
+                    include_function_drop_types(compiler, analysis, instance)
+                }
+            }
+        }
+    }
+
+    fn include_function_drop_types(compiler: write Compiler, analysis: sema::Analysis, instance: sema::FunctionInstance) -> void {
+        loan read analysis.checker.symbols.functions[instance.function] as function {
+            let result = sema::substitute(function.result, instance.arguments)
+            include_drop_type(compiler.drop_types, analysis.checker.symbols, result)
+            for index in 0..function.parameters.length() {
+                let parameter = sema::substitute(function.parameters[index].value_type, instance.arguments)
+                include_drop_type(compiler.drop_types, analysis.checker.symbols, parameter)
+            }
+        }
+    }
+}

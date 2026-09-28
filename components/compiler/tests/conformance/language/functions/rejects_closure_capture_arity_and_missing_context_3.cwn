@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    let action = fn(value) {
+        return value
+    }
+    return 0
+}

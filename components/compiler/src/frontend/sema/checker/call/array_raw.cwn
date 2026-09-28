@@ -1,0 +1,21 @@
+module sema {
+    fn checker_array_raw(checker: write Checker, kind: frontend::ExpressionKind, element: Type) -> Option<ExpressionInfo> {
+        if type_is_copy_with_symbols(checker.symbols, element) == false {
+            checker_error(checker, "array as_raw requires copyable elements")
+            return None()
+        }
+        match read kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                method;
+                arguments
+                loan read receiver as value {
+                    checker_place(checker, value, ReadPath())
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+        return checker_as_raw(checker, kind, type_copy(element))
+    }
+}

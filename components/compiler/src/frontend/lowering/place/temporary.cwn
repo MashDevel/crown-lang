@@ -1,0 +1,86 @@
+module lowering {
+    fn borrowed_scalar_value(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        if borrowed_pointer_operation(compiler, analysis, expression)? {
+            coverage_line(compiler, expression.span)?
+            return literal_expression(compiler, analysis, expression, expression.kind)
+        }
+        return function_expression(compiler, analysis, expression)
+    }
+
+    fn borrowed_pointer_operation(compiler: FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<bool, u32> {
+        match read expression.kind {
+            frontend::ExpressionMethodCall(receiver, method, arguments) => {
+                arguments
+                if sema::name_is(analysis.checker.symbols.source, method, "as_raw") == false && sema::name_is(analysis.checker.symbols.source, method, "offset") == false {
+                    return Ok(false)
+                }
+                loan read receiver as value {
+                    return Ok(pointer_receiver(function_expression_type(compiler, analysis, value)?))
+                }
+            }
+            frontend::ExpressionStaticCall(reference, method, arguments) => {
+                reference;
+                arguments
+                return Ok(sema::name_is(analysis.checker.symbols.source, method, "cast") && sema::type_builtin(function_expression_type(compiler, analysis, expression)?) == sema::RawPtr())
+            }
+            _ => {
+                return Ok(false)
+            }
+        }
+    }
+
+    fn pointer_receiver(value_type: sema::Type) -> bool {
+        match read value_type {
+            sema::ArrayType(element, length) => {
+                element;
+                length;
+                return true
+            }
+            _ => {
+                return sema::builtin_is_sequence(sema::type_builtin(value_type))
+            }
+        }
+    }
+
+    fn materialized_place(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Place, u32> {
+        let value_type = function_expression_type(compiler, analysis, expression)?
+        let value = function_expression(compiler, analysis, expression)?
+        let address = value_address(compiler, analysis.checker.symbols, move value)?
+        if expression_is_owned(compiler, analysis, expression) {
+            compiler.temporaries.push(Temporary {
+                    address: address, value_type: sema::type_copy(value_type), transfer: false, depth: compiler.scope_depth
+                })
+        }
+        return Ok(Place {
+                address: address, value_type: move value_type
+            })
+    }
+    fn borrowed_projection(compiler: write FunctionCompiler, analysis: sema::Analysis, expression: frontend::Expression) -> Result<Value, u32> {
+        match read expression.kind {
+            frontend::ExpressionField(target, name) => {
+                target;
+                name;
+                return place_expression(compiler, analysis, expression)
+            },
+            frontend::ExpressionIndex(target, index) => {
+                target;
+                index;
+                return place_expression(compiler, analysis, expression)
+            },
+            _ => {
+                return function_expression(compiler, analysis, expression)
+            }
+        }
+    }
+    fn finish_projection_value(compiler: write FunctionCompiler, symbols: sema::Symbols, value: take Value) -> Result<Value, u32> {
+        match copy_argument_place(symbols, value) {
+            Some(place) => {
+                let address = snapshot_place(compiler, symbols, place)?
+                return Ok(AddressValue(address, sema::type_copy(place.value_type)))
+            },
+            None => {
+            }
+        }
+        return Ok(move value)
+    }
+}

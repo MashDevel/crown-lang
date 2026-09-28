@@ -1,0 +1,120 @@
+module x86 {
+    struct AssemblyIndex {
+        symbols: Vec<ir::IndexEntry>
+        relocations: Vec<ir::IndexEntry>
+        starts: Vec<ir::IndexEntry>
+    }
+
+    view struct AssemblyPosition {
+        section: usize
+        offset: u64
+        symbols: Slice<ir::IndexEntry>
+        relocations: Slice<ir::IndexEntry>
+        starts: Slice<ir::IndexEntry>
+    }
+
+    fn assembly_index(object: object::CompilerObject) -> AssemblyIndex {
+        var index = AssemblyIndex {
+            symbols: Vec<ir::IndexEntry>.new()
+            relocations: Vec<ir::IndexEntry>.new()
+            starts: Vec<ir::IndexEntry>.new()
+        }
+        var cursor: usize = 0
+        while cursor < object.symbols.length() {
+            match assembly_symbol_entry(object.symbols[cursor], cursor) {
+                Some(entry) => {
+                    index.symbols.push(entry)
+                }
+                None => {
+                }
+            }
+            cursor = cursor + 1
+        }
+        cursor = 0
+        while cursor < object.relocations.length() {
+            loan read object.relocations[cursor] as relocation {
+                let entry = ir::IndexEntry {
+                    group: u64.from(relocation.section), key: relocation.offset, value: cursor
+                }
+                index.relocations.push(entry)
+                index.starts.push(entry)
+                index.starts.push(ir::IndexEntry {
+                        group: entry.group, key: assembly_relocation_start(relocation), value: cursor
+                    })
+            }
+            cursor = cursor + 1
+        }
+        ir::index_sort(index.symbols)
+        ir::index_sort(index.relocations)
+        ir::index_sort(index.starts)
+        return move index
+    }
+
+    fn assembly_relocation_start(relocation: object::Relocation) -> u64 {
+        var start = relocation.offset
+        match read relocation.kind {
+            object::RelocationPcRelativeCall32 => {
+                if start > 0 {
+                    start = start - 1
+                }
+            }
+            object::RelocationPcRelative32 | object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 => {
+                if start >= 3 {
+                    start = start - 3
+                }
+            }
+            _ => {
+            }
+        }
+        return start
+    }
+
+    fn assembly_emit_sections(object: object::CompilerObject, index: AssemblyIndex, output: write AssemblyOutput) -> Result<void, u32> {
+        loan read index.symbols as symbols {
+            loan read index.relocations as relocations {
+                loan read index.starts as starts {
+                    var position = AssemblyPosition {
+                        section: 0, offset: 0, symbols: symbols, relocations: relocations, starts: starts
+                    }
+                    return assembly_emit_indexed(object, position, output)
+                }
+            }
+        }
+    }
+
+    fn assembly_emit_indexed(object: object::CompilerObject, position: write AssemblyPosition, output: write AssemblyOutput) -> Result<void, u32> {
+        while position.section < object.sections.length() {
+            position.offset = 0
+            assembly_emit_section(object, position, output)?
+            position.section = position.section + 1
+        }
+        return Ok(())
+    }
+
+    fn assembly_next_index_event(entries: Slice<ir::IndexEntry>, position: AssemblyPosition, limit: u64) -> u64 {
+        var index = ir::index_lower_bound(entries, u64.from(position.section), position.offset)
+        while index < entries.length() {
+            if entries[index].group != u64.from(position.section) || entries[index].key >= limit {
+                return limit
+            }
+            if entries[index].key > position.offset {
+                return entries[index].key
+            }
+            index = index + 1
+        }
+        return limit
+    }
+
+    fn assembly_symbol_entry(symbol: object::Symbol, index: usize) -> Option<ir::IndexEntry> {
+        match read symbol.section {
+            Some(section) => {
+                return Some(ir::IndexEntry {
+                        group: u64.from(section), key: symbol.offset, value: index
+                    })
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+}

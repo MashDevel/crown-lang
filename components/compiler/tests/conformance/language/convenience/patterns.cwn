@@ -1,0 +1,27 @@
+fn consume(value: take Option<Text>) -> usize {
+    if let Some(text) = move value { return text.length() }
+    return 0
+}
+fn main() -> u32 {
+    var values = Vec<u32>.new()
+    values.push(2)
+    values.push(3)
+    var sum: u32 = 0
+    while let Some(value) = values.pop() {
+        if value == 3 { continue }
+        sum += value
+    }
+    if sum != 2 { return 1 }
+    var option: Option<u32> = Some(4)
+    if let Some(value) = write option { value += 1 }
+    let selected = if let Some(value) = read option { value } else { 0 }
+    if selected != 5 { return 2 }
+    if consume(Some("abc")) != 3 || consume(None()) != 0 { return 3 }
+    var count: u32 = 0
+    while let Some(value) = Some(1) { count += value; break }
+    if count != 1 { return 4 }
+    var empty: Option<u32> = None()
+    if let Some(value) = read empty { return value } else { count += 1 }
+    if count != 2 { return 5 }
+    return 0
+}

@@ -1,0 +1,54 @@
+fn fixture() -> Vec<u8> {
+    var bytes = std::bytes::filled(720, 0)
+    link_binary::put(bytes, 0, 1179403647, 4)
+    link_binary::put(bytes, 4, 65794, 3)
+    link_binary::put(bytes, 16, 1, 2)
+    link_binary::put(bytes, 18, 62, 2)
+    link_binary::put(bytes, 20, 1, 4)
+    link_binary::put(bytes, 40, 64, 8)
+    link_binary::put(bytes, 52, 64, 2)
+    link_binary::put(bytes, 58, 64, 2)
+    link_binary::put(bytes, 60, 7, 2)
+    fixture_sections(bytes)
+    bytes[512] = 184
+    bytes[513] = 42
+    bytes[517] = 195
+    let strings = toolchain::text_bytes("\0entry\0data\0unused\0")
+    for index in 0..strings.length() {
+        bytes[536 + index] = strings[index]
+    }
+    fixture_symbol(bytes, 584, [1, 18, 1, 6])
+    fixture_symbol(bytes, 608, [7, 17, 2, 8])
+    fixture_symbol(bytes, 632, [12, 16, 0, 0])
+    link_binary::put(bytes, 664, 4294967297, 8)
+    link_binary::put(bytes, 672, 3, 8)
+    return move bytes
+}
+
+fn fixture_sections(bytes: write Vec<u8>) -> void {
+    fixture_section(bytes, 1, [1, 6, 512, 6, 0, 0, 16, 0])
+    fixture_section(bytes, 2, [1, 3, 528, 8, 0, 0, 8, 0])
+    fixture_section(bytes, 3, [8, 3, 0, 16, 0, 0, 8, 0])
+    fixture_section(bytes, 4, [3, 0, 536, 19, 0, 0, 1, 0])
+    fixture_section(bytes, 5, [2, 0, 560, 96, 4, 1, 8, 24])
+    fixture_section(bytes, 6, [4, 0, 656, 24, 5, 2, 8, 24])
+}
+
+fn fixture_section(bytes: write Vec<u8>, index: usize, fields: [u64; 8]) -> void {
+    let offset: usize = 64 + index * 64
+    link_binary::put(bytes, offset + 4, fields[0], 4)
+    link_binary::put(bytes, offset + 8, fields[1], 8)
+    link_binary::put(bytes, offset + 24, fields[2], 8)
+    link_binary::put(bytes, offset + 32, fields[3], 8)
+    link_binary::put(bytes, offset + 40, fields[4], 4)
+    link_binary::put(bytes, offset + 44, fields[5], 4)
+    link_binary::put(bytes, offset + 48, fields[6], 8)
+    link_binary::put(bytes, offset + 56, fields[7], 8)
+}
+
+fn fixture_symbol(bytes: write Vec<u8>, offset: usize, fields: [u64; 4]) -> void {
+    link_binary::put(bytes, offset, fields[0], 4)
+    link_binary::put(bytes, offset + 4, fields[1], 1)
+    link_binary::put(bytes, offset + 6, fields[2], 2)
+    link_binary::put(bytes, offset + 16, fields[3], 8)
+}

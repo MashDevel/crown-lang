@@ -1,0 +1,13 @@
+fn test_bytes_equal(actual: Vec<u8>, expected: Slice<u8>) -> bool {
+    if actual.length() != expected.length() {
+        return false
+    }
+    var index: usize = 0
+    while index < expected.length() {
+        if actual[index] != expected[index] {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}

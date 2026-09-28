@@ -1,0 +1,32 @@
+module macho {
+    fn system_library_path(path: Text) -> bool {
+        let prefix = "/usr/lib/lib"
+        let suffix = ".dylib"
+        if std::text::starts(path, prefix) && std::text::ends(path, suffix) {
+            if path.length() <= prefix.length() + suffix.length() {
+                return false
+            }
+            let name = std::text::slice(path, prefix.length(), path.length() - suffix.length())
+            return system_link_name(name)
+        }
+        let name = toolchain::file_name(path)
+        if system_link_name(name) == false {
+            return false
+        }
+        let framework = std::text::joined(std::text::joined("/System/Library/Frameworks/", name), std::text::joined(".framework/", name))
+        return std::text::equal(path, framework)
+    }
+
+    fn system_link_name(name: Text) -> bool {
+        return match toolchain::valid_link_name(name) {
+            Ok(value) => {
+                value;
+                true
+            }
+            Err(error) => {
+                error;
+                false
+            }
+        }
+    }
+}

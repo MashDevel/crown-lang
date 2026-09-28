@@ -1,0 +1,124 @@
+module frontend {
+    fn statement(kind: take StatementKind, span: take Span) -> Statement {
+        let depth = statement_depth(kind) + 1
+        return Statement {
+            kind: move kind, span: span, depth: depth
+        }
+    }
+
+    fn parser_block(parser: write Parser) -> Vec<Statement> {
+        if parser_enter(parser) == false {
+            return Vec<Statement>.new()
+        }
+        parser_expect(parser, TokenLeftBrace())
+        parser_skip_breaks(parser)
+        var statements = Vec<Statement>.new()
+        while parser_at(parser, TokenRightBrace()) == false && parser_at(parser, TokenEnd()) == false {
+            statements.push(parser_statement(parser))
+            parser_skip_breaks(parser)
+        }
+        parser_expect(parser, TokenRightBrace())
+        parser.depth = parser.depth - 1
+        return move statements
+    }
+
+    fn parser_statement(parser: write Parser) -> Statement {
+        let value = parser_statement_value(parser)
+        if parser_depth_allowed(parser, value.depth) == false {
+            return statement(StatementContinue(), value.span)
+        }
+        return move value
+    }
+
+    fn parser_statement_value(parser: write Parser) -> Statement {
+        if parser_at(parser, TokenLet()) || parser_at(parser, TokenVar()) {
+            return parser_binding(parser)
+        }
+        if parser_at(parser, TokenReturn()) {
+            return parser_return(parser)
+        }
+        if parser_at(parser, TokenPrint()) {
+            return parser_print(parser)
+        }
+        if parser_at(parser, TokenLoan()) {
+            return parser_loan(parser)
+        }
+        return parser_control_statement(parser)
+    }
+
+    fn parser_control_statement(parser: write Parser) -> Statement {
+        if parser_at(parser, TokenIf()) {
+            return parser_if(parser)
+        }
+        if parser_at(parser, TokenMatch()) {
+            return parser_match(parser)
+        }
+        if parser_at(parser, TokenThreadScope()) {
+            return parser_thread_scope(parser)
+        }
+        if parser_at(parser, TokenUnsafe()) {
+            return parser_unsafe(parser)
+        }
+        if parser_at(parser, TokenWhile()) {
+            return parser_while(parser)
+        }
+        if parser_at(parser, TokenFor()) {
+            return parser_for(parser)
+        }
+        if parser_at(parser, TokenBreak()) || parser_at(parser, TokenContinue()) {
+            return parser_loop_exit(parser)
+        }
+        return parser_expression_statement(parser)
+    }
+
+    fn parser_line_end(parser: write Parser) -> void {
+        if parser_consumed(parser, TokenSemicolon()) == false {
+            if parser_at(parser, TokenNewline()) == false && parser_at(parser, TokenRightBrace()) == false {
+                parser_report(parser, MissingToken())
+            }
+        }
+        parser_skip_breaks(parser)
+    }
+
+    fn parser_binding(parser: write Parser) -> Statement {
+        let token = parser_advance(parser)
+        let mutable = token_kind_equal(token.kind, TokenVar())
+        if parser_at(parser, TokenLeftBrace()) {
+            return parser_destructure(parser, token.span, mutable)
+        }
+        let name = parser_identifier(parser)
+        var annotation: Option<TypeRef> = None()
+        if parser_consumed(parser, TokenColon()) {
+            annotation = Some(parser_type(parser))
+        }
+        parser_expect(parser, TokenEqual())
+        let value = parser_expression(parser)
+        let span = span_through(token.span, value.span)
+        parser_line_end(parser)
+        return statement(StatementBind(move name, mutable, move annotation, move value), span)
+    }
+
+    fn parser_return(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        let value = parser_return_value(parser, start.span)
+        let span = span_through(start.span, value.span)
+        parser_line_end(parser)
+        return statement(StatementReturn(move value, false), span)
+    }
+
+    fn parser_return_value(parser: write Parser, span: Span) -> Expression {
+        if parser_at(parser, TokenNewline()) || parser_at(parser, TokenSemicolon()) || parser_at(parser, TokenRightBrace()) {
+            return expression(ExpressionUnit(), span)
+        }
+        return parser_expression(parser)
+    }
+
+    fn parser_print(parser: write Parser) -> Statement {
+        let start = parser_advance(parser)
+        parser_expect(parser, TokenLeftParen())
+        let value = parser_expression(parser)
+        let end = parser_expect(parser, TokenRightParen())
+        parser_line_end(parser)
+        return statement(StatementPrint(move value), span_through(start.span, end.span))
+    }
+}

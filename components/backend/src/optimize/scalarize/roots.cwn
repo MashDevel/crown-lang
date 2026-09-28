@@ -1,0 +1,204 @@
+module optimize {
+    fn scalar_analysis(function: ir::Function) -> ScalarAnalysis {
+        var output = ScalarAnalysis {
+            roots: scalar_roots(function)
+            addresses: none_scalar_addresses(function.values.length())
+            copies: Vec<ScalarCopy>.new()
+        }
+        scalar_seed_addresses(output)
+        scalar_resolve_addresses(function, output)
+        scalar_inspect(function, output)
+        scalar_propagate_copies(output)
+        scalar_validate_roots(output)
+        scalar_sort_fields(output)
+        return move output
+    }
+
+    fn scalar_roots(function: ir::Function) -> Vec<ScalarRoot> {
+        var output = Vec<ScalarRoot>.with_capacity(function.values.length())
+        var value: usize = 0
+        while value < function.values.length() {
+            output.push(scalar_empty_root());
+            value = value + 1
+        }
+        var block: usize = 0
+        while block < function.blocks.length() {
+            var index: usize = 0
+            while index < function.blocks[block].instructions.length() {
+                loan read function.blocks[block].instructions[index] as instruction {
+                    scalar_add_root(output, instruction)
+                }
+                index = index + 1
+            }
+            block = block + 1
+        }
+        return move output
+    }
+
+    fn scalar_add_root(roots: write Vec<ScalarRoot>, instruction: ir::Instruction) -> void {
+        match read instruction.result {
+            None => {
+            }
+            Some(result) => {
+                match read instruction.kind {
+                    ir::InstructionMemory(instruction_memory_kind) => {
+                        match read instruction_memory_kind {
+                            ir::MemoryStackSlot(size, alignment) => {
+                                if size != 0 {
+                                    roots[result] = ScalarRoot {
+                                        present: true
+                                        size: size
+                                        alignment: alignment
+                                        fields: Vec<ScalarField>.new()
+                                        valid: true
+                                        fills: Vec<u8>.new()
+                                    }
+                                }
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    _ => {
+                    }
+                }
+            }
+        }
+    }
+
+    fn none_scalar_addresses(length: usize) -> Vec<Option<ScalarAddress>> {
+        var output = Vec<Option<ScalarAddress>>.with_capacity(length)
+        var index: usize = 0
+        while index < length {
+            output.push(None());
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn scalar_seed_addresses(analysis: write ScalarAnalysis) -> void {
+        var root: usize = 0
+        while root < analysis.roots.length() {
+            if analysis.roots[root].present {
+                analysis.addresses[root] = Some(ScalarAddress {
+                        root: root, offset: 0
+                    })
+            }
+            root = root + 1
+        }
+    }
+
+    fn scalar_resolve_addresses(function: ir::Function, analysis: write ScalarAnalysis) -> void {
+        var changed = true
+        while changed {
+            changed = false
+            var block: usize = 0
+            while block < function.blocks.length() {
+                var index: usize = 0
+                while index < function.blocks[block].instructions.length() {
+                    changed = scalar_resolve_instruction(function, analysis, function.blocks[block].instructions[index]) || changed
+                    index = index + 1
+                }
+                block = block + 1
+            }
+        }
+    }
+
+    fn scalar_resolve_instruction(function: ir::Function, analysis: write ScalarAnalysis, instruction: ir::Instruction) -> bool {
+        let result = match read instruction.result {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        match read analysis.addresses[result] {
+            Some(value) => {
+                value;
+                return false
+            }
+            None => {
+            }
+        }
+        let offset = match ir::instruction_offset(instruction.kind) {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        let address = match scalar_address(analysis, offset.base) {
+            Some(value) => move value
+            None => {
+                return false
+            }
+        }
+        let value = match scalar_integer(function, offset.offset) {
+            Some(value) => value
+            None => {
+                return false
+            }
+        }
+        if value > 18446744073709551615 - address.offset {
+            return false
+        }
+        analysis.addresses[result] = Some(ScalarAddress {
+                root: address.root, offset: address.offset + value
+            })
+        true
+    }
+
+    fn scalar_integer(function: ir::Function, value: usize) -> Option<u64> {
+        match ir::function_constant_value(function, value) {
+            Some(constant) => {
+                match move constant {
+                    ir::ConstantInteger(integer) => {
+                        return Some(integer)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn scalar_address(analysis: ScalarAnalysis, value: usize) -> Option<ScalarAddress> {
+        if value >= analysis.addresses.length() {
+            return None()
+        }
+        match read analysis.addresses[value] {
+            Some(address) => {
+                return Some(scalar_address_copy(address))
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn scalar_selected(analysis: ScalarAnalysis, value: usize) -> Option<ScalarAddress> {
+        match scalar_address(analysis, value) {
+            None => {
+                return None()
+            }
+            Some(address) => {
+                if analysis.roots[address.root].valid && analysis.roots[address.root].fields.length() != 0 {
+                    return Some(move address)
+                }
+                return None()
+            }
+        }
+    }
+
+    fn scalar_invalidate_address(analysis: write ScalarAnalysis, value: usize) -> void {
+        match scalar_address(analysis, value) {
+            Some(address) => {
+                analysis.roots[address.root].valid = false
+            }
+            None => {
+            }
+        }
+    }
+}

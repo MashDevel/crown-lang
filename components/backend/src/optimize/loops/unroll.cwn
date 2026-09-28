@@ -1,0 +1,81 @@
+module optimize {
+    struct UnrollCount {
+        iterations: usize
+        exit: usize
+    }
+
+    fn unroll(function: write ir::Function) -> usize {
+        let loops = find_loops(function)
+        for index in 0..loops.length() {
+            if loop_clone_cost_eligible(function, loops[index]) {
+                match unroll_count(function, loops[index]) {
+                    Some(count) => {
+                        if loop_close_values(function, loops[index]) == false {
+                            continue
+                        }
+                        unroll_apply(function, loops[index], count)
+                        return 1
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        return 0
+    }
+
+    fn unroll_count(function: ir::Function, natural_loop: NaturalLoop) -> Option<UnrollCount> {
+        if unroll_has_stack_slots(function, natural_loop.blocks) {
+            return None()
+        }
+        let evolution = match loop_evolution(function, natural_loop) {
+            Some(value) => move value
+            None => {
+                return None()
+            }
+        }
+        let count = match evolution_trip_count(function, evolution) {
+            Some(value) => value
+            None => {
+                return None()
+            }
+        }
+        if count > 8 {
+            return None()
+        }
+        return Some(UnrollCount {
+                iterations: usize.from(count), exit: evolution.exit
+            })
+    }
+
+    fn unroll_has_stack_slots(function: ir::Function, blocks: Vec<bool>) -> bool {
+        let roots = memory_roots(function)
+        for block in 0..blocks.length() {
+            if blocks[block] && unroll_block_has_stack(function.blocks[block], roots) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn unroll_block_has_stack(block: ir::BasicBlock, roots: Vec<MemoryRoot>) -> bool {
+        for index in 0..block.instructions.length() {
+            let value = match block.instructions[index].result {
+                Some(result) => result,
+                None => {
+                    continue
+                }
+            }
+            match roots[value] {
+                MemoryStack(slot) => {
+                    slot;
+                    return true
+                }
+                _ => {
+                }
+            }
+        }
+        return false
+    }
+
+}

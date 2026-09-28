@@ -1,0 +1,14 @@
+struct Person {
+    name: Text
+    age: u32
+}
+
+fn main() -> u32 {
+    let person = Person {
+        name: "Crown"
+        age: 42
+    }
+    let name = move person.name
+    name.length()
+    return person.age
+}

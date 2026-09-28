@@ -1,0 +1,197 @@
+module frontend {
+    fn lexer_digits(lexer: write Lexer) -> void {
+        while lexer.offset < lexer.length &&(lexer_is_digit(lexer_peek_or_zero(lexer)) || lexer_peek_or_zero(lexer) == 95) {
+            lexer_advance(lexer)
+        }
+    }
+
+    fn lexer_number(lexer: write Lexer, mark: LexerMark) -> void {
+        if lexer_radix_number(lexer, mark) {
+            return
+        }
+        lexer_digits(lexer)
+        var float = false
+        if lexer.offset + 1 < lexer.length && lexer_peek_or_zero(lexer) == 46 && lexer_is_digit(lexer_peek_next_or_zero(lexer)) {
+            float = true
+            lexer_advance(lexer)
+            lexer_digits(lexer)
+        }
+        var valid = true
+        if lexer.offset < lexer.length {
+            let exponent = lexer_peek_or_zero(lexer)
+            if exponent == 101 || exponent == 69 {
+                float = true
+                valid = lexer_exponent(lexer)
+            }
+        }
+        if lexer_separators_valid(lexer, mark.offset, lexer.offset, 10) == false {
+            valid = false
+        }
+        if float {
+            lexer_float_token(lexer, mark, valid)
+        } else {
+            lexer_decimal_integer(lexer, mark, valid)
+        }
+    }
+
+    fn lexer_float_token(lexer: write Lexer, mark: LexerMark, valid: bool) -> void {
+        if valid && lexer_float_finite(lexer, mark.offset, lexer.offset) {
+            lexer_push(lexer, LexerTokenInput {
+                    kind: TokenFloat(), mark: lexer_mark_copy(mark), integer: 0
+                })
+        } else {
+            lexer_error(lexer, InvalidFloat(), mark)
+        }
+    }
+
+    fn lexer_decimal_integer(lexer: write Lexer, mark: LexerMark, valid: bool) -> void {
+        if valid == false {
+            lexer_error(lexer, InvalidInteger(), mark)
+            return
+        }
+        match lexer_radix_value(lexer, mark.offset, lexer.offset, 10) {
+            Some(value) => {
+                lexer_push(lexer, LexerTokenInput {
+                        kind: TokenInteger(), mark: lexer_mark_copy(mark), integer: value
+                    })
+            }
+            None => {
+                lexer_error(lexer, InvalidInteger(), mark)
+            }
+        }
+    }
+
+    fn lexer_radix_number(lexer: write Lexer, mark: LexerMark) -> bool {
+        if mark.offset + 1 != lexer.offset || source_byte(lexer.source, mark.offset) != 48 {
+            return false
+        }
+        let prefix = lexer_peek_or_zero(lexer) | 32
+        var radix: u32 = 0
+        if prefix == 120 {
+            radix = 16
+        }
+        if prefix == 98 {
+            radix = 2
+        }
+        if radix == 0 {
+            return false
+        }
+        lexer_advance(lexer)
+        let start = lexer.offset
+        while lexer.offset < lexer.length && lexer_is_radix_character(lexer_peek_or_zero(lexer)) {
+            lexer_advance(lexer)
+        }
+        if lexer_separators_valid(lexer, start, lexer.offset, radix) == false {
+            lexer_error(lexer, InvalidInteger(), mark)
+            return true
+        }
+        match lexer_radix_value(lexer, start, lexer.offset, radix) {
+            Some(value) => {
+                lexer_push(lexer, LexerTokenInput {
+                        kind: TokenInteger(), mark: LexerMark {
+                            offset: mark.offset, line: mark.line, column: mark.column
+                        }, integer: value
+                    })
+            }
+            None => {
+                lexer_error(lexer, InvalidInteger(), mark)
+            }
+        }
+        return true
+    }
+
+    fn lexer_is_radix_character(value: u8) -> bool {
+        if value == 95 {
+            return true
+        }
+        if value >= 48 && value <= 57 {
+            return true
+        }
+        if value >= 65 && value <= 90 {
+            return true
+        }
+        return value >= 97 && value <= 122
+    }
+
+    fn lexer_separators_valid(lexer: Lexer, start: usize, end: usize, radix: u32) -> bool {
+        if start == end {
+            return false
+        }
+        var index = start
+        while index < end {
+            let value = source_byte(lexer.source, index)
+            if value == 95 {
+                if lexer_separator_valid(lexer, index, start, end, radix) == false {
+                    return false
+                }
+            } else {
+                if radix != 10 && lexer_digit_value(value, radix) < 0 {
+                    return false
+                }
+            }
+            index = index + 1
+        }
+        true
+    }
+
+    fn lexer_separator_valid(lexer: Lexer, index: usize, start: usize, end: usize, radix: u32) -> bool {
+        if index == start || index + 1 == end {
+            return false
+        }
+        let before = source_byte(lexer.source, index - 1)
+        let after = source_byte(lexer.source, index + 1)
+        lexer_digit_value(before, radix) >= 0 && lexer_digit_value(after, radix) >= 0
+    }
+
+    fn lexer_radix_value(lexer: Lexer, start: usize, end: usize, radix: u32) -> Option<u64> {
+        var value: u64 = 0
+        var index = start
+        while index < end {
+            let byte = source_byte(lexer.source, index)
+            if byte != 95 {
+                let digit = lexer_digit_value(byte, radix)
+                if digit < 0 {
+                    return None()
+                }
+                let next = u64.from(digit)
+                let base = u64.from(radix)
+                if value >(18446744073709551615 - next) / base {
+                    return None()
+                }
+                value = value * base + next
+            }
+            index = index + 1
+        }
+        return Some(value)
+    }
+
+    fn lexer_digit_value(value: u8, radix: u32) -> isize {
+        var digit: isize = -1
+        if value >= 48 && value <= 57 {
+            digit = isize.from(value - 48)
+        }
+        if value >= 65 && value <= 70 {
+            digit = isize.from(value - 65 + 10)
+        }
+        if value >= 97 && value <= 102 {
+            digit = isize.from(value - 97 + 10)
+        }
+        if digit < isize.from(radix) {
+            return digit
+        }
+        return -1
+    }
+
+    fn lexer_exponent(lexer: write Lexer) -> bool {
+        lexer_advance(lexer)
+        if lexer.offset < lexer.length {
+            let sign = lexer_peek_or_zero(lexer)
+            if sign == 43 || sign == 45 {
+                lexer_advance(lexer)
+            }
+        }
+        let start = lexer.offset
+        lexer_digits(lexer)
+        return lexer.offset != start
+    }
+}

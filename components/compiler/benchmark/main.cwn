@@ -1,0 +1,48 @@
+fn main(arguments: Arguments) -> u32 {
+    match benchmark_command(toolchain::arguments(arguments)) {
+        Ok(status) => status
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}
+
+fn benchmark_command(arguments: Vec<Text>) -> Result<u32, Text> {
+    let options = toolchain::parse_options(arguments)?
+    if options.paths.length() != 1 {
+        return Err("benchmark requires one compiler path")
+    }
+    toolchain::set_environment("CROWN_JOBS", std::text::decimal(u64.from(options.jobs)))?
+    let root = toolchain::repository_root()?
+    let output = benchmark_output(root, options)?
+    let input = benchmark::Inputs {
+        root: root.clone(), compiler: toolchain::absolute(options.paths[0])?, jobs: options.jobs
+    }
+    for index in 0..options.runs {
+        benchmark_iteration(input, output, index)?
+    }
+    return Ok(0)
+}
+
+fn benchmark_iteration(input: benchmark::Inputs, output: Text, index: usize) -> Result<void, Text> {
+    let suffix = std::text::joined(std::text::decimal(toolchain::milliseconds()), std::text::joined("-", std::text::decimal(u64.from(index))))
+    let directory = toolchain::path_join(output, std::text::joined("run-", suffix))
+    toolchain::make_directory(directory)?
+    toolchain::say(directory)
+    var current = benchmark::Benchmark {
+        directory: move directory, results: Vec<Text>.new()
+    }
+    benchmark::run(current, input)?
+    return Ok(())
+}
+
+fn benchmark_output(root: Text, options: toolchain::Options) -> Result<Text, Text> {
+    let output = if options.output.length() == 0 {
+        toolchain::path_join(root, "target/compiler-benchmark")
+    } else {
+        toolchain::absolute(options.output)?
+    }
+    toolchain::make_directory(output)?
+    return Ok(move output)
+}

@@ -1,0 +1,12 @@
+struct Pair {
+    first: u32, second: u32
+}
+fn invalid(value: take Pair) -> void {
+    let {
+        first: same, second: same
+    } = move value
+    same
+}
+fn main() -> u32 {
+    return 0
+}

@@ -1,0 +1,6 @@
+fn consume(value: Text) -> Text {
+    move value
+}
+fn main() -> u32 {
+    0
+}

@@ -1,0 +1,87 @@
+module frontend {
+    fn parser_postfix(parser: write Parser, structs: bool) -> Expression {
+        if parser_enter(parser) == false {
+            let token = parser_token_at(parser, parser.offset)
+            return expression(ExpressionUnit(), token.span)
+        }
+        let primary = parser_primary(parser, structs)
+        let value = parser_finish_postfix(parser, move primary)
+        parser.depth = parser.depth - 1
+        return move value
+    }
+
+    fn parser_finish_postfix(parser: write Parser, primary: take Expression) -> Expression {
+        var value = move primary
+        var running = true
+        while running {
+            if parser_depth_allowed(parser, value.depth) == false {
+                return expression(ExpressionUnit(), value.span)
+            }
+            if parser_consumed(parser, TokenQuestion()) {
+                let end = parser_previous_span(parser)
+                let span = span_through(value.span, end)
+                value = expression(ExpressionTry(Box.new(move value)), span)
+            } else {
+                if parser_consumed(parser, TokenLeftBracket()) {
+                    value = parser_finish_index(parser, move value)
+                } else {
+                    if parser_consumed(parser, TokenDot()) {
+                        value = parser_finish_member(parser, move value)
+                    } else {
+                        running = false
+                    }
+                }
+            }
+        }
+        return move value
+    }
+
+    fn parser_finish_index(parser: write Parser, target: take Expression) -> Expression {
+        let start = target.span
+        let index = parser_expression(parser)
+        if parser_consumed(parser, TokenRange()) {
+            let end_value = parser_expression(parser)
+            let close = parser_expect(parser, TokenRightBracket())
+            return expression(ExpressionSlice(
+                    Box.new(move target),
+                    Box.new(move index),
+                    Box.new(move end_value)
+                ), span_through(start, close.span))
+        }
+        let close = parser_expect(parser, TokenRightBracket())
+        return expression(ExpressionIndex(Box.new(move target), Box.new(move index)), span_through(start, close.span))
+    }
+
+    fn parser_finish_member(parser: write Parser, target: take Expression) -> Expression {
+        let start = target.span
+        let name = parser_member_name(parser)
+        let name_span = name.span
+        if parser_at(parser, TokenLeftParen()) {
+            let arguments = parser_arguments(parser)
+            let span = span_through(start, arguments.end)
+            let {
+                values, end
+            } = move arguments
+            return expression(ExpressionMethodCall(Box.new(move target), move name, move values), span)
+        }
+        var path: Option<Path> = None()
+        match read target.kind {
+            ExpressionPath(value) => {
+                path = Some(path_copy(value))
+            }
+            _ => {
+            }
+        }
+        match move path {
+            Some(value) => {
+                var output = move value
+                output.segments.push(move name)
+                output.span = span_through(output.span, name_span)
+                return expression(ExpressionPath(move output), span_through(start, name_span))
+            }
+            None => {
+                return expression(ExpressionField(Box.new(move target), move name), span_through(start, name_span))
+            }
+        }
+    }
+}

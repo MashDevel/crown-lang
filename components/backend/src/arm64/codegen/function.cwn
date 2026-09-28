@@ -1,0 +1,37 @@
+module arm64 {
+    fn compile_function(program: ir::Program, id: usize, variant: AbiVariant) -> Result<Compiler, Text> {
+        loan read program.functions[id] as function {
+            var compiler = compiler_new(function, variant)?
+            reserve_parameters(function, compiler)?
+            prologue(compiler)
+            capture_parameters(function, compiler)?
+            for block in 0..function.blocks.length() {
+                compiler.block = block
+                compiler.blocks.push(compiler.bytes.length())
+                compile_block(program, function, compiler)?
+            }
+            for index in 0..compiler.branches.length() {
+                let offset = compiler.branches[index].offset
+                let target = compiler.blocks[compiler.branches[index].block]
+                patch_branch(compiler, offset, target)
+            }
+            return Ok(move compiler)
+        }
+    }
+    fn compile_block(program: ir::Program, function: ir::Function, compiler: write Compiler) -> Result<void, Text> {
+        loan read function.blocks[compiler.block] as block {
+            for index in 0..block.instructions.length() {
+                compile_instruction(program, function, compiler, block.instructions[index])?
+            }
+            match read block.terminator {
+                Some(value) => {
+                    return compile_terminator(function, compiler, value)
+                }
+                None => {
+                    return Err("ARM64 block has no terminator")
+                }
+            }
+        }
+    }
+
+}

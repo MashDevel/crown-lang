@@ -1,0 +1,131 @@
+module optimize {
+    fn prove_signed_comparison(function: ir::Function, state: RangeProofState, input: RangeComparisonQuery) -> Option<bool> {
+        if ir::compare_is_signed(input.operator) == false {
+            return None()
+        }
+        if i128_value(function, input.left) == false || i128_value(function, input.right) == false {
+            return None()
+        }
+        let left_query = RangeProofQuery {
+            block: input.block, value: input.left
+        }
+        let right_query = RangeProofQuery {
+            block: input.block, value: input.right
+        }
+        let left_range = signed_value_range(function, state, left_query)
+        let right_range = signed_value_range(function, state, right_query)
+        match move left_range {
+            None => {
+                return None()
+            }
+            Some(left_value) => {
+                match move right_range {
+                    None => {
+                        return None()
+                    }
+                    Some(right_value) => {
+                        return prove_signed_ranges(input.operator, left_value, right_value)
+                    }
+                }
+            }
+        }
+    }
+
+    fn i128_value(function: ir::Function, value: usize) -> bool {
+        match ir::function_value_type(function, value) {
+            Some(value_type) => {
+                match read value_type {
+                    ir::TypeInteger(width) => {
+                        return ir::integer_width_bits(width) == 128
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            None => {
+                return false
+            }
+        }
+    }
+
+    fn signed_value_range(function: ir::Function, state: RangeProofState, query: RangeProofQuery) -> Option<SignedRange> {
+        match proof_value_range(function, state, query) {
+            Some(value) => {
+                return Some(SignedRange {
+                        minimum: ir::WideInteger {
+                            low: value.minimum, high: 0
+                        }
+                        maximum: ir::WideInteger {
+                            low: value.maximum, high: 0
+                        }
+                    })
+            }
+            None => {
+            }
+        }
+        match ir::function_constant_value(function, query.value) {
+            Some(constant) => {
+                match move constant {
+                    ir::ConstantWideInteger(value) => {
+                        return Some(SignedRange {
+                                minimum: ir::WideInteger {
+                                    low: value.low, high: value.high
+                                }
+                                maximum: ir::WideInteger {
+                                    low: value.low, high: value.high
+                                }
+                            })
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            None => {
+                return None()
+            }
+        }
+    }
+
+    fn prove_signed_ranges(operator: ir::CompareOperator, left: SignedRange, right: SignedRange) -> Option<bool> {
+        match read operator {
+            ir::CompareSignedLess => prove_signed_order(left, right, false)
+            ir::CompareSignedLessEqual => prove_signed_order(left, right, true)
+            ir::CompareSignedGreater => prove_signed_order(right, left, false)
+            ir::CompareSignedGreaterEqual => prove_signed_order(right, left, true)
+            _ => None()
+        }
+    }
+
+    fn prove_signed_order(left: SignedRange, right: SignedRange, inclusive: bool) -> Option<bool> {
+        if inclusive {
+            if wide_signed_less(right.minimum, left.maximum) == false {
+                return Some(true)
+            }
+            if wide_signed_less(right.maximum, left.minimum) {
+                return Some(false)
+            }
+            return None()
+        }
+        if wide_signed_less(left.maximum, right.minimum) {
+            return Some(true)
+        }
+        if wide_signed_less(left.minimum, right.maximum) == false {
+            return Some(false)
+        }
+        None()
+    }
+
+    fn wide_signed_less(left: ir::WideInteger, right: ir::WideInteger) -> bool {
+        let left_negative = (left.high >> 63) != 0
+        let right_negative = (right.high >> 63) != 0
+        if left_negative != right_negative {
+            return left_negative
+        }
+        if left.high != right.high {
+            return left.high < right.high
+        }
+        return left.low < right.low
+    }
+}

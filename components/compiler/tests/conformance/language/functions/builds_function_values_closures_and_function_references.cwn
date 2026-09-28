@@ -1,0 +1,12 @@
+fn apply(action: read fn(u32, u32) -> u32, left: read u32, right: read u32) -> u32 {
+    return action(left, right)
+}
+fn add(left: read u32, right: read u32) -> u32 {
+    return left + right
+}
+fn main() -> u32 {
+    let first = apply(fn(left, right) {
+            return left * right
+        }, 2, 3)
+    return apply(add, first, 1)
+}

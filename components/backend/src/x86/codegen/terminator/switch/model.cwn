@@ -1,0 +1,46 @@
+module x86 {
+    struct SwitchInput {
+        value: usize
+        cases: Vec<ir::SwitchCase>
+        default: usize
+    }
+
+    struct SwitchEdge {
+        value: u64
+        target: usize
+        label: LocalLabel
+    }
+
+    struct DenseSwitch {
+        minimum: u64
+        targets: Vec<LocalLabel>
+    }
+
+    struct SwitchTree {
+        edges: Vec<SwitchEdge>
+        default: LocalLabel
+    }
+
+    struct SwitchRange {
+        start: usize
+        end: usize
+    }
+
+    fn codegen_switch_cases_copy(cases: Vec<ir::SwitchCase>) -> Vec<ir::SwitchCase> {
+        var output = Vec<ir::SwitchCase>.with_capacity(cases.length())
+        var index: usize = 0
+        while index < cases.length() {
+            output.push(ir::SwitchCase {
+                    value: cases[index].value, block: cases[index].block
+                })
+            index = index + 1
+        }
+        return move output
+    }
+
+    fn codegen_switch_edge_copy(edge: SwitchEdge) -> SwitchEdge {
+        return SwitchEdge {
+            value: edge.value, target: edge.target, label: local_label_copy(edge.label)
+        }
+    }
+}

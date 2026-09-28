@@ -1,0 +1,7 @@
+unsafe fn operation() -> void {
+    return
+}
+fn main() -> u32 {
+    operation()
+    return 0
+}

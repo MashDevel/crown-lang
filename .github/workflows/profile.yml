@@ -1,0 +1,149 @@
+name: Profile compiler
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Revision to profile
+        type: string
+        default: main
+      baseline:
+        description: Optional revision for a paired checksum comparison
+        type: string
+        default: ''
+      baseline_backend:
+        description: Use the baseline revision's compiler for the checksum comparison
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  profile:
+    name: ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: x86_64-macos
+            runner: macos-15-intel
+          - host: arm64-macos
+            runner: macos-15
+    env:
+      CROWN_ROOT: ${{ github.workspace }}
+      CROWN_JOBS: 1
+      PROFILE_HOST: ${{ matrix.host }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Fetch verified starting compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh bootstrap/fetch
+          mkdir -p target/profile
+          clang "bootstrap/$PROFILE_HOST/compiler.s" -arch "${PROFILE_HOST%-macos}" -Wl,-fatal_warnings -Wl,-dead_strip -o target/profile/seed
+      - name: Check out checksum baseline
+        if: ${{ inputs.baseline != '' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.baseline }}
+          path: target/profile/baseline
+          persist-credentials: false
+      - name: Build compiler with function symbols
+        run: |
+          target/profile/seed compile target/profile/stage.s components/compiler --target "$PROFILE_HOST"
+          clang target/profile/stage.s -arch "${PROFILE_HOST%-macos}" -Wl,-fatal_warnings -Wl,-dead_strip -o target/profile/stage
+          target/profile/stage compile target/profile/compiler.s components/compiler --target "$PROFILE_HOST"
+          clang target/profile/compiler.s -arch "${PROFILE_HOST%-macos}" -Wl,-fatal_warnings -Wl,-dead_strip -o target/profile/crown
+          git rev-parse HEAD > target/profile/revision.txt
+          sysctl machdep.cpu.brand_string hw.ncpu hw.memsize > target/profile/host.txt
+          nm target/profile/crown > target/profile/symbols.txt
+      - name: Verify native parser depth limit
+        run: target/profile/crown test --filter parser_limits_recursion_and_tracks_tree_depth --output target/profile/parser-tests
+      - name: Verify native register allocation
+        run: target/profile/crown test --filter arm64_register_allocation --output target/profile/register-tests
+      - name: Build baseline backend
+        if: ${{ inputs.baseline != '' && inputs.baseline_backend }}
+        run: target/profile/crown build target/profile/baseline/components/compiler -o target/profile/baseline-compiler
+      - name: Sample formatting, lint and compilation
+        run: |
+          profile() {
+            name=$1
+            shift
+            started=$SECONDS
+            target/profile/crown "$@" > "target/profile/$name.log" 2>&1 &
+            process=$!
+            if ! sample "$process" 10 1 -mayDie -file "target/profile/$name.sample.txt"; then
+              if kill -0 "$process" 2>/dev/null; then
+                wait "$process"
+                return 1
+              fi
+            fi
+            wait "$process"
+            printf '%s %s seconds\n' "$name" "$((SECONDS - started))" | tee -a target/profile/timings.txt
+          }
+          profile fmt fmt components/compiler/src components/backend/src components/library/src components/toolchain/src --check
+          profile lint lint components/compiler --output target/profile/metrics.json
+          profile compile compile target/profile/output.s components/compiler --target "$PROFILE_HOST"
+      - name: Measure checksum throughput
+        env:
+          COMPARE_BASELINE: ${{ inputs.baseline != '' }}
+          COMPARE_BACKEND: ${{ inputs.baseline_backend }}
+        run: |
+          mkdir -p target/profile/tests
+          cat > target/profile/tests/Crown.toml <<'EOF'
+          [package]
+          name = "checksum_benchmark"
+          sources = ["main.cwn", "../../../components/library/src"]
+          EOF
+          cat > target/profile/tests/main.cwn <<'EOF'
+          fn main() -> u32 {
+              let bytes = std::bytes::filled(16777216, 97)
+              let digest = std::sha256::digest(bytes)
+              var encoded = ""
+              for index in 0..digest.length() {
+                  std::text::hex_byte(encoded, digest[index])
+              }
+              return if std::text::equal(encoded, "5b6ff2e19d0da0fe323061018fc381393492884e74af8296c81ab9cb2694783a") { 0 } else { 1 }
+          }
+          EOF
+          target/profile/crown build target/profile/tests -o target/profile/hash
+          if [ "$COMPARE_BASELINE" = true ]; then
+            mkdir -p target/profile/baseline-tests
+            cat > target/profile/baseline-tests/Crown.toml <<'EOF'
+          [package]
+          name = "baseline_checksum_benchmark"
+          sources = ["../tests/main.cwn", "../baseline/components/library/src"]
+          EOF
+            git -C target/profile/baseline rev-parse HEAD > target/profile/baseline-revision.txt
+            compiler=target/profile/crown
+            if [ "$COMPARE_BACKEND" = true ]; then
+              compiler=target/profile/baseline-compiler
+            fi
+            "$compiler" build target/profile/baseline-tests -o target/profile/baseline-hash
+          fi
+          for iteration in 1 2 3 4 5; do
+            if [ "$COMPARE_BASELINE" = true ]; then
+              /usr/bin/time -p target/profile/baseline-hash 2>> target/profile/baseline-hash-timings.txt
+            fi
+            /usr/bin/time -p target/profile/hash 2>> target/profile/hash-timings.txt
+          done
+      - name: Upload profiles
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: profile-${{ matrix.host }}
+          path: |
+            target/profile/*.txt
+            target/profile/*.log
+            target/profile/*.json
+            target/profile/parser-tests/*.json
+            target/profile/register-tests/*.json
+          if-no-files-found: error
+          retention-days: 14

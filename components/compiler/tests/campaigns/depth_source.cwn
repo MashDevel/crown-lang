@@ -1,0 +1,86 @@
+module campaign {
+    struct DepthCase {
+        name: Text, source: Text, rejected: bool
+    }
+
+    fn expression(value: Text) -> Text {
+        return std::text::joined(std::text::joined("fn main() -> u32 { ", value), " }\n")
+    }
+
+    fn depth_shape(name: Text, depth: usize) -> DepthCase {
+        var source = ""
+        var maximum: usize = 126
+        if std::text::equal(name, "parentheses") {
+            source = expression(std::text::joined(std::text::joined(std::text::repeat("(", depth), "1"), std::text::repeat(")", depth)))
+        }
+        if std::text::equal(name, "unary") {
+            source = expression(std::text::joined(std::text::repeat("~", depth), "1"))
+        }
+        if std::text::equal(name, "binary") {
+            source = expression(std::text::joined(std::text::repeat("1+", depth), "1"))
+        }
+        if std::text::equal(name, "type") {
+            source = std::text::joined("struct Deep { value: ", std::text::repeat("Box<", depth))
+            std::text::append(source, std::text::joined("u32", std::text::repeat(">", depth)))
+            std::text::append(source, std::text::joined(" }\n", expression("0")))
+            maximum = 127
+        }
+        if std::text::equal(name, "block") {
+            source = expression(std::text::joined(std::text::joined(std::text::repeat("unsafe {", depth), std::text::repeat("}", depth)), " return 0"));
+            maximum = 127
+        }
+        if std::text::equal(name, "module") {
+            source = std::text::joined(std::text::joined(std::text::repeat("module nested {", depth), std::text::repeat("}", depth)), std::text::joined("\n", expression("0")));
+            maximum = 128
+        }
+        return DepthCase {
+            name: std::text::joined(std::text::joined(name, "-"), std::text::decimal(u64.from(depth))), source: move source, rejected: depth > maximum
+        }
+    }
+
+    fn depth_corpus() -> Result<Vec<DepthCase>, Text> {
+        let depths = std::text::split("0 1 32 125 126 127 128 129 256 512 1024 2048 4096", 32)
+        let shapes = std::text::split("parentheses unary binary type block module", 32)
+        var output = Vec<DepthCase>.new()
+        for index in 0..depths.length() {
+            let depth = usize.from(std::text::unsigned(depths[index])?)
+            for shape in 0..shapes.length() {
+                output.push(depth_shape(shapes[shape], depth))
+            }
+        }
+        depth_wide(output)
+        depth_chains(output)
+        return Ok(move output)
+    }
+
+    fn depth_wide(output: write Vec<DepthCase>) -> void {
+        output.push(DepthCase {
+                name: "wide", source: expression(std::text::joined(std::text::joined("var items = [", std::text::repeat("1,", 4095)), "1]; items[0]")), rejected: false
+            })
+        output.push(DepthCase {
+                name: "sequential", source: expression(std::text::joined(std::text::joined("var item = 0;\n", std::text::repeat("item = 1;\n", 4096)), "item")), rejected: false
+            })
+    }
+
+    fn depth_chains(output: write Vec<DepthCase>) -> void {
+        let mixed = std::text::joined(std::text::joined(std::text::repeat("(", 64), "1"), std::text::repeat(std::text::joined(std::text::repeat("+1", 64), ")"), 64))
+        output.push(DepthCase {
+                name: "mixed-chain", source: expression(mixed), rejected: true
+            })
+        output.push(DepthCase {
+                name: "member-chain", source: expression(std::text::joined("(1)", std::text::repeat(".field", 4096))), rejected: true
+            })
+        let calls = expression(std::text::joined(std::text::joined(std::text::repeat("identity(", 512), "1"), std::text::repeat(")", 512)))
+        output.push(DepthCase {
+                name: "call-chain", source: std::text::joined("fn identity(value: u32) -> u32 { value }\n", calls), rejected: true
+            })
+        let conditional = std::text::joined(std::text::joined("let value = ", std::text::repeat("if true { 1 } else ", 512)), "{ 0 }; value")
+        output.push(DepthCase {
+                name: "conditional-chain", source: expression(conditional), rejected: true
+            })
+        let matching = std::text::joined(std::text::joined(std::text::repeat("match Some(1) { Some(value) => ", 512), "1"), std::text::repeat(" None => 0 }", 512))
+        output.push(DepthCase {
+                name: "match-chain", source: expression(matching), rejected: true
+            })
+    }
+}

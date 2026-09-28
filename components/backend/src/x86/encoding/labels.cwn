@@ -1,0 +1,42 @@
+module x86 {
+    fn collect_labels(function: Function) -> Result<Vec<LabelOffset>, EncodeError> {
+        var labels = Vec<LabelOffset>.new()
+        var offset: u64 = 0
+        var index: usize = 0
+        while index < function.instructions.length() {
+            match read function.instructions[index] {
+                Label(name) => {
+                    match label_offset(labels, name) {
+                        Some(value) => {
+                            value;
+                            return Err(encode_error(DuplicateLabel()))
+                        }
+                        None => {
+                        }
+                    }
+                    labels.push(LabelOffset {
+                            name: local_label_copy(name), offset: offset
+                        })
+                }
+                _ => {
+                    offset = offset + instruction_size(function.instructions[index])
+                }
+            }
+            index = index + 1
+        }
+        return Ok(move labels)
+    }
+
+    fn label_offset(labels: Vec<LabelOffset>, name: LocalLabel) -> Option<u64> {
+        var index: usize = 0
+        while index < labels.length() {
+            loan read labels[index] as label {
+                if local_label_equal(label.name, name) {
+                    return Some(label.offset)
+                }
+            }
+            index = index + 1
+        }
+        return None()
+    }
+}

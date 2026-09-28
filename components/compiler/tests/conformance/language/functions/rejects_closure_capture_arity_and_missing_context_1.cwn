@@ -1,0 +1,9 @@
+fn apply(action: read fn(u32) -> u32) -> u32 {
+    return action(1)
+}
+fn main() -> u32 {
+    let outside = 2
+    return apply(fn(value) {
+            return value + outside
+        })
+}

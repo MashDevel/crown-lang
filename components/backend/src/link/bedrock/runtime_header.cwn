@@ -1,0 +1,60 @@
+module bedrock {
+    struct Segment {
+        offset: usize, size: usize, memory: usize, address: u64
+    }
+    struct Table {
+        offset: usize, count: usize
+    }
+
+    fn validate_runtime_header(bytes: Vec<u8>) -> Result<void, Text> {
+        let identity = link_binary::number(bytes, 0, 8)?
+        let machine = link_binary::number(bytes, 16, 4)?
+        if identity != 282584257676671 || machine != 4063234 {
+            return Err("runtime must be an x86-64 ELF executable")
+        }
+        let count = link_binary::number(bytes, 56, 2)?
+        let size = link_binary::number(bytes, 54, 2)?
+        if count != 2 || size != 56 {
+            return Err("unsupported runtime ELF layout")
+        }
+        return Ok(())
+    }
+
+    fn runtime_segment(bytes: Vec<u8>, offset: usize) -> Result<Segment, Text> {
+        if link_binary::number(bytes, offset, 4)? != 1 {
+            return Err("runtime must have two load segments")
+        }
+        return Ok(Segment {
+                offset: usize.from(link_binary::number(bytes, offset + 8, 8)?),
+                size: usize.from(link_binary::number(bytes, offset + 32, 8)?),
+                memory: usize.from(link_binary::number(bytes, offset + 40, 8)?),
+                address: link_binary::number(bytes, offset + 16, 8)?
+            })
+    }
+
+    fn runtime_section_table(bytes: Vec<u8>) -> Result<Table, Text> {
+        if link_binary::number(bytes, 58, 2)? != 64 {
+            return Err("unsupported section header size")
+        }
+        let offset = usize.from(link_binary::number(bytes, 40, 8)?)
+        let count = usize.from(link_binary::number(bytes, 60, 2)?)
+        if count == 0 || offset > bytes.length() {
+            return Err("invalid runtime section table")
+        }
+        if count >(bytes.length() - offset) / 64 {
+            return Err("invalid runtime section table")
+        }
+        return Ok(Table {
+                offset: offset, count: count
+            })
+    }
+
+    fn runtime_data(bytes: Vec<u8>, segment: Segment) -> Result<Vec<u8>, Text> {
+        if segment.memory > 16777216 || segment.memory < segment.size {
+            return Err("runtime data exceeds image limit")
+        }
+        var data = link_binary::part(bytes, segment.offset, segment.size)?
+        link_binary::pad(data, segment.memory)
+        return Ok(move data)
+    }
+}

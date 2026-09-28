@@ -1,0 +1,198 @@
+module lowering {
+    struct ArenaHandleState {
+        position: ArenaPosition
+        result_type: sema::Type
+    }
+
+    struct ArenaValidity {
+        arena: usize
+        handle: usize
+        index: usize
+    }
+
+    struct ArenaRemovalState {
+        arena: usize
+        handle: usize
+        result: usize
+        result_type: sema::Type
+        element: sema::Type
+    }
+
+    fn arena_make_handle(compiler: write FunctionCompiler, symbols: sema::Symbols, state: ArenaHandleState) -> Result<Value, u32> {
+        let result = function_zeroed_stack(compiler, symbols, state.result_type)?
+        let position_store = StoreRequest {
+            address: result, value: state.position.index, value_type: sema::builtin_leaf(sema::USize())
+        }
+        function_store(compiler, symbols, position_store)?
+        let generations = function_load_pointer_field(compiler, state.position.arena, 8)?
+        let generation = arena_generation(compiler, symbols, ArenaPosition {
+                arena: generations, index: state.position.index
+            })?
+        let generation_target = function_offset(compiler, result, 8)?
+        let generation_store = StoreRequest {
+            address: generation_target, value: generation, value_type: sema::builtin_leaf(sema::U32())
+        }
+        function_store(compiler, symbols, generation_store)?
+        let identity = arena_load_identity(compiler, symbols, state.position.arena, 40)?
+        let identity_target = function_offset(compiler, result, 16)?
+        function_store(compiler, symbols, StoreRequest {
+                address: identity_target, value: identity, value_type: sema::builtin_leaf(sema::USize())
+            })?
+        return Ok(AddressValue(result, sema::type_copy(state.result_type)))
+    }
+
+    fn arena_valid(compiler: write FunctionCompiler, symbols: sema::Symbols, position: take ArenaPosition) -> Result<usize, u32> {
+        let result_type = sema::builtin_leaf(sema::Bool())
+        let result = function_stack(compiler, symbols, result_type)?
+        let boolean_type = ir::TypeInteger(ir::IntegerWidth1())
+        let false_value = function_integer(compiler, boolean_type, 0)
+        let initial = StoreRequest {
+            address: result, value: false_value, value_type: move result_type
+        }
+        function_store(compiler, symbols, initial)?
+        let index_load = Place {
+            address: position.index, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, index_load)?
+        let validity = ArenaValidity {
+            arena: position.arena, handle: position.index, index: index
+        }
+        let eligible = arena_handle_eligible(compiler, symbols, validity)?
+        let ready = function_begin_guarded_block(compiler, eligible)?
+        arena_store_validity(compiler, symbols, ArenaValidityResult {
+                validity: arena_validity_copy(validity), result: result, ready: ready
+            })?
+        function_select_block(compiler, ready)
+        let load = Place {
+            address: result, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        return function_load(compiler, symbols, load)
+    }
+
+    fn arena_handle_eligible(compiler: write FunctionCompiler, symbols: sema::Symbols, state: ArenaValidity) -> Result<usize, u32> {
+        let capacity_field = function_offset(compiler, state.arena, 32)?
+        let capacity_load = Place {
+            address: capacity_field, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let capacity = function_load(compiler, symbols, capacity_load)?
+        let inside = function_append_value(compiler, ir::InstructionCompare(ir::CompareUnsignedLess(), state.index, capacity))?
+        let actual = arena_load_identity(compiler, symbols, state.arena, 40)?
+        let expected = arena_load_identity(compiler, symbols, state.handle, 16)?
+        let matching = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), actual, expected))?
+        return function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), inside, matching))
+    }
+
+    struct ArenaValidityResult {
+        validity: ArenaValidity
+        result: usize
+        ready: usize
+    }
+
+    fn arena_store_validity(compiler: write FunctionCompiler, symbols: sema::Symbols, state: take ArenaValidityResult) -> Result<void, u32> {
+        let occupied = arena_slot_occupied(compiler, symbols, ArenaPosition {
+                arena: state.validity.arena, index: state.validity.index
+            })?
+        let generations = function_load_pointer_field(compiler, state.validity.arena, 8)?
+        let actual = arena_generation(compiler, symbols, ArenaPosition {
+                arena: generations, index: state.validity.index
+            })?
+        let expected_field = function_offset(compiler, state.validity.handle, 8)?
+        let expected_load = Place {
+            address: expected_field, value_type: sema::builtin_leaf(sema::U32())
+        }
+        let expected = function_load(compiler, symbols, expected_load)?
+        let matching = function_append_value(compiler, ir::InstructionCompare(ir::CompareEqual(), actual, expected))?
+        let valid = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAnd(), occupied, matching))?
+        let store = StoreRequest {
+            address: state.result, value: valid, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        function_store(compiler, symbols, store)?
+        return function_finish(compiler, ir::TerminatorBranch(state.ready))
+    }
+
+    fn arena_empty_option(compiler: write FunctionCompiler, symbols: sema::Symbols, value_type: sema::Type) -> Result<usize, u32> {
+        let result = function_zeroed_stack(compiler, symbols, value_type)?
+        return Ok(result)
+    }
+
+    fn arena_remove_item(compiler: write FunctionCompiler, symbols: sema::Symbols, state: ArenaRemovalState) -> Result<void, u32> {
+        let index_load = Place {
+            address: state.handle, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let index = function_load(compiler, symbols, index_load)?
+        let data = function_load_pointer(compiler, state.arena)?
+        let source = arena_element_address(compiler, symbols, ArenaItem {
+                data: data, index: index, element: sema::type_copy(state.element)
+            })?
+        let tag_type = ir::TypeInteger(ir::IntegerWidth32())
+        let some = function_integer(compiler, tag_type, 1)
+        let tag_store = StoreRequest {
+            address: state.result, value: some, value_type: sema::builtin_leaf(sema::U32())
+        }
+        function_store(compiler, symbols, tag_store)?
+        let element_layout = layout(symbols, state.element)?
+        let target = function_offset(compiler, state.result, align_to(4, element_layout.alignment))?
+        let value = AddressValue(source, sema::type_copy(state.element))
+        let transfer = CopyRequest {
+            destination: target, value: move value
+        }
+        function_copy(compiler, symbols, transfer)?
+        return arena_retire_slot(compiler, symbols, ArenaPosition {
+                arena: state.arena, index: index
+            })
+    }
+
+    fn arena_retire_slot(compiler: write FunctionCompiler, symbols: sema::Symbols, position: take ArenaPosition) -> Result<void, u32> {
+        arena_clear_live(compiler, symbols, position)?
+        arena_increment_generation(compiler, symbols, position)?
+        return arena_decrement_length(compiler, symbols, position.arena)
+    }
+
+    fn arena_clear_live(compiler: write FunctionCompiler, symbols: sema::Symbols, position: ArenaPosition) -> Result<void, u32> {
+        let live = function_load_pointer_field(compiler, position.arena, 16)?
+        let item = function_append_value(compiler, ir::InstructionOffset(live, position.index))?
+        let value_type = ir::TypeInteger(ir::IntegerWidth1())
+        let zero = function_integer(compiler, value_type, 0)
+        let store = StoreRequest {
+            address: item, value: zero, value_type: sema::builtin_leaf(sema::Bool())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn arena_increment_generation(compiler: write FunctionCompiler, symbols: sema::Symbols, position: ArenaPosition) -> Result<void, u32> {
+        let generations = function_load_pointer_field(compiler, position.arena, 8)?
+        let address = arena_generation_address(compiler, generations, position.index)?
+        let load = Place {
+            address: address, value_type: sema::builtin_leaf(sema::U32())
+        }
+        let generation = function_load(compiler, symbols, load)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth32())
+        let one = function_integer(compiler, value_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinaryAdd(), generation, one))?
+        let store = StoreRequest {
+            address: address, value: next, value_type: sema::builtin_leaf(sema::U32())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn arena_decrement_length(compiler: write FunctionCompiler, symbols: sema::Symbols, arena: usize) -> Result<void, u32> {
+        let field = function_offset(compiler, arena, 24)?
+        let load = Place {
+            address: field, value_type: sema::builtin_leaf(sema::USize())
+        }
+        let length = function_load(compiler, symbols, load)?
+        let value_type = ir::TypeInteger(ir::IntegerWidth64())
+        let one = function_integer(compiler, value_type, 1)
+        let next = function_append_value(compiler, ir::InstructionBinary(ir::BinarySubtract(), length, one))?
+        let store = StoreRequest {
+            address: field, value: next, value_type: sema::builtin_leaf(sema::USize())
+        }
+        return function_store(compiler, symbols, store)
+    }
+
+    fn arena_validity_copy(state: ArenaValidity) -> ArenaValidity {
+        return ArenaValidity {
+            arena: state.arena, handle: state.handle, index: state.index
+        }
+    }
+}

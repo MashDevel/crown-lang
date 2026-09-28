@@ -1,0 +1,139 @@
+module elf {
+    fn version_equal(left: SymbolVersion, right: SymbolVersion) -> bool {
+        return std::text::equal(left.library, right.library) && std::text::equal(left.version, right.version)
+    }
+
+    fn version_index(records: Vec<SymbolVersion>, version: SymbolVersion) -> usize {
+        for index in 0..records.length() {
+            if version_equal(records[index], version) {
+                return index + 2
+            }
+        }
+        return 1
+    }
+
+    fn version_records(versions: Vec<SymbolVersion>) -> Result<Vec<SymbolVersion>, Text> {
+        var output = Vec<SymbolVersion>.new()
+        for index in 0..versions.length() {
+            loan read versions[index] as version {
+                if version.version.length() != 0 && version_index(output, version) == 1 {
+                    output.push(SymbolVersion {
+                            symbol: "", library: version.library.clone(), version: version.version.clone()
+                        })
+                }
+            }
+        }
+        if output.length() > 32766 {
+            return Err("too many ELF symbol versions")
+        }
+        return Ok(move output)
+    }
+
+    fn symbol_version(versions: Vec<SymbolVersion>, records: Vec<SymbolVersion>, name: Text) -> usize {
+        for index in 0..versions.length() {
+            if std::text::equal(versions[index].symbol, name) {
+                return version_index(records, versions[index])
+            }
+        }
+        return 1
+    }
+
+    fn prepare_versions(image: write Image, object: object::CompilerObject, options: Options, strings: write Vec<u8>) -> Result<void, Text> {
+        let records = version_records(options.versions)?
+        if records.length() == 0 {
+            return Ok(())
+        }
+        var symbols = std::bytes::filled(2, 0)
+        for index in 0..object.symbols.length() {
+            let dynamic_index = usize.from(image.dynamic_indices[index])
+            if dynamic_index != 0 {
+                link_binary::pad(symbols, (dynamic_index + 1) * 2)
+                let version = symbol_version(options.versions, records, object.symbols[index].name)
+                link_binary::put(symbols, dynamic_index * 2, u64.from(version), 2)
+            }
+        }
+        let offset = append(image, symbols, 2)?
+        dynamic_entry(image, 1879048176, IMAGE_BASE + u64.from(offset))
+        let requirements = version_requirements(records, options.libraries, strings)?
+        let table = append(image, requirements, 4)?
+        dynamic_entry(image, 1879048190, IMAGE_BASE + u64.from(table))
+        dynamic_entry(image, 1879048191, u64.from(version_library_count(records, options.libraries)))
+        return Ok(())
+    }
+
+    fn version_library_count(records: Vec<SymbolVersion>, libraries: Vec<Text>) -> usize {
+        var count: usize = 0
+        for index in 0..libraries.length() {
+            let indices = library_version_indices(records, libraries[index])
+            if indices.length() != 0 {
+                count = count + 1
+            }
+        }
+        return count
+    }
+
+    fn library_version_indices(records: Vec<SymbolVersion>, name: Text) -> Vec<usize> {
+        var indices = Vec<usize>.new()
+        for index in 0..records.length() {
+            if std::text::equal(records[index].library, name) {
+                indices.push(index)
+            }
+        }
+        return move indices
+    }
+
+    fn version_requirements(records: Vec<SymbolVersion>, libraries: Vec<Text>, strings: write Vec<u8>) -> Result<Vec<u8>, Text> {
+        var output = Vec<u8>.new()
+        var remaining = version_library_count(records, libraries)
+        for index in 0..libraries.length() {
+            let indices = library_version_indices(records, libraries[index])
+            if indices.length() != 0 {
+                var group = version_requirement_group(records, indices, libraries[index], strings)?
+                remaining = remaining - 1
+                if remaining != 0 {
+                    link_binary::put(group, 12, u64.from(group.length()), 4)
+                }
+                link_binary::append(output, group)
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn version_requirement_group(records: Vec<SymbolVersion>, indices: Vec<usize>, library: Text, strings: write Vec<u8>) -> Result<Vec<u8>, Text> {
+        var output = std::bytes::filled(16, 0)
+        link_binary::put(output, 0, 1, 2)
+        link_binary::put(output, 2, u64.from(indices.length()), 2)
+        link_binary::put(output, 4, string(strings, library)?, 4)
+        link_binary::put(output, 8, 16, 4)
+        for item in 0..indices.length() {
+            let auxiliary = version_auxiliary(records[indices[item]].version, indices[item] + 2, item + 1 < indices.length(), strings)?
+            link_binary::append(output, auxiliary)
+        }
+        return Ok(move output)
+    }
+
+    fn version_auxiliary(version: Text, index: usize, next: bool, strings: write Vec<u8>) -> Result<Vec<u8>, Text> {
+        var output = std::bytes::filled(16, 0)
+        link_binary::put(output, 0, version_hash(version), 4)
+        link_binary::put(output, 6, u64.from(index), 2)
+        link_binary::put(output, 8, string(strings, version)?, 4)
+        if next {
+            link_binary::put(output, 12, 16, 4)
+        }
+        return Ok(move output)
+    }
+
+    fn version_hash(name: Text) -> u64 {
+        var hash: u64 = 0
+        let bytes = toolchain::text_bytes(name)
+        for index in 0..bytes.length() {
+            hash = (hash << 4) + u64.from(bytes[index])
+            let high = hash & 4026531840
+            if high != 0 {
+                hash = hash ^(high >> 24)
+            }
+            hash = hash &(4294967295 ^ high)
+        }
+        return hash
+    }
+}

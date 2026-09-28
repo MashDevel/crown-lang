@@ -1,0 +1,109 @@
+module frontend {
+    fn parser_binary_operator(kind: TokenKind) -> Option<ParsedBinaryOperator> {
+        match read kind {
+            TokenOrOr => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 1, operator: BinaryLogicalOr()
+                    })
+            }
+            TokenAndAnd => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 2, operator: BinaryLogicalAnd()
+                    })
+            }
+            TokenEqualEqual => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 3, operator: BinaryEqual()
+                    })
+            }
+            TokenBangEqual => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 3, operator: BinaryNotEqual()
+                    })
+            }
+            TokenLess => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 4, operator: BinaryLess()
+                    })
+            }
+            TokenLessEqual => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 4, operator: BinaryLessEqual()
+                    })
+            }
+            TokenGreater => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 4, operator: BinaryGreater()
+                    })
+            }
+            TokenGreaterEqual => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 4, operator: BinaryGreaterEqual()
+                    })
+            }
+            _ => parser_bitwise_operator(kind)
+        }
+    }
+
+    fn parser_bitwise_operator(kind: TokenKind) -> Option<ParsedBinaryOperator> {
+        match read kind {
+            TokenPipe => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 5, operator: BinaryBitwiseOr()
+                    })
+            }
+            TokenCaret => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 6, operator: BinaryBitwiseXor()
+                    })
+            }
+            TokenAmpersand => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 7, operator: BinaryBitwiseAnd()
+                    })
+            }
+            TokenShiftLeft => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 8, operator: BinaryShiftLeft()
+                    })
+            }
+            TokenShiftRight => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 8, operator: BinaryShiftRight()
+                    })
+            }
+            _ => parser_arithmetic_operator(kind)
+        }
+    }
+
+    fn parser_arithmetic_operator(kind: TokenKind) -> Option<ParsedBinaryOperator> {
+        match read kind {
+            TokenPlus => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 9, operator: BinaryAdd()
+                    })
+            }
+            TokenMinus => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 9, operator: BinarySubtract()
+                    })
+            }
+            TokenStar => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 10, operator: BinaryMultiply()
+                    })
+            }
+            TokenSlash => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 10, operator: BinaryDivide()
+                    })
+            }
+            TokenPercent => {
+                return Some(ParsedBinaryOperator {
+                        precedence: 10, operator: BinaryRemainder()
+                    })
+            }
+            _ => None()
+        }
+    }
+}

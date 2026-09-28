@@ -1,0 +1,114 @@
+module lowering {
+    fn struct_layout(symbols: sema::Symbols, symbol: usize, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        var parameters = Vec<frontend::Name>.new()
+        var fields = Vec<sema::Field>.new()
+        loan read symbols.types[symbol] as declaration {
+            parameters = sema::names_copy(declaration.type_parameters)
+            fields = sema::fields_copy(declaration.fields)
+        }
+        let values = sema::parameter_values(parameters, arguments)
+        var output = layout_new(0, 1)
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as field {
+                let value_type = sema::substitute(field.value_type, values)
+                match layout(symbols, value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        if layout_append(output, layout) == false {
+                            return Err(9)
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        output.size = align_to(output.size, output.alignment)
+        if output.size == 0 {
+            output.size = 1
+        }
+        return Ok(move output)
+    }
+
+    fn enum_layout(symbols: sema::Symbols, symbol: usize, arguments: Vec<sema::Type>) -> Result<Layout, u32> {
+        var parameters = Vec<frontend::Name>.new()
+        var variants = Vec<sema::Variant>.new()
+        loan read symbols.types[symbol] as declaration {
+            parameters = sema::names_copy(declaration.type_parameters)
+            variants = variants_copy(declaration.variants)
+        }
+        let values = sema::parameter_values(parameters, arguments)
+        var payload = layout_new(0, 1)
+        var index: usize = 0
+        while index < variants.length() {
+            loan read variants[index] as variant {
+                match variant_payload_layout(symbols, variant.fields, values) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        if layout.size > payload.size {
+                            payload.size = layout.size
+                        }
+                        if layout.alignment > payload.alignment {
+                            payload.alignment = layout.alignment
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        return Ok(enum_payload_layout(payload))
+    }
+
+    fn variant_payload_layout(symbols: sema::Symbols, fields: Vec<sema::Type>, values: Vec<sema::Type>) -> Result<Layout, u32> {
+        var output = layout_new(0, 1)
+        var index: usize = 0
+        while index < fields.length() {
+            loan read fields[index] as field {
+                let value_type = sema::substitute(field, values)
+                match layout(symbols, value_type) {
+                    Err(error) => {
+                        return Err(error)
+                    }
+                    Ok(layout) => {
+                        if layout_append(output, layout) == false {
+                            return Err(10)
+                        }
+                    }
+                }
+            }
+            index = index + 1
+        }
+        output.size = align_to(output.size, output.alignment)
+        return Ok(move output)
+    }
+
+    fn layout_append(output: write Layout, field: Layout) -> bool {
+        let offset = align_to(output.size, field.alignment)
+        if offset > 18446744073709551615 - field.size {
+            return false
+        }
+        output.size = offset + field.size
+        if field.alignment > output.alignment {
+            output.alignment = field.alignment
+        }
+        return true
+    }
+
+    fn variants_copy(values: Vec<sema::Variant>) -> Vec<sema::Variant> {
+        var output = Vec<sema::Variant>.with_capacity(values.length())
+        var index: usize = 0
+        while index < values.length() {
+            loan read values[index] as value {
+                output.push(sema::Variant {
+                        name: frontend::name_copy(value.name), fields: sema::types_copy(value.fields)
+                    })
+            }
+            index = index + 1
+        }
+        return move output
+    }
+}

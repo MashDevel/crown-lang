@@ -1,0 +1,65 @@
+module testing_group {
+    struct Fixture {
+        root: Text, executable: Text, registry: Text, source: Text
+    }
+
+    fn fixture(root: Text, executable: Text) -> Result<Fixture, Text> {
+        testing::compiler()?;
+        let compiler = testing::write_file(root, "compiler", "#!/bin/sh\nexec \"$CROWN_TEST_COMPILER\" \"$@\"\n")?
+        toolchain::executable(compiler)?
+        testing::write_file(root, "first.cwn", "fn value() -> u32 { 41 } fn main() -> u32 { value() }")?
+        testing::write_file(root, "second.cwn", "fn value() -> u32 { 42 } fn main() -> u32 { value() }")?
+        testing::write_file(root, "failure.cwn", "fn main() -> u32 { 0 }")?
+        testing::write_file(root, "timeout.cwn", "fn main() -> u32 { while true {} return 42 }")?
+        let library = toolchain::path_join(toolchain::repository_root()?, "components/library/src")
+        var source = std::text::joined("[", row("good_first", "first.cwn", 41, 30000, library))
+        std::text::append(source, std::text::joined(",", row("good_second", "second.cwn", 42, 30000, library)))
+        std::text::append(source, std::text::joined(",", row("bad_failure", "failure.cwn", 42, 30000, library)))
+        std::text::append(source, std::text::joined(",", row("bad_timeout", "timeout.cwn", 42, 30, library)))
+        source.push(']')
+        let registry = testing::write_file(root, "cases.json", source)?
+        return Ok(Fixture {
+                root: root.clone(), executable: executable.clone(), registry: move registry, source: move source
+            })
+    }
+
+    fn row(name: Text, source: Text, status: u32, timeout: u64, library: Text) -> Text {
+        var output = std::text::joined("{\"unit\":true,\"mode\":\"run\",\"name\":", toolchain::json_quoted(name))
+        std::text::append(output, std::text::joined(",\"source\":", toolchain::json_quoted(source)))
+        std::text::append(output, std::text::joined(",\"status\":", std::text::decimal(u64.from(status))))
+        std::text::append(output, std::text::joined(",\"timeout_ms\":", std::text::decimal(timeout)))
+        std::text::append(output, std::text::joined(",\"roots\":[", toolchain::json_quoted(library)))
+        std::text::append(output, "]}")
+        return move output
+    }
+
+    fn execute(fixture: Fixture, filter: Text, coverage: Text) -> Result<u32, Text> {
+        toolchain::write_text(fixture.registry, fixture.source)?
+        let environment = harness::Environment {
+            compiler: toolchain::path_join(fixture.root, "compiler"), root: fixture.root.clone(), output: toolchain::path_join(fixture.root, "results"), coverage: coverage.clone()
+        }
+        let request = harness::Suite {
+            executable: fixture.executable.clone(), environment: move environment, registry: fixture.registry.clone(), jobs: 2, filter: filter.clone()
+        }
+        return harness::run_suite(move request)
+    }
+
+    fn results(fixture: Fixture, count: usize) -> Result<toolchain::Json, Text> {
+        let path = toolchain::path_join(fixture.root, "results/results.json")
+        let document = toolchain::json(toolchain::read_text(path)?)?
+        let rows = toolchain::json_array_values(document, document.root)?
+        testing::expect(rows.length() == count, "one result per selected unit test")?
+        return Ok(move document)
+    }
+
+    fn binaries(root: Text, count: usize) -> Result<void, Text> {
+        let entries = toolchain::directory_entries(toolchain::path_join(root, "target/test-cache"))?
+        var found: usize = 0
+        for index in 0..entries.length() {
+            if toolchain::exists(toolchain::path_join(entries[index], "program")) {
+                found = found + 1
+            }
+        }
+        return testing::expect(found == count, "unit group compiles one executable per input version")
+    }
+}

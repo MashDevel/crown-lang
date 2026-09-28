@@ -1,0 +1,62 @@
+module std {
+    module cstr {
+        opaque resource CString {
+            private bytes: Vec<u8>
+            drop {
+            }
+        }
+
+        fn is_terminated(value: TextView) -> bool {
+            if value.length() == 0 {
+                return false
+            }
+            for index in 0..value.length() - 1 {
+                if value[index] == 0 {
+                    return false
+                }
+            }
+            return value[value.length() - 1] == 0
+        }
+
+        fn new(value: TextView) -> Option<CString> {
+            var bytes = Vec<u8>.new()
+            match encode(value) {
+                None => {
+                    return None()
+                }
+                Some(encoded) => {
+                    bytes = move encoded
+                }
+            }
+            unsafe {
+                return Some(CString {
+                        bytes: move bytes
+                    })
+            }
+        }
+
+        fn encode(value: TextView) -> Option<Vec<u8>> {
+            var bytes = Vec<u8>.with_capacity(value.length() + 1)
+            for index in 0..value.length() {
+                if value[index] == 0 {
+                    return None()
+                }
+                bytes.push(value[index])
+            }
+            bytes.push(0)
+            return Some(move bytes)
+        }
+
+        fn length(value: CString) -> usize {
+            unsafe {
+                return value.bytes.length() - 1
+            }
+        }
+
+        unsafe fn as_raw(value: CString) -> RawPtr<u8> {
+            unsafe {
+                return value.bytes.as_raw()
+            }
+        }
+    }
+}

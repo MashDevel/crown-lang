@@ -1,0 +1,15 @@
+module arm64 {
+    fn branch_later(compiler: write Compiler) -> usize {
+        let offset = compiler.bytes.length()
+        emit_encoding(compiler, branch_word(0, false))
+        return offset
+    }
+    fn condition_later(compiler: write Compiler, condition: u32) -> usize {
+        emit_encoding(compiler, conditional_branch(8, condition ^ 1))
+        return branch_later(compiler)
+    }
+    fn branch_here(compiler: write Compiler, offset: usize) -> void {
+        return patch_branch(compiler, offset, compiler.bytes.length())
+    }
+
+}

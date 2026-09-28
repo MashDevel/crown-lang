@@ -1,0 +1,53 @@
+module sema {
+    fn qualified_variant_name(symbols: Symbols, context: Resolution, name: frontend::Name) -> frontend::Name {
+        var output = frontend::name_copy(name)
+        match read context.self_symbol {
+            Some(symbol) => {
+                loan read symbols.types[symbol] as declaration {
+                    let owner = name_text(symbols.source, declaration.name)
+                    let leaf = name_text(symbols.source, name)
+                    output.text = frontend::namespace_qualify(owner, leaf)
+                }
+            }
+            None => {
+            }
+        }
+        return move output
+    }
+
+    fn name_leaf_start(source: Shared<Vec<u8>>, name: frontend::Name) -> usize {
+        var start: usize = 0
+        var index: usize = 0
+        while index < name_length(name) {
+            if name_byte(source, name, index) == 58 {
+                start = index + 1
+            }
+            index = index + 1
+        }
+        return start
+    }
+
+    fn variant_name_matches(source: Shared<Vec<u8>>, canonical: frontend::Name, request: frontend::Name) -> bool {
+        if name_leaf_start(source, request) != 0 {
+            return names_equal(source, canonical, request)
+        }
+        return name_leaves_equal(source, canonical, request)
+    }
+
+    fn name_leaves_equal(source: Shared<Vec<u8>>, left: frontend::Name, right: frontend::Name) -> bool {
+        let left_start = name_leaf_start(source, left)
+        let right_start = name_leaf_start(source, right)
+        let length = name_length(left) - left_start
+        if length != name_length(right) - right_start {
+            return false
+        }
+        var index: usize = 0
+        while index < length {
+            if name_byte(source, left, left_start + index) != name_byte(source, right, right_start + index) {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+}

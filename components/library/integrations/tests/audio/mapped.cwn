@@ -1,0 +1,92 @@
+fn test_audio_buffers() -> u32 {
+    unsafe {
+        let zero = RawPtr<native::pipewire::Buffer>.from_address(0)
+        if has_audio_buffer(integration::audio::mapped_audio(zero)) {
+            return 31
+        }
+        var samples = Vec<f32>.new()
+        for index in 0..16 {
+            index;
+            samples.push(0.0)
+        }
+        var chunks = Vec<native::pipewire::Chunk>.new()
+        chunks.push(native::pipewire::Chunk {
+                offset: 7, size: 0, stride: 0, flags: 0
+            })
+        var data = Vec<native::pipewire::Data>.new()
+        data.push(native::pipewire::Data {
+                kind: 1, flags: 0, descriptor: -1, map_offset: 0, max_size: 64, data: samples.as_raw(), chunk: chunks.as_raw()
+            })
+        var spa = Vec<native::pipewire::SpaBuffer>.new()
+        spa.push(native::pipewire::SpaBuffer {
+                metas_count: 0, data_count: 1, metas: RawPtr<u8>.from_address(0), data: data.as_raw()
+            })
+        var buffers = Vec<native::pipewire::Buffer>.new()
+        buffers.push(native::pipewire::Buffer {
+                buffer: spa.as_raw(), user_data: RawPtr<u8>.from_address(0), size: 0, requested: 9999
+            })
+        let mapped_result = check_audio_buffer(buffers.as_raw(), chunks)
+        if mapped_result != 0 {
+            return mapped_result
+        }
+        return invalid_audio_buffers(buffers, spa, data, samples.as_raw())
+    }
+}
+
+unsafe fn invalid_audio_buffers(buffers: write Vec<native::pipewire::Buffer>, spa: write Vec<native::pipewire::SpaBuffer>, data: write Vec<native::pipewire::Data>, samples: RawPtr<f32>) -> u32 {
+    unsafe {
+        spa[0].data_count = 0
+        if has_audio_buffer(integration::audio::mapped_audio(buffers.as_raw())) {
+            return 35
+        }
+        spa[0].data_count = 1
+        data[0].data = RawPtr<f32>.from_address(0)
+        if has_audio_buffer(integration::audio::mapped_audio(buffers.as_raw())) {
+            return 37
+        }
+        data[0].data = samples
+        data[0].chunk = RawPtr<native::pipewire::Chunk>.from_address(0)
+        if has_audio_buffer(integration::audio::mapped_audio(buffers.as_raw())) {
+            return 36
+        }
+        spa[0].data = RawPtr<native::pipewire::Data>.from_address(0)
+        if has_audio_buffer(integration::audio::mapped_audio(buffers.as_raw())) {
+            return 38
+        }
+        buffers[0].buffer = RawPtr<native::pipewire::SpaBuffer>.from_address(0)
+        if has_audio_buffer(integration::audio::mapped_audio(buffers.as_raw())) {
+            return 39
+        }
+    }
+    return 0
+}
+
+fn check_audio_buffer(pointer: RawPtr<native::pipewire::Buffer>, chunks: Vec<native::pipewire::Chunk>) -> u32 {
+    unsafe {
+        match integration::audio::mapped_audio(pointer) {
+            None => {
+                return 32
+            }
+            Some(mapped) => {
+                if mapped.frames != 8 {
+                    return 33
+                }
+                integration::audio::commit_audio(mapped)
+                if chunks[0].offset != 0 || chunks[0].size != 64 || chunks[0].stride != 8 {
+                    return 34
+                }
+            }
+        }
+    }
+    return 0
+}
+
+fn has_audio_buffer(value: Option<integration::audio::MappedAudio>) -> bool {
+    match value {
+        Some(buffer) => {
+            buffer;
+            return true
+        }
+        None => false
+    }
+}

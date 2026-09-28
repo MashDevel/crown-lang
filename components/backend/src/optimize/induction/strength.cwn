@@ -1,0 +1,104 @@
+module optimize {
+    fn induction_strength(function: write ir::Function) -> usize {
+        let loops = find_loops(function)
+        var count: usize = 0
+        for index in 0..loops.length() {
+            let values = induction_find(function, loops[index])
+            for cursor in 0..values.length() {
+                let candidates = induction_scales(function, loops[index], values[cursor])
+                for candidate in 0..candidates.length() {
+                    induction_scale_apply(function, values[cursor], candidates[candidate])
+                    count = count + 1
+                }
+            }
+        }
+        return count
+    }
+
+    fn induction_scales(function: ir::Function, natural_loop: NaturalLoop, induction: Induction) -> Vec<ScaledInduction> {
+        var output = Vec<ScaledInduction>.new()
+        for block in 0..function.blocks.length() {
+            if natural_loop.blocks[block] {
+                for index in 0..function.blocks[block].instructions.length() {
+                    match induction_scale(function, function.blocks[block].instructions[index], induction.value) {
+                        Some(candidate) => {
+                            output.push(ScaledInduction {
+                                    block: block, instruction: index, result: candidate.result, factor: candidate.factor
+                                })
+                        }
+                        None => {
+                        }
+                    }
+                }
+            }
+        }
+        return move output
+    }
+
+    fn induction_scale(function: ir::Function, instruction: ir::Instruction, value: usize) -> Option<ScaledInduction> {
+        let result = match instruction.result {
+            Some(found) => found,
+            None => {
+                return None()
+            }
+        }
+        match read instruction.kind {
+            ir::InstructionBinary(operator, left, right) => {
+                if operator != ir::BinaryMultiply() ||(left != value && right != value) {
+                    return None()
+                }
+                let factor = if left == value {
+                    right
+                } else {
+                    left
+                }
+                match integer_constant(function, factor) {
+                    Some(number) => {
+                        if number <= 1 {
+                            return None()
+                        }
+                        return Some(ScaledInduction {
+                                block: 0, instruction: 0, result: result, factor: factor
+                            })
+                    }
+                    None => None()
+                }
+            }
+            _ => None()
+        }
+    }
+
+    fn induction_scale_apply(function: write ir::Function, induction: Induction, scale: ScaledInduction) -> void {
+        let initial = induction_emit(function, induction.preheader, induction.value_type, ir::InstructionBinary(ir::BinaryMultiply(), induction.start, scale.factor))
+        let step = induction_emit(function, induction.preheader, induction.value_type, ir::InstructionBinary(ir::BinaryMultiply(), induction.step, scale.factor))
+        let value = ir::function_new_value(function, induction.value_type)
+        let next = induction_emit(function, induction.latch, induction.value_type, ir::InstructionBinary(induction.operator, value, step))
+        var incoming = Vec<ir::PhiIncoming>.new()
+        incoming.push(ir::PhiIncoming {
+                block: induction.preheader, value: initial
+            })
+        incoming.push(ir::PhiIncoming {
+                block: induction.latch, value: next
+            })
+        var instructions = Vec<ir::Instruction>.new()
+        instructions.push(ir::Instruction {
+                result: Some(value), kind: ir::InstructionPhi(induction.value_type, move incoming)
+            })
+        for index in 0..function.blocks[induction.header].instructions.length() {
+            instructions.push(ir::instruction_copy(function.blocks[induction.header].instructions[index]))
+        }
+        function.blocks[induction.header].instructions = move instructions
+        ir::function_replace_uses(function, scale.result, value)
+        var removed = false_values(function.values.length())
+        removed[scale.result] = true
+        remove_results(function, removed, result_marked)
+    }
+
+    fn induction_emit(function: write ir::Function, block: usize, value_type: ir::Type, kind: take ir::InstructionKind) -> usize {
+        let value = ir::function_new_value(function, value_type)
+        function.blocks[block].instructions.push(ir::Instruction {
+                result: Some(value), kind: move kind
+            })
+        return value
+    }
+}

@@ -1,0 +1,5 @@
+fn main() -> u32 {
+    for index in false..true {
+    }
+    return 0
+}

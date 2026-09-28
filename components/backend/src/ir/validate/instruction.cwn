@@ -1,0 +1,276 @@
+module ir {
+    struct BinaryValues {
+        left: usize
+        right: usize
+    }
+
+    struct SelectValues {
+        condition: usize
+        then_value: usize
+        else_value: usize
+    }
+
+    struct MemoryValues {
+        first: usize
+        second: usize
+        third: usize
+    }
+
+    fn instruction_valid(program: Program, function: Function, instruction: Instruction) -> bool {
+        if instruction_result_matches(function, instruction) == false {
+            return false
+        }
+        return instruction_kind_valid(program, function, instruction.kind)
+    }
+
+    fn instruction_result_matches(function: Function, instruction: Instruction) -> bool {
+        let expected = function_instruction_type(function, instruction.kind)
+        return optional_type_matches(function, instruction.result, expected)
+    }
+
+    fn instruction_kind_valid(program: Program, function: Function, kind: InstructionKind) -> bool {
+        if scalar_instruction_valid(function, kind) {
+            return true
+        }
+        if access_instruction_valid(function, kind) {
+            return true
+        }
+        if address_instruction_valid(program, kind) {
+            return true
+        }
+        if bulk_instruction_valid(function, kind) {
+            return true
+        }
+        call_instruction_valid(program, function, kind)
+    }
+
+    fn scalar_instruction_valid(function: Function, kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionVectorSplat(value, target) => {
+                return vector_type(function.values[value]) == Some(target)
+            }
+            InstructionBinary(operator, left, right) => {
+                return binary_valid(function, operator, BinaryValues {
+                        left: left, right: right
+                    })
+            }
+            InstructionUnary(operator, value) => {
+                return unary_valid(function, operator, value)
+            }
+            InstructionCompare(operator, left, right) => {
+                return compare_valid(function, operator, BinaryValues {
+                        left: left, right: right
+                    })
+            }
+            InstructionCast(operator, value, target) => {
+                operator;
+                return cast_valid(function, value, target)
+            }
+            InstructionPhi(value_type, incoming) => {
+                return phi_type_valid(function, value_type, incoming)
+            }
+            InstructionSelect(condition, then_value, else_value) => {
+                return select_valid(function, SelectValues {
+                        condition: condition, then_value: then_value, else_value: else_value
+                    })
+            }
+            _ => false
+        }
+    }
+
+    fn access_instruction_valid(function: Function, kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    MemoryStackSlot(size, alignment) => {
+                        return size != 0 && valid_alignment(alignment)
+                    }
+                    MemoryLoad(address, value_type, alignment, volatile) => {
+                        volatile
+                        return memory_address_valid(function, address, alignment) && type_has_value(value_type)
+                    }
+                    MemoryStore(address, value, alignment, volatile) => {
+                        volatile
+                        return memory_address_valid(function, address, alignment) && value_has_type(function, value)
+                    }
+                    MemoryOffset(base, offset) => {
+                        return value_is_pointer(function, base) && value_is_integer(function, offset)
+                    }
+                    _ => false
+                }
+            }
+
+            _ => false
+        }
+    }
+
+    fn address_instruction_valid(program: Program, kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    MemoryGlobalAddress(global) => {
+                        return global < program.globals.length()
+                    }
+                    MemorySymbolAddress(symbol) => {
+                        return text_valid_symbol(symbol)
+                    }
+                    MemoryFunctionAddress(callee) => {
+                        return callee < program.functions.length()
+                    }
+                    _ => false
+                }
+            }
+
+            _ => false
+        }
+    }
+
+    fn bulk_instruction_valid(function: Function, kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionMemory(instruction_memory_kind) => {
+                match read instruction_memory_kind {
+                    MemoryCopy(destination, source, size) => {
+                        return memory_copy_valid(function, MemoryValues {
+                                first: destination, second: source, third: size
+                            })
+                    }
+                    MemorySet(destination, value, size) => {
+                        return memory_set_valid(function, MemoryValues {
+                                first: destination, second: value, third: size
+                            })
+                    }
+                    MemoryRepeat(destination, source, size, count) => {
+                        return memory_repeat_valid(function, MemoryValues {
+                                first: destination, second: source, third: size
+                            }, count)
+                    }
+                    _ => false
+                }
+            }
+
+            _ => false
+        }
+    }
+
+    fn call_instruction_valid(program: Program, function: Function, kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionCall(callee, arguments, result) => {
+                callee;
+                arguments;
+                result
+                return call_valid(program, function, kind)
+            }
+            InstructionCallIndirect(callee, signature, arguments) => {
+                return signature_attributes_valid(signature) && value_is_pointer(function, callee) && arguments_match(function, arguments, signature.parameters)
+            }
+            _ => false
+        }
+    }
+
+    fn binary_valid(function: Function, operator: BinaryOperator, values: take BinaryValues) -> bool {
+        if type_is_vector(function.values[values.left]) {
+            return values_same_type(function, values.left, values.right) && vector_binary_supported(function.values[values.left], operator)
+        }
+        if binary_is_shift(operator) {
+            return value_is_integer(function, values.left) && value_is_integer(function, values.right)
+        }
+        if values_same_type(function, values.left, values.right) == false {
+            return false
+        }
+        if binary_is_float(operator) {
+            return value_is_float(function, values.left)
+        }
+        return value_is_integer(function, values.left)
+    }
+
+    fn unary_valid(function: Function, operator: UnaryOperator, value: usize) -> bool {
+        if unary_is_float(operator) {
+            return value_is_float(function, value)
+        }
+        return value_is_integer(function, value)
+    }
+
+    fn compare_valid(function: Function, operator: CompareOperator, values: take BinaryValues) -> bool {
+        if values_same_type(function, values.left, values.right) == false {
+            return false
+        }
+        if compare_is_float(operator) {
+            return value_is_float(function, values.left)
+        }
+        return value_is_integer(function, values.left) || value_is_pointer(function, values.left)
+    }
+
+    fn cast_valid(function: Function, value: usize, target: Type) -> bool {
+        return value_has_type(function, value) && type_has_value(target) && type_is_vector(target) == false && type_is_vector(function.values[value]) == false
+    }
+
+    fn select_valid(function: Function, values: take SelectValues) -> bool {
+        let boolean = TypeInteger(IntegerWidth1())
+        return value_type_equal(function, values.condition, boolean) && values_same_type(function, values.then_value, values.else_value) && type_is_vector(function.values[values.then_value]) == false
+    }
+
+    fn memory_copy_valid(function: Function, values: take MemoryValues) -> bool {
+        return value_is_pointer(function, values.first) && value_is_pointer(function, values.second) && value_is_integer(function, values.third)
+    }
+
+    fn memory_set_valid(function: Function, values: take MemoryValues) -> bool {
+        return value_is_pointer(function, values.first) && value_is_integer(function, values.second) && value_is_integer(function, values.third)
+    }
+
+    fn memory_repeat_valid(function: Function, values: take MemoryValues, count: usize) -> bool {
+        return value_is_pointer(function, values.first) && value_is_pointer(function, values.second) && value_is_integer(function, values.third) && value_is_integer(function, count)
+    }
+
+    fn call_valid(program: Program, caller: Function, kind: InstructionKind) -> bool {
+        match read kind {
+            InstructionCall(callee, arguments, result) => {
+                if callee >= program.functions.length() {
+                    return false
+                }
+                loan read program.functions[callee] as function {
+                    if type_equal(function.signature.result, result) == false {
+                        return false
+                    }
+                    return arguments_match(caller, arguments, function.signature.parameters)
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn phi_type_valid(function: Function, value_type: Type, incoming: Vec<PhiIncoming>) -> bool {
+        if type_has_value(value_type) == false || incoming.length() == 0 {
+            return false
+        }
+        var index: usize = 0
+        while index < incoming.length() {
+            if value_type_equal(function, incoming[index].value, value_type) == false {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
+
+    fn text_valid_symbol(symbol: Text) -> bool {
+        if symbol.length() == 0 {
+            return false
+        }
+        loan read symbol as bytes {
+            var index: usize = 0
+            while index < bytes.length() {
+                if bytes[index] == 0 {
+                    return false
+                }
+                index = index + 1
+            }
+        }
+        return true
+    }
+
+    fn memory_address_valid(function: Function, address: usize, alignment: u32) -> bool {
+        value_is_pointer(function, address) && valid_alignment(alignment)
+    }
+}

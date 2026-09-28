@@ -1,0 +1,19 @@
+extern "c" {
+    fn darwin_return_check() -> i32
+    fn darwin_narrow(a: i8, b: u8, c: i16, d: u16, e: i32, f: u32, g: i64, h: u64, i: i8, j: u8, k: i16, l: u16) -> i32
+    fn darwin_variadic(fixed: i32,...a: i8, b: u16, c: f32, d: i64) -> i32
+}
+fn main() -> u32 {
+    unsafe {
+        if darwin_return_check() != 42 {
+            return 3
+        }
+        if darwin_narrow(-1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12) != 42 {
+            return 1
+        }
+        if darwin_variadic(7, -8, 60000, 1.5, -123456789) != 42 {
+            return 2
+        }
+    }
+    return 42
+}

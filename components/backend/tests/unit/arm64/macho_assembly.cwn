@@ -1,0 +1,107 @@
+fn instruction(kind: object::RelocationKind, word: u32, addend: i64, expected: Text) -> Result<void, Text> {
+    let actual = arm64::macho_assembly_instruction(kind, word, "_target", addend)?
+    return testing::expect(std::text::equal(actual, expected), std::text::joined("Mach-O instruction: ", actual))
+}
+
+fn branches_and_addresses() -> Result<void, Text> {
+    instruction(object::RelocationArmBranch26(), 335544320, 0, "b _target")?
+    instruction(object::RelocationArmBranch26(), 2483027968, -4, "bl _target-4")?
+    instruction(object::RelocationArmPage21(), 2415919113, 8, "adrp x9, _target@PAGE+8")?
+    instruction(object::RelocationArmGotPage21(), 2415919104, 0, "adrp x0, _target@GOTPAGE")?
+    instruction(object::RelocationArmPageOffset12(), 2432697312, 0, "add x0, sp, _target@PAGEOFF")?
+    instruction(object::RelocationArmGotLoadPageOffset12(), 4181721376, 0, "ldr x0, [x9, _target@GOTPAGEOFF]")?
+    testing::error(arm64::macho_assembly_instruction(object::RelocationAbsolute64(), 0, "_target", 0))?
+    return testing::error(arm64::macho_assembly_instruction(object::RelocationArmBranch26(), 0, "_target", 0))
+}
+
+fn memory_instructions() -> Result<void, Text> {
+    let loads: [u32; 5] = [960496608, 2034238432, 3107980256, 4181722080, 1035994080]
+    let stores: [u32; 5] = [956302304, 2030044128, 3103785952, 4177527776, 1031799776]
+    let names = testing::list("ldrb w0|ldrh w0|ldr w0|ldr x0|ldr q0")
+    let store_names = testing::list("strb w0|strh w0|str w0|str x0|str q0")
+    for scale in 0..5 {
+        let kind = object::RelocationArmLoadPageOffset12(u32.from(scale))
+        instruction(kind, loads[scale], 0, std::text::joined(names[scale], ", [sp, _target@PAGEOFF]"))?
+        instruction(kind, stores[scale], 0, std::text::joined(store_names[scale], ", [sp, _target@PAGEOFF]"))?
+    }
+    let registers = testing::list("b|h|s|d|q")
+    for scale in 0..5 {
+        testing::expect(std::text::equal(arm64::macho_memory_register(67108864, u32.from(scale))?, registers[scale]), "SIMD register width")?
+    }
+    testing::error(arm64::macho_memory_register(8388608, 2))?
+    return instruction(object::RelocationArmLoadPageOffset12(3), 4181721376, 0, "ldr x0, [x9, _target@PAGEOFF]")
+}
+
+fn assembly_object() -> Result<void, Text> {
+    var object = arm_macho_address()?
+    object.sections[0].memory_size = 24
+    let first = arm64::macho_assembly(object, "fixture")?
+    testing::expect(std::text::equal(first, arm64::macho_assembly(object, "fixture")?), "deterministic assembly")?
+    let required = testing::list(".build_version macos, 11, 0|.data|.text|.space 16|.globl _main|@GOTPAGE|@GOTPAGEOFF")
+    for index in 0..required.length() {
+        testing::expect(std::text::contains(first, required[index]), required[index])?
+    }
+    object.architecture = object::ArchitectureX86_64()
+    return testing::error(arm64::macho_assembly(object, "fixture"))
+}
+
+fn entries_and_imports() -> Result<void, Text> {
+    var object = arm_macho_address()?
+    object.symbols[1].name = "entry"
+    let renamed = arm64::macho_assembly(object, "fixture")?
+    testing::expect(std::text::contains(renamed, ".set _main, _entry"), "entry alias")?
+    object.entry = None()
+    testing::expect(std::text::contains(arm64::macho_assembly(object, "fixture")?, ".set _main") == false, "no entry alias without entry")?
+    let imported = arm64::macho_assembly(arm_macho_import()?, "imports")?
+    return testing::expect(std::text::contains(imported, "bl _exit\n"), "imported call")
+}
+
+fn relocation_bounds() -> Result<void, Text> {
+    var object = arm_macho_address()?
+    swap(object.relocations[0], object.relocations[1])
+    arm64::macho_assembly(object, "sorted")?
+    object.relocations[1].offset = object.relocations[0].offset
+    testing::error(arm64::macho_assembly(object, "overlap"))?
+    object.relocations[1].offset = 1048576
+    testing::error(arm64::macho_assembly(object, "outside"))?
+    object.relocations[1].offset = u64.from(object.sections[1].data.length()) - 4
+    object.relocations[1].kind = object::RelocationAbsolute64()
+    testing::error(arm64::macho_assembly(object, "width"))?
+    object.relocations[1].section = object.sections.length()
+    return testing::error(arm64::macho_assembly(object, "section"))
+}
+
+fn data_relocations() -> Result<void, Text> {
+    var object = arm_macho_address()?
+    var relocation = object::Relocation {
+        section: 1, offset: 0, kind: object::RelocationAbsolute64(), symbol: 0,
+        subtract: None(), addend: -8
+    }
+    var output = ""
+    arm64::macho_assembly_relocation(object, output, relocation)?
+    testing::expect(std::text::equal(output, ".quad _answer-8\n"), "64-bit data relocation")?
+    relocation.kind = object::RelocationDifference32()
+    relocation.subtract = Some(1)
+    relocation.addend = 4
+    output = ""
+    arm64::macho_assembly_relocation(object, output, relocation)?
+    testing::expect(std::text::equal(output, ".long _answer-_main+4\n"), "subtracting data relocation")?
+    relocation.kind = object::RelocationArmPage21()
+    testing::error(arm64::macho_assembly_relocation(object, output, relocation))?
+    relocation.subtract = None()
+    relocation.kind = object::RelocationPcRelative32()
+    return testing::error(arm64::macho_assembly_relocation(object, output, relocation))
+}
+
+fn run() -> Result<void, Text> {
+    branches_and_addresses()?
+    memory_instructions()?
+    assembly_object()?
+    entries_and_imports()?
+    relocation_bounds()?
+    return data_relocations()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,114 @@
+module x86 {
+    fn encode_float_memory(instruction: Instruction, output: write Vec<u8>) -> bool {
+        match read instruction {
+            FloatBinaryMemory(values) => {
+                emit_float_binary_memory(values, output);
+                return true
+            }
+            FloatCompareMemory(values) => {
+                emit_float_compare_memory(values, output);
+                return true
+            }
+            LoadFloatMemory(values) => {
+                emit_float_transfer(values, output, 16);
+                return true
+            }
+            StoreFloatMemory(values) => {
+                emit_float_store(values, output);
+                return true
+            }
+            SaveFloatState(base, offset) => {
+                emit_float_state(output, FloatStateEncoding {
+                        base: register_code(base), offset: offset, group: 0
+                    });
+                return true
+            }
+            RestoreFloatState(base, offset) => {
+                emit_float_state(output, FloatStateEncoding {
+                        base: register_code(base), offset: offset, group: 1
+                    });
+                return true
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+
+    fn emit_float_binary_memory(values: FloatBinaryMemoryArgs, output: write Vec<u8>) -> void {
+        emit_float_memory_raw(output, FloatMemoryEncoding {
+                prefix: Some(float_width_prefix(float_width_code(values.width)))
+                first_opcode: 15
+                second_opcode: float_binary_opcode(values.operator)
+                register: float_register_code(values.destination)
+                base: register_code(values.base)
+                offset: values.offset
+            })
+    }
+
+    fn emit_float_compare_memory(values: FloatCompareMemoryArgs, output: write Vec<u8>) -> void {
+        var prefix: Option<u8> = None()
+        if float_width_code(values.width) == 1 {
+            prefix = Some(102)
+        }
+        emit_float_memory_raw(output, FloatMemoryEncoding {
+                prefix: prefix
+                first_opcode: 15
+                second_opcode: 46
+                register: float_register_code(values.left)
+                base: register_code(values.base)
+                offset: values.offset
+            })
+    }
+
+    fn emit_float_transfer(values: LoadFloatMemoryArgs, output: write Vec<u8>, opcode: u8) -> void {
+        emit_float_memory_raw(output, FloatMemoryEncoding {
+                prefix: Some(float_width_prefix(float_width_code(values.width)))
+                first_opcode: 15
+                second_opcode: opcode
+                register: float_register_code(values.destination)
+                base: register_code(values.base)
+                offset: values.offset
+            })
+    }
+
+    fn emit_float_store(values: StoreFloatMemoryArgs, output: write Vec<u8>) -> void {
+        emit_float_memory_raw(output, FloatMemoryEncoding {
+                prefix: Some(float_width_prefix(float_width_code(values.width)))
+                first_opcode: 15
+                second_opcode: 17
+                register: float_register_code(values.source)
+                base: register_code(values.base)
+                offset: values.offset
+            })
+    }
+
+    fn emit_float_memory_raw(output: write Vec<u8>, values: take FloatMemoryEncoding) -> void {
+        match read values.prefix {
+            Some(prefix) => {
+                output.push(prefix)
+            }
+            None => {
+            }
+        }
+        output.push(rex_narrow(values.register, 0, values.base))
+        output.push(values.first_opcode)
+        output.push(values.second_opcode)
+        output.push(128 |((values.register & 7) << 3) |(values.base & 7))
+        if values.base & 7 == 4 {
+            output.push(36)
+        }
+        emit_i32(output, values.offset)
+    }
+
+    fn emit_float_state(output: write Vec<u8>, values: take FloatStateEncoding) -> void {
+        output.push(rex_narrow(values.group, values.base, values.base))
+        output.push(15);
+        output.push(174);
+        output.push(128 |((values.group & 7) << 3) |(values.base & 7))
+        if values.base & 7 == 4 {
+            output.push(36)
+        }
+        emit_i32(output, values.offset)
+    }
+}

@@ -1,0 +1,124 @@
+fn test_io(path: read TextView) -> Result<u32, std::io::Error> {
+    var bytes = std::bytes::filled(65537, 0)
+    bytes[0] = 255
+    bytes[65536] = 42
+    std::io::write_file(path, bytes)?
+    let loaded = std::io::read_file(path)?
+    if loaded.length() != bytes.length() || loaded[0] != 255 || loaded[65536] != 42 {
+        return Ok(1)
+    }
+    let empty = Vec<u8>.new()
+    std::io::write_file(path, empty)?
+    let loaded_empty = std::io::read_file(path)?
+    if loaded_empty.length() != 0 {
+        return Ok(2)
+    }
+    return test_io_cases(path)
+}
+
+fn test_io_cases(path: TextView) -> Result<u32, std::io::Error> {
+    let cases: [fn(read TextView) -> Result<u32, std::io::Error>; 4] = [test_closed_file, test_text_file, test_failed_io, test_unopenable_files]
+    for index in 0..4 {
+        let action = cases[index]
+        let status = action(path)?
+        if status != 0 {
+            return Ok(status)
+        }
+    }
+    return Ok(0)
+}
+
+fn test_closed_file(path: read TextView) -> Result<u32, std::io::Error> {
+    var file = std::io::open(path, std::io::Mode::Read())?
+    std::io::close(file)?
+    match std::io::close(file) {
+        Ok(value) => {
+            value;
+            return Ok(3)
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match std::io::size(file) {
+        Ok(value) => {
+            value;
+            return Ok(4)
+        }
+        Err(error) => {
+            error
+        }
+    }
+    return Ok(0)
+}
+
+fn test_text_file(path: read TextView) -> Result<u32, std::io::Error> {
+    let text = "binary\0text"
+    std::io::write_text(path, text)?
+    let loaded_text = std::io::read_file(path)?
+    if loaded_text.length() != 11 || loaded_text[6] != 0 {
+        return Ok(5)
+    }
+    let invalid = "invalid\0path"
+    loan read invalid as view {
+        match std::io::read_file(view) {
+            Ok(value) => {
+                value;
+                return Ok(6)
+            }
+            Err(error) => {
+                error
+            }
+        }
+    }
+    return Ok(0)
+}
+
+fn test_failed_io(path: read TextView) -> Result<u32, std::io::Error> {
+    let input = std::bytes::filled(1, 42)
+    std::io::write_file(path, input)?
+    var file = std::io::open(path, std::io::Mode::Read())?
+    var output = std::bytes::filled(2, 0)
+    match std::io::read_exact(file, output) {
+        Ok(value) => {
+            value;
+            return Ok(7)
+        }
+        Err(error) => {
+            error
+        }
+    }
+    if output[0] != 42 {
+        return Ok(8)
+    }
+    match std::io::write_all(file, input) {
+        Ok(value) => {
+            value;
+            return Ok(9)
+        }
+        Err(error) => {
+            error
+        }
+    }
+    std::io::close(file)?
+    var empty = Vec<u8>.new()
+    match std::io::read_exact(file, empty) {
+        Ok(value) => {
+            value;
+            return Ok(10)
+        }
+        Err(error) => {
+            error
+        }
+    }
+    match std::io::write_all(file, empty) {
+        Ok(value) => {
+            value;
+            return Ok(11)
+        }
+        Err(error) => {
+            error
+        }
+    }
+    return Ok(0)
+}

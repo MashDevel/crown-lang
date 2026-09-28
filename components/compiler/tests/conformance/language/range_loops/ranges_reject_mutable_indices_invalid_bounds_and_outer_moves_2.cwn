@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    for index in 0..3 {
+    }
+    return index
+    return 0
+}

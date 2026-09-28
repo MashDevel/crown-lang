@@ -1,0 +1,4 @@
+fn main() -> u32 {
+    let value = ~1.5
+    return 0
+}

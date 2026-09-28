@@ -1,0 +1,94 @@
+fn cache_metadata(root: Text) -> Result<void, Text> {
+    let binary = testing_launcher::cache(root)?
+    testing_launcher::expect_status(root, 17)?
+    let record = std::text::joined(binary, ".crown-build")
+    let original = toolchain::read_text(record)?
+    let invalid = testing::list("{}|invalid json|{\"input\":false}|{\"seed\":[]}|{\"output\":\"short\"}")
+    for index in 0..invalid.length() {
+        toolchain::write_text(record, invalid[index])?
+        testing_launcher::expect_status(root, 23)?
+    }
+    toolchain::remove_file(record)?
+    testing_launcher::expect_status(root, 23)?
+    toolchain::write_text(record, original)?
+    return testing_launcher::expect_status(root, 17)
+}
+
+fn cache_lineage(root: Text) -> Result<void, Text> {
+    let binary = testing_launcher::cache(root)?
+    let input = toolchain::digest_text("inputs")?
+    toolchain::record_build(binary, input, Some(toolchain::digest_text("different seed")?))?
+    testing_launcher::expect_status(root, 23)?
+    let seed = toolchain::path_join(root, toolchain::seed_relative("compiler.s"))
+    toolchain::record_build(binary, input, Some(toolchain::digest(seed)?))?
+    return corrupt_cache(root, binary)
+}
+
+fn corrupt_cache(root: Text, binary: Text) -> Result<void, Text> {
+    toolchain::write_text(binary, "corrupted executable")?
+    testing_launcher::expect_status(root, 23)?
+    toolchain::remove_file(binary)?
+    return testing_launcher::expect_status(root, 23)
+}
+
+fn invalid_cache_fields(root: Text) -> Result<void, Text> {
+    testing_launcher::cache(root)?
+    let fields = testing::list("input|output|seed")
+    let invalid = testing::list("\"\"|\"short\"|17|false|[]|\"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\"")
+    for field in 0..fields.length() {
+        for value in 0..invalid.length() {
+            testing_launcher::changed_record(root, fields[field], invalid[value])?
+            testing_launcher::expect_status(root, 23)?
+        }
+    }
+    return Ok(())
+}
+
+fn seed_metadata(root: Text) -> Result<void, Text> {
+    let manifest = toolchain::path_join(root, toolchain::seed_relative("manifest.json"))
+    let invalid = testing::list("{}|invalid json|{\"assembly_sha256\":17}|{\"assembly_sha256\":[]}|{\"assembly_sha256\":\"short\"}|{\"assembly_sha256\":\"$(exit 17)\"}")
+    for index in 0..invalid.length() {
+        toolchain::write_text(manifest, invalid[index])?
+        testing_launcher::expect_status(root, 1)?
+    }
+    toolchain::remove_file(manifest)?
+    return testing_launcher::expect_status(root, 1)
+}
+
+fn seed_integrity(root: Text) -> Result<void, Text> {
+    let seed = testing_launcher::seed(root)?
+    toolchain::write_text(seed, "corrupted assembly")?
+    let result = testing_launcher::invoke(root)?
+    testing::expect(result.status == 1, "corrupted seed rejected before assembly")?
+    testing::expect(std::text::contains(result.stderr, "bootstrap assembly checksum mismatch or missing seed"), "seed integrity diagnostic")?
+    toolchain::remove_file(seed)?
+    return testing_launcher::expect_status(root, 1)
+}
+
+fn alternate_cache(root: Text) -> Result<void, Text> {
+    let binary = testing_launcher::cache(root)?
+    let directory = toolchain::path_join(root, "alternate cache")
+    let available = testing_launcher::invoke_at(root, directory)?
+    testing::expect(available.status == 17 && available.stderr.length() == 0, "alternate cache starts with the verified available compiler")?
+    toolchain::write_text(binary, "corrupted available compiler")?
+    let corrupt = testing_launcher::invoke_at(root, directory)?
+    return testing::expect(corrupt.status == 23 && corrupt.stderr.length() == 0, "untrusted available compiler falls back to the seed")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::path_join(toolchain::temporary_path(temporary), "bootstrap fixture with spaces")
+    toolchain::make_directory(root)?
+    testing_launcher::fixture(root)?
+    testing_launcher::expect_status(root, 23)?
+    alternate_cache(root)?
+    cache_metadata(root)?
+    invalid_cache_fields(root)?
+    cache_lineage(root)?
+    seed_metadata(root)?
+    return seed_integrity(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

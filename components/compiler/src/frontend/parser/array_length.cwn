@@ -1,0 +1,9 @@
+module frontend {
+    fn parser_array_length(parser: write Parser) -> ArrayLength {
+        if parser_at(parser, TokenInteger()) {
+            let token = parser_expect(parser, TokenInteger())
+            return LiteralLength(usize.from(token.integer))
+        }
+        return NamedLength(parser_identifier(parser))
+    }
+}

@@ -1,0 +1,102 @@
+module lowering {
+    fn type_rank(value_type: sema::Type) -> u32 {
+        match read value_type {
+            sema::BuiltinType(builtin, arguments) => {
+                arguments;
+                return builtin_type_rank(builtin)
+            }
+            sema::ArrayType(element, length) => {
+                element;
+                length;
+                return 15
+            }
+            sema::FunctionType(parameters, result) => {
+                parameters;
+                result;
+                return 16
+            }
+            sema::DynamicType(symbol) => {
+                symbol;
+                return 17
+            }
+            sema::NamedType(symbol, arguments) => {
+                symbol;
+                arguments;
+                return 18
+            }
+            sema::ParameterType(parameter) => {
+                parameter;
+                return 19
+            }
+            sema::IntegerLiteral(value) => {
+                value;
+                return 21
+            }
+            sema::FloatLiteral | sema::Infer | sema::Invalid => {
+                return unresolved_type_rank(value_type)
+            }
+            sema::ScopedFunction(inner) => {
+                inner;
+                return 24
+            }
+        }
+    }
+
+    fn unresolved_type_rank(value_type: sema::Type) -> u32 {
+        if sema::type_is_infer(value_type) {
+            return 20
+        }
+        if sema::type_is_float_literal(value_type) {
+            return 22
+        }
+        return 23
+    }
+
+    fn builtin_type_rank(builtin: sema::Builtin) -> u32 {
+        if sema::builtin_is_integer(builtin) {
+            return integer_type_rank(builtin)
+        }
+        match builtin {
+            sema::F32 => 10
+            sema::F64 => 11
+            sema::Bool => 12
+            sema::Char => 13
+            sema::Unit => 14
+            _ => 18
+        }
+    }
+
+    fn integer_type_rank(builtin: sema::Builtin) -> u32 {
+        let width = sema::builtin_width(builtin)
+        let width_rank: u32 = match width {
+            8 => 0
+            16 => 1
+            32 => 2
+            _ => 3
+        }
+        if builtin == sema::ISize() {
+            return 9
+        }
+        if builtin == sema::USize() {
+            return 8
+        }
+        if sema::builtin_is_signed(builtin) {
+            return width_rank
+        }
+        width_rank + 4
+    }
+
+    fn mode_rank(mode: frontend::Mode) -> u32 {
+        match read mode {
+            frontend::ModeRead => {
+                return 0
+            }
+            frontend::ModeWrite => {
+                return 1
+            }
+            frontend::ModeTake => {
+                return 2
+            }
+        }
+    }
+}
