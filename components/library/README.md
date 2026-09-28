@@ -1,10 +1,23 @@
-The shared library is ordinary Crown source under `module std`. It adds no compiler builtins, package manager, or dependencies. Projects select the files through their existing `Crown.toml` source list; the compiler includes the library this way.
+The standard library is ordinary Crown source under `module std`. Crown supplies it automatically from the selected toolchain for projects and standalone source files. Applications declare their own source files; they do not list the standard library's implementation directories.
 
-For a project beside `library`, include its sources with:
+For example:
 
 ```toml
-sources = ["src", "../library/src"]
+[package]
+name = "application"
+source = "src"
 ```
+
+Optional bundled libraries use named declarations:
+
+```toml
+[toolchain]
+libraries = ["platform", "integrations"]
+```
+
+`platform` provides the native API bindings. `integrations` provides the higher-level audio and Steam integrations and includes `platform` transitively. `toolchain` provides the host tooling used by development tools and project test runners. These names resolve inside the selected Crown distribution and do not download packages. Unknown names and duplicate manifest entries are errors. Standalone source commands can select the same libraries with repeated `--toolchain-library <name>` options.
+
+Crown resolves its distribution relative to the compiler executable, including invocation through PATH and symlinks. `CROWN_ROOT` can explicitly select a distribution; the bootstrap launcher sets it to its checkout. Library sources are selected for the requested target and included in build-cache fingerprints. Their type errors fail compilation. Lint and coverage measure the sources owned by the requested project; to validate library implementation, use its own source and test projects. Workspace duplication continues to scan every included source and test file together.
 
 | Module | Operations |
 | --- | --- |

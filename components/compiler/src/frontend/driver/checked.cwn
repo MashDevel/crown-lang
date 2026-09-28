@@ -8,7 +8,15 @@ module frontend {
     }
 
     fn parsed_sources(sources: Vec<Text>) -> Result<ParsedSource, Text> {
-        let bundle = source_bundle_from_paths(sources)
+        return parsed_bundle(source_bundle_from_paths(sources))
+    }
+
+    fn parsed_inputs(inputs: toolchain::SourceInputs) -> Result<ParsedSource, Text> {
+        return parsed_bundle(source_bundle_from_inputs(inputs))
+    }
+
+    fn parsed_bundle(input: take SourceBundle) -> Result<ParsedSource, Text> {
+        let bundle = move input
         if bundle.errors != 0 || bundle.files.length() == 0 {
             return Err("no readable source files")
         }
@@ -30,7 +38,7 @@ module frontend {
                 if source_capture_expand(bundle, program) == false {
                     return Err("source capture expansion failed")
                 }
-                let analysis = sema::analyze_with_limit(bundle.source.share(), program, max_instances)
+                let analysis = sema::analyze_owned(bundle.source.share(), program, max_instances, bundle.owned_length)
                 if analysis.errors != 0 {
                     print_semantic_errors(bundle, analysis)
                     return Err("type check failed")
@@ -42,5 +50,9 @@ module frontend {
 
     fn checked_sources(sources: Vec<Text>, max_instances: usize) -> Result<CheckedSource, Text> {
         return check_parsed(parsed_sources(sources)?, max_instances)
+    }
+
+    fn checked_inputs(inputs: toolchain::SourceInputs, max_instances: usize) -> Result<CheckedSource, Text> {
+        return check_parsed(parsed_inputs(inputs)?, max_instances)
     }
 }

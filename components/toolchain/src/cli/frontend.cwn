@@ -3,7 +3,7 @@ module toolchain {
         Parse, Check, Compile(Text)
     }
     struct FrontendRequest {
-        command: FrontendCommand, sources: Vec<Text>, max_instances: usize, coverage: Text, optimization: OptimizationOptions, target: Target
+        command: FrontendCommand, inputs: SourceInputs, max_instances: usize, coverage: Text, optimization: OptimizationOptions, target: Target
     }
 
     fn frontend_request(options: Options) -> Result<FrontendRequest, Text> {
@@ -23,7 +23,7 @@ module toolchain {
             }
         }
         return Ok(FrontendRequest {
-                command: move command, sources: frontend_paths(options.paths, start, options.target)?, max_instances: usize.from(options.max_instances), coverage: options.coverage.clone(), optimization: optimization_copy(options.optimization), target: options.target
+                command: move command, inputs: frontend_inputs(options.paths, start, options.target, options.libraries)?, max_instances: usize.from(options.max_instances), coverage: options.coverage.clone(), optimization: optimization_copy(options.optimization), target: options.target
             })
     }
 }

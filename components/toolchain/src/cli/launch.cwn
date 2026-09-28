@@ -25,7 +25,7 @@ module toolchain {
     fn launch(arguments: Vec<Text>) -> Result<void, Text> {
         let root = repository_root()?
         let request = BootstrapRequest {
-            root: root.clone(), compiler: absolute(arguments[0])?, directory: bootstrap_directory(root), force: false, verify: false
+            root: root.clone(), compiler: resolve_program(arguments[0])?, directory: bootstrap_directory(root), force: false, verify: false
         }
         let compiler = bootstrap(request)?
         var forwarded = Vec<Text>.new()

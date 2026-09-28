@@ -91,7 +91,7 @@ module toolchain {
         let assembly = path_join(directory, "compiler.s")
         let binary = path_join(directory, "compiler")
         let request = CompileRequest {
-            compiler: compiler.clone(), assembly: assembly.clone(), sources: std::text::clone_list(sources), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
+            compiler: compiler.clone(), assembly: assembly.clone(), sources: std::text::clone_list(sources), libraries: Vec<Text>.new(), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
         }
         compile(request)?
         bootstrap_link(assembly, binary)?

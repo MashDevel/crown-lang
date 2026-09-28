@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ "${1:-}" = --help ] && [ "$#" -eq 1 ]; then
+    printf '%s\n' 'Usage: sh bootstrap/install' 'Fetch and build Crown, then configure PATH for zsh or bash.' 'Keep this checkout in place. Open a new shell after installation.'
+    exit 0
+fi
+if [ "$#" -ne 0 ]; then
+    printf '%s\n' 'error: install takes no arguments; use --help for usage' >&2
+    exit 1
+fi
+case "${SHELL:-}" in
+    */zsh) profile="${ZDOTDIR:-$HOME}/.zshrc" ;;
+    */bash)
+        profile="$HOME/.bash_profile"
+        for candidate in .bash_profile .bash_login .profile; do
+            if [ -f "$HOME/$candidate" ]; then
+                profile="$HOME/$candidate"
+                break
+            fi
+        done
+        ;;
+    *) printf '%s\n' 'error: automatic PATH setup supports zsh and bash; set SHELL to your shell executable' >&2; exit 1 ;;
+esac
+quote() {
+    printf "'"
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+    printf "'"
+}
+case "$root" in
+    *:*|*'
+'*) printf '%s\n' 'error: the checkout path cannot contain a colon or newline' >&2; exit 1 ;;
+esac
+launcher=$(quote "$root/bootstrap")
+entry="case \":\$PATH:\" in *:$launcher:*) ;; *) export PATH=$launcher:\"\$PATH\" ;; esac"
+configure() {
+    mkdir -p "$(dirname -- "$1")"
+    if [ -f "$1" ] && grep -Fqx -- "$entry" "$1"; then
+        return
+    fi
+    printf '\n%s\n' "$entry" >> "$1"
+    printf 'Configured PATH in %s\n' "$1"
+}
+sh "$root/bootstrap/fetch"
+"$root/bootstrap/crown" --version
+configure "$profile"
+case "$SHELL" in
+    */bash) configure "$HOME/.bashrc" ;;
+esac
+printf '%s\n' 'Crown is installed. Open a new shell, or run:'
+printf '  export PATH=%s:"$PATH"\n' "$launcher"

@@ -8,6 +8,9 @@ module harness {
     struct SuiteExecution {
         request: Suite, builds: Text
     }
+    copy struct ScheduledCase {
+        index: usize, timeout: u64
+    }
 
     fn run_suite(input: take Suite) -> Result<u32, Text> {
         var request = move input
@@ -30,16 +33,24 @@ module harness {
         var results = report()
         var selected = Vec<bool>.with_capacity(cases.length())
         var completed = Vec<Option<Outcome>>.with_capacity(cases.length())
+        var pending = Vec<ScheduledCase>.new()
         var next: usize = 0
         for index in 0..cases.length() {
             let active = selected_case(cases[index], execution.request.filter)
             selected.push(active)
             completed.push(None())
             if active {
-                queue_case(execution, index, cases[index].name, workers, completed)
-                if workers.length() == execution.request.jobs {
-                    finish_next_worker(workers, completed)
-                }
+                pending.push(ScheduledCase {
+                        index: index, timeout: cases[index].timeout
+                    })
+            }
+        }
+        let order = schedule_cases(move pending)
+        for position in 0..order.length() {
+            let index = order[position]
+            queue_case(execution, index, cases[index].name, workers, completed)
+            if workers.length() == execution.request.jobs {
+                finish_next_worker(workers, completed)
             }
             report_ready(selected, completed, next, results)
         }
@@ -48,6 +59,30 @@ module harness {
             report_ready(selected, completed, next, results)
         }
         return finish_suite(results, execution.request.environment.output, unavailable)
+    }
+
+    fn schedule_cases(input: take Vec<ScheduledCase>) -> Vec<usize> {
+        var pending = move input
+        std::sequence::sort(pending, fn(left, right) {
+                if left.timeout > right.timeout {
+                    return -1
+                }
+                if left.timeout < right.timeout {
+                    return 1
+                }
+                if left.index < right.index {
+                    return -1
+                }
+                if left.index > right.index {
+                    return 1
+                }
+                return 0
+            })
+        var order = Vec<usize>.with_capacity(pending.length())
+        for position in 0..pending.length() {
+            order.push(pending[position].index)
+        }
+        return move order
     }
 
     fn selected_case(value: Case, filter: Text) -> bool {

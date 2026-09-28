@@ -18,24 +18,26 @@ module toolchain {
         let name = file_name(source)
         let stem = std::text::slice(name, 0, name.length() - 4)
         return Ok(Project {
-                manifest: source.clone(), name: stem.clone(), sources: require_sources(request)?, links: Vec<Text>.new(), output: path_join(path_join(parent_path(source), "target/debug"), stem)
+                manifest: source.clone(), name: stem.clone(), sources: require_sources(request)?, libraries: Vec<Text>.new(), links: Vec<Text>.new(), output: path_join(path_join(parent_path(source), "target/debug"), stem)
             })
     }
 
-    fn frontend_paths(paths: Vec<Text>, start: usize, target: Target) -> Result<Vec<Text>, Text> {
+    fn frontend_inputs(paths: Vec<Text>, start: usize, target: Target, selected: Vec<Text>) -> Result<SourceInputs, Text> {
+        var names = std::text::clone_list(selected)
         if start == paths.length() {
-            let project = load_project(current_directory()?, target)?;
-            return Ok(std::text::clone_list(project.sources))
+            let project = load_project(current_directory()?, target)?
+            append_library_names(names, project.libraries)
+            return source_inputs(project.sources, names, target)
         }
         var result = Vec<Text>.new()
         for index in start..paths.length() {
-            append_frontend_path(result, paths[index], target)?
+            append_frontend_path(result, names, paths[index], target)?
         }
         std::text::sort_list(result)
-        return Ok(move result)
+        return source_inputs(result, names, target)
     }
 
-    fn append_frontend_path(output: write Vec<Text>, path: Text, target: Target) -> Result<void, Text> {
+    fn append_frontend_path(output: write Vec<Text>, names: write Vec<Text>, path: Text, target: Target) -> Result<void, Text> {
         if is_directory(path) == false && std::text::ends(path, ".cwn") {
             return append_source_file(output, absolute(path)?, target)
         }
@@ -43,6 +45,7 @@ module toolchain {
         if std::text::equal(file_name(path), "Crown.toml") || exists(path_join(path, "Crown.toml")) {
             let project = load_project(path, target)?
             sources = std::text::clone_list(project.sources)
+            append_library_names(names, project.libraries)
         } else {
             sources = require_sources(single_source(path, target))?
         }
@@ -62,7 +65,8 @@ module toolchain {
     }
 
     fn project_build_request(compiler: Text, options: Options) -> Result<BuildRequest, Text> {
-        let project = selected_project(options.paths, options.target)?
+        var project = selected_project(options.paths, options.target)?
+        append_library_names(project.libraries, options.libraries)
         if std::text::ends(project.manifest, ".cwn") && options.output.length() == 0 && std::text::equal(options.command, "build") {
             return Err("a single source file requires -o")
         }

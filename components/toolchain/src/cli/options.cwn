@@ -5,6 +5,7 @@ module toolchain {
         output: Text
         objects: Vec<Text>
         links: Vec<Text>
+        libraries: Vec<Text>
         max_instances: u64
         force: bool
         help: bool
@@ -21,7 +22,7 @@ module toolchain {
 
     fn options(command: take Text) -> Options {
         return Options {
-            command: move command, paths: Vec<Text>.new(), output: "", objects: Vec<Text>.new(), links: Vec<Text>.new(), max_instances: 128, force: false, help: false, arguments: Vec<Text>.new(), seed: 20260905, jobs: 3, runs: 3, filter: "", coverage: "", optimization: optimization_options(), check_only: false, target: host_target()
+            command: move command, paths: Vec<Text>.new(), output: "", objects: Vec<Text>.new(), links: Vec<Text>.new(), libraries: Vec<Text>.new(), max_instances: 128, force: false, help: false, arguments: Vec<Text>.new(), seed: 20260905, jobs: 3, runs: 3, filter: "", coverage: "", optimization: optimization_options(), check_only: false, target: host_target()
         }
     }
 
@@ -125,6 +126,10 @@ module toolchain {
             "--target" => {
                 output.target = parse_target(value)?
             }
+            "--toolchain-library" => {
+                library_directory(value)?
+                output.libraries.push(value.clone())
+            }
             "--coverage" => {
                 output.coverage = absolute(value)?
             }
@@ -206,7 +211,7 @@ module toolchain {
         match read key {
             "--coverage" => "|compile|build|run|test|"
             "--profile-generate" | "--profile-use" | "--optimization-report" => "|compile|build|run|"
-            "--target" | "--max-instances" => "|parse|check|compile|build|run|lint|"
+            "--target" | "--max-instances" | "--toolchain-library" => "|parse|check|compile|build|run|lint|"
             "-o" | "--output" => "|build|run|bootstrap|test|release|benchmark|lint|coverage|duplication|"
             "--jobs" => "|test|release|benchmark|"
             "--seed" => "|release|"
@@ -251,6 +256,6 @@ module toolchain {
     }
 
     fn help() -> Text {
-        return std::text::joined(version(), "\nusage: crown parse|check <sources-or-project> [--max-instances N]\n       crown compile <output.s> <sources-or-project> [--max-instances N]\n       crown build|run [project-or-source] [-o output] [-- program arguments]\n       crown fmt [sources-or-project] [--check]\n       crown lint [sources-or-project] [--output metrics.json]\n       crown duplication [paths] [--output clones.json]\n       crown coverage <directories...> [--output report.json]\n       crown bootstrap [--output directory] [--force]\n       crown refresh-seed\n       crown test [project] [--filter name] [--jobs 1..4] [--output directory] [--coverage directory]\n       crown release [--seed N] [--jobs 1..4] [--output directory]\n       crown benchmark [--runs N] [--jobs 1..4] [--output directory]\ncompile/build/run target: --target x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock\ncompile/build/run optimization: --profile-generate directory, --profile-use directory, --optimization-report path\ncompile/build/run instrumentation: --coverage directory\nbuild/run options: --max-instances N, --object path, --framework name, --library name\n")
+        return std::text::joined(version(), "\nusage: crown parse|check <sources-or-project> [--max-instances N]\n       crown compile <output.s> <sources-or-project> [--max-instances N]\n       crown build|run [project-or-source] [-o output] [-- program arguments]\n       crown fmt [sources-or-project] [--check]\n       crown lint [sources-or-project] [--output metrics.json]\n       crown duplication [paths] [--output clones.json]\n       crown coverage <directories...> [--output report.json]\n       crown bootstrap [--output directory] [--force]\n       crown refresh-seed\n       crown test [project] [--filter name] [--jobs 1..4] [--output directory] [--coverage directory]\n       crown release [--seed N] [--jobs 1..4] [--output directory]\n       crown benchmark [--runs N] [--jobs 1..4] [--output directory]\nsource libraries: --toolchain-library platform|integrations|toolchain (repeatable)\ncompile/build/run target: --target x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock\ncompile/build/run optimization: --profile-generate directory, --profile-use directory, --optimization-report path\ncompile/build/run instrumentation: --coverage directory\nbuild/run options: --max-instances N, --object path, --framework name, --library name\n")
     }
 }

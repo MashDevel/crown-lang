@@ -2,6 +2,7 @@ module frontend {
     struct SourceBundle {
         source: Shared<Vec<u8>>
         length: usize
+        owned_length: usize
         files: Vec<SourceBundleFile>
         errors: u32
     }
@@ -19,19 +20,27 @@ module frontend {
     }
 
     fn source_bundle_from_paths(paths: Vec<Text>) -> SourceBundle {
+        return source_bundle_from_inputs(toolchain::SourceInputs {
+                sources: std::text::clone_list(paths), libraries: Vec<Text>.new()
+            })
+    }
+
+    fn source_bundle_from_inputs(sources: toolchain::SourceInputs) -> SourceBundle {
         var input = SourceBundleInput {
             bytes: Vec<u8>.new(), files: Vec<SourceBundleFile>.new(), errors: 0
         }
-        for index in 0..paths.length() {
-            loan read paths[index] as path {
-                source_bundle_load(input, path)
-            }
+        for index in 0..sources.sources.length() {
+            source_bundle_load(input, sources.sources[index])
+        }
+        let owned_length = input.bytes.length()
+        for index in 0..sources.libraries.length() {
+            source_bundle_load(input, sources.libraries[index])
         }
         let length = input.bytes.length()
         let bytes = replace(input.bytes, Vec<u8>.new())
         let files = replace(input.files, Vec<SourceBundleFile>.new())
         return SourceBundle {
-            source: Shared.new(move bytes), length: length, files: move files, errors: input.errors
+            source: Shared.new(move bytes), length: length, owned_length: owned_length, files: move files, errors: input.errors
         }
     }
 

@@ -43,7 +43,8 @@ module harness {
             }
         }
         var sources = Vec<Text>.new()
-        toolchain::append_frontend_path(sources, resolved, target)?
+        var libraries = Vec<Text>.new()
+        toolchain::append_frontend_path(sources, libraries, resolved, target)?
         let paths = toolchain::source_paths(toolchain::SourcePaths {
                 entries: move sources, excluded: Vec<Text>.new(), target: target
             })?

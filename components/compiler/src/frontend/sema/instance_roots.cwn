@@ -1,0 +1,33 @@
+module sema {
+    fn record_function_reference(checker: write Checker, function: usize) -> void {
+        checker.function_references.push(FunctionReference {
+                caller: checker.current_function, function: function
+            })
+    }
+
+    fn required_instance_functions(checker: Checker) -> Vec<bool> {
+        var output = Vec<bool>.with_capacity(checker.symbols.functions.length())
+        for index in 0..checker.symbols.functions.length() {
+            output.push(checker.symbols.functions[index].name.span.start < checker.owned_length)
+        }
+        var changed = true
+        while changed {
+            changed = false
+            for index in 0..checker.function_references.length() {
+                let reference = checker.function_references[index]
+                if output[reference.function] == false && reference_required(output, reference.caller) {
+                    output[reference.function] = true
+                    changed = true
+                }
+            }
+        }
+        return move output
+    }
+
+    fn reference_required(functions: Vec<bool>, caller: Option<usize>) -> bool {
+        match caller {
+            Some(index) => functions[index]
+            None => true
+        }
+    }
+}

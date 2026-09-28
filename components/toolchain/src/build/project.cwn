@@ -24,7 +24,7 @@ module toolchain {
 
     fn compile_project(request: BuildRequest, binary: Text) -> Result<void, Text> {
         let build = CompileRequest {
-            compiler: request.compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(request.project.sources), max_instances: request.max_instances, coverage: request.coverage.clone(), optimization: optimization_copy(request.optimization), target: request.target
+            compiler: request.compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(request.project.sources), libraries: std::text::clone_list(request.project.libraries), max_instances: request.max_instances, coverage: request.coverage.clone(), optimization: optimization_copy(request.optimization), target: request.target
         }
         let links = project_links(request)
         compile_executable(build, request.objects, links)?
@@ -61,6 +61,12 @@ module toolchain {
         inputs.push(request.compiler.clone())
         for index in 0..request.project.sources.length() {
             inputs.push(request.project.sources[index].clone())
+        }
+        let source_libraries = library_sources(request.project.libraries, request.target)?
+        for index in 0..source_libraries.length() {
+            if std::text::list_contains(inputs, source_libraries[index]) == false {
+                inputs.push(source_libraries[index].clone())
+            }
         }
         for index in 0..request.objects.length() {
             inputs.push(request.objects[index].clone())

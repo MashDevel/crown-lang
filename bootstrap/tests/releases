@@ -11,6 +11,8 @@ release_package() {
 set -eu
 test "$1" = build
 test "$CC" = /unavailable
+test -z "${CROWN_ROOT:-}"
+CROWN_ROOT=${0%/*}
 printf 'local metadata\n' > "$CROWN_ROOT/.DS_Store"
 printf 'untracked staging output\n' > "$CROWN_ROOT/untracked-stage"
 printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "${CROWN_TEST_SMOKE_OUTPUT:-42}" > "$4"

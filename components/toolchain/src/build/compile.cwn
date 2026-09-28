@@ -1,6 +1,6 @@
 module toolchain {
     struct CompileRequest {
-        compiler: Text, assembly: Text, sources: Vec<Text>, max_instances: u64, coverage: Text, optimization: OptimizationOptions, target: Target
+        compiler: Text, assembly: Text, sources: Vec<Text>, libraries: Vec<Text>, max_instances: u64, coverage: Text, optimization: OptimizationOptions, target: Target
     }
 
     fn compile(request: CompileRequest) -> Result<void, Text> {
@@ -28,6 +28,10 @@ module toolchain {
             arguments.push(request.coverage.clone())
         }
         optimization_arguments(arguments, request.optimization)
+        for index in 0..request.libraries.length() {
+            arguments.push("--toolchain-library")
+            arguments.push(request.libraries[index].clone())
+        }
         arguments.push("--max-instances")
         arguments.push(std::text::decimal(request.max_instances))
         for index in 0..request.sources.length() {

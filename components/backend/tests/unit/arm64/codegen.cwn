@@ -88,7 +88,66 @@ fn arm_codegen_rejects() -> Result<void, u32> {
 
 fn run() -> Result<void, u32> {
     arm_codegen_validates()?
-    return arm_codegen_rejects()
+    arm_codegen_rejects()?
+    return arm_vector_opcodes()
+}
+
+fn arm_opcode(actual: take Result<u32, Text>, expected: u32, code: u32) -> Result<void, u32> {
+    return match move actual {
+        Ok(value) => safety_require(value == expected, code)
+        Err(error) => {
+            toolchain::failure(error);
+            Err(code)
+        }
+    }
+}
+
+fn arm_opcode_error(actual: take Result<u32, Text>, code: u32) -> Result<void, u32> {
+    return match move actual {
+        Err(error) => {
+            error;
+            Ok(())
+        }
+        Ok(value) => {
+            value;
+            Err(code)
+        }
+    }
+}
+
+fn arm_vector_opcodes() -> Result<void, u32> {
+    arm_vector_lanes()?
+    arm_vector_integer_opcodes()?
+    return arm_vector_float_opcodes()
+}
+
+fn arm_vector_lanes() -> Result<void, u32> {
+    arm_opcode(arm64::vector_lane_size(1), 0, 10)?
+    arm_opcode(arm64::vector_lane_size(2), 1, 11)?
+    arm_opcode(arm64::vector_lane_size(4), 2, 12)?
+    arm_opcode(arm64::vector_lane_size(8), 3, 13)?
+    arm_opcode_error(arm64::vector_lane_size(0), 14)?
+    return arm_opcode_error(arm64::vector_lane_size(16), 15)
+}
+
+fn arm_vector_integer_opcodes() -> Result<void, u32> {
+    arm_opcode(arm64::vector_integer_opcode(ir::BinaryAdd(), 1), 1310753792, 16)?
+    arm_opcode(arm64::vector_integer_opcode(ir::BinarySubtract(), 2), 1851819008, 17)?
+    arm_opcode(arm64::vector_integer_opcode(ir::BinaryMultiply(), 4), 1319148544, 18)?
+    arm_opcode(arm64::vector_integer_opcode(ir::BinaryAnd(), 8), 1310727168, 19)?
+    arm_opcode(arm64::vector_integer_opcode(ir::BinaryOr(), 1), 1319115776, 20)?
+    arm_opcode(arm64::vector_integer_opcode(ir::BinaryXor(), 1), 1847598080, 21)?
+    arm_opcode_error(arm64::vector_integer_opcode(ir::BinaryFloatAdd(), 4), 22)?
+    return arm_opcode_error(arm64::vector_integer_opcode(ir::BinaryAdd(), 16), 23)
+}
+
+fn arm_vector_float_opcodes() -> Result<void, u32> {
+    arm_opcode(arm64::vector_float_opcode(ir::BinaryFloatAdd(), false), 1310774272, 24)?
+    arm_opcode(arm64::vector_float_opcode(ir::BinaryFloatSubtract(), false), 1319162880, 25)?
+    arm_opcode(arm64::vector_float_opcode(ir::BinaryFloatMultiply(), false), 1847647232, 26)?
+    arm_opcode(arm64::vector_float_opcode(ir::BinaryFloatDivide(), false), 1847655424, 27)?
+    arm_opcode(arm64::vector_float_opcode(ir::BinaryFloatAdd(), true), 1314968576, 28)?
+    return arm_opcode_error(arm64::vector_float_opcode(ir::BinaryAdd(), false), 29)
 }
 
 fn main() -> u32 {

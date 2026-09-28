@@ -3,7 +3,7 @@ module coverage {
         if directory.length() == 0 {
             return Ok(None())
         }
-        let nodes = inspect::program(program)
+        let nodes = inspect::owned_program(bundle, program)
         let layout = layout(bundle.length, nodes)
         let document = metadata(bundle, layout)?
         let path = toolchain::path_join(directory, "map.json")

@@ -1,0 +1,125 @@
+fn installed(root: Text) -> Result<Text, Text> {
+    let compiler = toolchain::path_join(root, "toolchain/crown")
+    toolchain::make_directory(toolchain::parent_path(compiler))?
+    toolchain::copy_file(testing::compiler()?, compiler)?
+    toolchain::executable(compiler)?
+    return Ok(move compiler)
+}
+
+fn invoke(root: Text, compiler: Text, arguments: Text) -> Result<toolchain::ProcessResult, Text> {
+    var command = testing::list("env|CROWN_ROOT=|CC=/unavailable")
+    command.push(compiler.clone())
+    let supplied = testing::list(arguments)
+    for index in 0..supplied.length() {
+        command.push(supplied[index].clone())
+    }
+    return testing::capture_compiler(move command, root)
+}
+
+fn build(root: Text, compiler: Text, expected: Text) -> Result<void, Text> {
+    let project = toolchain::path_join(root, "application")
+    let result = invoke(root, compiler, std::text::joined("run|", project))?
+    testing::expect(result.status == 0, std::text::joined("relocated toolchain compiles: ", result.stderr))?
+    return testing::expect(std::text::equal(result.stdout, expected), "toolchain library controls generated program")
+}
+
+fn cache(root: Text, compiler: Text) -> Result<void, Text> {
+    let library = testing::write_file(root, "toolchain/components/library/src/value.cwn", "module std { fn value() -> u32 { 42 } }")?
+    testing::write_file(root, "application/Crown.toml", "[package]\nname='app'\nsource='main.cwn'")?
+    testing::write_file(root, "application/main.cwn", "fn main() -> u32 { print(std::value()); return 0 }")?
+    build(root, compiler, "42\n")?
+    let record = toolchain::path_join(root, "application/target/debug/app.crown-build")
+    let previous = toolchain::read_text(record)?
+    build(root, compiler, "42\n")?
+    testing::expect(std::text::equal(previous, toolchain::read_text(record)?), "unchanged library reuses build record")?
+    toolchain::write_text(library, "module std { fn value() -> u32 { 43 } }")?
+    build(root, compiler, "43\n")?
+    return testing::expect(std::text::equal(previous, toolchain::read_text(record)?) == false, "library edits invalidate cached builds")
+}
+
+fn missing(root: Text, compiler: Text) -> Result<void, Text> {
+    toolchain::remove_tree(toolchain::path_join(root, "toolchain/components"))
+    let source = toolchain::path_join(root, "application/main.cwn")
+    let result = invoke(root, compiler, std::text::joined("check|", source))?
+    testing::expect(result.status != 0, "missing installed library fails")?
+    return testing::expect(std::text::contains(result.stderr, "cannot locate Crown libraries"), "missing installation has an actionable diagnostic")
+}
+
+fn coverage(root: Text, compiler: Text, name: Text, expected: i32) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, name)
+    let application = toolchain::path_join(root, "application")
+    let built = invoke(root, compiler, std::text::joined("build|", std::text::joined(application, std::text::joined("|--coverage|", directory))))?
+    testing::expect(built.status == 0, std::text::joined("instrumented application builds: ", built.stderr))?
+    let binary = toolchain::path_join(application, "target/debug/app")
+    let ran = toolchain::capture(toolchain::command(testing::list(binary)), root)?
+    testing::expect(ran.status == 0, "instrumented application runs")?
+    let measured = invoke(root, compiler, std::text::joined("coverage|", directory))?
+    return testing::expect(measured.status == expected, "coverage enforces the owned package threshold")
+}
+
+fn quality(root: Text, compiler: Text) -> Result<void, Text> {
+    let source = toolchain::path_join(root, "application/main.cwn")
+    toolchain::write_text(source, "fn main() -> u32 { print(std::value()); return 0 }")?
+    coverage(root, compiler, "complete", 0)?
+    toolchain::write_text(source, "fn main() -> u32 { print(std::value()); return 0 }\nfn untested() -> u32 { return 7 }")?
+    coverage(root, compiler, "incomplete", 1)?
+    let report = toolchain::path_join(root, "metrics.json")
+    let result = invoke(root, compiler, std::text::joined("lint|", std::text::joined(source, std::text::joined("|--output|", report))))?
+    testing::expect(result.status == 0, "lint resolves automatic standard library")?
+    let document = toolchain::read_text(report)?
+    testing::expect(std::text::contains(document, "components/library") == false, "lint measures the selected source package")?
+    let library = toolchain::path_join(root, "toolchain/components/library/src/value.cwn")
+    toolchain::write_text(library, "module std { fn value() -> u32 { return missing() } }")?
+    let invalid = invoke(root, compiler, std::text::joined("check|", source))?
+    return testing::expect(invalid.status != 0, "dependency type errors still fail compilation")
+}
+
+fn budgets(root: Text, compiler: Text) -> Result<void, Text> {
+    let library = toolchain::path_join(root, "toolchain/components/library/src/value.cwn")
+    let declarations = "module std { fn identity<T>(value: take T) -> T { move value } fn unused() -> u32 { identity(true); identity(u64.from(0)); return 0 } fn value() -> u32 { return identity(u32.from(43)) } }"
+    toolchain::write_text(library, declarations)?
+    let source = toolchain::path_join(root, "application/main.cwn")
+    toolchain::write_text(source, "fn main() -> u32 { let callback = std::value; print(callback()); return 0 }")?
+    let application = toolchain::path_join(root, "application")
+    let arguments = std::text::joined("run|", std::text::joined(application, "|--max-instances|1"))
+    let passed = invoke(root, compiler, arguments)?
+    testing::expect(passed.status == 0, std::text::joined("unused library instances do not consume the application budget: ", passed.stderr))?
+    testing::expect(std::text::equal(passed.stdout, "43\n"), "function-valued library reference includes required instances")?
+    toolchain::write_text(source, "fn main() -> u32 { std::identity(true); std::identity(u32.from(1)); return 0 }")?
+    let failed = invoke(root, compiler, arguments)?
+    testing::expect(failed.status != 0, "used library instances respect the application budget")?
+    return testing::expect(std::text::contains(failed.stderr, "instance limit"), "library instantiation limit diagnostic")
+}
+
+fn symlink(root: Text, compiler: Text) -> Result<void, Text> {
+    let link = toolchain::path_join(root, "crown-link")
+    let arguments = testing::list(std::text::joined("ln|-s|", std::text::joined(compiler, std::text::joined("|", link))))
+    toolchain::require_command(move arguments)?
+    build(root, link, "43\n")?
+    return Ok(())
+}
+
+fn path_installation(root: Text, compiler: Text) -> Result<void, Text> {
+    let previous = toolchain::environment("PATH")
+    let paths = std::text::joined(toolchain::parent_path(compiler), std::text::joined(":", previous))
+    toolchain::set_environment("PATH", paths)?
+    let result = build(root, "crown", "43\n")
+    toolchain::set_environment("PATH", previous)?
+    return move result
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let compiler = installed(root)?
+    cache(root, compiler)?
+    symlink(root, compiler)?
+    path_installation(root, compiler)?
+    budgets(root, compiler)?
+    quality(root, compiler)?
+    return missing(root, compiler)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

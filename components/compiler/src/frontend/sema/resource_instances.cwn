@@ -19,10 +19,16 @@ module sema {
     }
     fn initial_resource_types(checker: write Checker, state: write InstanceState) -> void {
         for index in 0..checker.expressions.length() {
+            if reference_required(checker.required_functions, checker.expressions[index].function) == false {
+                continue
+            }
             let value = type_copy(checker.expressions[index].value_type)
             include_resource_type(checker, state, value)
         }
         for index in 0..checker.symbols.functions.length() {
+            if checker.required_functions[index] == false {
+                continue
+            }
             let instance = FunctionInstance {
                 function: index, arguments: Vec<Type>.new()
             }

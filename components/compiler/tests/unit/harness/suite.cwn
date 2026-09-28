@@ -80,8 +80,31 @@ fn failed_and_expired(root: Text) -> Result<void, Text> {
 fn run() -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
+    scheduling_order()?
     completion_order(root)?
     return failed_and_expired(root)
+}
+
+fn scheduling_order() -> Result<void, Text> {
+    var pending = Vec<harness::ScheduledCase>.new()
+    pending.push(harness::ScheduledCase {
+            index: 0, timeout: 300000
+        })
+    pending.push(harness::ScheduledCase {
+            index: 1, timeout: 600000
+        })
+    pending.push(harness::ScheduledCase {
+            index: 2, timeout: 900000
+        })
+    pending.push(harness::ScheduledCase {
+            index: 3, timeout: 300000
+        })
+    let order = harness::schedule_cases(move pending)
+    testing::expect(order.length() == 4, "all scheduled cases remain selected")?
+    testing::expect(order[0] == 2 && order[1] == 1, "long cases start first")?
+    testing::expect(order[2] == 0 && order[3] == 3, "equal timeouts retain registry order")?
+    let empty = harness::schedule_cases(Vec<harness::ScheduledCase>.new())
+    return testing::expect(empty.length() == 0, "empty schedule")
 }
 
 fn main() -> u32 {

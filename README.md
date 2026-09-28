@@ -59,7 +59,17 @@ Ordinary builds encode machine code and link Mach-O or ELF executables entirely 
 
 ## Start
 
-On any implemented host above, run from this checkout:
+On any implemented host above, install from a checkout you intend to keep:
+
+```sh
+sh bootstrap/install
+```
+
+The installer fetches the verified seed, builds Crown, and adds this checkout's `bootstrap` directory to your shell's PATH. It supports zsh (`${ZDOTDIR:-$HOME}/.zshrc`) and bash (`~/.bashrc` and the first existing login profile, or `~/.bash_profile`). Existing settings are preserved, and rerunning the installer does not duplicate its PATH entry. Open a new shell afterward, or run the `export PATH=...` command printed by the installer, then run `crown --version`. The installer cannot change the environment of your current shell. No manual `CROWN_ROOT` setting is needed.
+
+Keep the checkout in place: this installs access to its launcher and bundled sources, rather than copying a standalone executable. To uninstall, remove the PATH entry from the shell files reported by the installer. If you move the checkout, remove its old entry and rerun the installer from its new location.
+
+For other shells, or to leave your shell configuration unchanged, use the manual setup:
 
 ```sh
 sh bootstrap/fetch
@@ -122,7 +132,20 @@ name = "hello_crown"
 source = "src"
 ```
 
-Use exactly one of `source = "src"` or `sources = ["src", "../library/src"]`. Entries are relative files or directories; directories expand recursively in stable filename order. Duplicate source files are loaded once. `exclude = ["src/platform"]` removes files or directories from the expansion. Missing sources and empty source sets are errors.
+Use exactly one of `source = "src"` or `sources = ["src", "shared"]`. These are the project's own relative files or directories; directories expand recursively in stable filename order. Duplicate source files are loaded once. `exclude = ["src/platform"]` removes files or directories from the expansion. Missing sources and empty source sets are errors.
+
+The standard library is available automatically, including in single-file programs. Crown resolves it from its toolchain installation, so a project can live anywhere. The bootstrap launcher selects its checkout; a packaged compiler finds the distribution around its executable, including through PATH or a symlink. Set `CROWN_ROOT` to explicitly select a distribution. Keep the compiler and its bundled library sources together.
+
+Optional toolchain libraries use stable names:
+
+```toml
+[toolchain]
+libraries = ["platform", "integrations"]
+```
+
+`platform` supplies native API bindings. `integrations` supplies audio and Steam integrations and includes `platform`. `toolchain` supplies host tooling for development tools and project test runners. These are bundled source libraries, not downloaded packages. Unknown names and duplicate entries are errors. For standalone files, repeat `--toolchain-library <name>` on `parse`, `check`, `compile`, `build`, `run`, or `lint`.
+
+Build caches include resolved library files and their contents. Library sources are always type-checked, while lint and coverage measure the project's own sources. Library implementation is measured when selected as source in its own project. Workspace duplication scans all included source and test files, including libraries, as one corpus.
 
 Package names contain ASCII letters, digits, `-`, or `_`. Platform-specific link settings use:
 
@@ -207,6 +230,8 @@ Push a version tag such as `v0.1.0`, or dispatch the Release workflow with an ex
 Each release contains `crown-<host>.tar.gz`, compressed bootstrap assembly, a provenance manifest, a lock file, and `SHA256SUMS`. Compiler archives include the source tree and native seed; extract one, enter its directory, and use `./crown`. Use `./bootstrap/crown` when developing the compiler so source changes trigger rebuilding. Linux archives target glibc systems compatible with the Ubuntu 24.04 build host. macOS archives are built and tested on macOS 15.
 
 To advance the seed pin, download all four hosts' assets from a successful release, verify `SHA256SUMS`, copy each `crown-bootstrap-<host>.lock.json` to `bootstrap/locks/<host>.json`, and put the release tag in `bootstrap/seed-release`. Commit those small files; assembly and compiler binaries stay in release assets. The initial `bootstrap-20260928` release supplies the verified compiler and assembly seeds for this source snapshot. Its compiler archives contain the executable and license; use them with a checkout of the source. Subsequent compiler releases include the full source tree as described above.
+
+For installer QA, run `sh bootstrap/tests/run` to verify startup-file preservation, repeated installation, shell selection, quoted checkout paths, and failure handling in temporary home directories. Run `sh bootstrap/install` in a fresh checkout, open a new terminal, and confirm `crown --version` and `crown run /absolute/path/to/hello.cwn` work outside the checkout without setting `CROWN_ROOT`.
 
 For bootstrap and release QA, run `sh bootstrap/tests/run`, then fetch a seed into a fresh checkout and run `./bootstrap/crown bootstrap --force` and `./bootstrap/crown test`. Repeat the tests to exercise cache reuse, including after a test failure; every selected test must still execute. Corrupt a downloaded seed and confirm `bootstrap/fetch` rejects it. Verify that a failing matrix job prevents publication and that downloaded archives build and run `bootstrap/tests/fixtures/hello.cwn` without a system compiler. Archive entries must have numeric owner and group zero and contain only tracked source plus the compiler, revision, and host seed.
 

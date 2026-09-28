@@ -16,7 +16,7 @@ fn fixture(root: Text) -> Result<Fixture, Text> {
     let assembly = toolchain::path_join(root, "stub.s")
     let binary = toolchain::path_join(root, "stub")
     toolchain::compile(toolchain::CompileRequest {
-            compiler: testing::compiler()?, assembly: assembly.clone(), sources: move sources, max_instances: 128, coverage: "", optimization: toolchain::optimization_options(), target: toolchain::host_target()
+            compiler: testing::compiler()?, assembly: assembly.clone(), sources: move sources, libraries: Vec<Text>.new(), max_instances: 128, coverage: "", optimization: toolchain::optimization_options(), target: toolchain::host_target()
         })?
     toolchain::bootstrap_link(assembly, binary)?
     let counter = toolchain::path_join(root, "counter")

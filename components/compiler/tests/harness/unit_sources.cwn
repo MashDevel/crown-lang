@@ -61,8 +61,15 @@ module harness {
     }
 
     fn append_unit_roots(paths: write Vec<Text>, value: Case, root: Text) -> Result<void, Text> {
+        var libraries = Vec<Text>.new()
         for index in 0..value.roots.length() {
-            toolchain::append_frontend_path(paths, toolchain::path_join(root, value.roots[index]), toolchain::host_target())?
+            toolchain::append_frontend_path(paths, libraries, toolchain::path_join(root, value.roots[index]), toolchain::host_target())?
+        }
+        let additional = toolchain::named_library_sources(libraries, toolchain::host_target())?
+        for index in 0..additional.length() {
+            if std::text::list_contains(paths, additional[index]) == false {
+                paths.push(additional[index].clone())
+            }
         }
         std::text::sort_list(paths)
         return Ok(())

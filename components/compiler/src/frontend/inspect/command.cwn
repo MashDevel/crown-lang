@@ -1,6 +1,6 @@
 module inspect {
-    fn command(paths: Vec<Text>, output: Text, max_instances: usize) -> Result<u32, Text> {
-        let bundle = frontend::source_bundle_from_paths(paths)
+    fn command(inputs: toolchain::SourceInputs, output: Text, max_instances: usize) -> Result<u32, Text> {
+        let bundle = frontend::source_bundle_from_inputs(inputs)
         if bundle.errors != 0 {
             return Ok(1)
         }
@@ -11,12 +11,12 @@ module inspect {
                 return Ok(1)
             }
         }
-        let analysis = sema::analyze_with_limit(bundle.source.share(), parsed, max_instances)
+        let analysis = sema::analyze_owned(bundle.source.share(), parsed, max_instances, bundle.owned_length)
         if analysis.errors != 0 {
             frontend::print_semantic_errors(bundle, analysis);
             return Ok(1)
         }
-        let nodes = program(parsed)
+        let nodes = owned_program(bundle, parsed)
         let values = metrics(bundle, nodes)
         let errors = report(bundle, values, output)?
         if errors != 0 {
@@ -55,6 +55,9 @@ module inspect {
     fn report_files(bundle: frontend::SourceBundle, rules: write Vec<toolchain::QualityRules>, document: write Text) -> Result<usize, Text> {
         var errors: usize = 0
         for index in 0..bundle.files.length() {
+            if bundle.files[index].start >= bundle.owned_length {
+                break
+            }
             if index != 0 {
                 document.push(',')
             }

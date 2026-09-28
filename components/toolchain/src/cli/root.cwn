@@ -1,0 +1,43 @@
+module toolchain {
+    fn configure_toolchain(program: Text) -> Result<void, Text> {
+        let configured = environment("CROWN_ROOT")
+        if configured.length() != 0 {
+            return Ok(())
+        }
+        var directory = parent_path(resolve_program(program)?)
+        while true {
+            if is_directory(path_join(directory, "components/library/src")) {
+                return set_environment("CROWN_ROOT", directory)
+            }
+            let parent = parent_path(directory)
+            if std::text::equal(parent, directory) {
+                return Ok(())
+            }
+            directory = parent.clone()
+        }
+    }
+
+    fn resolve_program(program: Text) -> Result<Text, Text> {
+        if std::text::contains(program, "/") {
+            return absolute(program)
+        }
+        let directories = std::text::split(environment("PATH"), 58)
+        for index in 0..directories.length() {
+            let candidate = path_join(directories[index], program)
+            if executable_file(candidate)? {
+                return absolute(candidate)
+            }
+        }
+        return absolute(program)
+    }
+
+    fn executable_file(path: Text) -> Result<bool, Text> {
+        if is_directory(path) {
+            return Ok(false)
+        }
+        let encoded = cstring(path)?
+        unsafe {
+            return Ok(raw_access(std::cstr::as_raw(encoded), 1) == 0)
+        }
+    }
+}

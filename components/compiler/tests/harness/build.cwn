@@ -2,7 +2,7 @@ module harness {
     fn test_build(environment: Environment, sources: Vec<Text>, budget: u64) -> toolchain::BuildRequest {
         let binary = toolchain::path_join(environment.output, "program")
         let project = toolchain::Project {
-            manifest: "", name: "test", sources: std::text::clone_list(sources), links: Vec<Text>.new(), output: binary.clone()
+            manifest: "", name: "test", sources: std::text::clone_list(sources), libraries: Vec<Text>.new(), links: Vec<Text>.new(), output: binary.clone()
         }
         return toolchain::BuildRequest {
             compiler: environment.compiler.clone(), project: move project, output: move binary, objects: Vec<Text>.new(), links: Vec<Text>.new(), max_instances: budget, coverage: environment.coverage.clone(), optimization: toolchain::optimization_options(), target: toolchain::host_target()

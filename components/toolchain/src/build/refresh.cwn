@@ -37,7 +37,7 @@ module toolchain {
         let first = build_stage(compiler, sources, directory)?
         let expected = digest(first.assembly)?
         let second = CompileRequest {
-            compiler: first.binary.clone(), assembly: first.assembly.clone(), sources: std::text::clone_list(sources), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
+            compiler: first.binary.clone(), assembly: first.assembly.clone(), sources: std::text::clone_list(sources), libraries: Vec<Text>.new(), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
         }
         compile(second)?
         if std::text::equal(expected, digest(first.assembly)?) == false {

@@ -34,7 +34,15 @@ module harness {
         for index in 0..value.roots.length() {
             entries.push(toolchain::path_join(root, value.roots[index]))
         }
-        let sources = toolchain::frontend_paths(entries, 0, target)?
+        var sources = Vec<Text>.new()
+        var libraries = Vec<Text>.new()
+        for index in 0..entries.length() {
+            toolchain::append_frontend_path(sources, libraries, entries[index], target)?
+        }
+        let additional = toolchain::named_library_sources(libraries, target)?
+        for index in 0..additional.length() {
+            sources.push(additional[index].clone())
+        }
         return toolchain::require_sources(toolchain::SourcePaths {
                 entries: move sources, excluded: Vec<Text>.new(), target: target
             })

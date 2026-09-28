@@ -37,6 +37,17 @@ module inspect {
         return replace(walk.nodes, Vec<Node>.new())
     }
 
+    fn owned_program(bundle: frontend::SourceBundle, program: frontend::Program) -> Vec<Node> {
+        let nodes = inspect::program(program)
+        var output = Vec<Node>.new()
+        for index in 0..nodes.length() {
+            if nodes[index].span.start < bundle.owned_length {
+                output.push(nodes[index])
+            }
+        }
+        return move output
+    }
+
     fn function(walk: write Walk, function: frontend::Function) -> void {
         callable(walk, function.body, function.span, function.parameters.length())
     }

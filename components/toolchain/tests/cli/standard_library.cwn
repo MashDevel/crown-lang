@@ -1,0 +1,35 @@
+fn standard_program(root: Text) -> Result<Text, Text> {
+    return testing::write_file(root, "main.cwn", "fn main() -> u32 { let value = std::text::decimal(42); if std::text::equal(value, \"42\") == false { return 1 }; print(42); return 0 }\n")
+}
+
+fn standalone(root: Text) -> Result<void, Text> {
+    let source = standard_program(root)?
+    let binary = toolchain::path_join(root, "hello")
+    let arguments = std::text::joined("run|", std::text::joined(source, std::text::joined("|-o|", binary)))
+    let result = testing::invoke(testing::list(arguments), root)?
+    testing::expect(result.status == 0, std::text::joined("standard library resolves for standalone source: ", result.stderr))?
+    testing::expect(std::text::equal(result.stdout, "42\n"), "standalone standard-library output")?
+    testing::clean_call(root, std::text::joined("check|", source))?
+    testing::clean_call(root, std::text::joined("lint|", std::text::joined(source, std::text::joined("|--output|", toolchain::path_join(root, "metrics.json")))))?
+    return testing::clean_call(root, std::text::joined("compile|", std::text::joined(toolchain::path_join(root, "hello.s"), std::text::joined("|", source))))
+}
+
+fn project(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "project")
+    standard_program(directory)?
+    testing::write_file(directory, "Crown.toml", "[package]\nname='hello'\nsource='main.cwn'\n")?
+    let result = testing::invoke(testing::list(std::text::joined("run|", directory)), root)?
+    testing::expect(result.status == 0, std::text::joined("project standard library resolves: ", result.stderr))?
+    return testing::expect(std::text::equal(result.stdout, "42\n"), "project standard-library output")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    standalone(root)?
+    return project(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

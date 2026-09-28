@@ -86,7 +86,7 @@ fn interpreter_cache(root: Text) -> Result<void, Text> {
     toolchain::executable(compiler)?
     let inputs = testing::write_file(root, "link-inputs.json", "[]")?
     let project = toolchain::Project {
-        manifest: source.clone(), name: "test", sources: testing::list(source), links: Vec<Text>.new(), output: "program"
+        manifest: source.clone(), name: "test", sources: testing::list(source), libraries: Vec<Text>.new(), links: Vec<Text>.new(), output: "program"
     }
     let request = toolchain::BuildRequest {
         compiler: compiler.clone(), project: move project, output: "program", objects: Vec<Text>.new(), links: Vec<Text>.new(),

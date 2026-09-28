@@ -1,4 +1,8 @@
 fn main() -> u32 {
+    let value = std::text::decimal(42)
+    if std::text::equal(value, "42") == false {
+        return 1
+    }
     print(42)
     return 0
 }

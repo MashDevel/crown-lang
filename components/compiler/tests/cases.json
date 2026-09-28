@@ -1,5 +1,39 @@
 [
   {
+    "name": "toolchain_cli_library_installation",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/cli/library_installation.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/toolchain/tests/support",
+      "components/library/src"
+    ]
+  },
+  {
+    "name": "toolchain_project_libraries",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/project/libraries.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/toolchain/tests/support",
+      "components/library/src"
+    ],
+    "unit": true
+  },
+  {
+    "name": "toolchain_cli_standard_library",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/cli/standard_library.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/toolchain/tests/support",
+      "components/library/src"
+    ]
+  },
+  {
     "name": "rejects_moving_the_assignment_storage_root",
     "mode": "reject",
     "diagnostics": [
@@ -8348,6 +8382,18 @@
     "roots": [
       "components/backend",
       "components/compiler/tests/support/ir/safety.cwn",
+      "components/compiler/tests/support/backend/runtime.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "arm64_vector_codegen",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/arm64/vector_codegen.cwn",
+    "roots": [
+      "components/backend",
+      "components/compiler/tests/support/ir",
       "components/compiler/tests/support/backend/runtime.cwn"
     ],
     "unit": true

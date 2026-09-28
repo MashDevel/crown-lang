@@ -1,0 +1,81 @@
+module toolchain {
+    struct SourceInputs {
+        sources: Vec<Text>, libraries: Vec<Text>
+    }
+
+    fn library_names(document: Json) -> Result<Vec<Text>, Text> {
+        let names = json_optional_strings(document, document.root, "toolchain.libraries")?
+        for index in 0..names.length() {
+            library_directory(names[index])?
+            for previous in 0..index {
+                if std::text::equal(names[previous], names[index]) {
+                    return Err(std::text::joined("duplicate toolchain library: ", names[index]))
+                }
+            }
+        }
+        return Ok(move names)
+    }
+
+    fn library_directory(name: Text) -> Result<Text, Text> {
+        match read name {
+            "platform" => Ok("components/library/platform/src")
+            "integrations" => Ok("components/library/integrations/src")
+            "toolchain" => Ok("components/toolchain/src")
+            _ => Err(std::text::joined("unknown toolchain library: ", name))
+        }
+    }
+
+    fn library_sources(names: Vec<Text>, target: Target) -> Result<Vec<Text>, Text> {
+        let root = library_root()?
+        var output = require_sources(single_source(path_join(root, "components/library/src"), target))?
+        let additional = named_library_sources(names, target)?
+        for index in 0..additional.length() {
+            output.push(additional[index].clone())
+        }
+        std::text::sort_list(output)
+        return Ok(move output)
+    }
+
+    fn library_root() -> Result<Text, Text> {
+        let root = environment("CROWN_ROOT")
+        if root.length() == 0 {
+            return Err("cannot locate Crown libraries; keep the compiler with its toolchain or set CROWN_ROOT")
+        }
+        return absolute(root)
+    }
+
+    fn named_library_sources(names: Vec<Text>, target: Target) -> Result<Vec<Text>, Text> {
+        let root = library_root()?
+        var entries = Vec<Text>.new()
+        for index in 0..names.length() {
+            entries.push(path_join(root, library_directory(names[index])?))
+            if std::text::equal(names[index], "integrations") {
+                entries.push(path_join(root, library_directory("platform")?))
+            }
+        }
+        return source_paths(SourcePaths {
+                entries: move entries, excluded: Vec<Text>.new(), target: target
+            })
+    }
+
+    fn source_inputs(sources: Vec<Text>, names: Vec<Text>, target: Target) -> Result<SourceInputs, Text> {
+        let candidates = library_sources(names, target)?
+        var libraries = Vec<Text>.new()
+        for index in 0..candidates.length() {
+            if std::text::list_contains(sources, candidates[index]) == false {
+                libraries.push(candidates[index].clone())
+            }
+        }
+        return Ok(SourceInputs {
+                sources: std::text::clone_list(sources), libraries: move libraries
+            })
+    }
+
+    fn append_library_names(output: write Vec<Text>, names: Vec<Text>) -> void {
+        for index in 0..names.length() {
+            if std::text::list_contains(output, names[index]) == false {
+                output.push(names[index].clone())
+            }
+        }
+    }
+}

@@ -1,0 +1,115 @@
+fn fixture(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "components/library/src/core.cwn", "module std {}")?
+    testing::write_file(root, "components/library/platform/src/abi.macos.cwn", "module native {}")?
+    testing::write_file(root, "components/library/platform/src/abi.linux.cwn", "module native {}")?
+    testing::write_file(root, "components/library/integrations/src/service.cwn", "module integration {}")?
+    testing::write_file(root, "components/toolchain/src/tools.cwn", "module toolchain {}")?
+    testing::write_file(root, "main.cwn", "fn main() -> u32 { 0 }")?
+    return Ok(())
+}
+
+fn declarations() -> Result<void, Text> {
+    let valid = toolchain::toml("[toolchain]\nlibraries=['platform','integrations','toolchain']")?
+    let names = toolchain::library_names(valid.document)?
+    testing::expect(testing::equal_lists(names, testing::list("platform|integrations|toolchain")), "named library declarations")?
+    let empty = toolchain::toml("[toolchain]\nlibraries=[]")?
+    let absent = toolchain::toml("")?
+    testing::expect(testing::equal_lists(toolchain::library_names(empty.document)?, toolchain::library_names(absent.document)?), "optional libraries default empty")?
+    let invalid = testing::list("['platform','platform']|['missing']|['../src']|['std']|[1]|'platform'")
+    for index in 0..invalid.length() {
+        let document = toolchain::toml(std::text::joined("[toolchain]\nlibraries=", invalid[index]))?
+        testing::error(toolchain::library_names(document.document))?
+    }
+    return Ok(())
+}
+
+fn resolution(root: Text) -> Result<void, Text> {
+    let target = toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Macos())
+    let standard = toolchain::library_sources(Vec<Text>.new(), target)?
+    testing::expect(standard.length() == 1, "standard library is implicit")?
+    let libraries = toolchain::library_sources(testing::list("integrations|platform|toolchain"), target)?
+    testing::expect(libraries.length() == 4, "transitive platform dependency is deduplicated")?
+    testing::expect(std::text::list_contains(libraries, toolchain::path_join(root, "components/library/platform/src/abi.macos.cwn")), "library target selection")?
+    let source = toolchain::path_join(root, "main.cwn")
+    let inputs = toolchain::source_inputs(testing::list(source), Vec<Text>.new(), target)?
+    testing::expect(inputs.sources.length() == 1 && inputs.libraries.length() == 1, "owned sources stay separate")?
+    let explicit = toolchain::source_inputs(standard, Vec<Text>.new(), target)?
+    return testing::expect(explicit.sources.length() == 1 && explicit.libraries.length() == 0, "explicit library source retains ownership without duplication")
+}
+
+fn project(root: Text) -> Result<void, Text> {
+    testing::write_file(root, "Crown.toml", "[package]\nname='demo'\nsource='main.cwn'\n[toolchain]\nlibraries=['integrations']")?
+    let project = toolchain::load_project(root, toolchain::host_target())?
+    testing::expect(project.sources.length() == 1, "manifest sources describe the package")?
+    return testing::expect(testing::equal_lists(project.libraries, testing::list("integrations")), "manifest retains named libraries")
+}
+
+fn discovery(root: Text) -> Result<void, Text> {
+    let program = testing::write_file(root, "bin/crown", "compiler")?
+    toolchain::set_environment("CROWN_ROOT", "")?
+    toolchain::configure_toolchain(program)?
+    testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), root), "discover libraries relative to executable")?
+    toolchain::set_environment("CROWN_ROOT", "/explicit/toolchain")?
+    toolchain::configure_toolchain(program)?
+    testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), "/explicit/toolchain"), "explicit toolchain root wins")?
+    testing::error(toolchain::library_sources(Vec<Text>.new(), toolchain::host_target()))?
+    toolchain::set_environment("CROWN_ROOT", "")?
+    testing::error(toolchain::library_sources(Vec<Text>.new(), toolchain::host_target()))?
+    toolchain::configure_toolchain("/nonexistent-crown-installation/crown")?
+    testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), ""), "missing installation does not select the working directory")?
+    return path_search(root, program)
+}
+
+fn path_search(root: Text, program: Text) -> Result<void, Text> {
+    testing::write_file(root, "blocked/crown", "not executable")?
+    toolchain::executable(program)?
+    let previous = toolchain::environment("PATH")
+    let paths = std::text::joined(toolchain::path_join(root, "blocked"), std::text::joined(":", toolchain::path_join(root, "bin")))
+    toolchain::set_environment("PATH", paths)?
+    let result: Result<void, Text> = toolchain::configure_toolchain("crown")
+    toolchain::set_environment("PATH", previous)?
+    match move result {
+        Ok(value) => {
+            value
+        }
+        Err(error) => {
+            return Err(move error)
+        }
+    }
+    testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), root), "PATH discovery skips nonexecutable names")?
+    let fallback = toolchain::resolve_program("missing-crown-test-program")?
+    testing::expect(std::text::equal(fallback, toolchain::absolute("missing-crown-test-program")?), "unresolved program has an absolute fallback")?
+    return Ok(())
+}
+
+fn options() -> Result<void, Text> {
+    let parsed = toolchain::parse_options(testing::list("crown|check|source.cwn|--toolchain-library|integrations|--toolchain-library|platform"))?
+    testing::expect(testing::equal_lists(parsed.libraries, testing::list("integrations|platform")), "CLI selects named toolchain libraries")?
+    let invalid = testing::list("crown|check|source.cwn|--toolchain-library|missing")
+    testing::error(toolchain::parse_options(invalid))?
+    testing::error(toolchain::parse_options(testing::list("crown|fmt|--toolchain-library|platform")))?
+    return testing::error(toolchain::parse_options(testing::list("crown|build|--toolchain-library")))
+}
+
+fn configured(root: Text) -> Result<void, Text> {
+    toolchain::set_environment("CROWN_ROOT", root)?
+    declarations()?
+    options()?
+    resolution(root)?
+    project(root)?
+    return discovery(root)
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    fixture(root)?
+    let previous = toolchain::environment("CROWN_ROOT")
+    let result = configured(root)
+    toolchain::set_environment("CROWN_ROOT", previous)?
+    return move result
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

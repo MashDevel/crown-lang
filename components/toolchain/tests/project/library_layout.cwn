@@ -49,23 +49,23 @@ fn consumers() -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let crown = toolchain::temporary_path(temporary)
     let root = toolchain::path_join(crown, "consumer")
-    let library = toolchain::path_join(crown, "lang/components/library")
-    let manifest = "[package]\nname = \"consumer\"\nsources = [\"src\", \"../lang/components/library/src\", \"../lang/components/library/platform/src\", \"../lang/components/library/integrations/src\"]\n"
+    let manifest = "[package]\nname = \"consumer\"\nsource = \"src\"\n[toolchain]\nlibraries = [\"platform\", \"integrations\"]\n"
     let path = testing::write_file(root, "Crown.toml", manifest)?
-    consumer(root, library)?
+    consumer(root)?
     toolchain::write_text(path, "[package]\nname = \"incomplete\"\nsource = \"src\"\n")?
-    testing::error(consumer(root, library))?
+    testing::error(consumer(root))?
     toolchain::write_text(path, "invalid manifest")?
-    return testing::error(consumer(root, library))
+    return testing::error(consumer(root))
 }
 
-fn consumer(root: Text, library: Text) -> Result<void, Text> {
+fn consumer(root: Text) -> Result<void, Text> {
     let document = toolchain::toml(toolchain::read_text(toolchain::path_join(root, "Crown.toml"))?)?
-    let entries = toolchain::relative_paths(root, toolchain::manifest_sources(document.document)?)?
-    let layers = testing::list("src|platform/src|integrations/src")
+    let entries = toolchain::manifest_sources(document.document)?
+    testing::expect(testing::equal_lists(entries, testing::list("src")), "consumer selects only its own sources")?
+    let libraries = toolchain::library_names(document.document)?
+    let layers = testing::list("platform|integrations")
     for layer in 0..layers.length() {
-        let expected = toolchain::absolute(toolchain::path_join(library, layers[layer]))?
-        testing::expect(std::text::list_contains(entries, expected), "consumer must select shared layers")?
+        testing::expect(std::text::list_contains(libraries, layers[layer]), "consumer selects named toolchain layers")?
     }
     return Ok(())
 }

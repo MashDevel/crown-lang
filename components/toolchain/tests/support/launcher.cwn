@@ -103,7 +103,7 @@ module testing_launcher {
     fn cached_project(root: Text) -> Result<Text, Text> {
         testing::write_file(root, "components/compiler/src/main.cwn", "fn main() -> u32 { 17 }")?
         toolchain::make_directory(toolchain::path_join(root, "components/backend/src"))?
-        toolchain::make_directory(toolchain::path_join(root, "components/library/src"))?
+        testing::write_file(root, "components/library/src/empty.cwn", "module std {}")?
         toolchain::make_directory(toolchain::path_join(root, "components/toolchain/src"))?
         testing_launcher::seed(root)?
         return testing_launcher::cache(root)

@@ -158,6 +158,7 @@ module sema {
             checker_error(checker, "unknown name or invalid access to a variable");
             return None()
         }
+        record_function_reference(checker, index)
         return Some(copy_info(FunctionType(move parameters, Box.new(move result))))
     }
     struct VariablePathRequest {

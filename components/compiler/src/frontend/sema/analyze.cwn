@@ -4,9 +4,14 @@ module sema {
     }
 
     fn analyze_with_limit(source: take Shared<Vec<u8>>, program: frontend::Program, max_instances: usize) -> Analysis {
+        return analyze_owned(move source, program, max_instances, 18446744073709551615)
+    }
+
+    fn analyze_owned(source: take Shared<Vec<u8>>, program: frontend::Program, max_instances: usize, owned_length: usize) -> Analysis {
         let symbols = collect_symbols(move source, program)
         var checker = checker_new(move symbols)
         checker.max_instances = max_instances
+        checker.owned_length = owned_length
         checker_check_program(checker, program)
         let instances = collect_instances(checker)
         let errors = checker.symbols.errors + checker.errors

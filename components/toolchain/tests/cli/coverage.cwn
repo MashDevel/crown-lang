@@ -100,6 +100,7 @@ fn run() -> Result<void, Text> {
 fn standalone_runtime(root: Text) -> Result<void, Text> {
     let previous = toolchain::environment("CROWN_ROOT")
     let directory = toolchain::path_join(root, "standalone")
+    testing::write_file(root, "components/library/src/empty.cwn", "module std {}")?
     toolchain::set_environment("CROWN_ROOT", root)?
     let source = "fn main() -> u32 { var bytes = Vec<u8>.new(); for index in 0..131087 { index; bytes.push(0) }; var number: u32 = 0; thread_scope { let child = spawn(move bytes)[write number] { number = 7 }; if child.started() == false { return 3 }; child.join() }; let owner = NativeRoot<u32>.new(number); let token = owner.token(); let lease = match token.acquire() { Ok(value) => move value, Err(error) => { return error } }; loan read lease as value { return if value == 7 { 0 } else { 2 } } }"
     let result = build(root, source, directory)

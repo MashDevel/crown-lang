@@ -2,7 +2,8 @@ module frontend {
     fn build_executable(options: toolchain::Options) -> Result<u32, Text> {
         toolchain::validate_native_build(options)?
         let request = toolchain::project_build_request("", options)?
-        let checked = checked_sources(request.project.sources, usize.from(request.max_instances))?
+        let inputs = toolchain::source_inputs(request.project.sources, request.project.libraries, options.target)?
+        let checked = checked_inputs(inputs, usize.from(request.max_instances))?
         let object = instrumented_object(move checked, options.coverage, options.optimization, options.target)?
         let bytes = bedrock::executable(object, toolchain::bedrock_runtime())?
         toolchain::make_directory(toolchain::parent_path(request.output))?
@@ -11,8 +12,8 @@ module frontend {
     }
 
     fn native_executable(options: toolchain::Options) -> Result<u32, Text> {
-        let sources = toolchain::frontend_paths(options.paths, 0, options.target)?
-        let checked = checked_sources(sources, usize.from(options.max_instances))?
+        let inputs = toolchain::frontend_inputs(options.paths, 0, options.target, options.libraries)?
+        let checked = checked_inputs(inputs, usize.from(options.max_instances))?
         var object = instrumented_object(move checked, options.coverage, options.optimization, options.target)?
         if options.target.platform == toolchain::Platform::Linux() {
             return linux_executable(move object, options)

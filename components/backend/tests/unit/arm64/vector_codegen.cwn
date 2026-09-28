@@ -1,0 +1,42 @@
+fn vector_codegen_case(scalar: ir::Type, broadcast: bool) -> Result<void, u32> {
+    var function = vector_loop("vector_loop", scalar, broadcast)?
+    safety_require(optimize::vectorize(function) == 1, 1)?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    let output = match arm64::codegen(move program, safety_arm_variant()) {
+        Ok(value) => move value
+        Err(error) => {
+            toolchain::failure(error);
+            return Err(2)
+        }
+    }
+    match object::validate(output) {
+        Ok(done) => {
+            done;
+            return Ok(())
+        }
+        Err(error) => {
+            error;
+            return Err(3)
+        }
+    }
+}
+
+fn vector_codegen_cases() -> Result<void, u32> {
+    var types = Vec<ir::Type>.new()
+    types.push(ir::TypeInteger(ir::IntegerWidth8()))
+    types.push(ir::TypeInteger(ir::IntegerWidth16()))
+    types.push(ir::TypeInteger(ir::IntegerWidth32()))
+    types.push(ir::TypeInteger(ir::IntegerWidth64()))
+    types.push(ir::TypeFloat(ir::FloatWidth32()))
+    types.push(ir::TypeFloat(ir::FloatWidth64()))
+    for index in 0..types.length() {
+        vector_codegen_case(types[index], false)?
+        vector_codegen_case(types[index], true)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return safety_status(vector_codegen_cases())
+}

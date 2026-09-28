@@ -6,6 +6,7 @@ module sema {
     }
 
     fn collect_instances(checker: write Checker) -> Vec<FunctionInstance> {
+        checker.required_functions = required_instance_functions(checker)
         var state = InstanceState {
             output: Vec<FunctionInstance>.new()
             pending: Vec<FunctionInstance>.new()
@@ -43,7 +44,7 @@ module sema {
         while index < checker.generic_uses.length() {
             var candidate: Option<FunctionInstance> = None()
             loan read checker.generic_uses[index] as usage {
-                if checker.symbols.functions[usage.caller].type_parameters.length() == 0 {
+                if checker.required_functions[usage.caller] && checker.symbols.functions[usage.caller].type_parameters.length() == 0 {
                     let instance = FunctionInstance {
                         function: usage.callee, arguments: types_copy(usage.arguments)
                     }

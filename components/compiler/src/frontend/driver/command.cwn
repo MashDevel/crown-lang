@@ -13,7 +13,7 @@ module frontend {
     }
 
     fn execute_frontend(options: toolchain::FrontendRequest) -> Result<void, Text> {
-        let source = parsed_sources(options.sources)?
+        let source = parsed_inputs(options.inputs)?
         match read options.command {
             toolchain::FrontendCommand::Parse => {
                 return Ok(())

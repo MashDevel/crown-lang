@@ -109,6 +109,13 @@ module sema {
     }
 
     fn checker_record_generic_call(checker: write Checker, state: CallState) -> void {
+        match state.signature.function {
+            Some(function) => {
+                record_function_reference(checker, function)
+            }
+            None => {
+            }
+        }
         if state.signature.type_parameter_count == 0 {
             return
         }

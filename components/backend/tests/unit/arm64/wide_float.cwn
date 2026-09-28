@@ -79,7 +79,68 @@ fn conversion_program() -> Result<ir::Program, u32> {
 }
 
 fn run() -> Result<void, u32> {
-    return arm_execute(conversion_program()?)
+    arm_execute(conversion_program()?)?
+    return arm_execute(float_to_wide_program()?)
+}
+
+fn float_to_wide_case(function: write ir::Function, block: usize, narrow: bool, signed: bool) -> Result<usize, u32> {
+    let input_type = if narrow {
+        ir::TypeFloat(ir::FloatWidth32())
+    } else {
+        ir::TypeFloat(ir::FloatWidth64())
+    }
+    let constant = if narrow {
+        ir::ConstantFloat32(if signed {
+                3257401344
+            } else {
+                1109917696
+            })
+    } else {
+        ir::ConstantFloat64(if signed {
+                13854479828675198976
+            } else {
+                4631107791820423168
+            })
+    }
+    let input = ir::function_constant(function, input_type, move constant)
+    let operator = if signed {
+        ir::CastFloatToSignedInteger()
+    } else {
+        ir::CastFloatToUnsignedInteger()
+    }
+    let target = ir::TypeInteger(ir::IntegerWidth128())
+    let result = safety_append(function, block, ir::InstructionCast(operator, input, target))?
+    let expected = ir::function_constant(function, target, ir::ConstantWideInteger(ir::WideInteger {
+                low: if signed {
+                    18446744073709551574
+                } else {
+                    42
+                }, high: if signed {
+                    18446744073709551615
+                } else {
+                    0
+                }
+            }))
+    return safety_append(function, block, ir::InstructionCompare(ir::CompareEqual(), result, expected))
+}
+
+fn float_to_wide_program() -> Result<ir::Program, u32> {
+    var function = ir::function_new("float_to_wide", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal())
+    let block = safety_block(function)?
+    var valid = safety_integer(function, ir::IntegerWidth1(), 1)
+    for narrow in 0..2 {
+        for signed in 0..2 {
+            let equal = float_to_wide_case(function, block, narrow == 1, signed == 1)?
+            valid = safety_append(function, block, ir::InstructionBinary(ir::BinaryAnd(), valid, equal))?
+        }
+    }
+    let zero = safety_integer(function, ir::IntegerWidth32(), 0)
+    let one = safety_integer(function, ir::IntegerWidth32(), 1)
+    let result = safety_append(function, block, ir::InstructionSelect(valid, zero, one))?
+    safety_terminate(function, block, ir::TerminatorReturn(Some(result)))?
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    return Ok(move program)
 }
 
 fn main() -> u32 {

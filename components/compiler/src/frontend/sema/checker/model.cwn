@@ -108,6 +108,10 @@ module sema {
         arguments: Vec<Type>
     }
 
+    copy struct FunctionReference {
+        caller: Option<usize>, function: usize
+    }
+
     struct Analysis {
         checker: Checker
         instances: Vec<FunctionInstance>
@@ -126,6 +130,9 @@ module sema {
         resource_instances: Vec<Type>
         generic_calls: Vec<GenericCall>
         generic_uses: Vec<GenericUse>
+        function_references: Vec<FunctionReference>
+        required_functions: Vec<bool>
+        owned_length: usize
         spawns: Vec<SpawnRecord>
         closures: Vec<ClosureRecord>
         max_instances: usize
@@ -154,6 +161,9 @@ module sema {
             resource_instances: Vec<Type>.new()
             generic_calls: Vec<GenericCall>.new()
             generic_uses: Vec<GenericUse>.new()
+            function_references: Vec<FunctionReference>.new()
+            required_functions: Vec<bool>.new()
+            owned_length: 18446744073709551615
             spawns: Vec<SpawnRecord>.new()
             closures: Vec<ClosureRecord>.new()
             max_instances: 128

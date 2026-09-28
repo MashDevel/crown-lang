@@ -19,7 +19,7 @@ cp "bootstrap/$host/compiler.s" "bootstrap/$host/manifest.json" "$package/bootst
 cp target/bootstrap/crown "$package/crown"
 chmod +x "$package/crown"
 sh bootstrap/package-seed "$host" "$stage"
-CROWN_ROOT="$package" CC=/unavailable "$package/crown" build "$package/bootstrap/tests/fixtures/hello.cwn" -o "$stage/hello"
+env -u CROWN_ROOT CC=/unavailable "$package/crown" build "$package/bootstrap/tests/fixtures/hello.cwn" -o "$stage/hello"
 test "$("$stage/hello")" = 42
 git rev-parse HEAD > "$package/REVISION"
 git ls-tree -rz --name-only HEAD > "$stage/files"
