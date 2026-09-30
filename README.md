@@ -31,7 +31,7 @@ A small language reduces what an agent needs to understand and the choices it ne
 
 Minimality, sovereignty, memory safety, and portability support the central goal: making it easier to produce reliable software and keep improving it. Crown pursues these goals through explicit ownership, scoped loans and callbacks, value types, resources, interfaces, and generics. These are design goals under active implementation; passing tests and supporting multiple platforms do not establish a complete memory-safety guarantee.
 
-The compiler is written in Crown and supports x86-64 and ARM64 on macOS and Linux. Assembly seeds are distributed as GitHub release assets; the repository contains their pinned SHA-256 checksums. The launcher, build tools, test runner, and release campaigns are also written in Crown. No Rust or Python toolchain is required.
+The compiler is written in Crown and supports x86-64 and ARM64 on Windows, macOS, and Linux. Assembly seeds are distributed as GitHub release assets; the repository contains their pinned SHA-256 checksums. The launcher, build tools, test runner, and release campaigns are also written in Crown. No Rust or Python toolchain is required.
 
 Maintained implementation and test code outside `bootstrap/` is Crown, with six explicit C ABI fixtures as the exception. The three C files in `components/compiler/tests/platform/linux`, two in `components/compiler/tests/fixtures/arm64_macos`, and one in `components/backend/tests/fixtures/windows` independently check C calling conventions, external-object linking, and system-header layouts. They are validation inputs, not compiler or library implementation. The `toolchain_source_language` test checks this boundary; manifests, documentation, reference data, and generated build output are not implementation code.
 
@@ -41,23 +41,47 @@ Functions without a result use `-> void` and can exit with a bare `return`. The 
 
 ## Requirements
 
-- An x86-64 or ARM64 macOS host, or an x86-64 or ARM64 Linux host using glibc
-- For bootstrap only: Xcode command-line tools on macOS, or a C compiler and system assembler/linker on Linux
-- The host's standard shell, core utilities, and OS libraries
-- For downloading a seed: `curl` and `gzip`, or an offline copy of the release assets
+- An x86-64 or ARM64 Windows, macOS, or glibc Linux host
+- The host's OS libraries and command-line tools: PowerShell and `tar.exe` on Windows, or a shell and core utilities on macOS/Linux
+- For assembly seed recovery and fixed-point bootstrap only: Clang, LLD, and Windows SDK libraries on Windows; Xcode command-line tools on macOS; or a C compiler and system assembler/linker on Linux
+- For downloading a seed: `curl` and `gzip` on macOS/Linux, or `curl.exe` and PowerShell on Windows; offline release assets are also supported
 
 | OS | CPU | Compiler host and bootstrap | Executable target |
 | --- | --- | --- | --- |
+| Windows | x86-64 | Implemented | PE |
+| Windows | ARM64 / AArch64 | Implemented | PE |
 | macOS | x86-64 | Implemented | Mach-O |
+| macOS | ARM64 / Apple Silicon | Implemented | Mach-O |
 | Linux (glibc) | x86-64 | Implemented | ELF |
 | Linux (glibc) | ARM64 / AArch64 | Implemented | ELF |
-| macOS | ARM64 / Apple Silicon | Implemented | Mach-O |
 
-All four native host combinations are built and tested in [CI](https://github.com/MashDevel/crown-lang/actions/workflows/test.yml).
+All six native host combinations are built and tested in [CI](https://github.com/MashDevel/crown-lang/actions/workflows/test.yml).
 
-Ordinary builds encode machine code and link Mach-O or ELF executables entirely in Crown. The system compiler assembles and links the seed during bootstrap. Crown has no third-party package or LLVM dependency; generated programs use the host's OS libraries, including libSystem on macOS and glibc on Linux. Native-root ownership, supplied-stack threads, coverage instrumentation, and the allocation auditor are implemented in Crown.
+Ordinary builds encode machine code and link PE, Mach-O, or ELF executables entirely in Crown. Packaged compilers build and run Crown programs without a system C compiler or linker. Assembly seed recovery and fixed-point bootstrap use the system compiler and linker. Crown has no third-party package dependencies; generated programs use the host's OS libraries, including Windows system DLLs, libSystem on macOS, and glibc on Linux. Native-root ownership, supplied-stack threads, coverage instrumentation, and the allocation auditor are implemented in Crown.
 
 ## Start
+
+### Windows
+
+Download the archive matching your machine from the [verified bootstrap release](https://github.com/MashDevel/crown-lang/releases/tag/bootstrap-20260930):
+
+- [Windows x86-64](https://github.com/MashDevel/crown-lang/releases/download/bootstrap-20260930/crown-x86_64-windows.tar.gz)
+- [Windows ARM64](https://github.com/MashDevel/crown-lang/releases/download/bootstrap-20260930/crown-arm64-windows.tar.gz)
+
+In PowerShell, extract the archive and enter its directory. For x86-64:
+
+```powershell
+tar.exe -xzf crown-x86_64-windows.tar.gz
+Set-Location crown-x86_64-windows
+.\crown.exe --version
+.\crown.exe run bootstrap/tests/fixtures/hello.cwn -o hello.exe
+```
+
+For ARM64, use `arm64` in place of `x86_64` in the archive and directory names. The example prints `42`. Keep `crown.exe` with its bundled source directories. Clang and the Windows SDK are not required for ordinary builds with this packaged compiler. Run `.\crown.exe test` to run the compiler test registry; its bootstrap tests require the development tools listed above.
+
+The shell installer below configures macOS/Linux shells. On Windows, use the extracted compiler directly or add its directory to your user PATH.
+
+### macOS and Linux
 
 Install the current binary release on macOS or glibc Linux, on x86-64 or ARM64:
 
@@ -77,14 +101,23 @@ You can also download and unpack a host archive from [Releases](https://github.c
 sh bootstrap/install --source
 ```
 
-For source development without changing your shell configuration:
+### Source development
+
+From a Windows source checkout, fetch the pinned compiler and seed, then run the PowerShell launcher:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap/fetch.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap/crown.ps1 --version
+```
+
+For macOS/Linux source development without changing your shell configuration:
 
 ```sh
 sh bootstrap/fetch
 ./bootstrap/crown --version
 ```
 
-`bootstrap/fetch` downloads the host's seed from the release named in `bootstrap/seed-release`, verifies it against `bootstrap/locks/<host>.json`, and installs it into the ignored `bootstrap/<host>` directory. It verifies existing seeds without downloading them again. For offline installation, set `CROWN_BOOTSTRAP_ASSETS` to a directory containing the pinned release assets. A mismatched or partially installed seed is an error; remove that generated host directory before fetching a clean copy.
+`bootstrap/fetch` and `bootstrap/fetch.ps1` download the host's seed from the release named in `bootstrap/seed-release`, verify it against `bootstrap/locks/<host>.json`, and install it into the ignored `bootstrap/<host>` directory. They verify existing seeds without downloading them again. The Windows fetcher also installs the verified native compiler into `target/bootstrap/crown.exe`. For offline installation, set `CROWN_BOOTSTRAP_ASSETS` to a directory containing the pinned release assets. A mismatched or partially installed seed is an error; remove that generated host directory before fetching a clean copy.
 
 The launcher builds the current checkout once when its compiler is missing or stale, then caches that compiler. An existing verified compiler can be reused without rebuilding. Use `./bootstrap/crown bootstrap --force` for the full self-rebuild verification used by releases. Save this program as `hello.cwn`:
 
@@ -95,11 +128,13 @@ fn main() -> u32 {
 }
 ```
 
-Run it with `./bootstrap/crown run hello.cwn -o target/hello`; it prints `42`.
+Run it with `./bootstrap/crown run hello.cwn -o target/hello` on macOS/Linux, or `powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap/crown.ps1 run hello.cwn -o target/hello.exe` on Windows; it prints `42`.
 
-The generated compiler lives in `target/bootstrap/crown`. Keep the source tree and `bootstrap` directory together. All `target` directories are disposable build output.
+The generated compiler lives in `target/bootstrap/crown` (`target/bootstrap/crown.exe` on Windows). Keep the source tree and `bootstrap` directory together. All `target` directories are disposable build output.
 
 ## Commands
+
+The examples use the macOS/Linux source launcher. On Windows, replace `./bootstrap/crown` with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap/crown.ps1`. For an extracted Windows release, use `.\crown.exe`. The same command arguments apply.
 
 ```text
 ./bootstrap/crown parse <sources-or-project>
@@ -118,7 +153,7 @@ The generated compiler lives in `target/bootstrap/crown`. Keep the source tree a
 ./bootstrap/crown benchmark [--runs <count>] [--jobs 1..4]
 ```
 
-`check`, `build`, and `run` default to the current project. `build` accepts a project or one `.cwn` file; a single file requires `-o`. Project executables default to `target/debug/<package-name>` within the project. `run` forwards arguments after `--`, including empty arguments and paths containing spaces.
+`check`, `build`, and `run` default to the current project. `build` accepts a project or one `.cwn` file; a single file requires `-o`. Project executables default to `target/debug/<package-name>` within the project, with an `.exe` suffix on Windows. `run` forwards arguments after `--`, including empty arguments and paths containing spaces.
 
 `test` without a project runs Crown's compiler suite. `test <project>` builds and runs the Crown test project at `<project>/tests/Crown.toml`. The test executable receives the compiler path, project directory, output directory, filter, coverage directory, and job count after its executable name. It reports test failures through its process exit status. Project test suites can use the shared toolchain and standard library to build fixtures and verify results.
 
@@ -126,7 +161,7 @@ Builds reuse an executable only when its compiler, sources, link inputs, options
 
 Build records are published by atomic replacement; an existing record symlink is replaced without writing through it. Build tools trust their compiler, source checkout, output directories, environment, and operating-system libraries. Release checksums protect the download against changes relative to the trusted checkout; cache hashes do not authenticate an attacker-controlled compiler and matching metadata.
 
-Build and run accept repeated `--object <path>`, `--framework <name>`, and `--library <name>` options. Crown's native linkers support coverage builds and x86-64 and ARM64 Mach-O and ELF object inputs. Frameworks apply to macOS. `CC` configures bootstrap only; ordinary builds do not invoke it. The default generic instance budget is 128; `--max-instances` accepts a positive unsigned 64-bit integer.
+Build and run accept repeated `--object <path>`, `--framework <name>`, and `--library <name>` options. Crown's native linkers support coverage builds and x86-64 and ARM64 COFF, Mach-O, and ELF object inputs. Frameworks apply to macOS. `CC` configures bootstrap only; ordinary builds do not invoke it. The default generic instance budget is 128; `--max-instances` accepts a positive unsigned 64-bit integer.
 
 Run `./bootstrap/crown help <command>` for command usage.
 
@@ -164,6 +199,9 @@ libraries = ["objc"]
 
 [target.linux]
 libraries = ["m"]
+
+[target.windows]
+libraries = ["kernel32"]
 ```
 
 Unknown sections and keys are errors. Source paths may refer to shared sibling directories.
@@ -178,7 +216,7 @@ Library and framework names accept ASCII letters, digits, `-`, `_`, `.`, and `+`
 | `components/backend/src` | IR, verification, optimization, profiling, machine-code generation, object formats, and linking |
 | `components/backend/tests/unit` | Backend, IR, optimizer, and profiling tests, registered in the shared compiler gate |
 | `components/compiler/tests` | Compiler unit programs, language conformance cases, fixtures, and runtime checks |
-| `bootstrap/crown` | Source bootstrap launcher |
+| `bootstrap/crown`, `bootstrap/crown.ps1` | Unix and Windows source bootstrap launchers |
 | `bootstrap/locks` | Pinned release asset checksums for all six hosts |
 | `bootstrap/<host>` | Downloaded assembly seed and provenance manifest; ignored by Git |
 | `components/toolchain/src` | Crown host services, manifest loading, build caching, CLI, and bootstrap |
@@ -233,7 +271,7 @@ Linux CI disables automatic crash-report collection and core files for tests tha
 
 Push a version tag such as `v0.1.0`, or dispatch the Release workflow with an existing version tag. Each native job rebuilds the compiler to a fixed point, runs the full registry and release campaigns, refreshes its seed, and tests a packaged compiler with `CC=/unavailable`. Only after all six jobs succeed does the publishing job create and publish the GitHub release.
 
-Each release contains `crown-<host>.tar.gz`, compressed bootstrap assembly, a provenance manifest, a lock file, and `SHA256SUMS`. Compiler archives include the source tree and native seed; extract one, enter its directory, and use `./crown` (`.\crown.exe` in Windows PowerShell). Use `./bootstrap/crown` when developing the compiler so source changes trigger rebuilding. Linux archives target glibc systems compatible with the Ubuntu 24.04 build host. macOS archives are built and tested on macOS 15.
+Each release contains `crown-<host>.tar.gz`, compressed bootstrap assembly, a provenance manifest, a lock file, and `SHA256SUMS`. Compiler archives include the source tree and native seed; extract one, enter its directory, and use `./crown` (`.\crown.exe` in Windows PowerShell). Use `./bootstrap/crown` on macOS/Linux or `bootstrap/crown.ps1` through PowerShell on Windows when developing the compiler so source changes trigger rebuilding. Linux archives target glibc systems compatible with the Ubuntu 24.04 build host. macOS archives are built and tested on macOS 15.
 
 To advance the seed pin, download all six hosts' assets from a successful release, verify `SHA256SUMS`, copy each `crown-bootstrap-<host>.lock.json` to `bootstrap/locks/<host>.json`, and put the release tag in `bootstrap/seed-release`. Commit those small files; assembly and compiler binaries stay in release assets. The `bootstrap-20260930` release supplies verified compiler and assembly seeds for all six hosts, including complete source trees and native Windows executables.
 
