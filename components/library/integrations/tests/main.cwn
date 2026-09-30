@@ -7,5 +7,9 @@ fn main() -> u32 {
     if formats != 0 {
         return formats
     }
-    return test_audio_buffers()
+    let buffers = test_audio_buffers()
+    if buffers != 0 {
+        return buffers
+    }
+    return loop_test::run()
 }

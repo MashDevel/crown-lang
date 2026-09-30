@@ -27,13 +27,6 @@ module native::pipewire {
         }
     }
 
-    unsafe fn iterate(library: std::dylib::Library, loop: RawPtr<u8>, timeout: i32) -> i32 {
-        unsafe {
-            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> i32>.cast(std::dylib::slot(library, 4)).read()
-            return action(loop, timeout)
-        }
-    }
-
     unsafe fn properties_new(library: std::dylib::Library, properties: RawPtr<u8>) -> RawPtr<u8> {
         unsafe {
             let action = RawPtr<fn(read RawPtr<u8>) -> RawPtr<u8>>.cast(std::dylib::slot(library, 5)).read()
@@ -62,23 +55,9 @@ module native::pipewire {
             return action(request.loop, request.name, request.properties, request.events, request.data)
         }
     }
-    unsafe fn enter(library: std::dylib::Library, loop: RawPtr<u8>) -> void {
-        unsafe {
-            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 13)).read()
-            action(loop)
-        }
-    }
-
-    unsafe fn leave(library: std::dylib::Library, loop: RawPtr<u8>) -> void {
-        unsafe {
-            let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(std::dylib::slot(library, 14)).read()
-            action(loop)
-        }
-    }
-
     unsafe fn deinitialize(library: std::dylib::Library) -> void {
         unsafe {
-            let action = RawPtr<fn() -> void>.cast(std::dylib::slot(library, 15)).read()
+            let action = RawPtr<fn() -> void>.cast(std::dylib::slot(library, 4)).read()
             action()
         }
     }

@@ -19,7 +19,40 @@ fn stores() -> Result<void, u32> {
     store_case(true, false, false)?
     store_case(false, true, false)?
     store_case(false, false, true)?
+    indexed_stores(false, false)?
+    indexed_stores(false, true)?
+    indexed_stores(true, false)?
     return Ok(())
+}
+
+fn indexed_stores(same: bool, fixed: bool) -> Result<void, u32> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    var function = ir::function_new("indexed_stores", ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageLocal())
+    let block = safety_block(function)?
+    let first = safety_append(function, block, ir::InstructionOffset(0, 1))?
+    let other = safety_append(function, block, ir::InstructionOffset(0, 2))?
+    let second: usize = if same {
+        first
+    } else {
+        if fixed {
+            0
+        } else {
+            other
+        }
+    }
+    let value = safety_integer(function, ir::IntegerWidth32(), 42)
+    safety_append(function, block, ir::InstructionStore(first, value, 4, false))?
+    safety_append(function, block, ir::InstructionStore(second, value, 4, false))?
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    let expected: usize = if same {
+        1
+    } else {
+        0
+    }
+    return safety_require(optimize::dead_stores(function, Shared.new(Vec<optimize::MemoryEffect>.new())) == expected, 3)
 }
 
 fn main() -> u32 {

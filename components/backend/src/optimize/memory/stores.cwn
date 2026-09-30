@@ -91,7 +91,7 @@ module optimize {
         match read outer {
             Some(left) => {
                 match read inner {
-                    Some(right) => left.root == right.root && left.start <= right.start && left.end >= right.end
+                    Some(right) => left.root == right.root && left.term == right.term && left.start <= right.start && left.end >= right.end
                     None => false
                 }
             }
