@@ -1,0 +1,22 @@
+fn fill(values: write[u32; 16], left: usize, right: usize) -> void {
+    values[left] = 42
+    values[right] = 7
+}
+
+fn main(arguments: Arguments) -> u32 {
+    var values: [u32; 16] = [0; 16]
+    let left = arguments.length()
+    let right = arguments[0].length() % 8 + 2
+    fill(values, left, right)
+    if values[left] != 42 {
+        return 1
+    }
+    if values[right] != 7 {
+        return 2
+    }
+    fill(values, left, left)
+    if values[left] != 7 {
+        return 3
+    }
+    return 42
+}

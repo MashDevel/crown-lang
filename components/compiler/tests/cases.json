@@ -9298,5 +9298,11 @@
       "components/toolchain/tests/support",
       "components/library/src"
     ]
+  },
+  {
+    "name": "optimizer_dynamic_indexed_stores",
+    "mode": "run",
+    "status": 42,
+    "source": "components/compiler/tests/conformance/language/value_conveniences/array_dynamic_stores.cwn"
   }
 ]
