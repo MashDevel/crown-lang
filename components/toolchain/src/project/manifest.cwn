@@ -1,6 +1,6 @@
 module toolchain {
     struct Project {
-        manifest: Text, name: Text, sources: Vec<Text>, libraries: Vec<Text>, links: Vec<Text>, output: Text
+        manifest: Text, name: Text, sources: Vec<Text>, libraries: Vec<Text>, links: Vec<Text>, output: Text, windows_subsystem: Text
     }
 
     fn load_project(path: Text, target: Target) -> Result<Project, Text> {
@@ -28,7 +28,7 @@ module toolchain {
         let links = manifest_links(document, target)?
         let output = path_join(path_join(root, "target/debug"), executable_name(name, target))
         return Ok(Project {
-                manifest: manifest.clone(), name: move name, sources: move sources, libraries: library_names(document)?, links: move links, output: move output
+                manifest: manifest.clone(), name: move name, sources: move sources, libraries: library_names(document)?, links: move links, output: move output, windows_subsystem: manifest_windows_subsystem(document)?
             })
     }
 

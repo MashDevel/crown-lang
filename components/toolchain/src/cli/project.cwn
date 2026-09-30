@@ -18,7 +18,7 @@ module toolchain {
         let name = file_name(source)
         let stem = std::text::slice(name, 0, name.length() - 4)
         return Ok(Project {
-                manifest: source.clone(), name: stem.clone(), sources: require_sources(request)?, libraries: Vec<Text>.new(), links: Vec<Text>.new(), output: path_join(path_join(parent_path(source), "target/debug"), stem)
+                manifest: source.clone(), name: stem.clone(), sources: require_sources(request)?, libraries: Vec<Text>.new(), links: Vec<Text>.new(), windows_subsystem: "console", output: path_join(path_join(parent_path(source), "target/debug"), stem)
             })
     }
 
@@ -67,6 +67,9 @@ module toolchain {
     fn project_build_request(compiler: Text, options: Options) -> Result<BuildRequest, Text> {
         var project = selected_project(options.paths, options.target)?
         append_library_names(project.libraries, options.libraries)
+        if options.windows_subsystem.length() != 0 {
+            project.windows_subsystem = options.windows_subsystem.clone()
+        }
         if std::text::ends(project.manifest, ".cwn") && options.output.length() == 0 && std::text::equal(options.command, "build") {
             return Err("a single source file requires -o")
         }

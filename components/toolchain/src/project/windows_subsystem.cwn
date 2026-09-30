@@ -1,0 +1,34 @@
+module toolchain {
+    fn checked_windows_subsystem(value: Text) -> Result<Text, Text> {
+        if std::text::equal(value, "console") || std::text::equal(value, "windows") {
+            return Ok(value.clone())
+        }
+        return Err("Windows subsystem must be console or windows")
+    }
+
+    fn windows_subsystem_id(value: Text) -> u16 {
+        return if std::text::equal(value, "windows") {
+            2
+        } else {
+            3
+        }
+    }
+
+    fn manifest_windows_subsystem(document: Json) -> Result<Text, Text> {
+        match json_field(document, document.root, "target.windows.subsystem") {
+            Some(index) => {
+                return checked_windows_subsystem(json_text(document, index)?)
+            }
+            None => {
+                return Ok("console")
+            }
+        }
+    }
+
+    fn validate_windows_subsystem(options: Options) -> Result<void, Text> {
+        if options.windows_subsystem.length() != 0 && options.target.platform != Platform::Windows() {
+            return Err("--windows-subsystem requires a Windows target")
+        }
+        return Ok(())
+    }
+}

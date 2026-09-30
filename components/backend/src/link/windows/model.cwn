@@ -13,6 +13,7 @@ module pe {
 
     struct Image {
         architecture: object::Architecture
+        subsystem: u16
         sections: Vec<Section>
         locations: Vec<usize>
         section_map: Vec<usize>
@@ -29,7 +30,7 @@ module pe {
 
     fn image_new(architecture: object::Architecture) -> Image {
         return Image {
-            architecture: architecture, sections: Vec<Section>.new(), locations: Vec<usize>.new(),
+            architecture: architecture, subsystem: 3, sections: Vec<Section>.new(), locations: Vec<usize>.new(),
             section_map: Vec<usize>.new(), exception_section: None(),
             symbols: Vec<u64>.new(), slots: Vec<u64>.new(), fixups: Vec<usize>.new(),
             entry: 0, imports: 0, import_size: 0, relocations: 0, relocation_size: 0

@@ -1,5 +1,12 @@
 module pe {
     fn executable(object: object::CompilerObject, imports: Vec<Import>) -> Result<Vec<u8>, Text> {
+        return executable_with_subsystem(object, imports, 3)
+    }
+
+    fn executable_with_subsystem(object: object::CompilerObject, imports: Vec<Import>, subsystem: u16) -> Result<Vec<u8>, Text> {
+        if subsystem != 2 && subsystem != 3 {
+            return Err("unsupported Windows executable subsystem")
+        }
         match object::validate(object) {
             Err(error) => {
                 error;
@@ -11,6 +18,7 @@ module pe {
         }
         validate_imports(object, imports)?
         var image = layout(object)?
+        image.subsystem = subsystem
         prepare_imports(image, object, imports)?
         relocate(image, object)?
         prepare_exception_table(image)?

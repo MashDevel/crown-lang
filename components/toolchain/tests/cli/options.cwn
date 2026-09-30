@@ -75,6 +75,7 @@ fn option_tests() -> Result<void, Text> {
     option_target_tests()?
     apple_target_tests()?
     windows_target_tests()?
+    windows_subsystem_options()?
     option_numeric_tests()?
     option_rejection_tests()?
     option_special_tests()?
@@ -178,4 +179,14 @@ fn windows_target_tests() -> Result<void, Text> {
         testing::expect(std::text::contains(toolchain::help(), names[index]), "documented Windows target")?
     }
     return testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|--target|x86-windows")))
+}
+
+fn windows_subsystem_options() -> Result<void, Text> {
+    let gui = toolchain::parse_options(testing::list("crown|build|--windows-subsystem|windows|--target|arm64-windows"))?
+    testing::expect(toolchain::windows_subsystem_id(gui.windows_subsystem) == 2, "GUI subsystem option")?
+    let console = toolchain::parse_options(testing::list("crown|run|--target|x86_64-windows|--windows-subsystem|console"))?
+    testing::expect(toolchain::windows_subsystem_id(console.windows_subsystem) == 3, "console subsystem option")?
+    testing::error(toolchain::parse_options(testing::list("crown|build|--target|x86_64-windows|--windows-subsystem|invalid")))?
+    testing::error(toolchain::parse_options(testing::list("crown|build|--target|arm64-linux|--windows-subsystem|windows")))?
+    return testing::error(toolchain::parse_options(testing::list("crown|check|--target|x86_64-windows|--windows-subsystem|windows")))
 }

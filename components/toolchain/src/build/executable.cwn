@@ -1,9 +1,13 @@
 module toolchain {
-    fn compile_executable(request: CompileRequest, objects: Vec<Text>, links: Vec<Text>) -> Result<void, Text> {
+    fn compile_executable(request: CompileRequest, objects: Vec<Text>, links: Vec<Text>, subsystem: Text) -> Result<void, Text> {
         var arguments = compiler_arguments(request, "_executable")
         for index in 0..objects.length() {
             arguments.push("--object")
             arguments.push(objects[index].clone())
+        }
+        if request.target.platform == Platform::Windows() {
+            arguments.push("--windows-subsystem")
+            arguments.push(subsystem.clone())
         }
         append_native_links(arguments, links)?
         return require_compiler(move arguments)
