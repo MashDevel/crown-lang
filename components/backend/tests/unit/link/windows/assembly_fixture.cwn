@@ -1,0 +1,46 @@
+fn coff_assembly_program() -> Result<ir::Program, Text> {
+    var program = match windows_call_program(false) {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return Err("could not construct COFF call fixture")
+        }
+    }
+    coff_assembly_globals(program)
+    var code = windows_runtime::builder(ir::function_new("coff_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let address = windows_runtime::value(code, ir::InstructionFunctionAddress(1))?
+    let status = windows_runtime::value(code, ir::InstructionCallIndirect(address, windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), Vec<usize>.new()))?
+    let zero = windows_runtime::integer(code, ir::IntegerWidth32(), 0)
+    instrumentation_mock_equal(code, status, zero)?
+    coff_assembly_data_checks(code)?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}
+
+fn coff_assembly_globals(program: write ir::Program) -> void {
+    let constant = windows_runtime::instrumentation_global(program, "7:constant", std::bytes::filled(8, 0), false)
+    program.globals[constant].kind = ir::GlobalReadOnly()
+    program.globals[constant].bytes[0] = 42
+    let empty = windows_runtime::instrumentation_global(program, "empty", std::bytes::filled(16, 0), false)
+    program.globals[empty].kind = ir::GlobalZeroFill()
+    program.globals[empty].bytes = Vec<u8>.new()
+    let pointer = windows_runtime::instrumentation_global(program, "pointer", std::bytes::filled(8, 0), false)
+    program.globals[pointer].references.push(ir::GlobalReference {
+            offset: 0, target: ir::GlobalReferenceGlobal(constant), addend: 0
+        })
+}
+
+fn coff_assembly_data_checks(code: write windows_runtime::Builder) -> Result<void, Text> {
+    let pointer = windows_runtime::value(code, ir::InstructionGlobalAddress(2))?
+    let address = windows_runtime::value(code, ir::InstructionLoad(pointer, ir::TypePointer(), 8, false))?
+    let actual = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth64(), 42)
+    instrumentation_mock_equal(code, actual, expected)?
+    let empty = windows_runtime::value(code, ir::InstructionGlobalAddress(1))?
+    let zero = windows_runtime::value(code, ir::InstructionLoad(empty, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let cleared = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+    instrumentation_mock_equal(code, zero, cleared)?
+    windows_runtime::store(code, empty, 8, expected)?
+    return Ok(())
+}

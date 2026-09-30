@@ -5,13 +5,16 @@ fn native_stage() -> Result<void, Text> {
     let compiler = toolchain::path_join(root, "stage0")
     toolchain::copy_file(testing::compiler()?, compiler)?
     toolchain::executable(compiler)?
-    toolchain::set_environment("CC", "/usr/bin/false")?
     var current = benchmark::Benchmark {
         directory: root.clone(), results: Vec<Text>.new()
     }
     var sources = Vec<Text>.new()
     sources.push(source.clone())
-    benchmark::build_stage(current, sources, 0)?
+    let previous = toolchain::environment("CC")
+    toolchain::set_environment("CC", "/unavailable-compiler-driver")?
+    let result: Result<void, Text> = benchmark::build_stage(current, sources, 0)
+    toolchain::set_environment("CC", previous)?
+    (move result)?;
     return verify_native_stage(root)
 }
 
@@ -30,7 +33,7 @@ fn verify_native_stage(root: Text) -> Result<void, Text> {
 fn preparation() -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
-    let seed = testing::write_file(root, "seed", "#!/bin/sh\nexit 23\n")?
+    let seed = testing::status_program(root, "seed", 23)?
     let input = benchmark::Inputs {
         root: root.clone(), compiler: seed.clone(), jobs: 2
     }

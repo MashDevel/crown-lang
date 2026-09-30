@@ -1,5 +1,8 @@
 module coverage {
     fn runtime_sections(target: toolchain::Target) -> Text {
+        if target.platform == toolchain::Platform::Windows() {
+            return ""
+        }
         if target.platform == toolchain::Platform::Macos() {
             return ".section __DATA,__mod_init_func,mod_init_funcs\n.p2align 3\n.quad _crown_cov_init\n"
         }

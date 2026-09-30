@@ -40,6 +40,15 @@ module coverage {
     }
 
     fn merge_points(destination: write Vec<ProfilePoint>, source: Vec<ProfilePoint>) -> Result<void, Text> {
+        if source.length() == 0 {
+            return Ok(())
+        }
+        if destination.length() == 0 {
+            for index in 0..source.length() {
+                destination.push(source[index])
+            }
+            return Ok(())
+        }
         if destination.length() != source.length() {
             return Err("coverage point layouts differ")
         }

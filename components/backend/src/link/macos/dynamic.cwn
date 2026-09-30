@@ -96,23 +96,6 @@ module macho {
         }
     }
 
-    fn probe_export(path: Text, name: Text) -> Result<bool, std::dylib::Error> {
-        if system_library_path(path) == false {
-            return Err(std::dylib::Error::InvalidName())
-        }
-        let encoded_path = std::dylib::encoded(path)?
-        let encoded_name = std::dylib::encoded(name)?
-        unsafe {
-            let handle = std::dylib::raw_open(std::cstr::as_raw(encoded_path), 258)
-            if handle == RawPtr<u8>.from_address(0) {
-                return Err(std::dylib::Error::Open())
-            }
-            let symbol = std::dylib::raw_symbol(handle, std::cstr::as_raw(encoded_name))
-            std::dylib::raw_close(handle)
-            return Ok(symbol != RawPtr<u8>.from_address(0))
-        }
-    }
-
     fn libraries(options: Vec<Text>) -> Result<Vec<Text>, Text> {
         var output = Vec<Text>.new()
         output.push("/usr/lib/libSystem.B.dylib")

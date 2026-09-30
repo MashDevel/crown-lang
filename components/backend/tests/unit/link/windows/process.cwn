@@ -1,0 +1,50 @@
+fn process_fixture(architecture: object::Architecture) -> object::CompilerObject {
+    var output = import_fixture(architecture)
+    var bytes = Vec<u8>.new()
+    let arm = architecture == object::ArchitectureArm64()
+    if arm {
+        link_binary::pad(bytes, 8)
+        link_binary::put(bytes, 0, 3531605312, 4)
+        link_binary::put(bytes, 4, 335544320, 4)
+    } else {
+        let instructions: [u8; 15] = [72, 131, 236, 40, 185, 42, 0, 0, 0, 232, 0, 0, 0, 0, 204]
+        for index in 0..15 {
+            bytes.push(instructions[index])
+        }
+    }
+    output.sections[0].memory_size = u64.from(bytes.length())
+    output.symbols[0].size = u64.from(bytes.length())
+    output.sections[0].data = move bytes
+    output.relocations.push(object::Relocation {
+            section: 0, offset: if arm {
+                4
+            } else {
+                10
+            },
+            kind: if arm {
+                object::RelocationArmBranch26()
+            } else {
+                object::RelocationPcRelativeCall32()
+            },
+            symbol: 1, subtract: None(), addend: if arm {
+                0
+            } else {
+                -4
+            }
+        })
+    return move output
+}
+
+fn process_imports() -> Vec<pe::Import> {
+    var imports = Vec<pe::Import>.new()
+    imports.push(pe::Import {
+            symbol: "ExitProcess", library: "KERNEL32.dll", name: "ExitProcess"
+        })
+    return move imports
+}
+
+fn write_process(architecture: object::Architecture, path: Text) -> Result<void, Text> {
+    let object = process_fixture(architecture)
+    let bytes = pe::executable(object, process_imports())?
+    return toolchain::write_bytes(path, bytes)
+}

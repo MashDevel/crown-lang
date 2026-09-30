@@ -20,11 +20,13 @@ fn reuse_source(environment: harness::Environment) -> Result<void, Text> {
 
 fn invalidation(root: Text) -> Result<void, Text> {
     let environment = testing_cache::environment(root, "first")
-    let original = toolchain::read_text(environment.compiler)?
-    toolchain::write_text(environment.compiler, std::text::joined(original, "\n"))?
+    let original = toolchain::read_bytes(environment.compiler)?
+    var modified = toolchain::read_bytes(environment.compiler)?
+    modified.push(0)
+    toolchain::write_bytes(environment.compiler, modified)?
     testing_cache::build(environment, 128)?
     testing_cache::count(root, "compiles", 3)?
-    toolchain::write_text(environment.compiler, original)?
+    toolchain::write_bytes(environment.compiler, original)?
     testing_cache::build(environment, 129)?
     testing_cache::count(root, "compiles", 4)?
     testing_cache::build(environment, 128)?
@@ -82,7 +84,7 @@ fn coverage(root: Text) -> Result<void, Text> {
 
 fn concurrent(root: Text, executable: Text) -> Result<void, Text> {
     testing::write_file(root, "source.cwn", "parallel")?
-    var workers = Vec<i32>.new()
+    var workers = Vec<toolchain::Process>.new()
     for index in 0..4 {
         var arguments = Vec<Text>.new()
         arguments.push(executable.clone())

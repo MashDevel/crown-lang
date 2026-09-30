@@ -1,0 +1,51 @@
+fn directory_links(root: Text) -> Result<void, Text> {
+    let target = toolchain::path_join(root, "link target 😀")
+    let directory = toolchain::path_join(root, "link container")
+    let link = toolchain::path_join(directory, "alias")
+    toolchain::make_directory(target)?
+    toolchain::make_directory(directory)?
+    let preserved = toolchain::path_join(target, "preserved.txt")
+    toolchain::write_text(preserved, "preserved")?
+    directory_link(target, link)?
+    check(std::text::equal(toolchain::absolute(link)?, toolchain::absolute(target)?), "canonical directory link")?
+    let missing = toolchain::path_join(link, "missing/child")
+    let expected = toolchain::path_join(toolchain::absolute(target)?, "missing/child")
+    check(std::text::equal(toolchain::absolute(missing)?, expected), "canonical missing path under link")?
+    directory_link(directory, toolchain::path_join(target, "cycle"))?
+    let files = toolchain::walk_files(directory)?
+    check(files.length() == 1, "directory link cycle terminates")?
+    toolchain::remove_tree(directory)
+    check(toolchain::exists(directory) == false, "directory containing link removed")?
+    check(toolchain::exists(preserved), "directory link target preserved")?
+    let direct = toolchain::path_join(root, "direct link")
+    directory_link(target, direct)?
+    toolchain::remove_tree(direct)
+    check(toolchain::exists(direct) == false, "root directory link removed")?
+    check(toolchain::exists(preserved), "root directory link target preserved")?
+    return check(std::text::equal(toolchain::read_text(preserved)?, "preserved"), "linked file contents preserved")
+}
+
+fn directory_link(target: Text, link: Text) -> Result<void, Text> {
+    return toolchain::symbolic_link(target, link, true)
+}
+
+fn invalid_link(target: Text, path: Text) -> Result<void, Text> {
+    return match toolchain::symbolic_link(target, path, false) {
+        Err(error) => {
+            error;
+            Ok(())
+        }
+        Ok(done) => {
+            done;
+            Err("invalid symbolic link creation succeeded")
+        }
+    }
+}
+
+fn links(root: Text) -> Result<void, Text> {
+    invalid_link("invalid\0target", toolchain::path_join(root, "invalid"))?
+    invalid_link(root, "invalid\0link")?
+    invalid_link(root, root)?
+    invalid_link(root, toolchain::path_join(root, "missing/link"))?
+    return directory_links(root)
+}

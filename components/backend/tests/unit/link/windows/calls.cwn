@@ -1,0 +1,85 @@
+fn windows_call_signature() -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    for index in 0..6 {
+        parameters.push(if index % 2 == 0 {
+                ir::TypeInteger(ir::IntegerWidth64())
+            } else {
+                ir::TypeFloat(ir::FloatWidth64())
+            })
+    }
+    return ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth64()))
+}
+
+fn windows_callee(variadic: bool) -> Result<ir::Function, u32> {
+    var signature = windows_call_signature()
+    if variadic {
+        signature.variadic_start = Some(1)
+    }
+    var function = ir::function_new("windows_sum", move signature, ir::LinkageLocal())
+    let block = safety_block(function)?
+    var sum = function.parameters[0]
+    for index in 1..6 {
+        let value = if index % 2 == 0 {
+            function.parameters[index]
+        } else {
+            safety_append(function, block, ir::InstructionCast(ir::CastFloatToUnsignedInteger(), function.parameters[index], ir::TypeInteger(ir::IntegerWidth64())))?
+        }
+        sum = safety_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), sum, value))?
+    }
+    safety_terminate(function, block, ir::TerminatorReturn(Some(sum)))?
+    return Ok(move function)
+}
+
+fn windows_caller(target: usize) -> Result<ir::Function, u32> {
+    var function = ir::function_new("windows_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    var arguments = Vec<usize>.new()
+    for index in 0..6 {
+        let value = if index % 2 == 0 {
+            safety_integer(function, ir::IntegerWidth64(), 7)
+        } else {
+            ir::function_constant(function, ir::TypeFloat(ir::FloatWidth64()), ir::ConstantFloat64(4619567317775286272))
+        }
+        arguments.push(value)
+    }
+    let result = safety_append(function, block, ir::InstructionCall(target, move arguments, ir::TypeInteger(ir::IntegerWidth64())))?
+    let expected = safety_integer(function, ir::IntegerWidth64(), 42)
+    safety_return_equal(function, block, result, expected)?
+    return Ok(move function)
+}
+
+fn windows_call_program(variadic: bool) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    let target = ir::program_add_function(program, windows_callee(variadic)?)
+    program.entry = Some(ir::program_add_function(program, windows_caller(target)?))
+    return Ok(move program)
+}
+
+fn windows_call_object(input: take ir::Program, architecture: toolchain::Architecture) -> Result<object::CompilerObject, u32> {
+    var program = move input
+    if architecture == toolchain::Architecture::Arm64() {
+        return match arm64::codegen(move program, arm64::AbiVariant::Windows()) {
+            Ok(object) => Ok(move object)
+            Err(error) => {
+                toolchain::failure(error);
+                Err(70)
+            }
+        }
+    }
+    match x86::windows_program(program) {
+        Err(error) => {
+            error;
+            return Err(71)
+        }
+        Ok(value) => {
+            value;
+        }
+    }
+    return match x86::codegen(move program) {
+        Ok(object) => Ok(move object)
+        Err(error) => {
+            error;
+            Err(72)
+        }
+    }
+}

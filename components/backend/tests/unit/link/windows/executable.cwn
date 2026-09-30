@@ -1,0 +1,142 @@
+fn headers(architecture: object::Architecture, machine: u64) -> Result<void, Text> {
+    let object = fixture(architecture)
+    let bytes = pe::executable(object, Vec<pe::Import>.new())?
+    header_identity(bytes, machine)?
+    header_version(bytes, architecture)?
+    return header_dimensions(bytes)
+}
+
+fn header_dimensions(bytes: Vec<u8>) -> Result<void, Text> {
+    testing::expect(link_binary::number(bytes, 168, 4)? == 4096, "entry RVA")?
+    testing::expect(link_binary::number(bytes, 176, 8)? == pe::IMAGE_BASE, "64-bit image base")?
+    testing::expect(link_binary::number(bytes, 220, 2)? == 3, "console subsystem")?
+    testing::expect(bytes.length() % 512 == 0, "file alignment")?
+    return sections(bytes)
+}
+
+fn header_version(bytes: Vec<u8>, architecture: object::Architecture) -> Result<void, Text> {
+    let minor: u64 = if architecture == object::ArchitectureArm64() {
+        2
+    } else {
+        0
+    }
+    testing::expect(link_binary::number(bytes, 192, 4)? == 6 + minor * 65536, "target Windows OS version")?
+    testing::expect(link_binary::number(bytes, 200, 4)? == 6 + minor * 65536, "target Windows subsystem version")?
+    return Ok(())
+}
+
+fn header_identity(bytes: Vec<u8>, machine: u64) -> Result<void, Text> {
+    testing::expect(link_binary::number(bytes, 0, 2)? == 23117, "DOS magic")?
+    testing::expect(link_binary::number(bytes, 60, 4)? == 128, "PE header offset")?
+    testing::expect(link_binary::number(bytes, 128, 4)? == 17744, "PE signature")?
+    testing::expect(link_binary::number(bytes, 132, 2)? == machine, "PE architecture")?
+    return testing::expect(link_binary::number(bytes, 152, 2)? == 523, "PE32+ format")
+}
+
+fn sections(bytes: Vec<u8>) -> Result<void, Text> {
+    let count = usize.from(link_binary::number(bytes, 134, 2)?)
+    var expected: u64 = 4096
+    for index in 0..count {
+        let offset: usize = 392 + index * 40
+        let rva = link_binary::number(bytes, offset + 12, 4)?
+        let size = link_binary::number(bytes, offset + 8, 4)?
+        testing::expect(size != 0 && rva == expected, "nonempty adjacent aligned section RVAs")?
+        section_file_bounds(bytes, offset)?
+        expected = u64.from(link_binary::aligned(usize.from(rva + size), 4096))
+    }
+    return testing::expect(link_binary::number(bytes, 208, 4)? == expected, "image size ends at final section")
+}
+
+fn aligned_sections(architecture: object::Architecture) -> Result<void, Text> {
+    var object = fixture(architecture)
+    link_binary::pad(object.sections[0].data, 4096)
+    object.sections[0].memory_size = 4096
+    return sections(pe::executable(object, Vec<pe::Import>.new())?)
+}
+
+fn section_file_bounds(bytes: Vec<u8>, offset: usize) -> Result<void, Text> {
+    let size = link_binary::number(bytes, offset + 16, 4)?
+    let raw = link_binary::number(bytes, offset + 20, 4)?
+    return testing::expect(raw % 512 == 0 && raw + size <= u64.from(bytes.length()), "section file bounds")
+}
+
+fn imports(architecture: object::Architecture) -> Result<void, Text> {
+    let object = process_fixture(architecture)
+    missing_import(object)?
+    var names = Vec<pe::Import>.new()
+    names.push(pe::Import {
+            symbol: "ExitProcess", library: "KERNEL32.dll", name: "ExitProcess"
+        })
+    let bytes = pe::executable(object, names)?
+    testing::expect(link_binary::number(bytes, 276, 4)? == 40, "import directory includes null terminator")?
+    var image = pe::layout(object)?
+    pe::prepare_imports(image, object, names)?
+    testing::expect(image.slots[1] != 0 && image.symbols[1] != image.slots[1], "function import has IAT slot and thunk")?
+    names[0].name = "bad\0name"
+    testing::error(pe::executable(object, names))?
+    names[0].name = ""
+    return testing::error(pe::executable(object, names))
+}
+
+fn missing_import(object: object::CompilerObject) -> Result<void, Text> {
+    match pe::executable(object, Vec<pe::Import>.new()) {
+        Ok(bytes) => {
+            bytes;
+            return Err("missing Windows import accepted")
+        }
+        Err(error) => {
+            testing::expect(std::text::contains(error, "undefined symbol: ExitProcess"), "native linkers share undefined-symbol diagnostics")?
+        }
+    }
+    return Ok(())
+}
+
+fn unused_imports(architecture: object::Architecture) -> Result<void, Text> {
+    let object = import_fixture(architecture)
+    let bytes = pe::executable(object, Vec<pe::Import>.new())?
+    testing::expect(bytes.length() != 0, "unreferenced imports do not require DLL exports")?
+    var image = pe::layout(object)?
+    pe::prepare_imports(image, object, Vec<pe::Import>.new())?
+    return testing::expect(image.slots[1] == 0 && image.symbols[1] == 0, "unused import has no IAT slot or thunk")
+}
+
+fn rejection() -> Result<void, Text> {
+    var object = fixture(object::ArchitectureX86_64())
+    object.entry = None()
+    testing::error(pe::executable(object, Vec<pe::Import>.new()))?
+    object.entry = Some(0)
+    object.sections[0].alignment = 8192
+    testing::error(pe::executable(object, Vec<pe::Import>.new()))?
+    object.sections[0].alignment = 3
+    testing::error(pe::executable(object, Vec<pe::Import>.new()))?
+    testing::error(pe::relative(2147483648, 0))?
+    testing::error(pe::relative(-2147483649, 0))?
+    testing::expect(pe::relative(2147483647, 0)? == 2147483647, "maximum relative displacement")?
+    return testing::expect(pe::relative(-2147483648, 0)? == -2147483648, "minimum relative displacement")
+}
+
+fn run() -> Result<void, Text> {
+    headers(object::ArchitectureX86_64(), 34404)?
+    headers(object::ArchitectureArm64(), 43620)?
+    aligned_sections(object::ArchitectureX86_64())?
+    aligned_sections(object::ArchitectureArm64())?
+    imports(object::ArchitectureX86_64())?
+    imports(object::ArchitectureArm64())?
+    unused_imports(object::ArchitectureX86_64())?
+    unused_imports(object::ArchitectureArm64())?
+    relocation_tests()?
+    return rejection()
+}
+
+fn main() -> u32 {
+    match run() {
+        Ok(value) => {
+            value;
+            42
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

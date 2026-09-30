@@ -1,0 +1,62 @@
+fn coff_assemble(object: object::CompilerObject, target: toolchain::Target, directory: Text) -> Result<object::CompilerObject, Text> {
+    let assembly = toolchain::path_join(directory, "fixture.s")
+    let binary = toolchain::path_join(directory, "fixture.obj")
+    toolchain::write_text(assembly, backend_assembly::render(object, target, "fixture")?)?
+    var arguments = testing::list("clang")
+    arguments.push(std::text::joined("--target=", toolchain::windows_target_triple(target.architecture)))
+    arguments.push("-c")
+    arguments.push(assembly.clone())
+    arguments.push("-o")
+    arguments.push(binary.clone())
+    toolchain::require_command(move arguments)?
+    return coff::read_object(toolchain::read_bytes(binary)?)
+}
+
+fn coff_assembly_call(target: toolchain::Target, directory: Text) -> Result<void, Text> {
+    let program = coff_assembly_program()?
+    let object = match windows_call_object(move program, target.architecture) {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return Err("could not compile COFF assembly fixture")
+        }
+    }
+    var compiled = coff_assemble(object, target, directory)?
+    compiled.entry = link_object::existing_symbol(compiled, "main")
+    testing::expect(ir::value_present(compiled.entry), "COFF assembly exports an entry function")?
+    pe::executable(compiled, pe::system_imports())?;
+    if target.architecture == toolchain::host_target().architecture {
+        return safety_run_object(move compiled)
+    }
+    return Ok(())
+}
+
+fn coff_assembly_runtime(target: toolchain::Target, directory: Text) -> Result<void, Text> {
+    let object = windows_runtime::instrumentation_object(16, "C:/coverage/run.XXXXXX", target, false)?
+    testing::expect(ir::value_present(object.entry) == false, "instrumentation assembly has no application entry")?
+    let compiled = coff_assemble(object, target, directory)?
+    let initializer = match link_object::existing_symbol(compiled, "crown_cov_init") {
+        Some(index) => index,
+        None => {
+            return Err("COFF assembly lost instrumentation initializer")
+        }
+    }
+    testing::expect(object::symbol_is_function(compiled.symbols[initializer].kind), "COFF preserves exported function types")?
+    return testing::expect(std::text::equal(coverage::runtime_sections(target), ""), "Windows initializes instrumentation through startup")
+}
+
+fn coff_assembly_tests() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let directory = toolchain::temporary_path(temporary)
+    let names = testing::list("x86_64-windows|arm64-windows")
+    for index in 0..names.length() {
+        let target = toolchain::parse_target(names[index])?
+        coff_assembly_call(target, directory)?
+        coff_assembly_runtime(target, directory)?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(coff_assembly_tests())
+}

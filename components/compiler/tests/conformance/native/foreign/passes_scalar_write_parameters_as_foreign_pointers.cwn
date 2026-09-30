@@ -1,13 +1,16 @@
 extern "c" {
-    fn next_random(state: write u32) -> i32 = "rand_r"
+    fn decompose(value: f64, exponent: write i32) -> f64 = "frexp"
 }
+
 fn main() -> u32 {
-    var state = 1
+    var exponent: i32 = -1
     unsafe {
-        next_random(state)
+        if decompose(8.0, exponent) != 0.5 {
+            return 1
+        }
     }
-    if state == 1 {
-        return 1
+    if exponent != 4 {
+        return 2
     }
     return 0
 }

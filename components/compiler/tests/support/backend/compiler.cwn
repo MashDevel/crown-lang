@@ -7,6 +7,7 @@ fn safety_compiler(program: ir::Program, id: usize) -> Result<x86::FunctionCompi
         }
     }
     return Ok(x86::FunctionCompiler {
+            calling_convention: program.functions[id].signature.calling_convention
             id: id, frame: move frame, instructions: Some(Vec<x86::Instruction>.new()), block: Some(0)
             symbols: x86::codegen_symbol_addresses(program.functions[id])
             uses: x86::codegen_value_uses(program.functions[id]), cached_value: None(), label_sequence: 0

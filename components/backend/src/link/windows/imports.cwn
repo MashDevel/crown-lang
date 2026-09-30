@@ -1,0 +1,105 @@
+module pe {
+    fn prepare_imports(image: write Image, object: object::CompilerObject, imports: Vec<Import>) -> Result<void, Text> {
+        let data = section_append(image, section_new(".idata", 3221225536))?
+        let required = required_imports(object)
+        let count = import_count(required)
+        image.import_size = (count + 1) * 20
+        reserve(image.sections[data], image.import_size, 8);
+        image.imports = image.sections[data].rva
+        var descriptor: usize = 0
+        for index in 0..object.symbols.length() {
+            if object::symbol_is_import(object.symbols[index].binding) && required[index] == false {
+                continue
+            }
+            if required[index] {
+                let source = find_import(imports, object.symbols[index].name)?
+                import_entry(image, data, descriptor, imports[source])?
+                image.slots[index] = IMAGE_BASE + u64.from(image.sections[data].rva + image.sections[data].bytes.length() - 16)
+                descriptor = descriptor + 20
+            } else {
+                let slot = reserve(image.sections[data], 8, 8)
+                image.slots[index] = IMAGE_BASE + u64.from(image.sections[data].rva + slot)
+                link_binary::put(image.sections[data].bytes, slot, image.symbols[index], 8)
+                image.fixups.push(image.sections[data].rva + slot)
+            }
+        }
+        image.sections[data].size = image.sections[data].bytes.length()
+        return import_stubs(image, object, required)
+    }
+
+    fn import_count(required: Vec<bool>) -> usize {
+        var count: usize = 0
+        for index in 0..required.length() {
+            if required[index] {
+                count = count + 1
+            }
+        }
+        return count
+    }
+
+    fn find_import(imports: Vec<Import>, symbol: Text) -> Result<usize, Text> {
+        for index in 0..imports.length() {
+            if std::text::equal(imports[index].symbol, symbol) {
+                return Ok(index)
+            }
+        }
+        if std::text::starts(symbol, "__imp_") {
+            return find_import(imports, std::text::slice(symbol, 6, symbol.length()))
+        }
+        return Err(std::text::joined("undefined symbol: ", symbol))
+    }
+
+    fn import_entry(image: write Image, section: usize, descriptor: usize, source: Import) -> Result<void, Text> {
+        let rva = image.sections[section].rva
+        let library = string(image.sections[section], source.library)?
+        let hint = reserve(image.sections[section], 2, 2)
+        string(image.sections[section], source.name)?;
+        let lookup = reserve(image.sections[section], 16, 8)
+        let address = reserve(image.sections[section], 16, 8)
+        link_binary::put(image.sections[section].bytes, lookup, u64.from(rva + hint), 8)
+        link_binary::put(image.sections[section].bytes, address, u64.from(rva + hint), 8)
+        link_binary::put(image.sections[section].bytes, descriptor, u64.from(rva + lookup), 4)
+        link_binary::put(image.sections[section].bytes, descriptor + 12, u64.from(rva + library), 4)
+        link_binary::put(image.sections[section].bytes, descriptor + 16, u64.from(rva + address), 4)
+        return Ok(())
+    }
+
+    fn import_stubs(image: write Image, object: object::CompilerObject, required: Vec<bool>) -> Result<void, Text> {
+        let section = section_append(image, section_new(".thunks", 1610612768))?
+        for index in 0..object.symbols.length() {
+            if required[index] {
+                if object::symbol_is_function(object.symbols[index].kind) {
+                    function_stub(image, section, index)?
+                } else {
+                    image.symbols[index] = image.slots[index]
+                }
+            }
+        }
+        image.sections[section].size = image.sections[section].bytes.length()
+        return Ok(())
+    }
+
+    fn function_stub(image: write Image, section: usize, symbol: usize) -> Result<void, Text> {
+        let arm = image.architecture == object::ArchitectureArm64()
+        let offset = reserve(image.sections[section], if arm {
+                12
+            } else {
+                6
+            }, 4)
+        let address = IMAGE_BASE + u64.from(image.sections[section].rva + offset)
+        image.symbols[symbol] = address
+        let target = i64.from(image.slots[symbol])
+        if arm {
+            let page = arm64::arm_relocated_word(object::RelocationArmPage21(), 2415919120, target, address)?
+            let load = arm64::arm_relocated_word(object::RelocationArmGotLoadPageOffset12(), 4181721616, target, address + 4)?
+            link_binary::put(image.sections[section].bytes, offset, u64.from(page), 4)
+            link_binary::put(image.sections[section].bytes, offset + 4, u64.from(load), 4)
+            link_binary::put(image.sections[section].bytes, offset + 8, 3592356352, 4)
+        } else {
+            let delta = relative(target, address + 6)?
+            link_binary::put(image.sections[section].bytes, offset, 9727, 2)
+            link_binary::put(image.sections[section].bytes, offset + 2, u64.from_bits(delta), 4)
+        }
+        return Ok(())
+    }
+}

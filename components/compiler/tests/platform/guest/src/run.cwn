@@ -31,9 +31,7 @@ module guest {
         let result = wait(pid, options.timeout, exchange, fn() {
                 return toolchain::milliseconds()
             }, fn() {
-                unsafe {
-                    toolchain::raw_usleep(200000)
-                }
+                toolchain::wait_milliseconds(200)
             })?
         return finish(result)
     }

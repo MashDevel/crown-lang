@@ -13,6 +13,11 @@ module arm64 {
         if load_constant(compiler, value, register, false) {
             return
         }
+        let floating = frame_float_register(compiler.frame, value)
+        if floating != REGISTER_SPILLED {
+            emit_encoding(compiler, float_move_bits(register, floating, false, true))
+            return
+        }
         let allocated = frame_register(compiler.frame, value)
         if allocated != REGISTER_SPILLED {
             register_move(compiler, register, allocated)
@@ -25,7 +30,7 @@ module arm64 {
         if load_constant(compiler, value, register, true) {
             return
         }
-        if frame_register(compiler.frame, value) != REGISTER_SPILLED {
+        if frame_allocated(compiler.frame, value) {
             immediate(compiler, register, 0)
             return
         }
@@ -33,6 +38,11 @@ module arm64 {
         return frame_access(compiler, register, offset + 8, 8, true)
     }
     fn value_store(compiler: write Compiler, value: usize, register: u32) -> void {
+        let floating = frame_float_register(compiler.frame, value)
+        if floating != REGISTER_SPILLED {
+            emit_encoding(compiler, float_move_bits(floating, register, true, true))
+            return
+        }
         let allocated = frame_register(compiler.frame, value)
         if allocated != REGISTER_SPILLED {
             register_move(compiler, allocated, register)
@@ -60,6 +70,9 @@ module arm64 {
         match result {
             None => Ok(())
             Some(value) => {
+                if compiler.float_result {
+                    return float_value_store(compiler, value, compiler.result_register, function.values[value])
+                }
                 let register = compiler.result_register
                 if compiler.normalized == false {
                     normalize(compiler, function.values[value], register, false)

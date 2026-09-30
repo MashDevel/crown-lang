@@ -1,0 +1,32 @@
+module toolchain {
+    extern "c" {
+        fn raw_getenv(name: RawPtr<u8>) -> RawPtr<u8> = "getenv"
+        fn raw_setenv(name: RawPtr<u8>, value: RawPtr<u8>, replace: i32) -> i32 = "setenv"
+    }
+
+    fn environment(name: Text) -> Text {
+        match cstring(name) {
+            Err(error) => {
+                error;
+                return ""
+            }
+            Ok(encoded) => {
+                unsafe {
+                    return pointer_text(raw_getenv(std::cstr::as_raw(encoded)))
+                }
+            }
+        }
+    }
+
+    fn set_environment(name: Text, value: Text) -> Result<void, Text> {
+        let key = cstring(name)?
+        let content = cstring(value)?
+        unsafe {
+            if raw_setenv(std::cstr::as_raw(key), std::cstr::as_raw(content), 1) != 0 {
+                return Err("could not set environment variable")
+            }
+        }
+        return Ok(())
+    }
+
+}

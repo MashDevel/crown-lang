@@ -27,10 +27,10 @@ module toolchain {
     }
 
     fn manifest_fields() -> Text {
-        return "|package.name|package.source|package.sources|package.exclude|toolchain.libraries|target.macos.frameworks|target.macos.libraries|target.linux.libraries|quality.max_file_lines|quality.max_function_lines|quality.max_cyclomatic|quality.max_cognitive|quality.max_nesting|quality.max_parameters|quality.duplication.max_percent|quality.duplication.min_lines|quality.duplication.min_tokens|format.indent_width|format.max_blank_lines|format.final_newline|"
+        return "|package.name|package.source|package.sources|package.exclude|toolchain.libraries|target.macos.frameworks|target.macos.libraries|target.linux.libraries|target.windows.libraries|quality.max_file_lines|quality.max_function_lines|quality.max_cyclomatic|quality.max_cognitive|quality.max_nesting|quality.max_parameters|quality.duplication.max_percent|quality.duplication.min_lines|quality.duplication.min_tokens|format.indent_width|format.max_blank_lines|format.final_newline|"
     }
 
     fn manifest_section(section: Text) -> bool {
-        return std::text::contains("|package|toolchain|target|target.macos|target.linux|quality|quality.duplication|format|", std::text::joined(std::text::joined("|", section), "|"))
+        return std::text::contains("|package|toolchain|target|target.macos|target.linux|target.windows|quality|quality.duplication|format|", std::text::joined(std::text::joined("|", section), "|"))
     }
 }

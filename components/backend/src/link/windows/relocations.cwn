@@ -1,0 +1,102 @@
+module pe {
+    fn relocate(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..object.relocations.length() {
+            relocate_one(image, object, object.relocations[index])?
+        }
+        return Ok(())
+    }
+
+    fn relocate_one(image: write Image, object: object::CompilerObject, relocation: object::Relocation) -> Result<void, Text> {
+        let section = image.section_map[relocation.section]
+        let offset = image.locations[relocation.section] + usize.from(relocation.offset)
+        let rva = image.sections[section].rva + offset
+        let address = IMAGE_BASE + u64.from(rva)
+        validate_import_reference(object, relocation)?
+        let value = resolved_value(image, relocation)?
+        let encoded = if section_relocation(relocation.kind) {
+            section_relocation_value(image, object, relocation, value)?
+        } else {
+            encode_relocation(image, relocation, value, address, section)?
+        }
+        if relocation.kind == object::RelocationAbsolute64() {
+            image.fixups.push(rva)
+        }
+        let width = usize.from(object::relocation_width(relocation.kind))
+        link_binary::put(image.sections[section].bytes, offset, u64.from_bits(encoded), width)
+        return Ok(())
+    }
+
+    fn resolved_value(image: Image, relocation: object::Relocation) -> Result<i64, Text> {
+        var value = link_binary::signed_add(i64.from(relocation_target(image, relocation)), relocation.addend)?
+        match relocation.subtract {
+            Some(symbol) => {
+                value = link_binary::signed_subtract(value, i64.from(image.symbols[symbol]))?
+            }
+            None => {
+            }
+        }
+        return Ok(value)
+    }
+
+    fn encode_relocation(image: Image, relocation: object::Relocation, value: i64, address: u64, section: usize) -> Result<i64, Text> {
+        if arm64::arm_instruction_relocation(relocation.kind) {
+            if image.architecture != object::ArchitectureArm64() || address % 4 != 0 {
+                return Err("PE ARM64 relocation requires an aligned ARM64 instruction")
+            }
+            let offset = usize.from(address - IMAGE_BASE) - image.sections[section].rva
+            let word = u32.from(link_binary::number(image.sections[section].bytes, offset, 4)?)
+            return Ok(i64.from(arm64::arm_relocated_word(relocation.kind, word, value, address)?))
+        }
+        return relocation_value(relocation.kind, value, address)
+    }
+
+    fn validate_import_reference(object: object::CompilerObject, relocation: object::Relocation) -> Result<void, Text> {
+        loan read object.symbols[relocation.symbol] as symbol {
+            if object::symbol_is_import(symbol.binding) && object::symbol_is_function(symbol.kind) == false {
+                if std::text::starts(symbol.name, "__imp_") {
+                    return Ok(())
+                }
+                match relocation.kind {
+                    object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 | object::RelocationArmGotPage21 | object::RelocationArmGotLoadPageOffset12 => {
+                        return Ok(())
+                    }
+                    _ => {
+                        return Err("PE imported data requires an indirect relocation")
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn relocation_target(image: Image, relocation: object::Relocation) -> u64 {
+        match relocation.kind {
+            object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 | object::RelocationArmGotPage21 | object::RelocationArmGotLoadPageOffset12 => image.slots[relocation.symbol]
+            _ => image.symbols[relocation.symbol]
+        }
+    }
+
+    fn relative(value: i64, address: u64) -> Result<i64, Text> {
+        let delta = link_binary::signed_subtract(value, i64.from(address))?
+        if delta < -2147483648 || delta > 2147483647 {
+            return Err("PE relative relocation exceeds signed 32-bit range")
+        }
+        return Ok(delta)
+    }
+
+    fn relocation_value(kind: object::RelocationKind, value: i64, address: u64) -> Result<i64, Text> {
+        match kind {
+            object::RelocationImageRelative32 => {
+                let rva = link_binary::signed_subtract(value, i64.from(IMAGE_BASE))?
+                return unsigned_relocation(rva, 4294967295)
+            }
+            object::RelocationPcRelative32 | object::RelocationPcRelativeCall32 | object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 => relative(value, address)
+            object::RelocationAbsolute64 | object::RelocationDifference64 => Ok(value)
+            object::RelocationDifference32 => {
+                return relative(value, 0)
+            }
+            _ => Err("unsupported PE relocation")
+        }
+    }
+
+}

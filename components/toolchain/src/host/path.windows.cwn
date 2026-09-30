@@ -1,0 +1,90 @@
+module toolchain {
+    extern "c" {
+        fn raw_current_directory(size: u32, buffer: RawPtr<u16>) -> u32 = "GetCurrentDirectoryW"
+        fn raw_full_path(path: RawPtr<u16>, size: u32, buffer: RawPtr<u16>, name: RawPtr<u8>) -> u32 = "GetFullPathNameW"
+    }
+
+    fn path_separator(byte: u8) -> bool {
+        return byte == 47 || byte == 92
+    }
+
+    fn path_root_length(path: Text) -> usize {
+        loan read path as bytes {
+            if bytes.length() >= 2 && bytes[1] == 58 {
+                return drive_root_length(bytes)
+            }
+            if bytes.length() == 0 || path_separator(bytes[0]) == false {
+                return 0
+            }
+            if bytes.length() < 2 || path_separator(bytes[1]) == false {
+                return 1
+            }
+            return unc_root_length(bytes)
+        }
+    }
+
+    fn drive_root_length(bytes: TextView) -> usize {
+        if bytes.length() >= 3 && path_separator(bytes[2]) {
+            return 3
+        }
+        return 2
+    }
+
+    fn unc_root_length(bytes: TextView) -> usize {
+        var position: usize = 2
+        for component in 0..2 {
+            component;
+            while position < bytes.length() && path_separator(bytes[position]) == false {
+                position = position + 1
+            }
+            if position < bytes.length() {
+                position = position + 1
+            }
+        }
+        return position
+    }
+
+    fn normalized_windows_path(value: TextView) -> Text {
+        var output = ""
+        loan read value[0..value.length()] as bytes {
+            var index: usize = 0
+            while index < bytes.length() {
+                let scalar = std::text::decode_scalar(bytes, index)
+                output.push(if scalar == '\\' {
+                        '/'
+                    } else {
+                        scalar
+                    })
+            }
+        }
+        return move output
+    }
+
+    fn current_directory() -> Result<Text, Text> {
+        var buffer = wide_buffer(32768)
+        unsafe {
+            let size = raw_current_directory(32768, buffer.as_raw())
+            if size == 0 || size >= 32768 {
+                return Err("could not read working directory")
+            }
+            return Ok(normalized_windows_path(wide_text(buffer.as_raw(), usize.from(size))?))
+        }
+    }
+
+    fn absolute(path: Text) -> Result<Text, Text> {
+        let full = windows_full_path(path)?
+        return windows_resolved_path(full)
+    }
+
+    fn windows_full_path(path: Text) -> Result<Text, Text> {
+        let encoded = wstring(path)?
+        var buffer = wide_buffer(32768)
+        unsafe {
+            let size = raw_full_path(std::wstr::as_raw(encoded), 32768, buffer.as_raw(), null())
+            if size == 0 || size >= 32768 {
+                return Err(std::text::joined("could not resolve path: ", path))
+            }
+            return Ok(normalized_windows_path(wide_text(buffer.as_raw(), usize.from(size))?))
+        }
+    }
+}

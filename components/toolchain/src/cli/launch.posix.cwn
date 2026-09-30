@@ -1,0 +1,25 @@
+module toolchain {
+    extern "c" {
+        fn raw_execvp(path: RawPtr<u8>, arguments: RawPtr<RawPtr<u8>>) -> i32 = "execvp"
+    }
+
+    fn replace_process(arguments: Vec<Text>) -> Result<void, Text> {
+        if arguments.length() == 0 {
+            return Err("cannot execute an empty command")
+        }
+        var encoded = Vec<std::cstr::CString>.new()
+        var pointers = Vec<RawPtr<u8>>.new()
+        for index in 0..arguments.length() {
+            encoded.push(cstring(arguments[index])?)
+        }
+        unsafe {
+            for index in 0..encoded.length() {
+                pointers.push(std::cstr::as_raw(encoded[index]))
+            }
+            pointers.push(null())
+            raw_execvp(pointers[0], pointers.as_raw())
+        }
+        return Err(std::text::joined("could not execute: ", arguments[0]))
+    }
+
+}

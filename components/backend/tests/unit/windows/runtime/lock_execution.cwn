@@ -1,0 +1,91 @@
+fn runtime_lock_marker(name: Text) -> u64 {
+    return match read name {
+        "InitializeSRWLock" => 10
+        "AcquireSRWLockExclusive" => 20
+        "ReleaseSRWLockExclusive" => 30
+        "AcquireSRWLockShared" => 40
+        "ReleaseSRWLockShared" => 50
+        _ => 99
+    }
+}
+
+fn runtime_mock_locks(program: write ir::Program) -> Result<void, Text> {
+    for index in 9..program.functions.length() {
+        let function = ir::function_copy(program.functions[index])
+        var code = windows_runtime::builder(move function)?
+        let marker = runtime_lock_marker(code.function.name)
+        let constant = windows_runtime::integer(code, ir::IntegerWidth32(), marker)
+        let lock = code.function.parameters[0]
+        windows_runtime::store(code, lock, 0, constant)?
+        windows_runtime::finish(code, ir::TerminatorReturn(None()))?
+        program.functions[index] = windows_runtime::take_function(code)
+    }
+    return Ok(())
+}
+
+fn runtime_invoke_lock(code: write windows_runtime::Builder, target: usize, lock: usize, attributes: Option<usize>) -> Result<usize, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(lock)
+    match attributes {
+        Some(value) => arguments.push(value)
+        None => {
+        }
+    }
+    return windows_runtime::value(code, ir::InstructionCall(target, move arguments, ir::TypeInteger(ir::IntegerWidth32())))
+}
+
+fn runtime_expect_value(code: write windows_runtime::Builder, actual: usize, expected: u64) -> Result<void, Text> {
+    let constant = windows_runtime::integer(code, ir::IntegerWidth32(), expected)
+    let equal = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), actual, constant))?
+    return windows_runtime::require_condition(code, equal, 1)
+}
+
+fn runtime_expect_memory(code: write windows_runtime::Builder, lock: usize, offset: u64, expected: u64) -> Result<void, Text> {
+    let address = windows_runtime::offset(code, lock, offset)?
+    let actual = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth32()), 4, false))?
+    return runtime_expect_value(code, actual, expected)
+}
+
+fn runtime_lock_sequence(code: write windows_runtime::Builder, lock: usize) -> Result<void, Text> {
+    let targets: [usize; 10] = [4, 5, 7, 6, 7, 8, 0, 1, 2, 3]
+    let markers: [u64; 10] = [10, 40, 50, 20, 30, 30, 10, 20, 30, 30]
+    for index in 0..10 {
+        let attributes = if targets[index] == 0 || targets[index] == 4 {
+            Some(windows_runtime::null_pointer(code))
+        } else {
+            None()
+        }
+        let status = runtime_invoke_lock(code, targets[index], lock, attributes)?
+        runtime_expect_value(code, status, 0)?
+        runtime_expect_memory(code, lock, 0, markers[index])?
+        runtime_expect_memory(code, lock, 8, if index == 3 {
+                1
+            } else {
+                0
+            })?
+    }
+    return Ok(())
+}
+
+fn runtime_lock_rejections(code: write windows_runtime::Builder, lock: usize) -> Result<void, Text> {
+    let targets: [usize; 2] = [0, 4]
+    for index in 0..2 {
+        let status = runtime_invoke_lock(code, targets[index], lock, Some(lock))?
+        runtime_expect_value(code, status, 22)?
+        runtime_expect_memory(code, lock, 0, 30)?
+    }
+    return Ok(())
+}
+
+fn runtime_lock_execution_program() -> Result<ir::Program, Text> {
+    var program = runtime_lock_program()
+    windows_runtime::prepare(program)?
+    runtime_mock_locks(program)?
+    var code = windows_runtime::builder(ir::function_new("windows_runtime_mock_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let lock = windows_runtime::value(code, ir::InstructionStackSlot(16, 8))?
+    runtime_lock_sequence(code, lock)?
+    runtime_lock_rejections(code, lock)?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}

@@ -1,0 +1,22 @@
+fn windows_fixture_name(index: usize) -> Text {
+    let names = ["calls", "variadic", "aggregate4", "aggregate16", "aggregate24", "stack", "wide", "crt", "capture"]
+    if index >= 9 {
+        return ""
+    }
+    return names[index].clone()
+}
+
+fn windows_fixture_program(index: usize) -> Result<ir::Program, u32> {
+    match index {
+        0 => windows_call_program(false)
+        1 => windows_call_program(true)
+        2 => windows_aggregate_program(4)
+        3 => windows_aggregate_program(16)
+        4 => windows_aggregate_program(24)
+        5 => windows_aggregate_program(8192)
+        6 => windows_wide_program()
+        7 => windows_crt_program()
+        8 => windows_capture_program()
+        _ => Err(83)
+    }
+}

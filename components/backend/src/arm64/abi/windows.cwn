@@ -1,0 +1,33 @@
+module arm64 {
+    fn abi_windows_variadic(state: write AbiState, value: AbiValue) -> Result<AbiArgument, Text> {
+        let indirect = value.size > 16
+        let actual = if indirect {
+            AbiValue {
+                size: 8, alignment: 8, kind: AbiKind::Integer()
+            }
+        } else {
+            value
+        }
+        let location = if actual.size == 0 {
+            AbiLocation::Omitted()
+        } else {
+            abi_general(state, actual)?
+        }
+        return Ok(AbiArgument {
+                location: location, indirect: indirect
+            })
+    }
+
+    fn abi_variadic(signature: ir::Signature, index: usize, variant: AbiVariant) -> bool {
+        if variant == AbiVariant::Windows() {
+            return match signature.variadic_start {
+                Some(start) => {
+                    start;
+                    true
+                }
+                None => false
+            }
+        }
+        return ir::signature_variadic(signature, index)
+    }
+}

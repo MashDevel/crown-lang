@@ -1,5 +1,5 @@
 fn installed(root: Text) -> Result<Text, Text> {
-    let compiler = toolchain::path_join(root, "toolchain/crown")
+    let compiler = toolchain::path_join(root, toolchain::path_join("toolchain", toolchain::executable_name("crown", toolchain::host_target())))
     toolchain::make_directory(toolchain::parent_path(compiler))?
     toolchain::copy_file(testing::compiler()?, compiler)?
     toolchain::executable(compiler)?
@@ -7,13 +7,30 @@ fn installed(root: Text) -> Result<Text, Text> {
 }
 
 fn invoke(root: Text, compiler: Text, arguments: Text) -> Result<toolchain::ProcessResult, Text> {
-    var command = testing::list("env|CROWN_ROOT=|CC=/unavailable")
+    let previous = toolchain::environment("CROWN_ROOT")
+    toolchain::set_environment("CROWN_ROOT", "")?
+    let result = invoke_without_driver(root, compiler, arguments)
+    toolchain::set_environment("CROWN_ROOT", previous)?
+    return move result
+}
+
+fn invoke_without_driver(root: Text, compiler: Text, arguments: Text) -> Result<toolchain::ProcessResult, Text> {
+    var command = Vec<Text>.new()
     command.push(compiler.clone())
     let supplied = testing::list(arguments)
     for index in 0..supplied.length() {
         command.push(supplied[index].clone())
     }
-    return testing::capture_compiler(move command, root)
+    let previous = toolchain::environment("CC")
+    toolchain::set_environment("CC", "/unavailable")?
+    let result = testing::capture_compiler(move command, root)
+    toolchain::set_environment("CC", previous)?
+    return move result
+}
+
+fn application_binary(root: Text) -> Text {
+    let name = toolchain::executable_name("app", toolchain::host_target())
+    return toolchain::path_join(root, toolchain::path_join("application/target/debug", name))
 }
 
 fn build(root: Text, compiler: Text, expected: Text) -> Result<void, Text> {
@@ -28,7 +45,7 @@ fn cache(root: Text, compiler: Text) -> Result<void, Text> {
     testing::write_file(root, "application/Crown.toml", "[package]\nname='app'\nsource='main.cwn'")?
     testing::write_file(root, "application/main.cwn", "fn main() -> u32 { print(std::value()); return 0 }")?
     build(root, compiler, "42\n")?
-    let record = toolchain::path_join(root, "application/target/debug/app.crown-build")
+    let record = std::text::joined(application_binary(root), ".crown-build")
     let previous = toolchain::read_text(record)?
     build(root, compiler, "42\n")?
     testing::expect(std::text::equal(previous, toolchain::read_text(record)?), "unchanged library reuses build record")?
@@ -50,7 +67,7 @@ fn coverage(root: Text, compiler: Text, name: Text, expected: i32) -> Result<voi
     let application = toolchain::path_join(root, "application")
     let built = invoke(root, compiler, std::text::joined("build|", std::text::joined(application, std::text::joined("|--coverage|", directory))))?
     testing::expect(built.status == 0, std::text::joined("instrumented application builds: ", built.stderr))?
-    let binary = toolchain::path_join(application, "target/debug/app")
+    let binary = application_binary(root)
     let ran = toolchain::capture(toolchain::command(testing::list(binary)), root)?
     testing::expect(ran.status == 0, "instrumented application runs")?
     let measured = invoke(root, compiler, std::text::joined("coverage|", directory))?
@@ -93,15 +110,16 @@ fn budgets(root: Text, compiler: Text) -> Result<void, Text> {
 
 fn symlink(root: Text, compiler: Text) -> Result<void, Text> {
     let link = toolchain::path_join(root, "crown-link")
-    let arguments = testing::list(std::text::joined("ln|-s|", std::text::joined(compiler, std::text::joined("|", link))))
-    toolchain::require_command(move arguments)?
+    toolchain::symbolic_link(compiler, link, false)?
     build(root, link, "43\n")?
     return Ok(())
 }
 
 fn path_installation(root: Text, compiler: Text) -> Result<void, Text> {
     let previous = toolchain::environment("PATH")
-    let paths = std::text::joined(toolchain::parent_path(compiler), std::text::joined(":", previous))
+    var paths = toolchain::parent_path(compiler)
+    paths.push(char.from(toolchain::path_list_separator()))
+    std::text::append(paths, previous)
     toolchain::set_environment("PATH", paths)?
     let result = build(root, "crown", "43\n")
     toolchain::set_environment("PATH", previous)?

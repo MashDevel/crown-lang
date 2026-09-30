@@ -1,0 +1,13 @@
+module windows_runtime {
+    fn process_environment(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        if matching_signature(code.function.signature, pointers(0, ir::TypePointer())) == false {
+            return Err("incompatible Windows process environment signature")
+        }
+        let target = external(program, "__p__environ", pointers(0, ir::TypePointer()))?
+        let address = value(code, ir::InstructionCall(target, Vec<usize>.new(), ir::TypePointer()))?
+        let environment = value(code, ir::InstructionLoad(address, ir::TypePointer(), 8, false))?
+        finish(code, ir::TerminatorReturn(Some(environment)))?
+        return Ok(take_function(code))
+    }
+}

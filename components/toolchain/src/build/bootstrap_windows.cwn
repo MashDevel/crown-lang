@@ -1,0 +1,26 @@
+module toolchain {
+    fn windows_target_triple(architecture: Architecture) -> Text {
+        return match architecture {
+            Architecture::X86_64 => "x86_64-pc-windows-msvc",
+            Architecture::Arm64 => "aarch64-pc-windows-msvc"
+        }
+    }
+
+    fn bootstrap_windows_flags(target: Target) -> Vec<Text> {
+        var flags = std::text::split("-fuse-ld=lld|-Wl,/subsystem:console,/WX,/Brepro|-Wl,/stack:8388608|-lkernel32|-ladvapi32|-lws2_32", 124)
+        flags.push(std::text::joined("--target=", windows_target_triple(target.architecture)))
+        return move flags
+    }
+    fn bootstrap_link_record(target: Target) -> Text {
+        let flags = bootstrap_windows_flags(target)
+        var output = "["
+        for index in 0..flags.length() {
+            if index != 0 {
+                output.push(',')
+            }
+            std::text::append(output, json_quoted(flags[index]))
+        }
+        output.push(']')
+        return move output
+    }
+}

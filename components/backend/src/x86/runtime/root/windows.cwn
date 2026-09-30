@@ -1,0 +1,86 @@
+module x86 {
+    fn windows_root_runtime(program: write Program) -> Result<void, CodegenError> {
+        let count = program.functions.length()
+        for index in 0..count {
+            let name = program.functions[index].name.clone()
+            if root_runtime_name(name) || std::text::starts(name, "__compiler_root_") {
+                windows_root_body(program.functions[index])
+                if root_runtime_name(name) {
+                    program.functions[index].name = windows_root_name(name)
+                    codegen_insert_function(program, windows_root_entry(name))?
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn windows_root_name(name: Text) -> Text {
+        return std::text::joined("__compiler_windows_private_", name)
+    }
+
+    fn windows_root_entry(name: Text) -> Function {
+        var instructions = Vec<Instruction>.new()
+        instructions.push(Push(Rdi()))
+        instructions.push(Push(Rsi()))
+        instructions.push(SubtractImmediate(Rsp(), 8))
+        instructions.push(Move(Rdi(), Rcx()))
+        instructions.push(Move(Rsi(), Rdx()))
+        instructions.push(Move(Rdx(), R8()))
+        instructions.push(Move(Rcx(), R9()))
+        instructions.push(Call(windows_root_name(name)))
+        instructions.push(AddImmediate(Rsp(), 8))
+        instructions.push(Pop(Rsi()))
+        instructions.push(Pop(Rdi()))
+        instructions.push(Return())
+        return function_new(name.clone(), move instructions)
+    }
+
+    fn windows_root_body(function: write Function) -> void {
+        var pending = normalize_reverse(replace(function.instructions, Vec<Instruction>.new()))
+        while pending.length() != 0 {
+            match pending.pop() {
+                Some(instruction) => windows_root_instruction(function.instructions, move instruction)
+                None => {
+                }
+            }
+        }
+    }
+
+    fn windows_root_instruction(output: write Vec<Instruction>, instruction: take Instruction) -> void {
+        match read instruction {
+            Call(name) => {
+                windows_root_call(output, name)
+                return
+            }
+            CallRegister(register) => {
+                output.push(Move(R11(), register))
+                windows_root_external_begin(output)
+                output.push(CallRegister(R11()))
+                output.push(AddImmediate(Rsp(), 32))
+                return
+            }
+            _ => {
+            }
+        }
+        output.push(move instruction)
+    }
+
+    fn windows_root_call(output: write Vec<Instruction>, name: Text) -> void {
+        if root_runtime_name(name) {
+            output.push(Call(windows_root_name(name)))
+            return
+        }
+        if std::text::equal(name, "free") || std::text::equal(name, "abort") {
+            windows_root_external_begin(output)
+            output.push(Call(name.clone()))
+            output.push(AddImmediate(Rsp(), 32))
+            return
+        }
+        output.push(Call(name.clone()))
+    }
+
+    fn windows_root_external_begin(output: write Vec<Instruction>) -> void {
+        output.push(SubtractImmediate(Rsp(), 32))
+        output.push(Move(Rcx(), Rdi()))
+    }
+}

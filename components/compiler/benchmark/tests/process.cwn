@@ -1,0 +1,53 @@
+fn benchmark_worker_command(executable: Text, mode: Text) -> Vec<Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push(executable.clone())
+    arguments.push("worker")
+    arguments.push(mode.clone())
+    return move arguments
+}
+
+fn benchmark_worker(executable: Text, mode: Text) -> u32 {
+    return match read mode {
+        "success" => 0,
+        "failure" => 1,
+        "maximum" => 255,
+        "warning" => {
+            toolchain::failure("warning");
+            0
+        }
+        "busy" => benchmark_busy(),
+        "tree" => {
+            match toolchain::execute(toolchain::command(benchmark_worker_command(executable, "busy"))) {
+                Ok(status) => u32.from(status),
+                Err(error) => {
+                    toolchain::failure(error);
+                    1
+                }
+            }
+        }
+        "wait" => {
+            toolchain::wait_milliseconds(1000)
+            0
+        }
+        _ => 2
+    }
+}
+
+fn benchmark_busy() -> u32 {
+    let started = toolchain::milliseconds()
+    while toolchain::milliseconds() - started < 150 {
+    }
+    return 0
+}
+
+fn benchmark_measurement_tests(executable: Text) -> Result<void, Text> {
+    let measured = toolchain::execute_measured(toolchain::command(benchmark_worker_command(executable, "tree")))?
+    testing::expect(measured.status == 0, "measured command succeeds")?
+    testing::expect(measured.usage.user_microseconds + measured.usage.system_microseconds > 0, "measurement includes child process CPU time")?
+    let failed = toolchain::execute_measured(toolchain::command(benchmark_worker_command(executable, "maximum")))?
+    testing::expect(failed.status == 255, "measurement preserves failing exit status")?
+    testing::error(toolchain::execute_measured(toolchain::command(testing::list("/unavailable-benchmark-command"))))?
+    var request = toolchain::command(benchmark_worker_command(executable, "wait"))
+    request.timeout = 25
+    return testing::error(toolchain::execute_measured(request))
+}

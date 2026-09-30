@@ -1,10 +1,10 @@
 module profile {
-    fn runtime_hit() -> x86::Function {
+    fn runtime_hit(argument: x86::Register) -> x86::Function {
         var instructions = Vec<x86::Instruction>.new()
         instructions.push(x86::LoadSymbolAddress(x86::R8(), "crown_cov_data"))
         instructions.push(x86::Load(x86::R8(), x86::R8(), 0))
-        instructions.push(x86::ShiftLeftImmediate(x86::Rdi(), 3))
-        instructions.push(x86::Add(x86::R8(), x86::Rdi()))
+        instructions.push(x86::ShiftLeftImmediate(argument, 3))
+        instructions.push(x86::Add(x86::R8(), argument))
         instructions.push(x86::Load(x86::Rax(), x86::R8(), 0))
         instructions.push(x86::Label(x86::InternalLabel(0)))
         instructions.push(x86::CompareImmediate(x86::Rax(), -1))
@@ -22,15 +22,19 @@ module profile {
         return move function
     }
 
-    fn append_runtime(object: write object::CompilerObject, bytes: u64, directory: Text) -> Result<void, Text> {
+    fn append_runtime(object: write object::CompilerObject, bytes: u64, directory: Text, target: toolchain::Target) -> Result<void, Text> {
         if bytes == 0 {
             return Ok(())
+        }
+        if target.platform == toolchain::Platform::Windows() {
+            let runtime = windows_runtime::instrumentation_object(bytes, toolchain::path_join(directory, "run.XXXXXX"), target, true)?
+            return link_object::merge(object, move runtime)
         }
         if object.architecture == object::ArchitectureArm64() {
             let runtime = arm64::instrumentation_object(bytes, toolchain::path_join(directory, "run.XXXXXX"), true)?
             return link_object::merge(object, move runtime)
         }
-        let runtime = coverage::instrumentation_object(bytes, toolchain::path_join(directory, "run.XXXXXX"), runtime_hit(), "cannot initialize Crown profiling")?
+        let runtime = coverage::instrumentation_object(bytes, toolchain::path_join(directory, "run.XXXXXX"), runtime_hit(x86::Rdi()), "cannot initialize Crown profiling")?
         return link_object::merge(object, move runtime)
     }
 }

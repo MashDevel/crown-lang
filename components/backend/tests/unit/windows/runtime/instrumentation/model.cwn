@@ -1,0 +1,48 @@
+copy struct InstrumentationMock {
+    mode: usize, view: usize, calls: usize, closed: usize, removed: usize
+}
+
+fn instrumentation_mock_global(program: write ir::Program, name: Text) -> usize {
+    return windows_runtime::instrumentation_global(program, name, std::bytes::filled(8, 0), false)
+}
+
+fn instrumentation_mock_pointer(code: write windows_runtime::Builder, address: u64) -> Result<usize, Text> {
+    let bits = windows_runtime::integer(code, ir::IntegerWidth64(), address)
+    return windows_runtime::value(code, ir::InstructionCast(ir::CastIntegerToPointer(), bits, ir::TypePointer()))
+}
+
+fn instrumentation_mock_increment(code: write windows_runtime::Builder, global: usize) -> Result<usize, Text> {
+    let address = windows_runtime::value(code, ir::InstructionGlobalAddress(global))?
+    let previous = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let one = windows_runtime::integer(code, ir::IntegerWidth64(), 1)
+    let next = windows_runtime::value(code, ir::InstructionBinary(ir::BinaryAdd(), previous, one))?
+    windows_runtime::store(code, address, 0, next)?
+    return Ok(previous)
+}
+
+fn instrumentation_mock_equal(code: write windows_runtime::Builder, actual: usize, expected: usize) -> Result<void, Text> {
+    let valid = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), actual, expected))?
+    let success = windows_runtime::new_block(code)?
+    let failure = windows_runtime::new_block(code)?
+    windows_runtime::finish(code, ir::TerminatorConditional(valid, success, failure))?
+    code.block = failure
+    windows_runtime::finish(code, ir::TerminatorUnreachable())?
+    code.block = success
+    return Ok(())
+}
+
+fn instrumentation_mock_counter(code: write windows_runtime::Builder, global: usize, expected: u64) -> Result<void, Text> {
+    let address = windows_runtime::value(code, ir::InstructionGlobalAddress(global))?
+    let actual = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let value = windows_runtime::integer(code, ir::IntegerWidth64(), expected)
+    return instrumentation_mock_equal(code, actual, value)
+}
+
+fn instrumentation_mock_function(program: ir::Program, name: Text) -> Result<usize, Text> {
+    for index in 0..program.functions.length() {
+        if std::text::equal(program.functions[index].name, name) {
+            return Ok(index)
+        }
+    }
+    return Err("missing Windows instrumentation function")
+}

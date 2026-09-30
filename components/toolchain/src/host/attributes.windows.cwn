@@ -1,0 +1,58 @@
+module toolchain {
+    extern "c" {
+        fn raw_initialize_attributes(attributes: RawPtr<u64>, count: u32, flags: u32, bytes: RawPtr<usize>) -> i32 = "InitializeProcThreadAttributeList"
+        fn raw_update_attribute(attributes: RawPtr<u64>, flags: u32, attribute: usize, value: RawPtr<RawPtr<u8>>, size: usize, previous: RawPtr<u8>, returned: RawPtr<u8>) -> i32 = "UpdateProcThreadAttribute"
+        fn raw_delete_attributes(attributes: RawPtr<u64>) -> void = "DeleteProcThreadAttributeList"
+    }
+
+    opaque resource ProcessAttributes {
+        private data: Vec<u64>
+        private handles: Vec<RawPtr<u8>>
+        private initialized: bool
+        drop {
+            if initialized {
+                unsafe {
+                    raw_delete_attributes(data.as_raw())
+                }
+            }
+        }
+    }
+
+    fn process_handle_attributes(handles: Vec<NativeHandle>) -> Result<ProcessAttributes, Text> {
+        var size = Vec<usize>.new()
+        size.push(0)
+        unsafe {
+            raw_initialize_attributes(RawPtr<u64>.from_address(0), 1, 0, size.as_raw());
+            if size[0] == 0 || size[0] > 1048576 {
+                return Err("invalid process attribute size")
+            }
+            var attributes = ProcessAttributes {
+                data: native_words((size[0] + 7) / 8), handles: Vec<RawPtr<u8>>.new(), initialized: false
+            }
+            if raw_initialize_attributes(attributes.data.as_raw(), 1, 0, size.as_raw()) == 0 {
+                return Err("could not initialize process handle attributes")
+            }
+            attributes.initialized = true
+            for index in 0..handles.length() {
+                attributes.handles.push(handles[index].value)
+            }
+            if raw_update_attribute(attributes.data.as_raw(), 0, 131074, attributes.handles.as_raw(), attributes.handles.length() * 8, null(), null()) == 0 {
+                return Err("could not restrict inherited process handles")
+            }
+            return Ok(move attributes)
+        }
+    }
+
+    fn process_startup(handles: Vec<NativeHandle>, attributes: ProcessAttributes) -> Result<Vec<u64>, Text> {
+        var startup = native_words(14)
+        startup[0] = 112
+        startup[7] = 1099511627776
+        unsafe {
+            for index in 0..3 {
+                RawPtr<RawPtr<u8>>.cast(startup.as_raw()).offset(10 + index).write(handles[index].value)
+            }
+            RawPtr<RawPtr<u64>>.cast(startup.as_raw()).offset(13).write(attributes.data.as_raw())
+        }
+        return Ok(move startup)
+    }
+}

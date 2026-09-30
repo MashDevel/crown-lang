@@ -1,9 +1,0 @@
-module frontend {
-    fn arm_variant(target: toolchain::Target) -> arm64::AbiVariant {
-        return if target.platform == toolchain::Platform::Macos() {
-            arm64::AbiVariant::Darwin()
-        } else {
-            arm64::AbiVariant::Aapcs64()
-        }
-    }
-}

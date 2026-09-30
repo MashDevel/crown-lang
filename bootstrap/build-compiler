@@ -1,0 +1,56 @@
+#!/bin/sh
+set -eu
+compiler=${1:?expected starting compiler}
+output=${2:?expected output compiler}
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+host=$(sh "$root/bootstrap/host")
+architecture=${host%-*}
+platform=${host#*-}
+set --
+for component in compiler backend library toolchain; do
+    directory="$root/components/$component/src"
+    listing=$(find "$directory" -type f -name '*.cwn' | LC_ALL=C sort)
+    previous_ifs=$IFS
+    IFS='
+'
+    for source in $listing; do
+        stem=${source%.cwn}
+        case "$stem" in
+            *.windows) continue ;;
+            *.macos) [ "$platform" = macos ] || continue; stem=${stem%.macos} ;;
+            *.linux) [ "$platform" = linux ] || continue; stem=${stem%.linux} ;;
+            *.bedrock) continue ;;
+            *.posix) stem=${stem%.posix} ;;
+        esac
+        case "$stem" in
+            *.x86_64) [ "$architecture" = x86_64 ] || continue ;;
+            *.arm64) [ "$architecture" = arm64 ] || continue ;;
+        esac
+        set -- "$@" "$source"
+    done
+    IFS=$previous_ifs
+done
+inputs="$output.sources"
+mkdir -p "$inputs"
+ancestor=$(CDPATH= cd -- "$inputs" && pwd)
+prefix=
+while [ "$ancestor" != / ]; do
+    case "$root/" in "$ancestor/"*) break ;; esac
+    ancestor=${ancestor%/*}
+    ancestor=${ancestor:-/}
+    prefix="../$prefix"
+done
+manifest=$(mktemp "$inputs/Crown.toml.XXXXXX")
+trap 'rm -f "$manifest"' EXIT HUP INT TERM
+{
+    printf '%s\n' '[package]' 'name = "crown_bootstrap"' 'sources = ['
+    for source in "$@"; do
+        relative="$prefix${source#"${ancestor%/}/"}"
+        escaped=$(printf '%s' "$relative" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        printf '  "%s",\n' "$escaped"
+    done
+    printf '%s\n' ']'
+} > "$manifest"
+mv "$manifest" "$inputs/Crown.toml"
+trap - EXIT HUP INT TERM
+CROWN_ROOT=$root "$compiler" build "$inputs" --target "$host" -o "$output"

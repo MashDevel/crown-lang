@@ -1,0 +1,97 @@
+module windows_runtime {
+    fn startup_arguments(program: write ir::Program, code: write Builder) -> Result<Vec<usize>, Text> {
+        configure_arguments(program, code)?
+        let argc_address = call_value(program, code, "__p___argc", Vec<usize>.new(), ir::TypePointer())?
+        let argc = value(code, ir::InstructionLoad(argc_address, ir::TypeInteger(ir::IntegerWidth32()), 4, false))?
+        let count = value(code, ir::InstructionCast(ir::CastZeroExtend(), argc, ir::TypeInteger(ir::IntegerWidth64())))?
+        let argv_address = call_value(program, code, "__p___wargv", Vec<usize>.new(), ir::TypePointer())?
+        let wide = load_pointer(code, argv_address, 0)?
+        let convert = arguments_converter(program)?
+        var inputs = Vec<usize>.new()
+        inputs.push(count)
+        inputs.push(wide)
+        let argv = value(code, ir::InstructionCall(convert, move inputs, ir::TypePointer()))?
+        var arguments = Vec<usize>.new()
+        arguments.push(count)
+        arguments.push(argv)
+        return Ok(move arguments)
+    }
+
+    fn configure_arguments(program: write ir::Program, code: write Builder) -> Result<void, Text> {
+        var mode = Vec<usize>.new()
+        mode.push(integer(code, ir::IntegerWidth32(), 1))
+        let status = call_value(program, code, "_configure_wide_argv", move mode, ir::TypeInteger(ir::IntegerWidth32()))?
+        let zero = integer(code, ir::IntegerWidth32(), 0)
+        let valid = value(code, ir::InstructionCompare(ir::CompareEqual(), status, zero))?
+        startup_require(program, code, valid)?
+        return Ok(())
+    }
+
+    fn arguments_converter(program: write ir::Program) -> Result<usize, Text> {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        parameters.push(ir::TypePointer())
+        let signature = ir::signature_new(move parameters, ir::TypePointer())
+        var code = builder(ir::function_new("__crown_windows_arguments", move signature, ir::LinkageLocal()))?
+        let count = code.function.parameters[0]
+        let one = integer(code, ir::IntegerWidth64(), 1)
+        let eight = integer(code, ir::IntegerWidth64(), 8)
+        let slots = value(code, ir::InstructionBinary(ir::BinaryAdd(), count, one))?
+        let size = value(code, ir::InstructionBinary(ir::BinaryMultiply(), slots, eight))?
+        let output = startup_allocate(program, code, size)?
+        arguments_convert_loop(program, code, output)?
+        finish(code, ir::TerminatorReturn(Some(output)))?
+        return Ok(ir::program_add_function(program, take_function(code)))
+    }
+
+    fn arguments_convert_loop(program: write ir::Program, code: write Builder, output: usize) -> Result<void, Text> {
+        let cursor = arguments_cursor(code)?
+        let loop = arguments_loop(code, output, cursor)?
+        code.block = loop.body
+        arguments_convert_item(program, code, loop.bytes, loop.destination)?
+        let one = integer(code, ir::IntegerWidth64(), 1)
+        let next = value(code, ir::InstructionBinary(ir::BinaryAdd(), loop.index, one))?
+        store(code, cursor, 0, next)?
+        finish(code, ir::TerminatorBranch(loop.check))?
+        code.block = loop.done
+        let null = null_pointer(code)
+        return store(code, loop.destination, 0, null)
+    }
+
+    fn arguments_cursor(code: write Builder) -> Result<usize, Text> {
+        let cursor = value(code, ir::InstructionStackSlot(8, 8))?
+        let zero = integer(code, ir::IntegerWidth64(), 0)
+        store(code, cursor, 0, zero)?
+        return Ok(cursor)
+    }
+
+    struct ArgumentsLoop {
+        check: usize, body: usize, done: usize, index: usize, bytes: usize, destination: usize
+    }
+
+    fn arguments_loop(code: write Builder, output: usize, cursor: usize) -> Result<ArgumentsLoop, Text> {
+        let check = new_block(code)?
+        let body = new_block(code)?
+        let done = new_block(code)?
+        finish(code, ir::TerminatorBranch(check))?
+        code.block = check
+        let index = value(code, ir::InstructionLoad(cursor, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+        let count = code.function.parameters[0]
+        let more = value(code, ir::InstructionCompare(ir::CompareUnsignedLess(), index, count))?
+        let eight = integer(code, ir::IntegerWidth64(), 8)
+        let bytes = value(code, ir::InstructionBinary(ir::BinaryMultiply(), index, eight))?
+        let destination = value(code, ir::InstructionOffset(output, bytes))?
+        finish(code, ir::TerminatorConditional(more, body, done))?
+        return Ok(ArgumentsLoop {
+                check: check, body: body, done: done, index: index, bytes: bytes, destination: destination
+            })
+    }
+
+    fn arguments_convert_item(program: write ir::Program, code: write Builder, bytes: usize, destination: usize) -> Result<void, Text> {
+        let wide = code.function.parameters[1]
+        let source = value(code, ir::InstructionOffset(wide, bytes))?
+        let string = load_pointer(code, source, 0)?
+        let text = startup_utf8(program, code, string)?
+        return store(code, destination, 0, text)
+    }
+}

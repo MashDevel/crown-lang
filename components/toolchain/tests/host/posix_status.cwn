@@ -1,0 +1,6 @@
+fn main() -> u32 {
+    if toolchain::process_status(6) != -6 || toolchain::process_status(42 << 8) != 42 {
+        return 1
+    }
+    return 42
+}

@@ -1,0 +1,26 @@
+module toolchain {
+    extern "c" {
+        fn raw_wait4(pid: i32, status: RawPtr<i32>, options: i32, usage: RawPtr<u64>) -> i32 = "wait4"
+    }
+
+    fn process_usage_slot() -> Vec<u64> {
+        var values = Vec<u64>.new()
+        for index in 0..18 {
+            index;
+            values.push(0)
+        }
+        return move values
+    }
+
+    fn process_usage(process: Process) -> Result<ProcessUsage, Text> {
+        unsafe {
+            if process.active {
+                return Err("process has not been reaped")
+            }
+            return Ok(ProcessUsage {
+                    user_microseconds: process.accounting[0] * 1000000 + process.accounting[1],
+                    system_microseconds: process.accounting[2] * 1000000 + process.accounting[3]
+                })
+        }
+    }
+}

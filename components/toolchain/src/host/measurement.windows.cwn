@@ -1,0 +1,20 @@
+module toolchain {
+    extern "c" {
+        fn raw_query_job(job: RawPtr<u8>, kind: u32, information: RawPtr<u64>, size: u32, length: RawPtr<u32>) -> i32 = "QueryInformationJobObject"
+    }
+
+    fn process_usage(process: Process) -> Result<ProcessUsage, Text> {
+        var values = native_words(6)
+        unsafe {
+            if process.active {
+                return Err("process has not been reaped")
+            }
+            if raw_query_job(process.job.value, 1, values.as_raw(), 48, RawPtr<u32>.from_address(0)) == 0 {
+                return Err("could not read child resource usage")
+            }
+        }
+        return Ok(ProcessUsage {
+                user_microseconds: values[0] / 10, system_microseconds: values[1] / 10
+            })
+    }
+}

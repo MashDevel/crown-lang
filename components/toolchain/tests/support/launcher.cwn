@@ -36,21 +36,33 @@ module testing_launcher {
     fn fixture(root: Text) -> Result<void, Text> {
         let configured = toolchain::environment("CROWN_LAUNCHER_UNDER_TEST")
         let source = if configured.length() == 0 {
-            toolchain::path_join(toolchain::repository_root()?, "bootstrap/crown")
+            toolchain::path_join(toolchain::repository_root()?, testing_recovery::launcher_path())
         } else {
             configured.clone()
         }
         seed(root)?
-        let launcher = toolchain::path_join(root, "bootstrap/crown")
+        let launcher = toolchain::path_join(root, testing_recovery::launcher_path())
         toolchain::copy_file(source, launcher)?
-        toolchain::copy_file(toolchain::path_join(toolchain::parent_path(source), "digest.awk"), toolchain::path_join(root, "bootstrap/digest.awk"))?
+        fixture_build_tools(root, toolchain::parent_path(source))?
         toolchain::executable(launcher)?
+        return Ok(())
+    }
+
+    fn fixture_build_tools(root: Text, source: Text) -> Result<void, Text> {
+        let tools = testing_recovery::launcher_tools()
+        for index in 0..tools.length() {
+            toolchain::copy_file(toolchain::path_join(source, tools[index]), toolchain::path_join(root, toolchain::path_join("bootstrap", tools[index])))?
+        }
+        let components = testing::list("compiler|backend|library|toolchain")
+        for index in 0..components.length() {
+            toolchain::make_directory(toolchain::path_join(root, std::text::joined("components/", std::text::joined(components[index], "/src"))))?
+        }
         return Ok(())
     }
 
     fn cache(root: Text) -> Result<Text, Text> {
         let source = testing::write_file(root, "cached.s", assembly(17))?
-        let binary = toolchain::path_join(root, "target/bootstrap/crown")
+        let binary = toolchain::path_join(root, toolchain::executable_name("target/bootstrap/crown", toolchain::host_target()))
         toolchain::make_directory(toolchain::parent_path(binary))?
         toolchain::bootstrap_link(source, binary)?
         let seed_path = toolchain::path_join(root, toolchain::seed_relative("compiler.s"))
@@ -63,15 +75,11 @@ module testing_launcher {
     }
 
     fn invoke_at(root: Text, directory: Text) -> Result<toolchain::ProcessResult, Text> {
-        var arguments = testing::list("/usr/bin/env")
-        arguments.push(std::text::joined("CROWN_BOOTSTRAP_DIR=", directory))
-        arguments.push(toolchain::path_join(root, "bootstrap/crown"))
-        arguments.push("--version")
-        return toolchain::capture(toolchain::command(move arguments), root)
+        return testing_recovery::capture_launcher(root, directory, root, false)
     }
 
     fn changed_record(root: Text, field: Text, value: Text) -> Result<void, Text> {
-        let binary = toolchain::path_join(root, "target/bootstrap/crown")
+        let binary = toolchain::path_join(root, toolchain::executable_name("target/bootstrap/crown", toolchain::host_target()))
         let fields = testing::list("input|output|seed")
         var values = Vec<Text>.new()
         values.push(toolchain::digest_text("inputs")?)

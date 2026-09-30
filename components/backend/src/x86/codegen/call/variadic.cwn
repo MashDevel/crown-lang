@@ -3,6 +3,9 @@ module x86 {
         if ir::value_present(signature.variadic_start) == false {
             return Ok(())
         }
+        if signature.calling_convention == ir::CallingConvention::WindowsX64() {
+            return codegen_windows_variadic_arguments(compiler, signature)
+        }
         var assignment = abi_assignment_new()
         for index in 0..signature.parameters.length() {
             abi_assign(signature.parameters[index], signature.parameter_abi[index], assignment)?;

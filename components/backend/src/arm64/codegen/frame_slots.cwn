@@ -16,7 +16,7 @@ module arm64 {
     fn frame_assign_instruction(frame: write Frame, function: ir::Function, lifetimes: Vec<FrameLifetime>, slots: write Vec<FrameSlot>, instruction: ir::Instruction) -> Result<void, Text> {
         match instruction.result {
             Some(value) => {
-                if lifetimes[value].local && frame_register(frame, value) == REGISTER_SPILLED {
+                if lifetimes[value].local && frame_allocated(frame, value) == false {
                     let size = frame_value_size(function.values[value])?
                     frame.values[value] = frame_local_slot(frame, slots, lifetimes[value], size)?
                 }

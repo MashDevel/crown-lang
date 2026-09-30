@@ -1,0 +1,50 @@
+module windows_runtime {
+    fn console_signature(name: Text) -> ir::Signature {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth32()))
+        parameters.push(ir::TypePointer())
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        let width = if std::text::equal(name, "write") {
+            ir::IntegerWidth64()
+        } else {
+            ir::IntegerWidth32()
+        }
+        return ir::signature_new(move parameters, ir::TypeInteger(width))
+    }
+
+    fn console_write(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        if matching_signature(code.function.signature, console_signature("write")) == false {
+            return Err("incompatible Windows write signature")
+        }
+        let count = code.function.parameters[2]
+        let maximum = integer(code, ir::IntegerWidth64(), 2147483647)
+        let large = value(code, ir::InstructionCompare(ir::CompareUnsignedGreater(), count, maximum))?
+        let bounded = value(code, ir::InstructionSelect(large, maximum, count))?
+        let size = value(code, ir::InstructionCast(ir::CastTruncate(), bounded, ir::TypeInteger(ir::IntegerWidth32())))?
+        var arguments = Vec<usize>.new()
+        arguments.push(code.function.parameters[0])
+        arguments.push(code.function.parameters[1])
+        arguments.push(size)
+        let result = call_value(program, code, "_write", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?
+        let extended = value(code, ir::InstructionCast(ir::CastSignExtend(), result, ir::TypeInteger(ir::IntegerWidth64())))?
+        finish(code, ir::TerminatorReturn(Some(extended)))?
+        return Ok(take_function(code))
+    }
+
+    fn console_print(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        if matching_signature(code.function.signature, console_signature("dprintf")) == false {
+            return Err("incompatible Windows integer print signature")
+        }
+        var descriptor = Vec<usize>.new()
+        descriptor.push(code.function.parameters[0])
+        let stream = call_value(program, code, "__acrt_iob_func", move descriptor, ir::TypePointer())?
+        let slot = value(code, ir::InstructionStackSlot(8, 8))?
+        let number = code.function.parameters[2]
+        store(code, slot, 0, number)?
+        let result = console_format(program, code, stream, code.function.parameters[1], slot)?
+        finish(code, ir::TerminatorReturn(Some(result)))?
+        return Ok(take_function(code))
+    }
+}

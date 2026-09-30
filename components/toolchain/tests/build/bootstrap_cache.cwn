@@ -42,7 +42,7 @@ fn changed_sources(root: Text) -> Result<void, Text> {
     let original = toolchain::read_text(path)?
     toolchain::write_text(path, "fn main() -> u32 { 19 }")?
     testing::error(toolchain::bootstrap(request(root, "changed", false)))?
-    testing::expect(toolchain::exists(toolchain::path_join(root, "changed/crown")) == false, "failed rebuild does not publish a compiler")?
+    testing::expect(toolchain::exists(toolchain::path_join(root, toolchain::executable_name("changed/crown", toolchain::host_target()))) == false, "failed rebuild does not publish a compiler")?
     toolchain::write_text(path, original)?
     reused(root, "restored")?
     return Ok(())
@@ -52,7 +52,7 @@ fn available_compiler(root: Text, cached: Text) -> Result<void, Text> {
     toolchain::remove_file(cached)?
     toolchain::remove_file(std::text::joined(cached, ".crown-build"))?
     var build = request(root, "available", false)
-    build.compiler = toolchain::path_join(root, "first/crown")
+    build.compiler = toolchain::path_join(root, toolchain::executable_name("first/crown", toolchain::host_target()))
     toolchain::bootstrap(build)?
     reused(root, "from-available")?
     let seed = toolchain::verify_seed(root)?
@@ -94,8 +94,15 @@ fn changed_install(root: Text, cached: Text) -> Result<void, Text> {
 fn native_compiler(root: Text) -> Result<Text, Text> {
     testing_launcher::cached_project(root)?
     testing_launcher::matching_seed_manifest(root)?
-    let compiler = testing::write_file(root, "native-compiler", "#!/bin/sh\nset -eu\ntest \"$1\" = _executable\ntest \"$2\" = -o\nprintf '#!/bin/sh\\nexit 37\\n' > \"$3\"\nchmod +x \"$3\"\nprintf 'built\\n' >> \"$0.calls\"\n")?
-    toolchain::executable(compiler)?
+    let compiler = toolchain::path_join(root, toolchain::executable_name("native-compiler", toolchain::host_target()))
+    var arguments = testing::list("build")
+    arguments.push(toolchain::path_join(toolchain::repository_root()?, "components/toolchain/tests/fixtures/native_compiler.cwn"))
+    arguments.push("--toolchain-library");
+    arguments.push("toolchain")
+    arguments.push("-o");
+    arguments.push(compiler.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(result), "native compiler fixture builds")?
     return Ok(move compiler)
 }
 

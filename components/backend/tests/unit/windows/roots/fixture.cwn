@@ -1,0 +1,86 @@
+fn windows_root_program() -> Result<ir::Program, Text> {
+    var program = ir::program_new()
+    let storage = windows_root_storage(program)
+    let destructor = windows_root_destructor(program)?
+    windows_root_free(program)?
+    var code = windows_runtime::builder(ir::function_new("windows_root_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let data = windows_runtime::value(code, ir::InstructionGlobalAddress(storage))?
+    let token = windows_root_register(program, code, data, destructor)?
+    windows_root_lifecycle(program, code, token, data)?
+    windows_root_declaration(program, code, data, destructor)?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}
+
+fn windows_root_storage(program: write ir::Program) -> usize {
+    return ir::program_add_global(program, ir::Global {
+            name: "windows_root_storage", bytes: Vec<u8>.new(), size: 8, alignment: 8,
+            kind: ir::GlobalZeroFill(), exported: false, references: Vec<ir::GlobalReference>.new()
+        })
+}
+
+fn windows_root_destructor(program: write ir::Program) -> Result<usize, Text> {
+    var code = windows_runtime::builder(ir::function_new("windows_root_destructor", windows_runtime::pointers(1, ir::TypeVoid()), ir::LinkageLocal()))?
+    let data = code.function.parameters[0]
+    let one = windows_runtime::integer(code, ir::IntegerWidth64(), 1)
+    windows_runtime::store(code, data, 0, one)?
+    windows_runtime::finish(code, ir::TerminatorReturn(None()))?
+    return Ok(ir::program_add_function(program, windows_runtime::take_function(code)))
+}
+
+fn windows_root_free(program: write ir::Program) -> Result<void, Text> {
+    var code = windows_runtime::builder(ir::function_new("free", windows_runtime::pointers(1, ir::TypeVoid()), ir::LinkageLocal()))?
+    let data = code.function.parameters[0]
+    native_runtime_increment(code, data)?;
+    windows_runtime::finish(code, ir::TerminatorReturn(None()))?
+    ir::program_add_function(program, windows_runtime::take_function(code));
+    return Ok(())
+}
+
+fn windows_root_register(program: write ir::Program, code: write windows_runtime::Builder, data: usize, destructor: usize) -> Result<usize, Text> {
+    let token = windows_runtime::value(code, ir::InstructionStackSlot(16, 8))?
+    let callback = windows_runtime::value(code, ir::InstructionFunctionAddress(destructor))?
+    var arguments = Vec<usize>.new()
+    arguments.push(token)
+    arguments.push(data)
+    arguments.push(callback)
+    arguments.push(data)
+    native_runtime_status(program, code, "crown_root_register", move arguments)?
+    return Ok(token)
+}
+
+fn windows_root_lifecycle(program: write ir::Program, code: write windows_runtime::Builder, token: usize, data: usize) -> Result<void, Text> {
+    let null = windows_runtime::null_pointer(code)
+    windows_root_acquire(program, code, token, null, 3)?;
+    let acquired = windows_root_acquire(program, code, token, data, 0)?
+    native_runtime_lock(program, code, "crown_root_close", token)?
+    windows_root_expect(code, data, 0)?
+    let lease = windows_runtime::offset(code, acquired, 8)?
+    native_runtime_lock(program, code, "crown_root_release", lease)?
+    windows_root_acquire(program, code, token, data, 1)?;
+    return windows_root_expect(code, data, 2)
+}
+
+fn windows_root_acquire(program: write ir::Program, code: write windows_runtime::Builder, token: usize, data: usize, status: u64) -> Result<usize, Text> {
+    let acquired = windows_runtime::value(code, ir::InstructionStackSlot(24, 8))?
+    var arguments = Vec<usize>.new()
+    arguments.push(acquired)
+    arguments.push(token)
+    arguments.push(data)
+    let actual = windows_runtime::call_value(program, code, "crown_root_acquire", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth32(), status)
+    native_runtime_expect(code, actual, expected)?
+    windows_root_expect(code, acquired, if status == 0 {
+            1
+        } else {
+            0
+        })?
+    return Ok(acquired)
+}
+
+fn windows_root_expect(code: write windows_runtime::Builder, data: usize, number: u64) -> Result<void, Text> {
+    let actual = native_runtime_load(code, data)?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth64(), number)
+    return native_runtime_expect(code, actual, expected)
+}

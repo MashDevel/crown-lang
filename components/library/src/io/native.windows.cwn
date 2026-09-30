@@ -1,0 +1,22 @@
+module std::io {
+    extern "c" {
+        fn raw_open(path: RawPtr<u16>, mode: RawPtr<u16>) -> RawPtr<u8> = "_wfopen"
+        fn raw_seek(file: RawPtr<u8>, offset: isize, origin: i32) -> i32 = "_fseeki64"
+        fn raw_tell(file: RawPtr<u8>) -> isize = "_ftelli64"
+    }
+
+    fn wide_path(value: TextView) -> Result<wstr::WString, Error> {
+        return match wstr::new(value) {
+            Some(encoded) => Ok(move encoded)
+            None => Err(InvalidPath())
+        }
+    }
+
+    fn open_handle(path: TextView, mode: Mode) -> Result<RawPtr<u8>, Error> {
+        let encoded = wide_path(path)?
+        let encoded_mode = wide_path(mode_text(mode))?
+        unsafe {
+            return Ok(raw_open(wstr::as_raw(encoded), wstr::as_raw(encoded_mode)))
+        }
+    }
+}

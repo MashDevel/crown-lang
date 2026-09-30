@@ -1,0 +1,48 @@
+module toolchain {
+    fn wstring(value: Text) -> Result<std::wstr::WString, Text> {
+        loan read value as view {
+            return match std::wstr::new(view) {
+                Some(encoded) => Ok(move encoded)
+                None => Err("text contains a NUL byte")
+            }
+        }
+    }
+
+    fn wide_buffer(length: usize) -> Vec<u16> {
+        var output = Vec<u16>.with_capacity(length)
+        for index in 0..length {
+            index;
+            output.push(0)
+        }
+        return move output
+    }
+
+    unsafe fn wide_text(pointer: RawPtr<u16>, length: usize) -> Result<Text, Text> {
+        var units = Vec<u16>.with_capacity(length)
+        unsafe {
+            for index in 0..length {
+                let unit = pointer.offset(index).read()
+                if unit == 0 {
+                    break
+                }
+                units.push(unit)
+            }
+        }
+        return match std::utf16::decode(units) {
+            Ok(value) => Ok(move value)
+            Err(error) => {
+                error;
+                Err("Windows returned invalid UTF-16")
+            }
+        }
+    }
+
+    fn native_words(length: usize) -> Vec<u64> {
+        var output = Vec<u64>.with_capacity(length)
+        for index in 0..length {
+            index;
+            output.push(0)
+        }
+        return move output
+    }
+}

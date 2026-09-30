@@ -26,10 +26,11 @@ verify_compiler() {
 launch() {
     binary=$1
     shift
+    sh "$CROWN_ROOT/bootstrap/build-compiler" "$binary" "$directory/current"
     if [ "${1:-}" = bootstrap ]; then
-        exec "$binary" "$@"
+        exec "$directory/current" "$@"
     fi
-    exec "$binary" _launch "$@"
+    exec "$directory/current" _launch "$@"
 }
 seed="$CROWN_ROOT/bootstrap/$host/compiler.s"
 if ! seed_digest=$(read_digest "$CROWN_ROOT/bootstrap/$host/manifest.json" assembly_sha256) || ! verify_digest "$seed" "$seed_digest"; then

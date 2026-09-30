@@ -1,0 +1,51 @@
+fn root_path(path: Text) -> Text {
+    var current = path.clone()
+    while true {
+        let parent = toolchain::parent_path(current)
+        if std::text::equal(current, parent) {
+            return move current
+        }
+        current = parent.clone()
+    }
+}
+
+fn root_boundaries(root: Text) -> Result<void, Text> {
+    let volume = root_path(root)
+    let source = toolchain::path_join(volume, "crown-coverage-root-boundary.cwn")
+    testing::expect(coverage::test_source(source) == false, "root-level source is not a test")?
+    testing::expect(std::text::equal(coverage::package_path(source), volume), "root-level source terminates package discovery")?
+    testing::expect(coverage::test_source("standalone.cwn") == false, "relative source is not a test")?
+    return testing::expect(std::text::equal(coverage::package_path("standalone.cwn"), "."), "relative source terminates package discovery")
+}
+
+fn directories(root: Text) -> Result<void, Text> {
+    let source = toolchain::path_join(root, "src/main.cwn")
+    let test = toolchain::path_join(root, "tests/main.cwn")
+    testing::expect(coverage::test_source(source) == false && coverage::test_source(test), "source and test classification")?
+    testing::expect(std::text::equal(coverage::package_path(source), root), "source package")?
+    testing::expect(std::text::equal(coverage::package_path(test), root), "test package")?
+    let nested = toolchain::path_join(root, "tests/fixture/src/main.cwn")
+    return testing::expect(coverage::test_source(nested) == false, "nearest source directory controls classification")
+}
+
+fn manifests(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "project")
+    let source = toolchain::path_join(directory, "main.cwn")
+    testing::expect(coverage::test_source(source) == false, "standalone source terminates at volume root")?
+    testing::expect(std::text::equal(coverage::package_path(source), directory), "unpackaged source uses its parent")?
+    testing::write_file(directory, "Crown.toml", "[package]\nname='fixture'\n")?
+    let nested = toolchain::path_join(directory, "nested/main.cwn")
+    return testing::expect(std::text::equal(coverage::package_path(nested), directory), "manifest identifies the containing package")
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    root_boundaries(root)?
+    directories(root)?
+    return manifests(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,81 @@
+fn windows_value(size: u64, alignment: u32, kind: arm64::AbiKind) -> arm64::AbiValue {
+    return arm64::AbiValue {
+        size: size, alignment: alignment, kind: kind
+    }
+}
+
+fn windows_fixed_parameters() -> Result<void, Text> {
+    var state = arm64::abi_state(arm64::AbiVariant::Windows())
+    let integer = arm64::abi_argument(state, windows_value(8, 8, arm64::AbiKind::Integer()), false)?
+    let wide = arm64::abi_argument(state, windows_value(16, 16, arm64::AbiKind::Integer()), false)?
+    let float = arm64::abi_argument(state, windows_value(8, 8, arm64::AbiKind::Float()), false)?
+    testing::expect(integer.location == arm64::AbiLocation::General(0, 1), "Windows integer register")?
+    testing::expect(wide.location == arm64::AbiLocation::General(2, 2), "Windows wide integer even register")?
+    return testing::expect(float.location == arm64::AbiLocation::Simd(0, 1), "Windows fixed floating register")
+}
+
+fn windows_variadic_parameters() -> Result<void, Text> {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeFloat(ir::FloatWidth64()))
+    parameters.push(ir::TypeFloat(ir::FloatWidth64()))
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    signature.variadic_start = Some(1)
+    let windows = arm64::call_layout(signature, arm64::AbiVariant::Windows())?
+    testing::expect(windows.locations[0].location == arm64::AbiLocation::General(0, 1), "Windows fixed variadic float uses integer register")?
+    testing::expect(windows.locations[1].location == arm64::AbiLocation::General(1, 1), "Windows trailing variadic float uses integer register")?
+    return testing::expect(windows.size == 0, "Windows ARM64 has no shadow space")
+}
+
+fn windows_homogeneous_parameters() -> Result<void, Text> {
+    var fixed = arm64::abi_state(arm64::AbiVariant::Windows())
+    var variadic = arm64::abi_state(arm64::AbiVariant::Windows())
+    let triple = windows_value(24, 8, arm64::AbiKind::Homogeneous(3, 8))
+    let normal = arm64::abi_argument(fixed, triple, false)?
+    let extra = arm64::abi_argument(variadic, triple, true)?
+    testing::expect(normal.location == arm64::AbiLocation::Simd(0, 3) && normal.indirect == false, "fixed HFA stays in SIMD registers")?
+    testing::expect(extra.location == arm64::AbiLocation::General(0, 1) && extra.indirect, "variadic HFA larger than sixteen bytes uses a pointer")?
+    let empty = arm64::abi_argument(variadic, windows_value(0, 1, arm64::AbiKind::Aggregate()), true)?
+    return testing::expect(empty.location == arm64::AbiLocation::Omitted() && variadic.integer == 1, "empty variadic aggregate consumes no register")
+}
+
+fn windows_stack_parameters() -> Result<void, Text> {
+    var state = arm64::abi_state(arm64::AbiVariant::Windows())
+    state.integer = 7
+    let pair = arm64::abi_argument(state, windows_value(16, 8, arm64::AbiKind::Aggregate()), true)?
+    let byte = arm64::abi_argument(state, windows_value(1, 1, arm64::AbiKind::Integer()), false)?
+    testing::expect(pair.location == arm64::AbiLocation::Stack(0, 16), "aggregate is not split across registers and stack")?
+    testing::expect(byte.location == arm64::AbiLocation::Stack(16, 8), "Windows narrow stack argument consumes eight bytes")?
+    testing::expect(arm64::abi_stack_size(state)? == 32, "Windows outgoing stack remains aligned")?
+    return testing::expect(state.simd == 0, "variadic arguments never consume SIMD registers")
+}
+
+fn windows_invalid_parameters() -> Result<void, Text> {
+    var state = arm64::abi_state(arm64::AbiVariant::Windows())
+    testing::error(arm64::abi_argument(state, windows_value(8, 3, arm64::AbiKind::Float()), true))?
+    state.integer = 8
+    state.stack = 18446744073709551608
+    testing::error(arm64::abi_argument(state, windows_value(8, 8, arm64::AbiKind::Integer()), true))?
+    return testing::expect(state.stack == 18446744073709551608, "failed stack assignment does not wrap")
+}
+
+fn run() -> Result<void, Text> {
+    windows_fixed_parameters()?
+    windows_variadic_parameters()?
+    windows_homogeneous_parameters()?
+    windows_stack_parameters()?
+    windows_invalid_parameters()?
+    return windows_stack_probes()
+}
+
+fn main() -> u32 {
+    match run() {
+        Ok(value) => {
+            value;
+            42
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

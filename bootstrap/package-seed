@@ -4,7 +4,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 host=${1:?expected host}
 output=${2:?expected output directory}
 case "$host" in
-    x86_64-macos|arm64-macos|x86_64-linux|arm64-linux) ;;
+    x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-windows|arm64-windows) ;;
     *) printf '%s\n' 'error: unsupported seed host' >&2; exit 1 ;;
 esac
 seed="$root/bootstrap/$host"

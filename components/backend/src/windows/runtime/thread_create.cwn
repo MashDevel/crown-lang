@@ -1,0 +1,56 @@
+module windows_runtime {
+    fn thread_create(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        if matching_signature(code.function.signature, pointers(4, ir::TypeInteger(ir::IntegerWidth32()))) == false {
+            return Err("incompatible Windows thread creation signature")
+        }
+        thread_arguments(code)?
+        let record = thread_allocate(program, code)?
+        let start = thread_entry(program)?
+        let handle = thread_launch(program, code, record, start)?
+        thread_create_result(program, code, record, handle)?
+        return Ok(take_function(code))
+    }
+
+    fn thread_arguments(code: write Builder) -> Result<void, Text> {
+        let output = code.function.parameters[0]
+        let attributes = code.function.parameters[1]
+        let start = code.function.parameters[2]
+        require_nonnull(code, output, 22)?
+        require_nonnull(code, start, 22)?
+        let null = null_pointer(code)
+        let valid = value(code, ir::InstructionCompare(ir::CompareEqual(), attributes, null))?
+        return require_condition(code, valid, 22)
+    }
+
+    fn thread_launch(program: write ir::Program, code: write Builder, record: usize, start: usize) -> Result<usize, Text> {
+        let null = null_pointer(code)
+        let stack = integer(code, ir::IntegerWidth32(), 8388608)
+        let flags = integer(code, ir::IntegerWidth32(), 65536)
+        let callback = value(code, ir::InstructionFunctionAddress(start))?
+        var arguments = Vec<usize>.new()
+        arguments.push(null)
+        arguments.push(stack)
+        arguments.push(callback)
+        arguments.push(record)
+        arguments.push(flags)
+        arguments.push(null)
+        return call_value(program, code, "_beginthreadex", move arguments, ir::TypeInteger(ir::IntegerWidth64()))
+    }
+
+    fn thread_create_result(program: write ir::Program, code: write Builder, record: usize, handle: usize) -> Result<void, Text> {
+        let zero = integer(code, ir::IntegerWidth64(), 0)
+        let valid = value(code, ir::InstructionCompare(ir::CompareNotEqual(), handle, zero))?
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(valid, success, failure))?
+        code.block = failure
+        pointer_call(program, code, "free", record)?
+        return_status(code, 11)?
+        code.block = success
+        store(code, record, THREAD_HANDLE, handle)?
+        let output = code.function.parameters[0]
+        store(code, output, 0, record)?
+        return return_status(code, 0)
+    }
+}

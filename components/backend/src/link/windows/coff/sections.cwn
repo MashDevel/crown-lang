@@ -1,0 +1,76 @@
+module coff {
+    fn section_headers(bytes: Vec<u8>, strings: Vec<u8>) -> Result<Vec<Header>, Text> {
+        if link_binary::number(bytes, 16, 2)? != 0 || link_binary::number(bytes, 18, 2)? & 2 != 0 {
+            return Err("COFF input must be a relocatable object, not a PE image")
+        }
+        let count = usize.from(link_binary::number(bytes, 2, 2)?)
+        table_bounds(bytes, 20, count, 40)?
+        var headers = Vec<Header>.new()
+        for index in 0..count {
+            headers.push(section_header(bytes, strings, 20 + index * 40)?)
+        }
+        return Ok(move headers)
+    }
+
+    fn section_header(bytes: Vec<u8>, strings: Vec<u8>, offset: usize) -> Result<Header, Text> {
+        let name = short_name(bytes, offset)?
+        return Ok(Header {
+                name: section_name(name, strings)?, size: usize.from(link_binary::number(bytes, offset + 16, 4)?),
+                offset: usize.from(link_binary::number(bytes, offset + 20, 4)?),
+                relocations: usize.from(link_binary::number(bytes, offset + 24, 4)?),
+                relocation_count: usize.from(link_binary::number(bytes, offset + 32, 2)?),
+                flags: u32.from(link_binary::number(bytes, offset + 36, 4)?)
+            })
+    }
+
+    fn read_sections(reader: write Reader) -> Result<void, Text> {
+        for index in 0..reader.headers.length() {
+            if loaded_section(reader.headers[index]) {
+                let section = read_section(reader.bytes, reader.headers[index])?
+                reader.sections.push(Some(reader.output.sections.length()))
+                reader.output.sections.push(move section)
+            } else {
+                reader.sections.push(None())
+            }
+        }
+        return Ok(())
+    }
+
+    fn loaded_section(header: Header) -> bool {
+        return header.flags & 2048 == 0 && header.flags & 3758096384 != 0 && std::text::starts(header.name, ".debug") == false
+    }
+
+    fn read_section(bytes: Vec<u8>, header: Header) -> Result<object::Section, Text> {
+        let alignment = (header.flags >> 20) & 15
+        if alignment == 15 {
+            return Err("COFF section has invalid alignment")
+        }
+        let kind = section_kind(header.flags)
+        let data = if object::section_is_zero_fill(kind) {
+            Vec<u8>.new()
+        } else {
+            link_binary::part(bytes, header.offset, header.size)?
+        }
+        return Ok(object::Section {
+                name: header.name.clone(), kind: move kind, alignment: if alignment == 0 {
+                    16
+                } else {
+                    u64.from(1) << u64.from(alignment - 1)
+                },
+                data: move data, memory_size: u64.from(header.size)
+            })
+    }
+
+    fn section_kind(flags: u32) -> object::SectionKind {
+        if flags & 32 != 0 {
+            return object::SectionText()
+        }
+        if flags & 128 != 0 {
+            return object::SectionZeroFill()
+        }
+        if flags & 2147483648 != 0 {
+            return object::SectionData()
+        }
+        return object::SectionReadOnlyData()
+    }
+}

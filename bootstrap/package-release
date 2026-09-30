@@ -2,6 +2,8 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 host=$(sh "$root/bootstrap/host")
+binary=crown
+case "$host" in *-windows) binary=crown.exe ;; esac
 output=${1:?expected output directory}
 mkdir -p "$output"
 output=$(CDPATH= cd -- "$output" && pwd)
@@ -16,20 +18,20 @@ git archive --format=tar HEAD > "$stage/source.tar"
 tar -xf "$stage/source.tar" -C "$package"
 mkdir -p "$package/bootstrap/$host"
 cp "bootstrap/$host/compiler.s" "bootstrap/$host/manifest.json" "$package/bootstrap/$host/"
-cp target/bootstrap/crown "$package/crown"
-chmod +x "$package/crown"
+cp "target/bootstrap/$binary" "$package/$binary"
+chmod +x "$package/$binary"
 sh bootstrap/package-seed "$host" "$stage"
-env -u CROWN_ROOT CC=/unavailable "$package/crown" build "$package/bootstrap/tests/fixtures/hello.cwn" -o "$stage/hello"
+env -u CROWN_ROOT CC=/unavailable "$package/$binary" build "$package/bootstrap/tests/fixtures/hello.cwn" -o "$stage/hello"
 test "$("$stage/hello")" = 42
 git rev-parse HEAD > "$package/REVISION"
 git ls-tree -rz --name-only HEAD > "$stage/files"
-printf '%s\0' crown REVISION "bootstrap/$host/compiler.s" "bootstrap/$host/manifest.json" >> "$stage/files"
+printf '%s\0' "$binary" REVISION "bootstrap/$host/compiler.s" "bootstrap/$host/manifest.json" >> "$stage/files"
 case "$host" in
     *-macos) COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname root --no-acls --no-xattrs --no-fflags -s ",^,crown-$host/," -czf "$stage/crown-$host.tar.gz" -C "$package" --null -T "$stage/files" ;;
-    *-linux) tar --owner=0 --group=0 --numeric-owner --no-acls --no-xattrs --transform="s,^,crown-$host/," -czf "$stage/crown-$host.tar.gz" -C "$package" --null -T "$stage/files" ;;
+    *-linux|*-windows) tar --owner=0 --group=0 --numeric-owner --no-acls --no-xattrs --transform="s,^,crown-$host/," -czf "$stage/crown-$host.tar.gz" -C "$package" --null -T "$stage/files" ;;
 esac
 record=$(cat "$stage/crown-bootstrap-$host.lock.json")
-compiler_digest=$(sh bootstrap/checksum "$package/crown")
+compiler_digest=$(sh bootstrap/checksum "$package/$binary")
 archive_digest=$(sh bootstrap/checksum "$stage/crown-$host.tar.gz")
 printf '%s,"compiler_sha256":"%s","compiler_archive_sha256":"%s"}\n' "${record%?}" "$compiler_digest" "$archive_digest" > "$stage/crown-bootstrap-$host.lock.json"
 for file in "crown-$host.tar.gz" "crown-bootstrap-$host.s.gz" "crown-bootstrap-$host.json" "crown-bootstrap-$host.lock.json"; do

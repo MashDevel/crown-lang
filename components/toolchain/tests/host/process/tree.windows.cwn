@@ -1,0 +1,10 @@
+fn process_tree(executable: Text) -> u32 {
+    let command = process_command(executable, "wait")
+    return match toolchain::execute(command) {
+        Ok(status) => u32.from(status)
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

@@ -1,0 +1,57 @@
+const RUNTIME_THREAD_VALUE: u64 = 1311768467463790320
+
+fn runtime_test_callback(program: write ir::Program) -> Result<usize, Text> {
+    let signature = windows_runtime::pointers(1, ir::TypePointer())
+    var code = windows_runtime::builder(ir::function_new("windows_test_thread_callback", move signature, ir::LinkageLocal()))?
+    let argument = code.function.parameters[0]
+    windows_runtime::finish(code, ir::TerminatorReturn(Some(argument)))?
+    return Ok(ir::program_add_function(program, windows_runtime::take_function(code)))
+}
+
+fn runtime_create_arguments(code: write windows_runtime::Builder, callback: usize, output: usize) -> Result<Vec<usize>, Text> {
+    let bits = windows_runtime::integer(code, ir::IntegerWidth64(), RUNTIME_THREAD_VALUE)
+    let argument = windows_runtime::value(code, ir::InstructionCast(ir::CastIntegerToPointer(), bits, ir::TypePointer()))?
+    let null = windows_runtime::null_pointer(code)
+    let start = windows_runtime::value(code, ir::InstructionFunctionAddress(callback))?
+    var arguments = Vec<usize>.new()
+    arguments.push(output)
+    arguments.push(null)
+    arguments.push(start)
+    arguments.push(argument)
+    return Ok(move arguments)
+}
+
+fn runtime_call_create(code: write windows_runtime::Builder, arguments: take Vec<usize>) -> Result<usize, Text> {
+    return windows_runtime::value(code, ir::InstructionCall(0, move arguments, ir::TypeInteger(ir::IntegerWidth32())))
+}
+
+fn runtime_call_join(code: write windows_runtime::Builder, thread: usize, output: usize) -> Result<usize, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(thread)
+    arguments.push(output)
+    return windows_runtime::value(code, ir::InstructionCall(1, move arguments, ir::TypeInteger(ir::IntegerWidth32())))
+}
+
+fn runtime_invalid_thread_calls(code: write windows_runtime::Builder, callback: usize, output: usize) -> Result<void, Text> {
+    for index in 0..3 {
+        var arguments = runtime_create_arguments(code, callback, output)?
+        arguments[index] = if index == 1 {
+            output
+        } else {
+            windows_runtime::null_pointer(code)
+        }
+        let status = runtime_call_create(code, move arguments)?
+        runtime_expect_value(code, status, 22)?
+    }
+    let null = windows_runtime::null_pointer(code)
+    let zero = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+    let status = runtime_call_join(code, zero, null)?
+    return runtime_expect_value(code, status, 22)
+}
+
+fn runtime_check_thread_result(code: write windows_runtime::Builder, output: usize) -> Result<void, Text> {
+    let actual = windows_runtime::value(code, ir::InstructionLoad(output, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth64(), RUNTIME_THREAD_VALUE)
+    let equal = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), actual, expected))?
+    return windows_runtime::require_condition(code, equal, 2)
+}

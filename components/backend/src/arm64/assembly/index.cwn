@@ -1,0 +1,23 @@
+module arm64 {
+    fn assembly_relocation_index(object: object::CompilerObject) -> Result<Vec<Vec<usize>>, Text> {
+        var sections = Vec<Vec<usize>>.new()
+        for index in 0..object.sections.length() {
+            index;
+            sections.push(Vec<usize>.new())
+        }
+        for index in 0..object.relocations.length() {
+            let section = object.relocations[index].section
+            if section >= sections.length() {
+                return Err("assembly relocation has an invalid section")
+            }
+            sections[section].push(index)
+            var position = sections[section].length() - 1
+            while position > 0 && object.relocations[sections[section][position - 1]].offset > object.relocations[index].offset {
+                sections[section][position] = sections[section][position - 1]
+                position = position - 1
+            }
+            sections[section][position] = index
+        }
+        return Ok(move sections)
+    }
+}

@@ -1,17 +1,8 @@
 module arm64 {
     fn compile_terminator(function: ir::Function, compiler: write Compiler, terminator: ir::Terminator) -> Result<void, Text> {
         match read terminator {
-            ir::TerminatorBranch(target) => emit_edge(function, compiler, target)
-            ir::TerminatorConditional(value, yes, no) => {
-                value_load(compiler, value, 9)
-                emit_encoding(compiler, compare_word(9, 31))
-                emit_encoding(compiler, conditional_branch(8, 1))
-                let otherwise = compiler.bytes.length()
-                emit_encoding(compiler, branch_word(0, false))
-                emit_edge(function, compiler, yes)?
-                patch_branch(compiler, otherwise, compiler.bytes.length())
-                emit_edge(function, compiler, no)
-            }
+            ir::TerminatorBranch(target) => emit_edge(function, compiler, target, true)
+            ir::TerminatorConditional(value, yes, no) => compile_conditional(function, compiler, value, yes, no)
             ir::TerminatorSwitch(value, cases, fallback) => {
                 for index in 0..cases.length() {
                     value_load(compiler, value, 9)
@@ -20,10 +11,10 @@ module arm64 {
                     emit_encoding(compiler, conditional_branch(8, 0))
                     let next = compiler.bytes.length()
                     emit_encoding(compiler, branch_word(0, false))
-                    emit_edge(function, compiler, cases[index].block)?
+                    emit_edge(function, compiler, cases[index].block, false)?
                     patch_branch(compiler, next, compiler.bytes.length())
                 }
-                emit_edge(function, compiler, fallback)
+                emit_edge(function, compiler, fallback, true)
             }
             ir::TerminatorReturn(value) => compile_return(function, compiler, value)
             ir::TerminatorUnreachable => {
@@ -32,9 +23,37 @@ module arm64 {
             }
         }
     }
-    fn emit_edge(function: ir::Function, compiler: write Compiler, target: usize) -> Result<void, Text> {
+    fn compile_conditional(function: ir::Function, compiler: write Compiler, value: usize, yes: usize, no: usize) -> Result<void, Text> {
+        let invert = yes == compiler.block + 1
+        let first = if invert {
+            no
+        } else {
+            yes
+        }
+        let last = if invert {
+            yes
+        } else {
+            no
+        }
+        value_load(compiler, value, 9)
+        emit_encoding(compiler, compare_word(9, 31))
+        emit_encoding(compiler, conditional_branch(8, if invert {
+                    0
+                } else {
+                    1
+                }))
+        let otherwise = branch_later(compiler)
+        emit_edge(function, compiler, first, false)?
+        branch_here(compiler, otherwise)
+        return emit_edge(function, compiler, last, true)
+    }
+
+    fn emit_edge(function: ir::Function, compiler: write Compiler, target: usize, fallthrough: bool) -> Result<void, Text> {
         edge_copies(function, compiler, target, true)?
         edge_copies(function, compiler, target, false)?
+        if fallthrough && target == compiler.block + 1 {
+            return Ok(())
+        }
         compiler.branches.push(BranchFixup {
                 offset: compiler.bytes.length(), block: target
             })
@@ -64,6 +83,9 @@ module arm64 {
     fn phi_copy(compiler: write Compiler, incoming: Vec<ir::PhiIncoming>, result: usize, value_type: ir::Type, stage: bool) -> Result<void, Text> {
         let value = phi_source(incoming, compiler.block)?
         let staged = frame_copy(compiler.frame, result)?
+        if ir::type_is_float(value_type) {
+            return float_phi_copy(compiler, value, result, value_type, stage)
+        }
         let wide = value_size(value_type)? == 16
         if stage {
             value_load(compiler, value, 9)
@@ -117,12 +139,12 @@ module arm64 {
         if ir::type_is_vector(function.values[id]) {
             return vector_load(compiler, id, 0)
         }
+        if ir::type_is_float(function.values[id]) {
+            return float_value_load(compiler, id, 0, function.values[id])
+        }
         value_load(compiler, id, 0)
         if compiler.variant == AbiVariant::Darwin() {
             normalize(compiler, function.values[id], 0, function.signature.result_signed)
-        }
-        if ir::type_is_float(function.values[id]) {
-            emit_encoding(compiler, float_move_bits(0, 0, true, ir::type_is_float64(function.values[id])))
         }
         if value_size(function.values[id])? == 16 {
             value_high(compiler, id, 1)

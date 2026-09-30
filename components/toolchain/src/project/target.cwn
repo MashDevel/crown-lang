@@ -4,7 +4,7 @@ module toolchain {
     }
 
     copy enum Platform {
-        Macos, Linux, Bedrock
+        Macos, Linux, Bedrock, Windows
     }
 
     copy struct Target {
@@ -25,7 +25,9 @@ module toolchain {
             "x86_64-linux" => Ok(target(Architecture::X86_64(), Platform::Linux()))
             "arm64-linux" => Ok(target(Architecture::Arm64(), Platform::Linux()))
             "x86_64-bedrock" => Ok(target(Architecture::X86_64(), Platform::Bedrock()))
-            _ => Err("target must be x86_64-macos, arm64-macos, x86_64-linux, arm64-linux, or x86_64-bedrock")
+            "x86_64-windows" => Ok(target(Architecture::X86_64(), Platform::Windows()))
+            "arm64-windows" => Ok(target(Architecture::Arm64(), Platform::Windows()))
+            _ => Err("target must be x86_64-macos, arm64-macos, x86_64-linux, arm64-linux, x86_64-bedrock, x86_64-windows, or arm64-windows")
         }
     }
 
@@ -41,6 +43,7 @@ module toolchain {
             Platform::Macos => "macos"
             Platform::Linux => "linux"
             Platform::Bedrock => "bedrock"
+            Platform::Windows => "windows"
         }
     }
 
@@ -53,7 +56,11 @@ module toolchain {
     }
 
     fn target_source(path: Text, value: Target) -> bool {
-        let suffixes = std::text::split("macos|linux|bedrock", 124)
+        if std::text::ends(path, ".posix.cwn") {
+            let stem = std::text::slice(path, 0, path.length() - 10)
+            return value.platform != Platform::Windows() && architecture_source(stem, value.architecture)
+        }
+        let suffixes = std::text::split("macos|linux|bedrock|windows", 124)
         for index in 0..suffixes.length() {
             let suffix = std::text::joined(std::text::joined(".", suffixes[index]), ".cwn")
             if std::text::ends(path, suffix) {

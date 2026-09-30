@@ -1,0 +1,83 @@
+fn generate(directory: Text) -> Result<void, Text> {
+    toolchain::make_directory(directory)?
+    write_process(object::ArchitectureX86_64(), toolchain::path_join(directory, "x86_64-windows.exe"))?
+    write_process(object::ArchitectureArm64(), toolchain::path_join(directory, "arm64-windows.exe"))?
+    let architectures = [toolchain::Architecture::X86_64(), toolchain::Architecture::Arm64()]
+    for index in 0..2 {
+        write_architecture(directory, architectures[index])?
+    }
+    return Ok(())
+}
+
+fn write_architecture(directory: Text, architecture: toolchain::Architecture) -> Result<void, Text> {
+    for index in 0..9 {
+        write_program(directory, architecture, windows_fixture_name(index), windows_fixture_program(index))?
+    }
+    write_coff(directory, architecture)?
+    write_runtime(directory, architecture, "locks", native_lock_program()?)?
+    write_runtime(directory, architecture, "threads", native_thread_program()?)?
+    write_runtime(directory, architecture, "roots", windows_root_program()?)?
+    return write_runtime(directory, architecture, "stack-switch", runtime_stack_program()?)
+}
+
+fn write_runtime(directory: Text, architecture: toolchain::Architecture, name: Text, program: take ir::Program) -> Result<void, Text> {
+    var object = match windows_call_object(move program, architecture) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err("could not compile Windows runtime fixture")
+        }
+    }
+    windows_test_startup(object)?
+    let bytes = pe::executable(object, native_runtime_imports())?
+    let target = toolchain::target(architecture, toolchain::Platform::Windows())
+    let suffix = std::text::joined(std::text::joined("-", name), ".exe")
+    return toolchain::write_bytes(toolchain::path_join(directory, std::text::joined(toolchain::target_name(target), suffix)), bytes)
+}
+
+fn write_coff(directory: Text, architecture: toolchain::Architecture) -> Result<void, Text> {
+    let bytes = pe::executable(windows_coff_object(architecture)?, process_imports())?
+    let target = toolchain::target(architecture, toolchain::Platform::Windows())
+    let name = std::text::joined(toolchain::target_name(target), "-coff.exe")
+    return toolchain::write_bytes(toolchain::path_join(directory, name), bytes)
+}
+
+fn write_program(directory: Text, architecture: toolchain::Architecture, name: Text, input: take Result<ir::Program, u32>) -> Result<void, Text> {
+    var object = match move input {
+        Err(error) => {
+            error;
+            return Err("could not build Windows call IR")
+        }
+        Ok(program) => {
+            match windows_call_object(move program, architecture) {
+                Ok(value) => move value
+                Err(error) => {
+                    error;
+                    return Err("could not compile Windows call IR")
+                }
+            }
+        }
+    }
+    windows_test_startup(object)?
+    let bytes = pe::executable(object, windows_abi_imports())?
+    let target = toolchain::target(architecture, toolchain::Platform::Windows())
+    let suffix = std::text::joined(std::text::joined("-", name), ".exe")
+    let filename = std::text::joined(toolchain::target_name(target), suffix)
+    return toolchain::write_bytes(toolchain::path_join(directory, filename), bytes)
+}
+
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() != 2 {
+        return 2
+    }
+    match generate(arguments[1].clone()) {
+        Ok(value) => {
+            value;
+            0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

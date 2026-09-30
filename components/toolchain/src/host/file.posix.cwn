@@ -1,0 +1,86 @@
+module toolchain {
+    extern "c" {
+        fn raw_access(path: RawPtr<u8>, mode: i32) -> i32 = "access"
+        fn raw_unlink(path: RawPtr<u8>) -> i32 = "unlink"
+        fn raw_rmdir(path: RawPtr<u8>) -> i32 = "rmdir"
+        fn raw_rename(source: RawPtr<u8>, destination: RawPtr<u8>) -> i32 = "rename"
+    }
+
+    fn exists(path: Text) -> bool {
+        match cstring(path) {
+            Err(error) => {
+                error;
+                return false
+            }
+            Ok(encoded) => {
+                unsafe {
+                    return raw_access(std::cstr::as_raw(encoded), 0) == 0
+                }
+            }
+        }
+    }
+
+    fn make_directory(path: Text) -> Result<void, Text> {
+        if is_directory(path) {
+            return Ok(())
+        }
+        let parent = parent_path(path)
+        if std::text::equal(parent, path) == false {
+            make_directory(parent)?
+        }
+        let encoded = cstring(path)?
+        unsafe {
+            if raw_mkdir(std::cstr::as_raw(encoded), 493) == 0 {
+                return Ok(())
+            }
+        }
+        if is_directory(path) {
+            return Ok(())
+        }
+        return Err(std::text::joined("could not create directory: ", path))
+    }
+
+    fn remove_file(path: Text) -> Result<void, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            if raw_unlink(std::cstr::as_raw(encoded)) != 0 {
+                return Err(std::text::joined("could not remove file: ", path))
+            }
+        }
+        return Ok(())
+    }
+
+    fn rename_file(source: Text, destination: Text) -> Result<void, Text> {
+        let from = cstring(source)?
+        let to = cstring(destination)?
+        unsafe {
+            if raw_rename(std::cstr::as_raw(from), std::cstr::as_raw(to)) != 0 {
+                return Err(std::text::joined("could not replace: ", destination))
+            }
+        }
+        return Ok(())
+    }
+
+    fn executable(path: Text) -> Result<void, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            if raw_chmod(std::cstr::as_raw(encoded), 493) != 0 {
+                return Err(std::text::joined("could not make executable: ", path))
+            }
+        }
+        return Ok(())
+    }
+
+    fn remove_directory(path: Text) -> void {
+        match cstring(path) {
+            Ok(encoded) => {
+                unsafe {
+                    raw_rmdir(std::cstr::as_raw(encoded));
+                }
+            }
+            Err(error) => {
+                error;
+            }
+        }
+    }
+}

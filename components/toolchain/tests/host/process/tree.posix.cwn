@@ -1,0 +1,13 @@
+extern "c" {
+    fn process_fork() -> i32 = "fork"
+}
+
+fn process_tree(executable: Text) -> u32 {
+    executable;
+    unsafe {
+        if process_fork() < 0 {
+            return 1
+        }
+    }
+    return process_delay(10000)
+}

@@ -4,10 +4,10 @@ module arm64 {
             variant: AbiVariant::Aapcs64(),
             frame: Frame {
                 size: size, values: Vec<u64>.new(), copies: Vec<u64>.new(), allocations: Vec<u64>.new(),
-                registers: Vec<u32>.new(), saved: Vec<u64>.new()
+                registers: Vec<u32>.new(), saved: Vec<u64>.new(), float_registers: Vec<u32>.new(), float_saved: Vec<u64>.new()
             },
             constants: Vec<Option<ir::WideInteger>>.new(), bytes: Vec<u8>.new(), symbols: Vec<SymbolFixup>.new(), branches: Vec<BranchFixup>.new(), blocks: Vec<usize>.new(), error: "", block: 0,
-            target: 9, result_register: 9, normalized: false
+            target: 9, result_register: 9, normalized: false, float_target: 2, float_result: false
         }
     }
     fn runtime_label(compiler: write Compiler, label: usize) -> void {

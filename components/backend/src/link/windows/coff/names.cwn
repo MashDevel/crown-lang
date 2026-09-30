@@ -1,0 +1,38 @@
+module coff {
+    fn short_name(bytes: Vec<u8>, offset: usize) -> Result<Text, Text> {
+        var name = link_binary::part(bytes, offset, 8)?
+        name.push(0)
+        return link_binary::terminated(name, 0)
+    }
+
+    fn long_name(strings: Vec<u8>, offset: usize) -> Result<Text, Text> {
+        if offset < 4 || offset >= strings.length() {
+            return Err("COFF name is outside its string table")
+        }
+        return link_binary::terminated(strings, offset)
+    }
+
+    fn section_name(name: Text, strings: Vec<u8>) -> Result<Text, Text> {
+        if std::text::starts(name, "/") == false {
+            return Ok(name.clone())
+        }
+        var offset: usize = 0
+        loan read name as bytes {
+            for index in 1..bytes.length() {
+                let value = bytes[index]
+                if value < 48 || value > 57 {
+                    return Err("invalid COFF long section name")
+                }
+                offset = offset * 10 + usize.from(value - 48)
+            }
+        }
+        return long_name(strings, offset)
+    }
+
+    fn symbol_name(reader: Reader, offset: usize) -> Result<Text, Text> {
+        if link_binary::number(reader.bytes, offset, 4)? == 0 {
+            return long_name(reader.strings, usize.from(link_binary::number(reader.bytes, offset + 4, 4)?))
+        }
+        return short_name(reader.bytes, offset)
+    }
+}

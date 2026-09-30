@@ -71,6 +71,17 @@ fn sync_object(input: take ir::Program) -> Result<object::CompilerObject, Text> 
     if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
         return arm64::codegen(move program, safety_arm_variant())
     }
+    if toolchain::host_target().platform == toolchain::Platform::Windows() {
+        match x86::windows_program(program) {
+            Ok(done) => {
+                done;
+            }
+            Err(error) => {
+                error;
+                return Err("could not prepare Windows synchronization ABI")
+            }
+        }
+    }
     return match x86::codegen(move program) {
         Ok(value) => Ok(move value)
         Err(error) => {

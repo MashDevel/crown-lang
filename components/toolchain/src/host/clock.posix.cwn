@@ -1,0 +1,24 @@
+module toolchain {
+    extern "c" {
+        fn raw_clock_gettime(clock: i32, result: RawPtr<u64>) -> i32 = "clock_gettime"
+        fn raw_usleep(microseconds: u32) -> i32 = "usleep"
+    }
+
+    fn milliseconds() -> u64 {
+        var values = Vec<u64>.new()
+        values.push(0)
+        values.push(0)
+        unsafe {
+            if raw_clock_gettime(MONOTONIC_CLOCK, values.as_raw()) != 0 {
+                return 0
+            }
+        }
+        return values[0] * 1000 + values[1] / 1000000
+    }
+
+    fn wait_interval(milliseconds: u32) -> void {
+        unsafe {
+            raw_usleep(milliseconds * 1000)
+        }
+    }
+}

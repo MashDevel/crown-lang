@@ -1,0 +1,89 @@
+fn coff_images() -> Result<void, Text> {
+    let architectures = [toolchain::Architecture::X86_64(), toolchain::Architecture::Arm64()]
+    for index in 0..2 {
+        let object = windows_coff_object(architectures[index])?
+        let bytes = pe::executable(object, process_imports())?
+        testing::expect(link_binary::number(bytes, 288, 4)? != 0, "COFF unwind table has an exception directory")?
+        let size = link_binary::number(bytes, 292, 4)?
+        testing::expect(size == if index == 0 {
+                12
+            } else {
+                8
+            }, "architecture-specific runtime function record")?
+    }
+    return Ok(())
+}
+
+fn coff_header_failures() -> Result<void, Text> {
+    let original = windows_coff_bytes(toolchain::Architecture::X86_64())?
+    var bytes = link_binary::part(original, 0, original.length())?
+    link_binary::put(bytes, 0, 332, 2)
+    testing::error(coff::read_object(move bytes))?
+    bytes = link_binary::part(original, 0, original.length())?
+    link_binary::put(bytes, 2, 65535, 2)
+    testing::error(coff::read_object(move bytes))?
+    return testing::error(coff::read_object(link_binary::part(original, 0, 19)?))
+}
+
+fn coff_symbol_failures() -> Result<void, Text> {
+    let original = windows_coff_bytes(toolchain::Architecture::X86_64())?
+    var bytes = link_binary::part(original, 0, original.length())?
+    link_binary::put(bytes, 12, 4294967295, 4)
+    testing::error(coff::read_object(move bytes))?
+    bytes = link_binary::part(original, 0, original.length())?
+    let symbols = usize.from(link_binary::number(original, 8, 4)?)
+    link_binary::put(bytes, symbols + 17, 255, 1)
+    return testing::error(coff::read_object(move bytes))
+}
+
+fn coff_relative_addends() -> Result<void, Text> {
+    var bytes = Vec<u8>.new()
+    link_binary::pad(bytes, 8)
+    link_binary::put(bytes, 0, 4294967295, 4)
+    for kind in 4..10 {
+        let relocation = coff::decoded_relocation(object::ArchitectureX86_64(), bytes, 0, u64.from(kind))?
+        testing::expect(relocation.kind == object::RelocationPcRelative32() && relocation.addend == -1 - i64.from(kind), "COFF REL32 instruction-tail bias")?
+    }
+    testing::error(coff::decoded_relocation(object::ArchitectureX86_64(), bytes, 6, 1))?
+    return testing::error(coff::decoded_relocation(object::ArchitectureX86_64(), bytes, 0, 65535))
+}
+
+fn coff_arm_addends() -> Result<void, Text> {
+    let page = coff::arm_word_relocation(2415919200, 4)?
+    testing::expect(page.addend == 12, "COFF ADRP embeds a byte addend")?
+    let load = coff::arm_word_relocation(4181724160, 7)?
+    testing::expect(load.kind == object::RelocationArmLoadPageOffset12(3) && load.addend == 24, "COFF LDR scales its embedded addend")?
+    let branch = coff::arm_word_relocation(402653183, 3)?
+    testing::expect(branch.addend == -4, "COFF branch sign extension")?
+    return testing::error(coff::arm_word_relocation(0, 65535))
+}
+
+fn coff_test() -> Result<void, Text> {
+    coff_images()?
+    coff_header_failures()?
+    coff_symbol_failures()?
+    coff_invalid_section()?
+    coff_relative_addends()?
+    coff_arm_addends()?
+    return pe_exception_tests()
+}
+
+fn coff_invalid_section() -> Result<void, Text> {
+    var bytes = windows_coff_bytes(toolchain::Architecture::X86_64())?
+    let symbols = usize.from(link_binary::number(bytes, 8, 4)?)
+    link_binary::put(bytes, symbols + 48, 32767, 2)
+    return testing::error(coff::read_object(move bytes))
+}
+
+fn main() -> u32 {
+    match coff_test() {
+        Ok(value) => {
+            value;
+            42
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

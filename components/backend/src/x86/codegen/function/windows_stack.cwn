@@ -1,0 +1,41 @@
+module x86 {
+    fn codegen_windows_saved_floats(compiler: write FunctionCompiler, load: bool) -> void {
+        if compiler.calling_convention != ir::CallingConvention::WindowsX64() {
+            return
+        }
+        let saved = compiler.frame.saved_registers.length()
+        let base = i32.from((saved + saved % 2) * 8)
+        for index in 0..10 {
+            let register = FloatRegister {
+                code: u8.from(index + 6)
+            }
+            let offset = -base - i32.from((index + 1) * 16)
+            if load {
+                codegen_emit(compiler, LoadPackedFloat(LoadFloatMemoryArgs {
+                            width: Float64(), destination: register, base: Rbp(), offset: offset
+                        }))
+            } else {
+                codegen_emit(compiler, StorePackedFloat(StoreFloatMemoryArgs {
+                            width: Float64(), source: register, base: Rbp(), offset: offset
+                        }))
+            }
+        }
+    }
+
+    fn codegen_stack_allocate(compiler: write FunctionCompiler, size: i32) -> void {
+        if compiler.calling_convention == ir::CallingConvention::WindowsX64() && size >= 4096 {
+            let loop_label = codegen_internal_label(compiler)
+            codegen_emit(compiler, Move(R10(), Rsp()))
+            codegen_emit(compiler, MoveImmediate(Rax(), i64.from(size / 4096)))
+            codegen_emit(compiler, Label(local_label_copy(loop_label)))
+            codegen_emit(compiler, SubtractImmediate(R10(), 4096))
+            codegen_emit(compiler, Store(R10(), 0, R10()))
+            codegen_emit(compiler, SubtractImmediate(Rax(), 1))
+            codegen_emit(compiler, JumpIf(NotEqual(), move loop_label))
+            if size % 4096 != 0 {
+                codegen_emit(compiler, Store(R10(), -(size % 4096), R10()))
+            }
+        }
+        codegen_emit(compiler, SubtractImmediate(Rsp(), size))
+    }
+}

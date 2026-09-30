@@ -68,6 +68,10 @@ fn test_library_values() -> u32 {
     if strings != 0 {
         return 10 + strings
     }
+    let wide = test_wide_strings()
+    if wide != 0 {
+        return 20 + wide
+    }
     return 0
 }
 

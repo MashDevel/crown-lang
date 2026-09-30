@@ -1,16 +1,15 @@
-fn process_failures(root: Text) -> Result<void, Text> {
+fn process_failures(root: Text, executable: Text) -> Result<void, Text> {
     testing::error(toolchain::capture(toolchain::command(testing::list("/nonexistent/crown-command")), root))?
     testing::error(toolchain::capture(toolchain::command(Vec<Text>.new()), root))?
     testing::error(toolchain::cstring("a\0b"))?
-    process_timeout(root)?
-    process_without_timeout(root)?
-    process_polling()?
-    return process_status(root)
+    process_timeout(root, executable)?
+    process_without_timeout(root, executable)?
+    process_polling(executable)?
+    return process_status(root, executable)
 }
 
-fn process_polling() -> Result<void, Text> {
-    let arguments = testing::list("/bin/sh|-c|sleep 0.05; exit 42")
-    let pid = toolchain::start_process(toolchain::command(move arguments))?
+fn process_polling(executable: Text) -> Result<void, Text> {
+    var pid = toolchain::start_process(process_command(executable, "poll"))?
     var status_slot = toolchain::process_status_slot()
     match toolchain::poll_process(pid, status_slot)? {
         Some(status) => {
@@ -35,11 +34,16 @@ fn process_polling() -> Result<void, Text> {
     return Err("polled child did not finish")
 }
 
-fn process_status(root: Text) -> Result<void, Text> {
-    let result = toolchain::capture(toolchain::command(testing::list("/bin/sh|-c|printf error >&2; exit 19")), root)?
+fn process_status(root: Text, executable: Text) -> Result<void, Text> {
+    let result = toolchain::capture(process_command(executable, "error"), root)?
     testing::expect(result.status == 19 && std::text::equal(result.stderr, "error") && result.stdout.length() == 0, "failure output capture")?
-    let signal = toolchain::capture(toolchain::command(testing::list("/bin/sh|-c|kill -ABRT $$")), root)?
-    testing::expect(signal.status == -6, "aborted child status")?
+    let signal = toolchain::capture(process_command(executable, "abort"), root)?
+    let expected: i32 = if toolchain::host_target().platform == toolchain::Platform::Windows() {
+        -1073740791
+    } else {
+        -6
+    }
+    testing::expect(signal.status == expected, "aborted child status")?
     return Ok(())
 }
 
@@ -79,20 +83,24 @@ fn temporary_tree(root: Text) -> Result<Text, Text> {
     return Ok(move path)
 }
 
-fn run() -> Result<void, Text> {
+fn run(executable: Text) -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
-    process_failures(root)?;
+    process_failures(root, executable)?;
     file_failures(root)?;
     cleanup_test(root)?
     return Ok(())
 }
-fn main() -> u32 {
-    return testing::done(run())
+fn main(arguments: Arguments) -> u32 {
+    let values = toolchain::arguments(arguments)
+    if values.length() == 2 {
+        return process_child(values[0], values[1])
+    }
+    return testing::done(run(values[0]))
 }
 
-fn process_timeout(root: Text) -> Result<void, Text> {
-    var timeout = toolchain::command(testing::list("/bin/sh|-c|sleep 10 & wait"))
+fn process_timeout(root: Text, executable: Text) -> Result<void, Text> {
+    var timeout = process_command(executable, "tree")
     timeout.timeout = 20
     let started = toolchain::milliseconds()
     testing::error(toolchain::capture(timeout, root))?
@@ -110,8 +118,8 @@ fn invalid_text_file(root: Text) -> Result<void, Text> {
     return Ok(())
 }
 
-fn process_without_timeout(root: Text) -> Result<void, Text> {
-    var request = toolchain::command(testing::list("/bin/sh|-c|sleep 0.02; exit 42"))
+fn process_without_timeout(root: Text, executable: Text) -> Result<void, Text> {
+    var request = process_command(executable, "done")
     request.timeout = 0
     let result = toolchain::capture(request, root)?
     return testing::expect(result.status == 42, "zero timeout allows a child to finish")

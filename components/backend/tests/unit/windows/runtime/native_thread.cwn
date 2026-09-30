@@ -1,0 +1,58 @@
+fn native_thread_program() -> Result<ir::Program, Text> {
+    var program = ir::program_new()
+    let callback = native_thread_callback(program)?
+    var code = windows_runtime::builder(ir::function_new("windows_native_thread_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let shared = windows_runtime::value(code, ir::InstructionStackSlot(24, 8))?
+    native_thread_initialize(program, code, shared)?
+    let handles = native_thread_launches(program, code, callback, shared)?
+    native_thread_joins(program, code, handles, shared)?
+    native_thread_verify(program, code, shared)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}
+
+fn native_thread_initialize(program: write ir::Program, code: write windows_runtime::Builder, shared: usize) -> Result<void, Text> {
+    native_runtime_lock(program, code, "pthread_mutex_init", shared)?
+    let zero = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+    return windows_runtime::store(code, shared, 16, zero)
+}
+
+fn native_thread_launches(program: write ir::Program, code: write windows_runtime::Builder, callback: usize, shared: usize) -> Result<Vec<usize>, Text> {
+    let start = windows_runtime::value(code, ir::InstructionFunctionAddress(callback))?
+    let null = windows_runtime::null_pointer(code)
+    var handles = Vec<usize>.new()
+    for index in 0..4 {
+        index;
+        let output = windows_runtime::value(code, ir::InstructionStackSlot(8, 8))?
+        var arguments = Vec<usize>.new()
+        arguments.push(output)
+        arguments.push(null)
+        arguments.push(start)
+        arguments.push(shared)
+        native_runtime_status(program, code, "pthread_create", move arguments)?
+        handles.push(native_runtime_load(code, output)?)
+    }
+    return Ok(move handles)
+}
+
+fn native_thread_joins(program: write ir::Program, code: write windows_runtime::Builder, handles: Vec<usize>, shared: usize) -> Result<void, Text> {
+    let output = windows_runtime::value(code, ir::InstructionStackSlot(8, 8))?
+    for index in 0..handles.length() {
+        var arguments = Vec<usize>.new()
+        arguments.push(handles[index])
+        arguments.push(output)
+        native_runtime_status(program, code, "pthread_join", move arguments)?
+        let result = windows_runtime::load_pointer(code, output, 0)?
+        native_runtime_expect(code, result, shared)?
+    }
+    return Ok(())
+}
+
+fn native_thread_verify(program: write ir::Program, code: write windows_runtime::Builder, shared: usize) -> Result<void, Text> {
+    let address = windows_runtime::offset(code, shared, 16)?
+    let count = native_runtime_load(code, address)?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth64(), 4000)
+    native_runtime_expect(code, count, expected)?
+    native_runtime_lock(program, code, "pthread_mutex_destroy", shared)?
+    return windows_runtime::return_status(code, 0)
+}

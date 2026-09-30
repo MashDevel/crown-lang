@@ -1,0 +1,105 @@
+module windows_runtime {
+    copy struct InstrumentationFile {
+        path: usize, random: usize, cursor: usize, again: usize, failure: usize
+    }
+
+    fn instrumentation_open(program: write ir::Program, configuration: Instrumentation, mapping: usize) -> Result<usize, Text> {
+        var code = builder(ir::function_new("crown_windows_open_counters", pointers(0, ir::TypePointer()), ir::LinkageLocal()))?
+        let state = instrumentation_file_state(code, configuration)?
+        instrumentation_attempt(program, code, state, configuration.suffix)?
+        let file = instrumentation_create_file(program, code, state.path)?
+        instrumentation_created(program, code, state, file)?
+        instrumentation_file_view(program, code, state.path, file, mapping)?
+        code.block = state.failure
+        let zero = null_pointer(code)
+        finish(code, ir::TerminatorReturn(Some(zero)))?
+        return Ok(ir::program_add_function(program, take_function(code)))
+    }
+
+    fn instrumentation_file_state(code: write Builder, configuration: Instrumentation) -> Result<InstrumentationFile, Text> {
+        let path = value(code, ir::InstructionGlobalAddress(configuration.path))?
+        let random = value(code, ir::InstructionStackSlot(16, 8))?
+        let cursor = arguments_cursor(code)?
+        let again = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorBranch(again))?
+        code.block = again
+        return Ok(InstrumentationFile {
+                path: path, random: random, cursor: cursor, again: again, failure: failure
+            })
+    }
+
+    fn instrumentation_attempt(program: write ir::Program, code: write Builder, state: InstrumentationFile, suffix: u64) -> Result<void, Text> {
+        instrumentation_attempt_limit(code, state)?
+        var arguments = Vec<usize>.new()
+        arguments.push(state.random)
+        arguments.push(integer(code, ir::IntegerWidth32(), 16))
+        let status = call_value(program, code, "SystemFunction036", move arguments, ir::TypeInteger(ir::IntegerWidth8()))?
+        let zero = integer(code, ir::IntegerWidth8(), 0)
+        let valid = value(code, ir::InstructionCompare(ir::CompareNotEqual(), status, zero))?
+        instrumentation_branch(code, valid, state.failure)?
+        return instrumentation_random_path(code, state, suffix)
+    }
+
+    fn instrumentation_attempt_limit(code: write Builder, state: InstrumentationFile) -> Result<void, Text> {
+        let count = value(code, ir::InstructionLoad(state.cursor, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+        let maximum = integer(code, ir::IntegerWidth64(), 128)
+        let valid = value(code, ir::InstructionCompare(ir::CompareUnsignedLess(), count, maximum))?
+        instrumentation_branch(code, valid, state.failure)?
+        let one = integer(code, ir::IntegerWidth64(), 1)
+        let next = value(code, ir::InstructionBinary(ir::BinaryAdd(), count, one))?
+        return store(code, state.cursor, 0, next)
+    }
+
+    fn instrumentation_create_file(program: write ir::Program, code: write Builder, path: usize) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(path)
+        arguments.push(integer(code, ir::IntegerWidth32(), 3221225472))
+        arguments.push(integer(code, ir::IntegerWidth32(), 7))
+        arguments.push(null_pointer(code))
+        arguments.push(integer(code, ir::IntegerWidth32(), 1))
+        arguments.push(integer(code, ir::IntegerWidth32(), 256))
+        arguments.push(null_pointer(code))
+        return call_value(program, code, "CreateFileW", move arguments, ir::TypePointer())
+    }
+
+    fn instrumentation_created(program: write ir::Program, code: write Builder, state: InstrumentationFile, file: usize) -> Result<void, Text> {
+        let bits = integer(code, ir::IntegerWidth64(), 18446744073709551615)
+        let invalid = value(code, ir::InstructionCast(ir::CastIntegerToPointer(), bits, ir::TypePointer()))?
+        let valid = value(code, ir::InstructionCompare(ir::CompareNotEqual(), file, invalid))?
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(valid, success, failure))?
+        code.block = failure
+        instrumentation_retry(program, code, state)?
+        code.block = success
+        return Ok(())
+    }
+
+    fn instrumentation_retry(program: write ir::Program, code: write Builder, state: InstrumentationFile) -> Result<void, Text> {
+        let error = call_value(program, code, "GetLastError", Vec<usize>.new(), ir::TypeInteger(ir::IntegerWidth32()))?
+        let exists = integer(code, ir::IntegerWidth32(), 80)
+        let already = integer(code, ir::IntegerWidth32(), 183)
+        let first = value(code, ir::InstructionCompare(ir::CompareEqual(), error, exists))?
+        let second = value(code, ir::InstructionCompare(ir::CompareEqual(), error, already))?
+        let retry = value(code, ir::InstructionBinary(ir::BinaryOr(), first, second))?
+        return finish(code, ir::TerminatorConditional(retry, state.again, state.failure))
+    }
+
+    fn instrumentation_file_view(program: write ir::Program, code: write Builder, path: usize, file: usize, mapping: usize) -> Result<void, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(file)
+        let view = value(code, ir::InstructionCall(mapping, move arguments, ir::TypePointer()))?
+        let valid = instrumentation_nonnull(code, view)?
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(valid, success, failure))?
+        code.block = failure
+        var remove = Vec<usize>.new()
+        remove.push(path)
+        call(program, code, "DeleteFileW", move remove, ir::TypeInteger(ir::IntegerWidth32()))?;
+        finish(code, ir::TerminatorBranch(success))?
+        code.block = success
+        return finish(code, ir::TerminatorReturn(Some(view)))
+    }
+}

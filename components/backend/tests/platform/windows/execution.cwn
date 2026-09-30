@@ -1,0 +1,70 @@
+fn build_fixture(root: Text, source: Text, name: Text) -> Result<Text, Text> {
+    let path = toolchain::path_join(toolchain::repository_root()?, source)
+    let output = toolchain::path_join(root, name)
+    var arguments = testing::list("build")
+    arguments.push(move path)
+    arguments.push("-o")
+    arguments.push(output.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(result), std::text::joined("fixture build: ", result.stderr))?
+    return Ok(move output)
+}
+
+fn generate_fixtures(root: Text) -> Result<Text, Text> {
+    let generator = build_fixture(root, "components/backend/tests/platform/windows", "generate.exe")?
+    let directory = toolchain::path_join(root, "images")
+    var arguments = Vec<Text>.new()
+    arguments.push(move generator)
+    arguments.push(directory.clone())
+    let result = toolchain::capture(toolchain::command(move arguments), root)?
+    testing::expect(toolchain::clean_result(result), std::text::joined("fixture generation: ", result.stderr))?
+    let target = toolchain::target_name(toolchain::host_target())
+    build_fixture(directory, "components/backend/tests/platform/windows/language/main.cwn", std::text::joined(target, "-language.exe"))?
+    build_fixture(directory, "components/compiler/tests/conformance/native/concurrency/thread_region_owned_stack.cwn", std::text::joined(target, "-supplied.exe"))?
+    return Ok(move directory)
+}
+
+fn execute_fixture(path: Text, root: Text) -> Result<void, Text> {
+    let language = std::text::ends(path, "-language.exe")
+    var arguments = Vec<Text>.new()
+    arguments.push(path.clone())
+    if language {
+        arguments.push("hello 😀!")
+        arguments.push("")
+    }
+    var command = toolchain::command(move arguments)
+    command.timeout = 30000
+    let result = toolchain::capture(command, root)?
+    let expected: i32 = if std::text::ends(path, "-supplied.exe") {
+        0
+    } else {
+        42
+    }
+    testing::expect(result.status == expected, std::text::joined("fixture exit status: ", path))?
+    testing::expect(result.stderr.length() == 0, std::text::joined(path, result.stderr))?
+    if language {
+        testing::expect(std::text::equal(result.stdout, "4950\n-8 1.5 ok 2147483648\n"), "language fixture stdout")?
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let directory = generate_fixtures(root)?
+    let entries = toolchain::directory_entries(directory)?
+    let target = toolchain::target_name(toolchain::host_target())
+    var count: usize = 0
+    for index in 0..entries.length() {
+        let name = toolchain::file_name(entries[index])
+        if std::text::starts(name, target) && std::text::ends(name, ".exe") {
+            execute_fixture(entries[index], root)?
+            count = count + 1
+        }
+    }
+    return testing::expect(count == 17, "all seventeen native Windows fixtures executed")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

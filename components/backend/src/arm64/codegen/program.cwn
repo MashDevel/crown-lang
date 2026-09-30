@@ -12,12 +12,7 @@ module arm64 {
         return codegen_validated(move program, variant)
     }
     fn codegen_validated(input: take ir::Program, variant: AbiVariant) -> Result<object::CompilerObject, Text> {
-        var program = move input
-        for index in 0..program.functions.length() {
-            if ir::function_is_import(program.functions[index]) == false {
-                ir::function_compact_values(program.functions[index])
-            }
-        }
+        let program = prepare_program(move input, variant)?
         var output = object::new()
         output.architecture = object::ArchitectureArm64()
         declare_symbols(program, output)
@@ -26,9 +21,23 @@ module arm64 {
         compile_functions(program, output, variant)?
         append_root_runtime(output)?
         append_stack_runtime(output)?
+        append_windows_stack_runtime(output)?
         append_process_runtime(output)?
         append_arena_runtime(output)?
         return Ok(move output)
+    }
+
+    fn prepare_program(input: take ir::Program, variant: AbiVariant) -> Result<ir::Program, Text> {
+        var program = move input
+        if variant == AbiVariant::Windows() {
+            windows_runtime::prepare(program)?
+        }
+        for index in 0..program.functions.length() {
+            if ir::function_is_import(program.functions[index]) == false {
+                ir::function_compact_values(program.functions[index])
+            }
+        }
+        return Ok(move program)
     }
     fn program_entry(program: ir::Program) -> Result<usize, Text> {
         match program.entry {

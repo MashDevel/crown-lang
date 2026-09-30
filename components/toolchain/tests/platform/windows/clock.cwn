@@ -1,0 +1,9 @@
+fn clock_checks() -> Result<void, Text> {
+    let started = toolchain::milliseconds()
+    toolchain::wait_milliseconds(0)
+    check(toolchain::milliseconds() - started < 1000, "zero wait returns promptly")?
+    let before = toolchain::milliseconds()
+    toolchain::wait_milliseconds(1001)
+    let elapsed = toolchain::milliseconds() - before
+    return check(elapsed >= 1001 && elapsed < 5000, "wait spans native interval boundary")
+}

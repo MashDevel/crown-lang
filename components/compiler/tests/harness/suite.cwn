@@ -3,7 +3,7 @@ module harness {
         executable: Text, environment: Environment, registry: Text, jobs: usize, filter: Text
     }
     struct Worker {
-        name: Text, directory: Text, pid: i32, index: usize, deadline: u64, status: Vec<i32>
+        name: Text, directory: Text, pid: toolchain::Process, index: usize, deadline: u64, status: Vec<i32>
     }
     struct SuiteExecution {
         request: Suite, builds: Text
@@ -161,7 +161,7 @@ module harness {
     }
 
     fn poll_worker(workers: write Vec<Worker>, completed: write Vec<Option<Outcome>>, index: usize) -> bool {
-        let status = match toolchain::poll_process(workers[index].pid, workers[index].status) {
+        let status = match poll_worker_process(workers[index]) {
             Ok(value) => value
             Err(error) => {
                 finish_worker(workers, completed, index, Err(move error))
@@ -233,5 +233,8 @@ module harness {
             return Err(std::text::joined(std::text::joined("worker status ", std::text::signed_decimal(i64.from(status))), std::text::joined("\n", std::text::joined(stdout, stderr))))
         }
         return Ok(())
+    }
+    fn poll_worker_process(worker: write Worker) -> Result<Option<i32>, Text> {
+        return toolchain::poll_process(worker.pid, worker.status)
     }
 }

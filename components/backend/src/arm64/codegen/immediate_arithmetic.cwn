@@ -1,0 +1,53 @@
+module arm64 {
+    fn arithmetic_immediate(compiler: write Compiler, operator: ir::BinaryOperator, width: u32, left: usize, right: usize) -> bool {
+        if operator != ir::BinaryAdd() && operator != ir::BinarySubtract() {
+            return false
+        }
+        let subtract = operator == ir::BinarySubtract()
+        match compiler.constants[right] {
+            Some(value) => {
+                if emit_arithmetic_immediate(compiler, left, value.low, width, subtract) {
+                    return true
+                }
+            }
+            None => {
+            }
+        }
+        if subtract == false {
+            match compiler.constants[left] {
+                Some(value) => {
+                    return emit_arithmetic_immediate(compiler, right, value.low, width, false)
+                }
+                None => {
+                }
+            }
+        }
+        return false
+    }
+
+    fn emit_arithmetic_immediate(compiler: write Compiler, operand: usize, value: u64, width: u32, subtract: bool) -> bool {
+        let shifted = value > 4095
+        if shifted &&(value % 4096 != 0 || value / 4096 > 4095) {
+            return false
+        }
+        let amount = u32.from(if shifted {
+                value / 4096
+            } else {
+                value
+            })
+        let source = value_register(compiler, operand, 9)
+        let word = match add_immediate(compiler.target, source, amount, subtract) {
+            Ok(encoded) => encoded
+            Err(error) => {
+                encoding_error(compiler, move error)
+                return true
+            }
+        }
+        emit(compiler, integer_sized_word(word | if shifted {
+                    4194304
+                } else {
+                    0
+                }, width))
+        return true
+    }
+}

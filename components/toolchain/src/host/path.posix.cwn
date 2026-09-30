@@ -1,0 +1,49 @@
+module toolchain {
+    extern "c" {
+        fn raw_realpath(path: RawPtr<u8>, output: RawPtr<u8>) -> RawPtr<u8> = "realpath"
+        fn raw_getcwd(output: RawPtr<u8>, length: usize) -> RawPtr<u8> = "getcwd"
+    }
+
+    fn current_directory() -> Result<Text, Text> {
+        unsafe {
+            let pointer = raw_getcwd(null(), 0)
+            if pointer == null() {
+                return Err("could not read working directory")
+            }
+            let output = pointer_text(pointer)
+            raw_free(pointer)
+            return Ok(move output)
+        }
+    }
+
+    fn absolute(path: Text) -> Result<Text, Text> {
+        let encoded = cstring(path)?
+        unsafe {
+            let pointer = raw_realpath(std::cstr::as_raw(encoded), null())
+            if pointer != null() {
+                let output = pointer_text(pointer)
+                raw_free(pointer)
+                return Ok(move output)
+            }
+        }
+        if std::text::equal(path, "/") {
+            return Ok("/")
+        }
+        let parent = parent_path(path)
+        if std::text::equal(parent, ".") {
+            return Ok(path_join(current_directory()?, file_name(path)))
+        }
+        return Ok(path_join(absolute(parent)?, file_name(path)))
+    }
+
+    fn path_separator(byte: u8) -> bool {
+        return byte == 47
+    }
+
+    fn path_root_length(path: Text) -> usize {
+        if std::text::starts(path, "/") {
+            return 1
+        }
+        return 0
+    }
+}

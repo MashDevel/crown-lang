@@ -1,0 +1,129 @@
+module arm64 {
+    fn native_assembly_relocation(object: object::CompilerObject, output: write NativeAssembly, relocation: object::Relocation) -> Result<void, Text> {
+        var symbol = native_symbol(object.symbols[relocation.symbol].name, output.windows)
+        match relocation.subtract {
+            Some(index) => {
+                std::text::append(symbol, std::text::joined("-", native_symbol(object.symbols[index].name, output.windows)))
+            }
+            None => {
+            }
+        }
+        if arm_instruction_relocation(relocation.kind) {
+            if ir::value_present(relocation.subtract) {
+                return Err("ARM64 instruction relocation cannot subtract a symbol")
+            }
+            let word = u32.from(link_binary::number(object.sections[relocation.section].data, usize.from(relocation.offset), 4)?)
+            let instruction = native_relocation_instruction(object, output, relocation, word)?
+            std::text::append(output.text, instruction)
+        } else {
+            assembly_addend(symbol, relocation.addend)
+            let directive = match relocation.kind {
+                object::RelocationAbsolute64 | object::RelocationDifference64 => ".quad "
+                object::RelocationAbsolute32 | object::RelocationDifference32 => ".long "
+                _ => {
+                    return Err("unsupported ARM64 native assembly relocation")
+                }
+            }
+            std::text::append(output.text, std::text::joined(directive, symbol))
+        }
+        output.text.push('\n')
+        return Ok(())
+    }
+    fn native_assembly_instruction(kind: object::RelocationKind, word: u32, symbol: Text, addend: i64, windows: bool) -> Result<Text, Text> {
+        arm_relocated_word(kind, word, 0, 0)?
+        let destination = std::text::joined("x", std::text::decimal(u64.from(word & 31)))
+        let base = if ((word >> 5) & 31) == 31 {
+            "sp"
+        } else {
+            std::text::joined("x", std::text::decimal(u64.from((word >> 5) & 31)))
+        }
+        match kind {
+            object::RelocationArmBranch26 => Ok(std::text::joined(if (word & 2147483648) != 0 {
+                        "bl "
+                    } else {
+                        "b "
+                    }, native_symbol_expression(symbol, "", addend, windows)))
+            object::RelocationArmPage21 | object::RelocationArmGotPage21 => {
+                let suffix = if kind == object::RelocationArmPage21() {
+                    "@PAGE"
+                } else {
+                    "@GOTPAGE"
+                }
+                return Ok(std::text::joined(std::text::joined("adrp ", destination), std::text::joined(", ", native_symbol_expression(symbol, suffix, addend, windows))))
+            }
+            object::RelocationArmPageOffset12 => {
+                let operands = std::text::joined(std::text::joined(destination, ", "), std::text::joined(base, ", "))
+                return Ok(std::text::joined(std::text::joined("add ", operands), native_symbol_expression(symbol, "@PAGEOFF", addend, windows)))
+            }
+            object::RelocationArmGotLoadPageOffset12 => {
+                let operands = std::text::joined(std::text::joined("ldr ", destination), std::text::joined(", [", base))
+                return Ok(std::text::joined(operands, std::text::joined(", ", std::text::joined(native_symbol_expression(symbol, "@GOTPAGEOFF", addend, windows), "]"))))
+            }
+            object::RelocationArmLoadPageOffset12(scale) => native_assembly_load(word, scale, native_symbol_expression(symbol, "@PAGEOFF", addend, windows))
+            _ => Err("unsupported ARM64 native instruction relocation")
+        }
+    }
+    fn native_assembly_load(word: u32, scale: u32, symbol: Text) -> Result<Text, Text> {
+        var operation = native_memory_operation(word, scale)
+        let register = native_memory_register(word, scale)?
+        std::text::append(operation, std::text::joined(" ", register))
+        std::text::append(operation, std::text::decimal(u64.from(word & 31)))
+        std::text::append(operation, ", [")
+        let base = (word >> 5) & 31
+        std::text::append(operation, if base == 31 {
+                "sp"
+            } else {
+                std::text::joined("x", std::text::decimal(u64.from(base)))
+            })
+        std::text::append(operation, std::text::joined(", ", std::text::joined(symbol, "]")))
+        return Ok(move operation)
+    }
+    fn native_memory_operation(word: u32, scale: u32) -> Text {
+        var operation = if (word & 4194304) != 0 {
+            "ldr"
+        } else {
+            "str"
+        }
+        if (word & 67108864) == 0 {
+            if scale == 0 {
+                std::text::append(operation, "b")
+            }
+            if scale == 1 {
+                std::text::append(operation, "h")
+            }
+        }
+        return move operation
+    }
+    fn native_memory_register(word: u32, scale: u32) -> Result<Text, Text> {
+        if (word & 67108864) != 0 {
+            return Ok(match scale {
+                    0 => "b",
+                    1 => "h",
+                    2 => "s",
+                    3 => "d",
+                    _ => "q"
+                })
+        }
+        if (word & 8388608) != 0 {
+            return Err("unsupported signed load in native assembly")
+        }
+        return Ok(if scale == 3 {
+                "x"
+            } else {
+                "w"
+            })
+    }
+    fn native_symbol_expression(symbol: Text, suffix: Text, addend: i64, windows: bool) -> Text {
+        var output = if windows {
+            std::text::joined(if std::text::ends(suffix, "PAGEOFF") {
+                    ":lo12:"
+                } else {
+                    ""
+                }, symbol)
+        } else {
+            std::text::joined(symbol, suffix)
+        }
+        assembly_addend(output, addend)
+        return move output
+    }
+}

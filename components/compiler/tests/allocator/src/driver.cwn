@@ -31,6 +31,12 @@ fn link_audited(object: take object::CompilerObject, output: Text) -> Result<voi
         frontend::linux_executable(move object, options)?;
         return Ok(())
     }
+    if toolchain::host_target().platform == toolchain::Platform::Windows() {
+        var options = toolchain::options("build")
+        options.output = output.clone()
+        frontend::windows_executable(move object, options)?;
+        return Ok(())
+    }
     let bytes = macho::executable(object, macho::libraries(Vec<Text>.new())?)?
     frontend::write_native_executable(output, bytes)?;
     return Ok(())

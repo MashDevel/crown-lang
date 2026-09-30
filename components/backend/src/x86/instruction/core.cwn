@@ -20,6 +20,7 @@ module x86 {
         LoadMxcsr(Register)
         StoreMxcsr(Register)
         ReadMsr
+        ReadThreadEnvironment(Register)
         WriteMsr
         ReloadSegments
     }

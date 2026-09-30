@@ -1,0 +1,58 @@
+module toolchain {
+    fn compiler_command(arguments: Vec<Text>, directory: Text) -> Result<Command, Text> {
+        if arguments.length() < 2 {
+            return Err("compiler invocation requires a command")
+        }
+        let path = path_join(directory, "arguments.json")
+        write_text(path, compiler_response_text(arguments))?
+        var invocation = Vec<Text>.new()
+        invocation.push(arguments[0].clone())
+        invocation.push("_arguments")
+        invocation.push(path.clone())
+        var request = command(move invocation)
+        request.timeout = 0
+        return Ok(move request)
+    }
+
+    fn compiler_response_text(arguments: Vec<Text>) -> Text {
+        var output = "["
+        for index in 1..arguments.length() {
+            if index != 1 {
+                output.push(',')
+            }
+            std::text::append(output, json_quoted(arguments[index]))
+        }
+        output.push(']')
+        return move output
+    }
+
+    fn compiler_response_arguments(arguments: Vec<Text>) -> Result<Vec<Text>, Text> {
+        if arguments.length() < 2 || std::text::equal(arguments[1], "_arguments") == false {
+            return Ok(std::text::clone_list(arguments))
+        }
+        if arguments.length() != 3 {
+            return Err("compiler argument file requires exactly one path")
+        }
+        let values = read_compiler_response(arguments[2])?
+        var output = Vec<Text>.new()
+        output.push(arguments[0].clone())
+        for index in 0..values.length() {
+            output.push(values[index].clone())
+        }
+        return Ok(move output)
+    }
+
+    fn read_compiler_response(path: Text) -> Result<Vec<Text>, Text> {
+        let document = json(read_text(path)?)?
+        let values = json_strings(document, document.root)?
+        if values.length() == 0 {
+            return Err("compiler argument file requires a command")
+        }
+        for index in 0..values.length() {
+            if std::text::contains(values[index], "\0") {
+                return Err("compiler argument contains a NUL byte")
+            }
+        }
+        return Ok(move values)
+    }
+}

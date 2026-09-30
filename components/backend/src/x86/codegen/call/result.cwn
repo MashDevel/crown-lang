@@ -29,6 +29,9 @@ module x86 {
             }
             index = index + 1
         }
+        if input.signature.calling_convention == ir::CallingConvention::WindowsX64() && codegen_type_is_wide(input.signature.result) {
+            return codegen_windows_wide_result(compiler, input.result)
+        }
         return codegen_store_optional_call_result(program, compiler, input.result)
     }
 

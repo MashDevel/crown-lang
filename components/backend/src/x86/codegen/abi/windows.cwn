@@ -1,0 +1,90 @@
+module x86 {
+    fn windows_integer_register(index: usize) -> Option<Register> {
+        return match index {
+            0 => Some(Rcx())
+            1 => Some(Rdx())
+            2 => Some(R8())
+            3 => Some(R9())
+            _ => None()
+        }
+    }
+
+    fn windows_abi_locations(signature: ir::Signature) -> Result<Vec<ArgumentLocation>, CodegenError> {
+        var output = Vec<ArgumentLocation>.new()
+        var position: usize = 0
+        for index in 0..signature.parameters.length() {
+            let location = windows_argument(signature.parameters[index], signature.parameter_abi[index], position)?
+            if windows_argument_omitted(location) == false {
+                position = position + 1
+            }
+            output.push(move location)
+        }
+        var copies: usize = if position < 4 {
+            4
+        } else {
+            position
+        }
+        for index in 0..output.length() {
+            match write output[index] {
+                ArgumentIndirect(argument) => {
+                    let aligned = copies + copies % 2
+                    if argument.size > 2147483647 || aligned > 268435455 - usize.from((argument.size + 7) / 8) {
+                        return Err(codegen_error(CodegenNumericOverflow()))
+                    }
+                    argument.copy_slot = aligned
+                    copies = aligned + usize.from((argument.size + 7) / 8)
+                }
+                _ => {
+                }
+            }
+        }
+        return Ok(move output)
+    }
+
+    fn windows_argument_omitted(location: ArgumentLocation) -> bool {
+        return match read location {
+            ArgumentOmitted => true
+            _ => false
+        }
+    }
+
+    fn windows_argument(value_type: ir::Type, abi: ir::ParameterAbi, position: usize) -> Result<ArgumentLocation, CodegenError> {
+        match read abi {
+            ir::ParameterDirect => {
+                if codegen_type_is_wide(value_type) || ir::type_is_vector(value_type) {
+                    return Ok(windows_indirect_argument(position, 16))
+                }
+                return windows_scalar_argument(value_type, position)
+            }
+            ir::ParameterAggregate(aggregate) => windows_aggregate_argument(aggregate, position)
+            ir::ParameterReturn(aggregate) => {
+                if windows_register_aggregate(aggregate) {
+                    return Ok(ArgumentOmitted())
+                }
+                return windows_scalar_argument(ir::TypePointer(), position)
+            }
+        }
+    }
+
+    fn windows_scalar_argument(value_type: ir::Type, position: usize) -> Result<ArgumentLocation, CodegenError> {
+        if ir::type_is_float(value_type) && position < 4 {
+            return match abi_float_register(position) {
+                Some(register) => Ok(ArgumentFloat(register))
+                None => Err(codegen_error(CodegenInvalidIr()))
+            }
+        }
+        if ir::type_is_float(value_type) == false && ir::type_is_integer(value_type) == false && ir::type_is_pointer(value_type) == false {
+            return Err(codegen_error(CodegenUnsupportedType(value_type)))
+        }
+        return Ok(match windows_integer_register(position) {
+                Some(register) => ArgumentInteger(register)
+                None => ArgumentStack(position)
+            })
+    }
+
+    fn windows_indirect_argument(position: usize, size: u64) -> ArgumentLocation {
+        return ArgumentIndirect(IndirectArgument {
+                register: windows_integer_register(position), slot: position, copy_slot: 0, size: size
+            })
+    }
+}

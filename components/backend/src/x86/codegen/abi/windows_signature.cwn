@@ -1,0 +1,78 @@
+module x86 {
+    fn windows_program(program: write ir::Program) -> Result<void, CodegenError> {
+        match windows_runtime::prepare(program) {
+            Err(error) => {
+                error;
+                return Err(codegen_error(CodegenInvalidIr()))
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        for index in 0..program.functions.length() {
+            windows_function(program.functions[index])?
+        }
+        return Ok(())
+    }
+
+    fn windows_function(function: write ir::Function) -> Result<void, CodegenError> {
+        windows_signature(function.signature)?
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                windows_instruction(function.blocks[block].instructions[index])?
+            }
+        }
+        return Ok(())
+    }
+
+    fn windows_instruction(instruction: write ir::Instruction) -> Result<void, CodegenError> {
+        match write instruction.kind {
+            ir::InstructionCallIndirect(target, signature, arguments) => {
+                target;
+                arguments;
+                windows_signature(signature)?
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn windows_signature(signature: write ir::Signature) -> Result<void, CodegenError> {
+        signature.calling_convention = ir::CallingConvention::WindowsX64()
+        for index in 0..signature.parameter_abi.length() {
+            match write signature.parameter_abi[index] {
+                ir::ParameterAggregate(aggregate) | ir::ParameterReturn(aggregate) => {
+                    let normalized = windows_aggregate(aggregate)?
+                    aggregate = move normalized
+                }
+                _ => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn windows_aggregate(aggregate: ir::AggregateAbi) -> Result<ir::AggregateAbi, CodegenError> {
+        let size = windows_aggregate_size(aggregate)
+        let alignment = match read aggregate {
+            ir::AggregateMemory(bytes, value) => {
+                bytes;
+                value
+            }
+            ir::AggregateRegisters(bytes, value, components) => {
+                bytes;
+                components;
+                value
+            }
+        }
+        if windows_register_aggregate(aggregate) == false {
+            return Ok(ir::AggregateMemory(size, alignment))
+        }
+        var components = Vec<ir::AbiComponent>.new()
+        if size != 0 {
+            components.push(windows_aggregate_component(size)?)
+        }
+        return Ok(ir::AggregateRegisters(size, alignment, move components))
+    }
+}

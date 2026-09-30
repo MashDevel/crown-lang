@@ -1,0 +1,40 @@
+module arm64 {
+    fn native_coff_function(symbol: object::Symbol, output: write NativeAssembly) -> void {
+        if output.windows && object::symbol_is_function(symbol.kind) && object::symbol_is_import(symbol.binding) == false {
+            let global = match read symbol.binding {
+                object::SymbolGlobal => true,
+                _ => false
+            }
+            std::text::append(output.text, object::coff_function_declaration(symbol.name, global))
+        }
+    }
+
+    fn native_relocation_instruction(object: object::CompilerObject, output: NativeAssembly, relocation: object::Relocation, word: u32) -> Result<Text, Text> {
+        if output.windows && native_got_relocation(relocation.kind) {
+            return coff_address_instruction(object.symbols[relocation.symbol], relocation, word)
+        }
+        let name = native_symbol(object.symbols[relocation.symbol].name, output.windows)
+        return native_assembly_instruction(relocation.kind, word, name, relocation.addend, output.windows)
+    }
+
+    fn native_got_relocation(kind: object::RelocationKind) -> bool {
+        return match kind {
+            object::RelocationArmGotPage21 | object::RelocationArmGotLoadPageOffset12 => true,
+            _ => false
+        }
+    }
+
+    fn coff_address_instruction(symbol: object::Symbol, relocation: object::Relocation, word: u32) -> Result<Text, Text> {
+        arm_relocated_word(relocation.kind, word, 0, 0)?
+        if object::symbol_is_import(symbol.binding) && object::symbol_is_function(symbol.kind) == false {
+            let name = native_symbol(std::text::joined("__imp_", symbol.name), true)
+            return native_assembly_instruction(relocation.kind, word, name, relocation.addend, true)
+        }
+        let name = native_symbol(symbol.name, true)
+        if relocation.kind == object::RelocationArmGotPage21() {
+            return native_assembly_instruction(object::RelocationArmPage21(), word, name, relocation.addend, true)
+        }
+        let address = 2432696320 |(word & 1023)
+        return native_assembly_instruction(object::RelocationArmPageOffset12(), address, name, relocation.addend, true)
+    }
+}

@@ -1,0 +1,5 @@
+module toolchain {
+    fn host_target() -> Target {
+        return target(host_architecture(), Platform::Windows())
+    }
+}

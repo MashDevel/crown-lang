@@ -1,0 +1,79 @@
+module windows_runtime {
+    fn startup(program: write ir::Program) -> Result<void, Text> {
+        let entry = match program.entry {
+            Some(index) => index
+            None => {
+                return Err("Windows executable requires a main function")
+            }
+        }
+        var code = builder(ir::function_new("__crown_windows_entry", pointers(0, ir::TypeVoid()), ir::LinkageLocal()))?
+        startup_streams(program, code)?
+        startup_instrumentation(program, code)?
+        let arguments = startup_main_arguments(program, code, entry)?
+        let result_type = program.functions[entry].signature.result
+        let result = emit(code, ir::InstructionCall(entry, move arguments, result_type))?
+        var status = integer(code, ir::IntegerWidth32(), 0)
+        match result {
+            Some(value) => {
+                status = value
+            }
+            None => {
+            }
+        }
+        var exit_arguments = Vec<usize>.new()
+        exit_arguments.push(status)
+        call(program, code, "exit", move exit_arguments, ir::TypeVoid())?;
+        finish(code, ir::TerminatorUnreachable())?
+        let startup_entry = ir::program_add_function(program, take_function(code))
+        ir::program_set_entry(program, startup_entry)
+        return Ok(())
+    }
+
+    fn startup_main_arguments(program: write ir::Program, code: write Builder, entry: usize) -> Result<Vec<usize>, Text> {
+        let count = program.functions[entry].parameters.length()
+        if count == 2 {
+            return startup_arguments(program, code)
+        } else {
+            if count != 0 {
+                return Err("invalid Windows entry signature")
+            }
+        }
+        return Ok(Vec<usize>.new())
+    }
+
+    fn startup_streams(program: write ir::Program, code: write Builder) -> Result<void, Text> {
+        for descriptor in 0..3 {
+            var arguments = Vec<usize>.new()
+            arguments.push(integer(code, ir::IntegerWidth32(), u64.from(descriptor)))
+            arguments.push(integer(code, ir::IntegerWidth32(), 32768))
+            call(program, code, "_setmode", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?;
+        }
+        call(program, code, "_initialize_narrow_environment", Vec<usize>.new(), ir::TypeInteger(ir::IntegerWidth32()))?;
+        return Ok(())
+    }
+
+    fn startup_require(program: write ir::Program, code: write Builder, condition: usize) -> Result<void, Text> {
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(condition, success, failure))?
+        code.block = failure
+        call(program, code, "abort", Vec<usize>.new(), ir::TypeVoid())?;
+        finish(code, ir::TerminatorUnreachable())?
+        code.block = success
+        return Ok(())
+    }
+
+    fn startup_pointer(program: write ir::Program, code: write Builder, pointer: usize) -> Result<void, Text> {
+        let null = null_pointer(code)
+        let valid = value(code, ir::InstructionCompare(ir::CompareNotEqual(), pointer, null))?
+        return startup_require(program, code, valid)
+    }
+
+    fn startup_allocate(program: write ir::Program, code: write Builder, size: usize) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(size)
+        let buffer = call_value(program, code, "malloc", move arguments, ir::TypePointer())?
+        startup_pointer(program, code, buffer)?
+        return Ok(buffer)
+    }
+}

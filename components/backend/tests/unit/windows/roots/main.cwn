@@ -1,0 +1,7 @@
+fn run() -> Result<void, Text> {
+    return runtime_execute_program(windows_root_program()?)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

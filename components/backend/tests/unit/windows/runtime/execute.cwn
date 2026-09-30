@@ -1,0 +1,13 @@
+fn runtime_execute_program(program: take ir::Program) -> Result<void, Text> {
+    let object = match windows_call_object(move program, toolchain::host_target().architecture) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err("could not compile Windows runtime test")
+        }
+    }
+    return match safety_execute_object(move object) {
+        Ok(value) => Ok(value)
+        Err(error) => Err(std::text::joined("Windows runtime execution failed: ", std::text::decimal(u64.from(error))))
+    }
+}

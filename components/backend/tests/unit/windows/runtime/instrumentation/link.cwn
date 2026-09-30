@@ -1,0 +1,27 @@
+fn instrumentation_link_test(target: toolchain::Target, profiling: bool) -> Result<void, Text> {
+    var program = ir::program_new()
+    instrumentation_counter_entry(program, profiling)?
+    program.globals[1].name = "test_pointer"
+    windows_runtime::startup(program)?
+    var object = match windows_call_object(move program, target.architecture) {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return Err("could not compile instrumentation link test")
+        }
+    }
+    let runtime = windows_runtime::instrumentation_object(16, "C:/coverage/run.XXXXXX", target, profiling)?
+    link_object::merge(object, move runtime)?
+    pe::executable(object, pe::system_imports())?;
+    return Ok(())
+}
+
+fn instrumentation_link_tests() -> Result<void, Text> {
+    let names = std::text::split("x86_64-windows|arm64-windows", 124)
+    for index in 0..names.length() {
+        let target = toolchain::parse_target(names[index])?
+        instrumentation_link_test(target, false)?
+        instrumentation_link_test(target, true)?
+    }
+    return Ok(())
+}

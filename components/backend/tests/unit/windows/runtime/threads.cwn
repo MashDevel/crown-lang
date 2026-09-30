@@ -1,0 +1,56 @@
+fn runtime_thread_program() -> ir::Program {
+    var program = ir::program_new()
+    let create = windows_runtime::pointers(4, ir::TypeInteger(ir::IntegerWidth32()))
+    ir::program_add_function(program, ir::function_new("pthread_create", move create, ir::LinkageImport()));
+    let join = windows_runtime::thread_join_signature()
+    ir::program_add_function(program, ir::function_new("pthread_join", move join, ir::LinkageImport()));
+    program.entry = Some(0)
+    return move program
+}
+
+fn runtime_thread_structure() -> Result<void, Text> {
+    var program = runtime_thread_program()
+    windows_runtime::prepare(program)?
+    runtime_validate(program)?
+    testing::expect(program.functions.length() == 8, "thread runtime adds a callback and five system imports")?
+    testing::expect(ir::function_is_import(program.functions[0]) == false && ir::function_is_import(program.functions[1]) == false, "thread creation and joining become Windows runtime bodies")?
+    windows_runtime::prepare(program)?
+    return testing::expect(program.functions.length() == 8, "thread runtime preparation is idempotent")
+}
+
+fn runtime_thread_errors() -> Result<void, Text> {
+    var program = runtime_thread_program()
+    program.functions[0].signature.result = ir::TypeVoid()
+    testing::error(windows_runtime::prepare(program))?
+    program = runtime_thread_program()
+    program.functions[1].signature.result = ir::TypeVoid()
+    return testing::error(windows_runtime::prepare(program))
+}
+
+fn runtime_placeholder_imports() -> Result<void, Text> {
+    var program = runtime_thread_program()
+    runtime_erase_signatures(program)
+    runtime_allocator_placeholders(program)
+    windows_runtime::prepare(program)?
+    testing::expect(program.functions[0].parameters.length() == 4, "compiler thread placeholders acquire their runtime signature")?
+    testing::expect(program.functions[1].parameters.length() == 2, "compiler join placeholders acquire their runtime signature")?
+    runtime_validate(program)?
+    program = runtime_lock_program()
+    runtime_erase_signatures(program)
+    windows_runtime::prepare(program)?
+    return runtime_validate(program)
+}
+
+fn runtime_allocator_placeholders(program: write ir::Program) -> void {
+    let names = ["malloc", "free"]
+    for index in 0..2 {
+        ir::program_add_function(program, ir::function_new(names[index].clone(), windows_runtime::pointers(0, ir::TypeVoid()), ir::LinkageImport()));
+    }
+}
+
+fn runtime_erase_signatures(program: write ir::Program) -> void {
+    for index in 0..program.functions.length() {
+        let name = program.functions[index].name.clone()
+        program.functions[index] = ir::function_new(move name, windows_runtime::pointers(0, ir::TypeVoid()), ir::LinkageImport())
+    }
+}

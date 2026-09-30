@@ -13,16 +13,14 @@ fn cache_tests(root: Text) -> Result<void, Text> {
     return Ok(())
 }
 
-fn hash_tests(root: Text) -> Result<void, Text> {
+fn hash_tests() -> Result<void, Text> {
     testing::expect(std::text::equal(toolchain::digest_text("abc")?, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"), "SHA-256 known answer")?
     testing::expect(std::text::equal(toolchain::digest_text("")?, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"), "SHA-256 empty input")?
     let values = testing::list("|abc|é λ|123456789")
+    let expected = testing::list("4294967295 0|1219131554 3|2252738386 5|930766865 9")
     for index in 0..values.length() {
-        let path = testing::write_file(root, "checksum", values[index])?
-        let request = testing::list(std::text::joined("cksum|", path))
-        let result = toolchain::capture(toolchain::command(move request), root)?
-        let expected = std::text::joined(toolchain::checksum(toolchain::text_bytes(values[index])), " ")
-        testing::expect(result.status == 0 && std::text::starts(result.stdout, expected), "POSIX checksum agreement")?
+        let actual = toolchain::checksum(toolchain::text_bytes(values[index]))
+        testing::expect(std::text::equal(actual, expected[index]), "POSIX cksum known answer")?
     }
     return Ok(())
 }
@@ -58,7 +56,7 @@ fn run() -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
     cache_tests(root)?;
-    hash_tests(root)?
+    hash_tests()?
     bootstrap_record(root)?
     interpreter_cache(root)?
     record_symlinks(root)?
@@ -82,8 +80,7 @@ fn cache_invalidation(source: Text, output: Text, checksum: Text, paths: Vec<Tex
 
 fn interpreter_cache(root: Text) -> Result<void, Text> {
     let source = testing::write_file(root, "interpreter-source.cwn", "fn main() -> u32 { 0 }")?
-    let compiler = testing::write_file(root, "fingerprint-compiler", "#!/bin/sh\ncat \"${0%/*}/link-inputs.json\"\n")?
-    toolchain::executable(compiler)?
+    let compiler = fingerprint_compiler(root)?
     let inputs = testing::write_file(root, "link-inputs.json", "[]")?
     let project = toolchain::Project {
         manifest: source.clone(), name: "test", sources: testing::list(source), libraries: Vec<Text>.new(), links: Vec<Text>.new(), output: "program"
@@ -119,28 +116,35 @@ fn environment_cache(request: toolchain::BuildRequest, name: Text) -> Result<voi
     return testing::expect(std::text::equal(first, second) == false, "changing Linux link configuration invalidates the build cache")
 }
 
-extern "c" {
-    fn make_symlink(target: RawPtr<u8>, path: RawPtr<u8>) -> i32 = "symlink"
-}
-
 fn record_symlinks(root: Text) -> Result<void, Text> {
     let binary = testing::write_file(root, "symlink-program", "binary")?
     let victim = testing::write_file(root, "unrelated", "preserved")?
     let path = std::text::joined(binary, ".crown-build")
-    let target = toolchain::cstring(victim)?
-    let link = toolchain::cstring(path)?
-    unsafe {
-        testing::expect(make_symlink(std::cstr::as_raw(target), std::cstr::as_raw(link)) == 0, "create record symlink")?
-    }
+    toolchain::symbolic_link(victim, path, false)?
     toolchain::record(binary, "input")?
     testing::expect(std::text::equal(toolchain::read_text(victim)?, "preserved"), "record publication preserves symlink target")?
     testing::expect(toolchain::fresh(binary, "input"), "record replaces symlink with valid metadata")?
+    return dangling_record(binary, victim, path)
+}
+
+fn dangling_record(binary: Text, victim: Text, path: Text) -> Result<void, Text> {
     toolchain::remove_file(path)?
     toolchain::remove_file(victim)?
-    unsafe {
-        testing::expect(make_symlink(std::cstr::as_raw(target), std::cstr::as_raw(link)) == 0, "create dangling record symlink")?
-    }
+    toolchain::symbolic_link(victim, path, false)?
     toolchain::record(binary, "next")?
     testing::expect(toolchain::exists(victim) == false, "record publication does not create symlink target")?
     return testing::expect(toolchain::fresh(binary, "next"), "record replaces dangling symlink")
+}
+
+fn fingerprint_compiler(root: Text) -> Result<Text, Text> {
+    let compiler = toolchain::path_join(root, toolchain::executable_name("fingerprint-compiler", toolchain::host_target()))
+    var arguments = testing::list("build")
+    arguments.push(toolchain::path_join(toolchain::repository_root()?, "components/toolchain/tests/fixtures/link_inputs.cwn"))
+    arguments.push("--toolchain-library")
+    arguments.push("toolchain")
+    arguments.push("-o")
+    arguments.push(compiler.clone())
+    let result = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(result), "native linker-input fixture builds")?
+    return Ok(move compiler)
 }

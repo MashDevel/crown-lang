@@ -1,0 +1,59 @@
+module std::utf16 {
+    copy enum Error {
+        Truncated, Surrogate
+    }
+
+    fn encode(value: TextView) -> Vec<u16> {
+        var output = Vec<u16>.with_capacity(value.length())
+        var index: usize = 0
+        loan read value[0..value.length()] as bytes {
+            while index < bytes.length() {
+                append_scalar(output, std::text::decode_scalar(bytes, index))
+            }
+        }
+        return move output
+    }
+
+    fn append_scalar(output: write Vec<u16>, scalar: char) -> void {
+        let value = u32.from(scalar)
+        if value < 65536 {
+            output.push(u16.from(value))
+            return
+        }
+        let supplementary = value - 65536
+        output.push(u16.from(55296 +(supplementary >> 10)))
+        output.push(u16.from(56320 +(supplementary & 1023)))
+    }
+
+    fn decode(units: Slice<u16>) -> Result<Text, Error> {
+        var output = ""
+        var index: usize = 0
+        while index < units.length() {
+            output.push(decode_scalar(units, index)?)
+        }
+        return Ok(move output)
+    }
+
+    fn decode_scalar(units: Slice<u16>, index: write usize) -> Result<char, Error> {
+        if index >= units.length() {
+            return Err(Error::Truncated())
+        }
+        let first = u32.from(units[index])
+        index = index + 1
+        if first < 55296 || first > 57343 {
+            return Ok(char.from(first))
+        }
+        if first >= 56320 {
+            return Err(Error::Surrogate())
+        }
+        if index >= units.length() {
+            return Err(Error::Truncated())
+        }
+        let second = u32.from(units[index])
+        if second < 56320 || second > 57343 {
+            return Err(Error::Surrogate())
+        }
+        index = index + 1
+        return Ok(char.from(65536 +((first - 55296) << 10) + second - 56320))
+    }
+}

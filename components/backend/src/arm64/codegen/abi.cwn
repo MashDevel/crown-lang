@@ -34,9 +34,10 @@ module arm64 {
         }
     }
     fn parameter_location(signature: ir::Signature, index: usize, state: write AbiState) -> Result<AbiArgument, Text> {
+        let variadic = abi_variadic(signature, index, state.variant)
         match read signature.parameter_abi[index] {
-            ir::ParameterDirect => abi_argument(state, abi_type(signature.parameters[index])?, ir::signature_variadic(signature, index))
-            ir::ParameterAggregate(aggregate) => abi_argument(state, aggregate_type(aggregate), ir::signature_variadic(signature, index))
+            ir::ParameterDirect => abi_argument(state, abi_type(signature.parameters[index])?, variadic)
+            ir::ParameterAggregate(aggregate) => abi_argument(state, aggregate_type(aggregate), variadic)
             ir::ParameterReturn(aggregate) => {
                 let result = abi_result(aggregate_type(aggregate))?
                 if result.indirect {
@@ -80,7 +81,7 @@ module arm64 {
             value_store(compiler, value, 9)
             return capture_location(function, compiler, index, argument.location, offset)
         }
-        if frame_register(compiler.frame, value) != REGISTER_SPILLED {
+        if frame_allocated(compiler.frame, value) {
             return capture_register_parameter(function, compiler, index, argument.location)
         }
         return capture_location(function, compiler, index, argument.location, frame_value(compiler.frame, value)?)

@@ -1,9 +1,6 @@
 module std {
     module io {
         extern "c" {
-            fn raw_open(path: RawPtr<u8>, mode: RawPtr<u8>) -> RawPtr<u8> = "fopen"
-            fn raw_seek(file: RawPtr<u8>, offset: isize, origin: i32) -> i32 = "fseek"
-            fn raw_tell(file: RawPtr<u8>) -> isize = "ftell"
             fn raw_read(data: RawPtr<u8>, size: usize, count: usize, file: RawPtr<u8>) -> usize = "fread"
             fn raw_write(data: RawPtr<u8>, size: usize, count: usize, file: RawPtr<u8>) -> usize = "fwrite"
             fn raw_close(file: RawPtr<u8>) -> i32 = "fclose"
@@ -34,38 +31,21 @@ module std {
         }
 
         fn open(path: TextView, mode: Mode) -> Result<File, Error> {
-            match cstr::new(path) {
-                None => {
-                    return Err(InvalidPath())
-                }
-                Some(encoded) => {
-                    return open_encoded(encoded, mode)
-                }
-            }
-        }
-
-        fn open_encoded(path: cstr::CString, mode: Mode) -> Result<File, Error> {
-            var reading = false
-            match mode {
-                Read => {
-                    reading = true
-                }
-                Write => {
-                }
-            }
-            let encoded_mode = if reading {
-                "rb\0"
-            } else {
-                "wb\0"
-            }
+            let handle = open_handle(path, mode)?
             unsafe {
-                let handle = raw_open(cstr::as_raw(path), encoded_mode.as_raw())
                 if handle == null() {
                     return Err(Open())
                 }
                 return Ok(File {
                         handle: handle
                     })
+            }
+        }
+
+        fn mode_text(mode: Mode) -> Text {
+            return match mode {
+                Read => "rb"
+                Write => "wb"
             }
         }
 

@@ -1,0 +1,26 @@
+fn validate(input: Arguments) -> Result<u32, Text> {
+    let arguments = toolchain::compiler_response_arguments(toolchain::arguments(input))?
+    if arguments.length() != 6 {
+        return Err("launcher argument count")
+    }
+    let expected = ["", "hello 😀!", "spaces \"quotes\"", "tail\\"]
+    for index in 0..4 {
+        if std::text::equal(arguments[index + 1], expected[index]) == false {
+            return Err("launcher changed an argument")
+        }
+    }
+    if arguments[5].length() != 70000 {
+        return Err("launcher truncated the response file")
+    }
+    return Ok(37)
+}
+
+fn main(arguments: Arguments) -> u32 {
+    return match validate(arguments) {
+        Ok(status) => status,
+        Err(error) => {
+            toolchain::failure(error)
+            1
+        }
+    }
+}

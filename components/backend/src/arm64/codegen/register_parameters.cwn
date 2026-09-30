@@ -13,7 +13,7 @@ module arm64 {
                 if count != 1 || ir::type_is_float(value_type) == false {
                     return Err("ARM64 register value requires one scalar SIMD argument")
                 }
-                emit_encoding(compiler, float_move_bits(9, start, false, ir::type_is_float64(value_type)))
+                return float_value_store(compiler, value, start, value_type)
             }
             AbiLocation::Stack(source, size) => {
                 if size > 8 {

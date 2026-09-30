@@ -1,0 +1,47 @@
+fn append(root: Text, name: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, name)
+    return toolchain::write_text(path, std::text::joined(toolchain::read_text(path)?, "x"))
+}
+
+fn compile(arguments: Vec<Text>) -> Result<u32, Text> {
+    if arguments.length() < 4 || std::text::equal(arguments[2], "-o") == false {
+        return Err("expected native compiler output")
+    }
+    let root = toolchain::parent_path(arguments[0])
+    append(root, "compiles")?
+    if toolchain::exists(toolchain::path_join(root, "fail")) {
+        return Ok(1)
+    }
+    if toolchain::exists(toolchain::path_join(root, "change")) {
+        append(root, "source.cwn")?
+    }
+    toolchain::copy_file(arguments[0], arguments[3])?
+    toolchain::executable(arguments[3])?
+    return Ok(0)
+}
+
+fn execute(input: Arguments) -> Result<u32, Text> {
+    let arguments = toolchain::compiler_response_arguments(toolchain::arguments(input))?
+    if arguments.length() == 1 {
+        append(toolchain::parent_path(toolchain::parent_path(arguments[0])), "runs")?
+        return Ok(42)
+    }
+    if std::text::equal(arguments[1], "_link_inputs") {
+        toolchain::say("[]")
+        return Ok(0)
+    }
+    if std::text::equal(arguments[1], "_executable") {
+        return compile(arguments)
+    }
+    return Err("unknown fixture compiler command")
+}
+
+fn main(arguments: Arguments) -> u32 {
+    match execute(arguments) {
+        Ok(status) => status
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

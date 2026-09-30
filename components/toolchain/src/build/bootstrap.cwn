@@ -31,7 +31,7 @@ module toolchain {
     fn bootstrap(request: BootstrapRequest) -> Result<Text, Text> {
         let directory = absolute(request.directory)?
         make_directory(directory)?
-        let output = path_join(directory, "crown")
+        let output = path_join(directory, executable_name("crown", host_target()))
         let lock = lock_file(std::text::joined(output, ".lock"))?
         bootstrap_locked(request, output)?
         lock

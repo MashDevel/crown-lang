@@ -1,0 +1,48 @@
+fn native_runtime_status(program: write ir::Program, code: write windows_runtime::Builder, name: Text, arguments: take Vec<usize>) -> Result<void, Text> {
+    let result = windows_runtime::call_value(program, code, name, move arguments, ir::TypeInteger(ir::IntegerWidth32()))?
+    let zero = windows_runtime::integer(code, ir::IntegerWidth32(), 0)
+    let valid = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), result, zero))?
+    return windows_runtime::require_condition(code, valid, 1)
+}
+
+fn native_runtime_lock(program: write ir::Program, code: write windows_runtime::Builder, name: Text, lock: usize) -> Result<void, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(lock)
+    if std::text::ends(name, "_init") {
+        arguments.push(windows_runtime::null_pointer(code))
+    }
+    return native_runtime_status(program, code, name, move arguments)
+}
+
+fn native_runtime_load(code: write windows_runtime::Builder, address: usize) -> Result<usize, Text> {
+    return windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth64()), 8, false))
+}
+
+fn native_runtime_increment(code: write windows_runtime::Builder, address: usize) -> Result<usize, Text> {
+    let previous = native_runtime_load(code, address)?
+    let one = windows_runtime::integer(code, ir::IntegerWidth64(), 1)
+    let next = windows_runtime::value(code, ir::InstructionBinary(ir::BinaryAdd(), previous, one))?
+    windows_runtime::store(code, address, 0, next)?
+    return Ok(next)
+}
+
+fn native_runtime_expect(code: write windows_runtime::Builder, actual: usize, expected: usize) -> Result<void, Text> {
+    let valid = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), actual, expected))?
+    return windows_runtime::require_condition(code, valid, 2)
+}
+
+fn native_runtime_imports() -> Vec<pe::Import> {
+    var imports = windows_abi_imports()
+    native_runtime_libraries(imports, "InitializeSRWLock|AcquireSRWLockExclusive|ReleaseSRWLockExclusive|AcquireSRWLockShared|ReleaseSRWLockShared|WaitForSingleObject|CloseHandle", "kernel32.dll")
+    native_runtime_libraries(imports, "malloc|free|_beginthreadex|abort", "ucrtbase.dll")
+    return move imports
+}
+
+fn native_runtime_libraries(imports: write Vec<pe::Import>, names: Text, library: Text) -> void {
+    let symbols = std::text::split(names, 124)
+    for index in 0..symbols.length() {
+        imports.push(pe::Import {
+                symbol: symbols[index].clone(), name: symbols[index].clone(), library: library.clone()
+            })
+    }
+}

@@ -48,12 +48,12 @@ fn execution() -> Result<void, Text> {
     value.stdout = None();
     value.status = -6;
     value.stderr = testing::list("integer overflow")
-    harness::verify_execution(value, completed(-6, "integer overflow\n", ""))?
+    harness::verify_execution(value, completed(harness::execution_status(-6, toolchain::host_target().platform), "integer overflow\n", ""))?
     let statuses: [i32; 4] = [0, 1, 42, -11]
     for index in 0..4 {
         testing::error(harness::verify_execution(value, completed(statuses[index], "integer overflow", "")))?
     }
-    testing::error(harness::verify_execution(value, completed(-6, "", "")))?
+    testing::error(harness::verify_execution(value, completed(harness::execution_status(-6, toolchain::host_target().platform), "", "")))?
     return Ok(())
 }
 
@@ -95,13 +95,38 @@ fn run(compiler: Text) -> Result<void, Text> {
     checking()?;
     execution()?;
     clean_execution()?;
+    platform_statuses()?;
     assembly_output()?
     return stale_assembly(compiler)
 }
 fn main(arguments: Arguments) -> u32 {
-    let values = toolchain::arguments(arguments)
+    let values = match toolchain::compiler_response_arguments(toolchain::arguments(arguments)) {
+        Ok(value) => move value
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
     if values.length() > 1 && std::text::equal(values[1], "compile") {
         return 0
     }
     return testing::done(run(values[0]))
+}
+
+fn platform_statuses() -> Result<void, Text> {
+    let platforms = [toolchain::Platform::Windows(), toolchain::Platform::Macos(), toolchain::Platform::Linux()]
+    let unchanged: [i32; 6] = [0, 1, 42, -11, -1073741819, -1073740791]
+    for index in 0..3 {
+        let expected: i32 = if index == 0 {
+            -1073740791
+        } else {
+            -6
+        }
+        testing::expect(harness::execution_status(-6, platforms[index]) == expected, "native abort status")?
+        for offset in 0..6 {
+            let status = unchanged[offset]
+            testing::expect(harness::execution_status(status, platforms[index]) == status, "preserve other exit and exception statuses")?
+        }
+    }
+    return Ok(())
 }

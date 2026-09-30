@@ -1,0 +1,37 @@
+module windows_runtime {
+    fn runtime_import(input: take ir::Function) -> ir::Function {
+        if placeholder_signature(input.signature) {
+            let signature = runtime_signature(input.name)
+            return ir::function_new(input.name.clone(), move signature, ir::LinkageImport())
+        }
+        return move input
+    }
+
+    fn placeholder_signature(signature: ir::Signature) -> bool {
+        return matching_signature(signature, pointers(0, ir::TypeVoid()))
+    }
+
+    fn runtime_signature(name: Text) -> ir::Signature {
+        if std::text::equal(name, "crown_pthread_create_stack") {
+            return stack_signature()
+        }
+        if std::text::equal(name, "write") || std::text::equal(name, "dprintf") {
+            return console_signature(name)
+        }
+        if std::text::equal(name, "pthread_join") {
+            return thread_join_signature()
+        }
+        if std::text::equal(name, "crown_process_environment") {
+            return pointers(0, ir::TypePointer())
+        }
+        if std::text::equal(name, "pthread_create") {
+            return pointers(4, ir::TypeInteger(ir::IntegerWidth32()))
+        }
+        let count: usize = if std::text::ends(name, "_init") {
+            2
+        } else {
+            1
+        }
+        return pointers(count, ir::TypeInteger(ir::IntegerWidth32()))
+    }
+}

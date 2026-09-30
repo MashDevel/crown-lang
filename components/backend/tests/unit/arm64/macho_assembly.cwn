@@ -1,5 +1,5 @@
 fn instruction(kind: object::RelocationKind, word: u32, addend: i64, expected: Text) -> Result<void, Text> {
-    let actual = arm64::macho_assembly_instruction(kind, word, "_target", addend)?
+    let actual = arm64::native_assembly_instruction(kind, word, "_target", addend, false)?
     return testing::expect(std::text::equal(actual, expected), std::text::joined("Mach-O instruction: ", actual))
 }
 
@@ -10,8 +10,8 @@ fn branches_and_addresses() -> Result<void, Text> {
     instruction(object::RelocationArmGotPage21(), 2415919104, 0, "adrp x0, _target@GOTPAGE")?
     instruction(object::RelocationArmPageOffset12(), 2432697312, 0, "add x0, sp, _target@PAGEOFF")?
     instruction(object::RelocationArmGotLoadPageOffset12(), 4181721376, 0, "ldr x0, [x9, _target@GOTPAGEOFF]")?
-    testing::error(arm64::macho_assembly_instruction(object::RelocationAbsolute64(), 0, "_target", 0))?
-    return testing::error(arm64::macho_assembly_instruction(object::RelocationArmBranch26(), 0, "_target", 0))
+    testing::error(arm64::native_assembly_instruction(object::RelocationAbsolute64(), 0, "_target", 0, false))?
+    return testing::error(arm64::native_assembly_instruction(object::RelocationArmBranch26(), 0, "_target", 0, false))
 }
 
 fn memory_instructions() -> Result<void, Text> {
@@ -26,49 +26,49 @@ fn memory_instructions() -> Result<void, Text> {
     }
     let registers = testing::list("b|h|s|d|q")
     for scale in 0..5 {
-        testing::expect(std::text::equal(arm64::macho_memory_register(67108864, u32.from(scale))?, registers[scale]), "SIMD register width")?
+        testing::expect(std::text::equal(arm64::native_memory_register(67108864, u32.from(scale))?, registers[scale]), "SIMD register width")?
     }
-    testing::error(arm64::macho_memory_register(8388608, 2))?
+    testing::error(arm64::native_memory_register(8388608, 2))?
     return instruction(object::RelocationArmLoadPageOffset12(3), 4181721376, 0, "ldr x0, [x9, _target@PAGEOFF]")
 }
 
 fn assembly_object() -> Result<void, Text> {
     var object = arm_macho_address()?
     object.sections[0].memory_size = 24
-    let first = arm64::macho_assembly(object, "fixture")?
-    testing::expect(std::text::equal(first, arm64::macho_assembly(object, "fixture")?), "deterministic assembly")?
+    let first = arm64::native_assembly(object, "fixture", false)?
+    testing::expect(std::text::equal(first, arm64::native_assembly(object, "fixture", false)?), "deterministic assembly")?
     let required = testing::list(".build_version macos, 11, 0|.data|.text|.space 16|.globl _main|@GOTPAGE|@GOTPAGEOFF")
     for index in 0..required.length() {
         testing::expect(std::text::contains(first, required[index]), required[index])?
     }
     object.architecture = object::ArchitectureX86_64()
-    return testing::error(arm64::macho_assembly(object, "fixture"))
+    return testing::error(arm64::native_assembly(object, "fixture", false))
 }
 
 fn entries_and_imports() -> Result<void, Text> {
     var object = arm_macho_address()?
     object.symbols[1].name = "entry"
-    let renamed = arm64::macho_assembly(object, "fixture")?
+    let renamed = arm64::native_assembly(object, "fixture", false)?
     testing::expect(std::text::contains(renamed, ".set _main, _entry"), "entry alias")?
     object.entry = None()
-    testing::expect(std::text::contains(arm64::macho_assembly(object, "fixture")?, ".set _main") == false, "no entry alias without entry")?
-    let imported = arm64::macho_assembly(arm_macho_import()?, "imports")?
+    testing::expect(std::text::contains(arm64::native_assembly(object, "fixture", false)?, ".set _main") == false, "no entry alias without entry")?
+    let imported = arm64::native_assembly(arm_macho_import()?, "imports", false)?
     return testing::expect(std::text::contains(imported, "bl _exit\n"), "imported call")
 }
 
 fn relocation_bounds() -> Result<void, Text> {
     var object = arm_macho_address()?
     swap(object.relocations[0], object.relocations[1])
-    arm64::macho_assembly(object, "sorted")?
+    arm64::native_assembly(object, "sorted", false)?
     object.relocations[1].offset = object.relocations[0].offset
-    testing::error(arm64::macho_assembly(object, "overlap"))?
+    testing::error(arm64::native_assembly(object, "overlap", false))?
     object.relocations[1].offset = 1048576
-    testing::error(arm64::macho_assembly(object, "outside"))?
+    testing::error(arm64::native_assembly(object, "outside", false))?
     object.relocations[1].offset = u64.from(object.sections[1].data.length()) - 4
     object.relocations[1].kind = object::RelocationAbsolute64()
-    testing::error(arm64::macho_assembly(object, "width"))?
+    testing::error(arm64::native_assembly(object, "width", false))?
     object.relocations[1].section = object.sections.length()
-    return testing::error(arm64::macho_assembly(object, "section"))
+    return testing::error(arm64::native_assembly(object, "section", false))
 }
 
 fn data_relocations() -> Result<void, Text> {
@@ -77,20 +77,22 @@ fn data_relocations() -> Result<void, Text> {
         section: 1, offset: 0, kind: object::RelocationAbsolute64(), symbol: 0,
         subtract: None(), addend: -8
     }
-    var output = ""
-    arm64::macho_assembly_relocation(object, output, relocation)?
-    testing::expect(std::text::equal(output, ".quad _answer-8\n"), "64-bit data relocation")?
+    var output = arm64::NativeAssembly {
+        text: "", prefix: "test", windows: false
+    }
+    arm64::native_assembly_relocation(object, output, relocation)?
+    testing::expect(std::text::equal(output.text, ".quad _answer-8\n"), "64-bit data relocation")?
     relocation.kind = object::RelocationDifference32()
     relocation.subtract = Some(1)
     relocation.addend = 4
-    output = ""
-    arm64::macho_assembly_relocation(object, output, relocation)?
-    testing::expect(std::text::equal(output, ".long _answer-_main+4\n"), "subtracting data relocation")?
+    output.text = ""
+    arm64::native_assembly_relocation(object, output, relocation)?
+    testing::expect(std::text::equal(output.text, ".long _answer-_main+4\n"), "subtracting data relocation")?
     relocation.kind = object::RelocationArmPage21()
-    testing::error(arm64::macho_assembly_relocation(object, output, relocation))?
+    testing::error(arm64::native_assembly_relocation(object, output, relocation))?
     relocation.subtract = None()
     relocation.kind = object::RelocationPcRelative32()
-    return testing::error(arm64::macho_assembly_relocation(object, output, relocation))
+    return testing::error(arm64::native_assembly_relocation(object, output, relocation))
 }
 
 fn run() -> Result<void, Text> {

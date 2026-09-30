@@ -53,9 +53,7 @@ module arm64 {
         if ir::type_is_vector(function.values[value]) {
             return vector_load(compiler, value, register)
         }
-        value_load(compiler, value, 9)
-        emit_encoding(compiler, float_move_bits(register, 9, true, ir::type_is_float64(function.values[value])))
-        return Ok(())
+        return float_value_load(compiler, value, register, function.values[value])
     }
     fn outgoing_store(compiler: write Compiler, register: u32, offset: u64) -> Result<void, Text> {
         outgoing_address(compiler, 17, offset)?
@@ -104,7 +102,8 @@ module arm64 {
             return vector_result(compiler)
         }
         if ir::type_is_float(value_type) {
-            emit_encoding(compiler, float_move_bits(9, 0, false, ir::type_is_float64(value_type)))
+            compiler.float_result = true
+            compiler.result_register = 0
         }
         else {
             emit_registers(compiler, 2852126720, 9, 31, 0)

@@ -1,0 +1,91 @@
+module coff {
+    copy struct DecodedRelocation {
+        kind: object::RelocationKind, addend: i64
+    }
+
+    fn decoded_relocation(architecture: object::Architecture, bytes: Vec<u8>, offset: usize, raw: u64) -> Result<DecodedRelocation, Text> {
+        if architecture == object::ArchitectureArm64() {
+            return arm_relocation(bytes, offset, raw)
+        }
+        let kind = x64_relocation_kind(raw)?
+        let value = link_binary::number(bytes, offset, usize.from(object::relocation_width(kind)))?
+        var addend = i64.from_bits(value)
+        if raw >= 4 && raw <= 9 {
+            addend = sign_extend(value, 32) - i64.from(raw)
+        }
+        return Ok(DecodedRelocation {
+                kind: kind, addend: addend
+            })
+    }
+
+    fn x64_relocation_kind(raw: u64) -> Result<object::RelocationKind, Text> {
+        return match raw {
+            1 => Ok(object::RelocationAbsolute64())
+            2 => Ok(object::RelocationAbsolute32())
+            3 => Ok(object::RelocationImageRelative32())
+            4 | 5 | 6 | 7 | 8 | 9 => Ok(object::RelocationPcRelative32())
+            10 => Ok(object::RelocationSectionIndex16())
+            11 => Ok(object::RelocationSectionRelative32())
+            _ => Err("unsupported x86-64 COFF relocation")
+        }
+    }
+
+    fn sign_extend(value: u64, bits: u32) -> i64 {
+        let sign = u64.from(1) << u64.from(bits - 1)
+        if value & sign != 0 {
+            return i64.from(value) - i64.from(sign * 2)
+        }
+        return i64.from(value)
+    }
+
+    fn arm_relocation(bytes: Vec<u8>, offset: usize, raw: u64) -> Result<DecodedRelocation, Text> {
+        if raw == 14 {
+            return Ok(DecodedRelocation {
+                    kind: object::RelocationAbsolute64(), addend: i64.from_bits(link_binary::number(bytes, offset, 8)?)
+                })
+        }
+        if raw == 13 {
+            return Ok(DecodedRelocation {
+                    kind: object::RelocationSectionIndex16(), addend: i64.from(link_binary::number(bytes, offset, 2)?)
+                })
+        }
+        return arm_word_relocation(u32.from(link_binary::number(bytes, offset, 4)?), raw)
+    }
+
+    fn arm_word_relocation(word: u32, raw: u64) -> Result<DecodedRelocation, Text> {
+        let kind = arm_relocation_kind(word, raw)?
+        let value = u64.from(word)
+        let addend = match raw {
+            3 => sign_extend(value & 67108863, 26) * 4
+            4 => sign_extend(((value >> 29) & 3) |((value >> 3) & 2097148), 21)
+            6 => i64.from((word >> 10) & 4095)
+            7 => i64.from(((word >> 10) & 4095) << arm_memory_scale(word))
+            17 => sign_extend(value, 32) - 4
+            _ => i64.from(value)
+        }
+        return Ok(DecodedRelocation {
+                kind: kind, addend: addend
+            })
+    }
+
+    fn arm_relocation_kind(word: u32, raw: u64) -> Result<object::RelocationKind, Text> {
+        return match raw {
+            1 => Ok(object::RelocationAbsolute32())
+            2 => Ok(object::RelocationImageRelative32())
+            3 => Ok(object::RelocationArmBranch26())
+            4 => Ok(object::RelocationArmPage21())
+            6 => Ok(object::RelocationArmPageOffset12())
+            7 => Ok(object::RelocationArmLoadPageOffset12(arm_memory_scale(word)))
+            8 => Ok(object::RelocationSectionRelative32())
+            17 => Ok(object::RelocationPcRelative32())
+            _ => Err("unsupported ARM64 COFF relocation")
+        }
+    }
+
+    fn arm_memory_scale(word: u32) -> u32 {
+        if word & 75497472 == 75497472 {
+            return 4
+        }
+        return word >> 30
+    }
+}

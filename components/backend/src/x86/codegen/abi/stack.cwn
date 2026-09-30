@@ -32,6 +32,12 @@ module x86 {
         var index: usize = 0
         while index < locations.length() {
             match read locations[index] {
+                ArgumentIndirect(argument) => {
+                    let end = argument.copy_slot + usize.from((argument.size + 7) / 8)
+                    if end > count {
+                        count = end
+                    }
+                }
                 ArgumentStack(slot) => {
                     if slot + 1 > count {
                         count = slot + 1

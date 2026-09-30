@@ -1,0 +1,95 @@
+module pe {
+    const IMAGE_BASE: u64 = 5368709120
+    const FILE_ALIGNMENT: usize = 512
+    const SECTION_ALIGNMENT: usize = 4096
+
+    struct Section {
+        name: Text, rva: usize, offset: usize, size: usize, flags: u32, bytes: Vec<u8>
+    }
+
+    struct Import {
+        symbol: Text, library: Text, name: Text
+    }
+
+    struct Image {
+        architecture: object::Architecture
+        sections: Vec<Section>
+        locations: Vec<usize>
+        section_map: Vec<usize>
+        exception_section: Option<usize>
+        symbols: Vec<u64>
+        slots: Vec<u64>
+        fixups: Vec<usize>
+        entry: usize
+        imports: usize
+        import_size: usize
+        relocations: usize
+        relocation_size: usize
+    }
+
+    fn image_new(architecture: object::Architecture) -> Image {
+        return Image {
+            architecture: architecture, sections: Vec<Section>.new(), locations: Vec<usize>.new(),
+            section_map: Vec<usize>.new(), exception_section: None(),
+            symbols: Vec<u64>.new(), slots: Vec<u64>.new(), fixups: Vec<usize>.new(),
+            entry: 0, imports: 0, import_size: 0, relocations: 0, relocation_size: 0
+        }
+    }
+
+    fn section_new(name: Text, flags: u32) -> Section {
+        return Section {
+            name: name.clone(), rva: 0, offset: 0, size: 0, flags: flags, bytes: Vec<u8>.new()
+        }
+    }
+
+    fn section_append(image: write Image, input: take Section) -> Result<usize, Text> {
+        if image.sections.length() >= 96 {
+            return Err("PE image exceeds 96 sections")
+        }
+        var section = move input
+        let index = image.sections.length()
+        section.rva = SECTION_ALIGNMENT
+        if index != 0 {
+            let previous = index - 1
+            section.rva = link_binary::aligned(image.sections[previous].rva + image.sections[previous].size, SECTION_ALIGNMENT)
+        }
+        if section.bytes.length() > section.size {
+            section.size = section.bytes.length()
+        }
+        if section.size > 2147483647 || section.rva > 2147483647 - section.size {
+            return Err("PE image exceeds supported address range")
+        }
+        image.sections.push(move section)
+        return Ok(index)
+    }
+
+    fn reserve(section: write Section, size: usize, alignment: usize) -> usize {
+        let offset = link_binary::aligned(section.bytes.length(), alignment)
+        link_binary::pad(section.bytes, offset + size)
+        return offset
+    }
+
+    fn emitted_sections(image: Image, end: usize) -> usize {
+        var count: usize = 0
+        for index in 0..end {
+            if image.sections[index].size != 0 {
+                count = count + 1
+            }
+        }
+        return count
+    }
+
+    fn string(section: write Section, value: Text) -> Result<usize, Text> {
+        if std::text::contains(value, "\0") || value.length() == 0 {
+            return Err("PE import names must be nonempty and contain no NUL bytes")
+        }
+        let offset = section.bytes.length()
+        loan read value as bytes {
+            for index in 0..bytes.length() {
+                section.bytes.push(bytes[index])
+            }
+        }
+        section.bytes.push(0)
+        return Ok(offset)
+    }
+}

@@ -45,10 +45,17 @@ fn project(root: Text) -> Result<void, Text> {
 }
 
 fn discovery(root: Text) -> Result<void, Text> {
-    let program = testing::write_file(root, "bin/crown", "compiler")?
+    let program = toolchain::path_join(root, toolchain::path_join("bin", toolchain::executable_name("crown", toolchain::host_target())))
+    toolchain::make_directory(toolchain::parent_path(program))?
+    toolchain::copy_file(testing::compiler()?, program)?
     toolchain::set_environment("CROWN_ROOT", "")?
     toolchain::configure_toolchain(program)?
     testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), root), "discover libraries relative to executable")?
+    discovery_failures(program)?
+    return path_search(root, program)
+}
+
+fn discovery_failures(program: Text) -> Result<void, Text> {
     toolchain::set_environment("CROWN_ROOT", "/explicit/toolchain")?
     toolchain::configure_toolchain(program)?
     testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), "/explicit/toolchain"), "explicit toolchain root wins")?
@@ -57,14 +64,16 @@ fn discovery(root: Text) -> Result<void, Text> {
     testing::error(toolchain::library_sources(Vec<Text>.new(), toolchain::host_target()))?
     toolchain::configure_toolchain("/nonexistent-crown-installation/crown")?
     testing::expect(std::text::equal(toolchain::environment("CROWN_ROOT"), ""), "missing installation does not select the working directory")?
-    return path_search(root, program)
+    return Ok(())
 }
 
 fn path_search(root: Text, program: Text) -> Result<void, Text> {
     testing::write_file(root, "blocked/crown", "not executable")?
     toolchain::executable(program)?
     let previous = toolchain::environment("PATH")
-    let paths = std::text::joined(toolchain::path_join(root, "blocked"), std::text::joined(":", toolchain::path_join(root, "bin")))
+    var paths = toolchain::path_join(root, "blocked")
+    paths.push(char.from(toolchain::path_list_separator()))
+    std::text::append(paths, toolchain::path_join(root, "bin"))
     toolchain::set_environment("PATH", paths)?
     let result: Result<void, Text> = toolchain::configure_toolchain("crown")
     toolchain::set_environment("PATH", previous)?

@@ -1,0 +1,30 @@
+module toolchain {
+    opaque resource Process {
+        private pid: i32
+        private active: bool
+        private accounting: Vec<u64>
+        drop {
+            if active {
+                var status = process_status_slot()
+                unsafe {
+                    raw_kill(-pid, 9);
+                    raw_kill(pid, 9);
+                    raw_waitpid(pid, status.as_raw(), 0);
+                }
+            }
+        }
+    }
+
+    fn start_process(request: Command) -> Result<Process, Text> {
+        var actions = spawn_actions()?
+        redirect(actions, 1, request.stdout)?
+        redirect(actions, 2, request.stderr)?
+        let pid = spawn_process(request.arguments, actions)?
+        unsafe {
+            return Ok(Process {
+                    pid: pid, active: true, accounting: process_usage_slot()
+                })
+        }
+    }
+
+}

@@ -1,0 +1,22 @@
+fn run(input: Arguments) -> Result<void, Text> {
+    let arguments = toolchain::compiler_response_arguments(toolchain::arguments(input))?
+    if arguments.length() < 2 || std::text::equal(arguments[1], "_link_inputs") == false {
+        return Err("expected linker input query")
+    }
+    let path = toolchain::path_join(toolchain::parent_path(arguments[0]), "link-inputs.json")
+    toolchain::say(toolchain::read_text(path)?)
+    return Ok(())
+}
+
+fn main(arguments: Arguments) -> u32 {
+    match run(arguments) {
+        Ok(done) => {
+            done;
+            0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
+}

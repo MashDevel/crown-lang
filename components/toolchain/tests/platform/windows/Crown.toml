@@ -1,0 +1,6 @@
+[package]
+name = "windows-host-tests"
+sources = ["."]
+
+[toolchain]
+libraries = ["toolchain"]

@@ -1,0 +1,90 @@
+copy enum RuntimeThreadFault {
+    Success, Allocate, Start, Wait, Close
+}
+
+copy struct RuntimeThreadMock {
+    record: usize, freed: usize, fault: RuntimeThreadFault
+}
+
+fn runtime_test_global(program: write ir::Program, name: Text, size: u64) -> usize {
+    return ir::program_add_global(program, ir::Global {
+            name: name.clone(), bytes: Vec<u8>.new(), size: size, alignment: 8,
+            kind: ir::GlobalZeroFill(), exported: false, references: Vec<ir::GlobalReference>.new()
+        })
+}
+
+fn runtime_mock_threads(program: write ir::Program, fault: RuntimeThreadFault) -> Result<RuntimeThreadMock, Text> {
+    let state = RuntimeThreadMock {
+        record: runtime_test_global(program, "windows_test_thread_record", 32),
+        freed: runtime_test_global(program, "windows_test_thread_frees", 8), fault: fault
+    }
+    for index in 0..program.functions.length() {
+        if ir::function_is_import(program.functions[index]) {
+            let function = ir::function_copy(program.functions[index])
+            let replacement = runtime_mock_thread_function(move function, state)?
+            program.functions[index] = move replacement
+        }
+    }
+    return Ok(state)
+}
+
+fn runtime_mock_thread_function(input: take ir::Function, state: RuntimeThreadMock) -> Result<ir::Function, Text> {
+    var code = windows_runtime::builder(move input)?
+    runtime_mock_thread_body(code, state)?
+    return Ok(windows_runtime::take_function(code))
+}
+
+fn runtime_mock_thread_body(code: write windows_runtime::Builder, state: RuntimeThreadMock) -> Result<void, Text> {
+    let name = code.function.name.clone()
+    return match read name {
+        "malloc" => runtime_mock_allocate(code, state)
+        "free" => runtime_mock_free(code, state)
+        "_beginthreadex" => runtime_mock_start(code, state.fault)
+        "WaitForSingleObject" => windows_runtime::return_status(code, if state.fault == RuntimeThreadFault::Wait() {
+                4294967295
+            } else {
+                0
+            })
+        "CloseHandle" => windows_runtime::return_status(code, if state.fault == RuntimeThreadFault::Close() {
+                0
+            } else {
+                1
+            })
+        _ => Err("unexpected Windows thread test import")
+    }
+}
+
+fn runtime_mock_allocate(code: write windows_runtime::Builder, state: RuntimeThreadMock) -> Result<void, Text> {
+    let pointer = if state.fault == RuntimeThreadFault::Allocate() {
+        windows_runtime::null_pointer(code)
+    } else {
+        windows_runtime::value(code, ir::InstructionGlobalAddress(state.record))?
+    }
+    return windows_runtime::finish(code, ir::TerminatorReturn(Some(pointer)))
+}
+
+fn runtime_mock_free(code: write windows_runtime::Builder, state: RuntimeThreadMock) -> Result<void, Text> {
+    let address = windows_runtime::value(code, ir::InstructionGlobalAddress(state.freed))?
+    let count = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth32()), 4, false))?
+    let one = windows_runtime::integer(code, ir::IntegerWidth32(), 1)
+    let next = windows_runtime::value(code, ir::InstructionBinary(ir::BinaryAdd(), count, one))?
+    windows_runtime::emit(code, ir::InstructionStore(address, next, 4, false))?;
+    return windows_runtime::finish(code, ir::TerminatorReturn(None()))
+}
+
+fn runtime_mock_start(code: write windows_runtime::Builder, fault: RuntimeThreadFault) -> Result<void, Text> {
+    if fault != RuntimeThreadFault::Start() {
+        let callback = code.function.parameters[2]
+        let argument = code.function.parameters[3]
+        var arguments = Vec<usize>.new()
+        arguments.push(argument)
+        let signature = windows_runtime::pointers(1, ir::TypeInteger(ir::IntegerWidth32()))
+        windows_runtime::value(code, ir::InstructionCallIndirect(callback, move signature, move arguments))?;
+    }
+    let result = windows_runtime::integer(code, ir::IntegerWidth64(), if fault == RuntimeThreadFault::Start() {
+            0
+        } else {
+            4660
+        })
+    return windows_runtime::finish(code, ir::TerminatorReturn(Some(result)))
+}

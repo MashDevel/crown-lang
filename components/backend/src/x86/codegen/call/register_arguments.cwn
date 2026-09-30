@@ -30,6 +30,9 @@ module x86 {
 
     fn codegen_load_register_argument(program: ir::Program, compiler: write FunctionCompiler, input: take RegisterArgument) -> Result<void, CodegenError> {
         match read input.location {
+            ArgumentIndirect(argument) => {
+                return codegen_load_indirect_argument(compiler, argument)
+            }
             ArgumentInteger(register) => {
                 return codegen_load_value(program, compiler, ValueAccess {
                         value: input.value

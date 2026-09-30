@@ -1,0 +1,22 @@
+module std::dylib {
+    extern "c" {
+        fn raw_open(name: RawPtr<u16>) -> RawPtr<u8> = "LoadLibraryW"
+        fn raw_symbol(handle: RawPtr<u8>, name: RawPtr<u8>) -> RawPtr<u8> = "GetProcAddress"
+        fn raw_close(handle: RawPtr<u8>) -> i32 = "FreeLibrary"
+    }
+
+    unsafe fn open_handle(name: Text) -> Result<RawPtr<u8>, Error> {
+        loan read name as view {
+            match wstr::new(view) {
+                Some(path) => {
+                    unsafe {
+                        return Ok(raw_open(wstr::as_raw(path)))
+                    }
+                }
+                None => {
+                    return Err(Error::InvalidName())
+                }
+            }
+        }
+    }
+}

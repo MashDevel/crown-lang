@@ -1,0 +1,53 @@
+module x86 {
+    fn windows_stack_runtime(program: write Program) -> Result<void, CodegenError> {
+        windows_teb_runtime(program)?
+        let name = "__crown_windows_stack_call"
+        if program_has_import(program, name) == false {
+            return Ok(())
+        }
+        program_remove_import(program, name)
+        var instructions = Vec<Instruction>.new()
+        instructions.push(Load(R11(), Rsp(), 40))
+        instructions.push(Push(Rbp()))
+        instructions.push(Push(R12()))
+        instructions.push(Push(R13()))
+        instructions.push(Push(R14()))
+        instructions.push(SubtractImmediate(Rsp(), 8))
+        instructions.push(Move(Rbp(), Rsp()))
+        instructions.push(Move(R12(), R11()))
+        instructions.push(Load(R13(), R12(), 8))
+        instructions.push(Load(R14(), R12(), 16))
+        instructions.push(Move(R10(), Rcx()))
+        instructions.push(Move(Rcx(), Rdx()))
+        instructions.push(Move(Rax(), R8()))
+        instructions.push(Add(Rax(), R9()))
+        instructions.push(MoveImmediate(R11(), -16))
+        instructions.push(And(Rax(), R11()))
+        instructions.push(Store(R12(), 8, Rax()))
+        instructions.push(Store(R12(), 16, R8()))
+        instructions.push(Move(Rsp(), Rax()))
+        instructions.push(SubtractImmediate(Rsp(), 32))
+        instructions.push(CallRegister(R10()))
+        instructions.push(Store(R12(), 8, R13()))
+        instructions.push(Store(R12(), 16, R14()))
+        instructions.push(Move(Rsp(), Rbp()))
+        instructions.push(AddImmediate(Rsp(), 8))
+        instructions.push(Pop(R14()))
+        instructions.push(Pop(R13()))
+        instructions.push(Pop(R12()))
+        instructions.push(Pop(Rbp()))
+        instructions.push(Return())
+        return codegen_insert_function(program, function_new(move name, move instructions))
+    }
+    fn windows_teb_runtime(program: write Program) -> Result<void, CodegenError> {
+        let name = "__crown_windows_teb"
+        if program_has_import(program, name) == false {
+            return Ok(())
+        }
+        program_remove_import(program, name)
+        var instructions = Vec<Instruction>.new()
+        instructions.push(Privileged(ReadThreadEnvironment(Rax())))
+        instructions.push(Return())
+        return codegen_insert_function(program, function_new(move name, move instructions))
+    }
+}

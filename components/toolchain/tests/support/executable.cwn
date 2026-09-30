@@ -1,0 +1,14 @@
+module testing {
+    fn status_program(root: Text, name: Text, status: u32) -> Result<Text, Text> {
+        let source = std::text::joined("fn main() -> u32 { return ", std::text::joined(std::text::decimal(u64.from(status)), " }"))
+        let path = write_file(root, std::text::joined(name, ".cwn"), source)?
+        let binary = toolchain::path_join(root, toolchain::executable_name(name, toolchain::host_target()))
+        var arguments = list("build")
+        arguments.push(path.clone())
+        arguments.push("-o")
+        arguments.push(binary.clone())
+        let result = invoke(move arguments, root)?
+        expect(toolchain::clean_result(result), std::text::joined("native fixture build: ", result.stderr))?
+        return Ok(move binary)
+    }
+}

@@ -1,0 +1,20 @@
+module std::io {
+    extern "c" {
+        fn raw_open(path: RawPtr<u8>, mode: RawPtr<u8>) -> RawPtr<u8> = "fopen"
+        fn raw_seek(file: RawPtr<u8>, offset: isize, origin: i32) -> i32 = "fseek"
+        fn raw_tell(file: RawPtr<u8>) -> isize = "ftell"
+    }
+
+    fn open_handle(path: TextView, mode: Mode) -> Result<RawPtr<u8>, Error> {
+        let encoded = match cstr::new(path) {
+            Some(value) => move value
+            None => {
+                return Err(InvalidPath())
+            }
+        }
+        let encoded_mode = std::text::joined(mode_text(mode), "\0")
+        unsafe {
+            return Ok(raw_open(cstr::as_raw(encoded), encoded_mode.as_raw()))
+        }
+    }
+}

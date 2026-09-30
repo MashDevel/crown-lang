@@ -1,0 +1,94 @@
+module pe {
+    fn header(image: write Image) -> Result<Vec<u8>, Text> {
+        let count = emitted_sections(image, image.sections.length())
+        let headers = link_binary::aligned(392 + count * 40, FILE_ALIGNMENT)
+        var bytes = Vec<u8>.new()
+        link_binary::pad(bytes, headers)
+        link_binary::put(bytes, 0, 23117, 2)
+        link_binary::put(bytes, 60, 128, 4)
+        link_binary::put(bytes, 128, 17744, 4)
+        let machine: u64 = if image.architecture == object::ArchitectureArm64() {
+            43620
+        } else {
+            34404
+        }
+        link_binary::put(bytes, 132, machine, 2)
+        link_binary::put(bytes, 134, u64.from(count), 2)
+        link_binary::put(bytes, 148, 240, 2)
+        link_binary::put(bytes, 150, 34, 2)
+        optional_header(bytes, image, headers)
+        var emitted: usize = 0
+        for index in 0..image.sections.length() {
+            if image.sections[index].size == 0 {
+                continue
+            }
+            image.sections[index].offset = bytes.length()
+            section_header(bytes, image.sections[index], 392 + emitted * 40)
+            link_binary::append(bytes, image.sections[index].bytes)
+            link_binary::pad(bytes, link_binary::aligned(bytes.length(), FILE_ALIGNMENT))
+            emitted = emitted + 1
+        }
+        return Ok(move bytes)
+    }
+
+    fn optional_header(bytes: write Vec<u8>, image: Image, headers: usize) -> void {
+        link_binary::put(bytes, 152, 523, 2)
+        section_sizes(bytes, image)
+        link_binary::put(bytes, 168, u64.from(image.entry), 4)
+        link_binary::put(bytes, 172, u64.from(image.sections[0].rva), 4)
+        link_binary::put(bytes, 176, IMAGE_BASE, 8)
+        link_binary::put(bytes, 184, u64.from(SECTION_ALIGNMENT), 4)
+        link_binary::put(bytes, 188, u64.from(FILE_ALIGNMENT), 4)
+        let minor: u64 = if image.architecture == object::ArchitectureArm64() {
+            2
+        } else {
+            0
+        }
+        link_binary::put(bytes, 192, 6 + minor * 65536, 4)
+        link_binary::put(bytes, 200, 6 + minor * 65536, 4)
+        let last = image.sections.length() - 1
+        let size = link_binary::aligned(image.sections[last].rva + image.sections[last].size, SECTION_ALIGNMENT)
+        link_binary::put(bytes, 208, u64.from(size), 4)
+        link_binary::put(bytes, 212, u64.from(headers), 4)
+        link_binary::put(bytes, 220, 3, 2)
+        link_binary::put(bytes, 222, 352, 2)
+        link_binary::put(bytes, 224, 8388608, 8)
+        link_binary::put(bytes, 232, 4096, 8)
+        link_binary::put(bytes, 240, 1048576, 8)
+        link_binary::put(bytes, 248, 4096, 8)
+        link_binary::put(bytes, 260, 16, 4)
+        link_binary::put(bytes, 272, u64.from(image.imports), 4)
+        link_binary::put(bytes, 276, u64.from(image.import_size), 4)
+        exception_directory(bytes, image)
+        link_binary::put(bytes, 304, u64.from(image.relocations), 4)
+        link_binary::put(bytes, 308, u64.from(image.relocation_size), 4)
+    }
+
+    fn section_sizes(bytes: write Vec<u8>, image: Image) -> void {
+        var code: usize = 0
+        var data: usize = 0
+        for index in 0..image.sections.length() {
+            let size = link_binary::aligned(image.sections[index].bytes.length(), FILE_ALIGNMENT)
+            if image.sections[index].flags & 32 != 0 {
+                code = code + size
+            } else {
+                data = data + size
+            }
+        }
+        link_binary::put(bytes, 156, u64.from(code), 4)
+        link_binary::put(bytes, 160, u64.from(data), 4)
+    }
+
+    fn section_header(bytes: write Vec<u8>, section: Section, offset: usize) -> void {
+        loan read section.name as name {
+            for index in 0..name.length() {
+                bytes[offset + index] = name[index]
+            }
+        }
+        link_binary::put(bytes, offset + 8, u64.from(section.size), 4)
+        link_binary::put(bytes, offset + 12, u64.from(section.rva), 4)
+        link_binary::put(bytes, offset + 16, u64.from(link_binary::aligned(section.bytes.length(), FILE_ALIGNMENT)), 4)
+        link_binary::put(bytes, offset + 20, u64.from(section.offset), 4)
+        link_binary::put(bytes, offset + 36, u64.from(section.flags), 4)
+    }
+}

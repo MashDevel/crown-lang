@@ -42,12 +42,12 @@ module benchmark {
         for offset in 0..sources.length() {
             arguments.push(sources[offset].clone())
         }
-        measure(benchmark, std::text::joined("stage", std::text::decimal(u64.from(index))), move arguments)?
+        measure_compiler(benchmark, std::text::joined("stage", std::text::decimal(u64.from(index))), move arguments)?
         let binary = toolchain::path_join(benchmark.directory, "compiler")
         let request = toolchain::CompileRequest {
             compiler: compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(sources), libraries: Vec<Text>.new(), max_instances: 128, coverage: "", optimization: toolchain::optimization_options(), target: toolchain::host_target()
         }
-        measure(benchmark, std::text::joined("build", std::text::decimal(u64.from(index + 1))), toolchain::compiler_arguments(request, "_executable"))?
+        measure_compiler(benchmark, std::text::joined("build", std::text::decimal(u64.from(index + 1))), toolchain::compiler_arguments(request, "_executable"))?
         let output = toolchain::path_join(benchmark.directory, std::text::joined("stage", std::text::decimal(u64.from(index + 1))))
         toolchain::copy_file(binary, output)?;
         toolchain::executable(output)?

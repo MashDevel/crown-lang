@@ -1,0 +1,26 @@
+fn windows_wide_program() -> Result<ir::Program, u32> {
+    let value_type = ir::TypeInteger(ir::IntegerWidth128())
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(value_type)
+    var callee = ir::function_new("windows_wide", ir::signature_new(move parameters, value_type), ir::LinkageLocal())
+    let block = safety_block(callee)?
+    safety_terminate(callee, block, ir::TerminatorReturn(Some(0)))?
+    var program = ir::program_new()
+    let target = ir::program_add_function(program, move callee)
+    program.entry = Some(ir::program_add_function(program, windows_wide_caller(target)?))
+    return Ok(move program)
+}
+
+fn windows_wide_caller(target: usize) -> Result<ir::Function, u32> {
+    var function = ir::function_new("windows_wide_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    let value_type = ir::TypeInteger(ir::IntegerWidth128())
+    let expected = ir::function_constant(function, value_type, ir::ConstantWideInteger(ir::WideInteger {
+                low: 42, high: 1234567890123456789
+            }))
+    var arguments = Vec<usize>.new()
+    arguments.push(expected)
+    let result = safety_append(function, block, ir::InstructionCall(target, move arguments, value_type))?
+    safety_return_equal(function, block, result, expected)?
+    return Ok(move function)
+}

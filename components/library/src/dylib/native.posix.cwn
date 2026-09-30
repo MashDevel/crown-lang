@@ -1,0 +1,14 @@
+module std::dylib {
+    extern "c" {
+        fn raw_open(name: RawPtr<u8>, flags: i32) -> RawPtr<u8> = "dlopen"
+        fn raw_symbol(handle: RawPtr<u8>, name: RawPtr<u8>) -> RawPtr<u8> = "dlsym"
+        fn raw_close(handle: RawPtr<u8>) -> i32 = "dlclose"
+    }
+
+    unsafe fn open_handle(name: Text) -> Result<RawPtr<u8>, Error> {
+        let path = encoded(name)?
+        unsafe {
+            return Ok(raw_open(cstr::as_raw(path), 2))
+        }
+    }
+}

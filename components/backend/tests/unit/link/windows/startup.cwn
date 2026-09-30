@@ -1,0 +1,70 @@
+fn windows_test_startup(output: write object::CompilerObject) -> Result<void, Text> {
+    let entry = match output.entry {
+        Some(value) => value
+        None => {
+            return Err("Windows test has no entry")
+        }
+    }
+    let section = output.sections.length()
+    let exit = output.symbols.length()
+    output.symbols.push(object::Symbol {
+            name: "ExitProcess", kind: object::SymbolFunction(), binding: object::SymbolImport(), section: None(), offset: 0, size: 0
+        })
+    let arm = output.architecture == object::ArchitectureArm64()
+    let bytes = windows_test_startup_bytes(arm)?
+    let size = u64.from(bytes.length())
+    output.entry = Some(output.symbols.length())
+    output.symbols.push(object::Symbol {
+            name: "windows_test_start", kind: object::SymbolFunction(), binding: object::SymbolLocal(), section: Some(section), offset: 0, size: size
+        })
+    output.sections.push(object::Section {
+            name: "windows_test_start", kind: object::SectionText(), alignment: 16, data: move bytes, memory_size: size
+        })
+    windows_test_call_relocation(output, section, entry, if arm {
+            4
+        } else {
+            5
+        })
+    windows_test_call_relocation(output, section, exit, if arm {
+            12
+        } else {
+            15
+        })
+    return Ok(())
+}
+
+fn windows_test_call_relocation(output: write object::CompilerObject, section: usize, symbol: usize, offset: u64) -> void {
+    let arm = output.architecture == object::ArchitectureArm64()
+    output.relocations.push(object::Relocation {
+            section: section, offset: offset,
+            kind: if arm {
+                object::RelocationArmBranch26()
+            } else {
+                object::RelocationPcRelativeCall32()
+            },
+            symbol: symbol, subtract: None(), addend: if arm {
+                0
+            } else {
+                -4
+            }
+        })
+}
+
+fn windows_test_startup_bytes(arm: bool) -> Result<Vec<u8>, Text> {
+    var bytes = Vec<u8>.new()
+    if arm {
+        arm64::append_word(bytes, arm64::pair_word(arm64::Registers {
+                    destination: 29, left: 31, right: 30
+                }, -16, arm64::PairIndex::Pre(), false)?)
+        arm64::append_word(bytes, arm64::branch_word(0, true)?)
+        arm64::append_word(bytes, arm64::add_immediate(0, 0, 42, false)?)
+        arm64::append_word(bytes, arm64::branch_word(0, true)?)
+        arm64::append_word(bytes, 3558866944)
+    } else {
+        let code: [u8; 20] = [72, 131, 236, 40, 232, 0, 0, 0, 0, 137, 193, 131, 193, 42, 232, 0, 0, 0, 0, 204]
+        for index in 0..20 {
+            bytes.push(code[index])
+        }
+    }
+    return Ok(move bytes)
+}

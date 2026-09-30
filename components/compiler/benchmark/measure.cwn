@@ -1,43 +1,26 @@
 module benchmark {
-    extern "c" {
-        fn raw_usage(who: i32, output: RawPtr<u64>) -> i32 = "getrusage"
-    }
-    struct Usage {
-        user: u64, system: u64
-    }
     struct Benchmark {
         directory: Text, results: Vec<Text>
     }
 
-    fn usage() -> Result<Usage, Text> {
-        var values = Vec<u64>.new()
-        for index in 0..18 {
-            index;
-            values.push(0)
-        }
-        unsafe {
-            if raw_usage(-1, values.as_raw()) != 0 {
-                return Err("could not read child resource usage")
-            }
-        }
-        return Ok(Usage {
-                user: values[0] * 1000000 + values[1], system: values[2] * 1000000 + values[3]
-            })
+    fn measure_compiler(benchmark: write Benchmark, label: Text, arguments: take Vec<Text>) -> Result<void, Text> {
+        let temporary = toolchain::temporary(toolchain::temporary_directory())?
+        var request = toolchain::compiler_command(arguments, toolchain::temporary_path(temporary))?
+        return measure(benchmark, label, replace(request.arguments, Vec<Text>.new()))
     }
 
     fn measure(benchmark: write Benchmark, label: Text, arguments: take Vec<Text>) -> Result<void, Text> {
-        let before = usage()?
         let started = toolchain::milliseconds()
         let request = toolchain::Command {
             arguments: move arguments, stdout: toolchain::path_join(benchmark.directory, std::text::joined(label, ".stdout.log")), stderr: toolchain::path_join(benchmark.directory, std::text::joined(label, ".stderr.log")), timeout: 900000
         }
-        let status = toolchain::execute(request)?
+        let measurement = toolchain::execute_measured(request)?
+        let status = measurement.status
         let elapsed = toolchain::milliseconds() - started
-        let after = usage()?
         var row = std::text::joined("{\"label\":", toolchain::json_quoted(label))
         std::text::append(row, std::text::joined(",\"milliseconds\":", std::text::decimal(elapsed)))
-        std::text::append(row, std::text::joined(",\"user_microseconds\":", std::text::decimal(after.user - before.user)))
-        std::text::append(row, std::text::joined(",\"system_microseconds\":", std::text::decimal(after.system - before.system)))
+        std::text::append(row, std::text::joined(",\"user_microseconds\":", std::text::decimal(measurement.usage.user_microseconds)))
+        std::text::append(row, std::text::joined(",\"system_microseconds\":", std::text::decimal(measurement.usage.system_microseconds)))
         std::text::append(row, std::text::joined(",\"status\":", std::text::signed_decimal(i64.from(status))))
         row.push('}')
         benchmark.results.push(move row)

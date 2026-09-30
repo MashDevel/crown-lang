@@ -1,0 +1,60 @@
+module windows_runtime {
+    fn thread_join_signature() -> ir::Signature {
+        var parameters = Vec<ir::Type>.new()
+        parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+        parameters.push(ir::TypePointer())
+        return ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+    }
+
+    fn thread_join(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        if matching_signature(code.function.signature, thread_join_signature()) == false {
+            return Err("incompatible Windows thread join signature")
+        }
+        let thread = code.function.parameters[0]
+        let record = value(code, ir::InstructionCast(ir::CastIntegerToPointer(), thread, ir::TypePointer()))?
+        require_nonnull(code, record, 22)?
+        let handle = thread_wait(program, code, record)?
+        thread_close(program, code, handle)?
+        thread_join_result(program, code, record)?
+        return Ok(take_function(code))
+    }
+
+    fn thread_wait(program: write ir::Program, code: write Builder, record: usize) -> Result<usize, Text> {
+        let handle = load_pointer(code, record, THREAD_HANDLE)?
+        let infinite = integer(code, ir::IntegerWidth32(), 4294967295)
+        var arguments = Vec<usize>.new()
+        arguments.push(handle)
+        arguments.push(infinite)
+        let result = call_value(program, code, "WaitForSingleObject", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?
+        let zero = integer(code, ir::IntegerWidth32(), 0)
+        let finished = value(code, ir::InstructionCompare(ir::CompareEqual(), result, zero))?
+        require_condition(code, finished, 22)?
+        return Ok(handle)
+    }
+
+    fn thread_close(program: write ir::Program, code: write Builder, handle: usize) -> Result<void, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(handle)
+        let result = call_value(program, code, "CloseHandle", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?
+        let zero = integer(code, ir::IntegerWidth32(), 0)
+        let closed = value(code, ir::InstructionCompare(ir::CompareNotEqual(), result, zero))?
+        return require_condition(code, closed, 22)
+    }
+
+    fn thread_join_result(program: write ir::Program, code: write Builder, record: usize) -> Result<void, Text> {
+        let output = code.function.parameters[1]
+        let null = null_pointer(code)
+        let requested = value(code, ir::InstructionCompare(ir::CompareNotEqual(), output, null))?
+        let copy_result = new_block(code)?
+        let release = new_block(code)?
+        finish(code, ir::TerminatorConditional(requested, copy_result, release))?
+        code.block = copy_result
+        let result = load_pointer(code, record, THREAD_RESULT)?
+        store(code, output, 0, result)?
+        finish(code, ir::TerminatorBranch(release))?
+        code.block = release
+        pointer_call(program, code, "free", record)?
+        return return_status(code, 0)
+    }
+}

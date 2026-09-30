@@ -1,0 +1,8 @@
+module toolchain {
+    fn executable_name(name: Text, target: Target) -> Text {
+        if target.platform == Platform::Windows() {
+            return std::text::joined(name, ".exe")
+        }
+        return name.clone()
+    }
+}

@@ -1,5 +1,8 @@
 module x86 {
     fn abi_locations(signature: ir::Signature) -> Result<Vec<ArgumentLocation>, CodegenError> {
+        if signature.calling_convention == ir::CallingConvention::WindowsX64() {
+            return windows_abi_locations(signature)
+        }
         var assignment = abi_assignment_new()
         var output = Vec<ArgumentLocation>.with_capacity(signature.parameters.length())
         var index: usize = 0

@@ -1,0 +1,109 @@
+fn instrumentation_mock(code: write windows_runtime::Builder, state: InstrumentationMock) -> Result<void, Text> {
+    let name = code.function.name.clone()
+    let result = match read name {
+        "SystemFunction036" => instrumentation_mock_random(code, state.mode)?,
+        "CreateFileW" => instrumentation_mock_file(code, state)?,
+        "CreateFileMappingW" | "MapViewOfFile" | "CloseHandle" | "DeleteFileW" | "GetLastError" => instrumentation_mock_mapping(code, state)?,
+        _ => {
+            return instrumentation_mock_crt(code)
+        }
+    }
+    return windows_runtime::finish(code, ir::TerminatorReturn(Some(result)))
+}
+
+fn instrumentation_mock_mapping(code: write windows_runtime::Builder, state: InstrumentationMock) -> Result<usize, Text> {
+    let name = code.function.name.clone()
+    let result = match read name {
+        "CreateFileMappingW" => instrumentation_mock_pointer(code, if state.mode == 3 {
+                0
+            } else {
+                66
+            })?,
+        "MapViewOfFile" => {
+            if state.mode == 4 {
+                windows_runtime::null_pointer(code)
+            }
+            else {
+                windows_runtime::value(code, ir::InstructionGlobalAddress(state.view))?
+            }
+        }
+        _ => {
+            return instrumentation_mock_cleanup(code, state)
+        }
+    }
+    return Ok(result)
+}
+
+fn instrumentation_mock_cleanup(code: write windows_runtime::Builder, state: InstrumentationMock) -> Result<usize, Text> {
+    let name = code.function.name.clone()
+    let result = match read name {
+        "CloseHandle" => {
+            instrumentation_mock_increment(code, state.closed)?;
+            windows_runtime::integer(code, ir::IntegerWidth32(), 1)
+        }
+        "DeleteFileW" => {
+            instrumentation_mock_increment(code, state.removed)?;
+            windows_runtime::integer(code, ir::IntegerWidth32(), 1)
+        }
+        "GetLastError" => windows_runtime::integer(code, ir::IntegerWidth32(), if state.mode >= 5 {
+                183
+            } else {
+                5
+            }),
+        _ => {
+            return Err("unexpected instrumentation API")
+        }
+    }
+    return Ok(result)
+}
+
+fn instrumentation_mock_random(code: write windows_runtime::Builder, mode: usize) -> Result<usize, Text> {
+    let random = windows_runtime::integer(code, ir::IntegerWidth64(), 8526495043095935640)
+    windows_runtime::store(code, code.function.parameters[0], 0, random)?
+    windows_runtime::store(code, code.function.parameters[0], 8, random)?
+    return Ok(windows_runtime::integer(code, ir::IntegerWidth8(), if mode == 1 {
+                0
+            } else {
+                1
+            }))
+}
+
+fn instrumentation_mock_file(code: write windows_runtime::Builder, state: InstrumentationMock) -> Result<usize, Text> {
+    let previous = instrumentation_mock_increment(code, state.calls)?
+    instrumentation_mock_path(code)?
+    let invalid = instrumentation_mock_pointer(code, 18446744073709551615)?
+    if state.mode == 2 || state.mode == 6 {
+        return Ok(invalid)
+    }
+    let file = instrumentation_mock_pointer(code, 65)?
+    if state.mode == 5 {
+        let zero = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+        let first = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), previous, zero))?
+        return windows_runtime::value(code, ir::InstructionSelect(first, invalid, file))
+    }
+    return Ok(file)
+}
+
+fn instrumentation_mock_path(code: write windows_runtime::Builder) -> Result<void, Text> {
+    let expected = "C:/é😀/run.98badcfe1032547698badcfe10325476\0"
+    let units = std::utf16::encode(expected)
+    for index in 0..units.length() {
+        let address = windows_runtime::offset(code, code.function.parameters[0], u64.from(index) * 2)?
+        let actual = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth16()), 2, false))?
+        let value = windows_runtime::integer(code, ir::IntegerWidth16(), u64.from(units[index]))
+        instrumentation_mock_equal(code, actual, value)?
+    }
+    return Ok(())
+}
+
+fn instrumentation_mock_crt(code: write windows_runtime::Builder) -> Result<void, Text> {
+    if std::text::equal(code.function.name, "memset") {
+        let zero = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+        windows_runtime::store(code, code.function.parameters[0], 0, zero)?
+        return windows_runtime::finish(code, ir::TerminatorReturn(Some(code.function.parameters[0])))
+    }
+    if code.function.signature.result == ir::TypeVoid() {
+        return windows_runtime::finish(code, ir::TerminatorReturn(None()))
+    }
+    return windows_runtime::return_status(code, 0)
+}

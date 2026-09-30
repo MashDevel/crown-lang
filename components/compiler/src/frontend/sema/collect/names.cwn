@@ -66,8 +66,7 @@ module sema {
         symbols.current_span = seed.name.span
         match builtin(symbols.source, seed.name) {
             Some(builtin) => {
-                builtin;
-                symbols_error(symbols, "type name conflicts with a built-in type");
+                symbols_error(symbols, std::text::joined("type name conflicts with a built-in type: ", std::text::joined(name_text(symbols.source, seed.name), std::text::joined(" -> ", builtin_type_name(builtin)))));
                 return
             }
             None => {

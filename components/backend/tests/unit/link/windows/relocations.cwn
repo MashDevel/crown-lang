@@ -1,0 +1,85 @@
+fn call_relocation(architecture: object::Architecture) -> Result<void, Text> {
+    let object = process_fixture(architecture)
+    var image = pe::layout(object)?
+    pe::prepare_imports(image, object, process_imports())?
+    pe::relocate(image, object)?
+    let arm = architecture == object::ArchitectureArm64()
+    let address = pe::IMAGE_BASE + u64.from(image.sections[0].rva)
+    if arm {
+        let word = link_binary::number(image.sections[0].bytes, 4, 4)?
+        return testing::expect((word & 67108863) * 4 + address + 4 == image.symbols[1], "ARM64 branch reaches import thunk")
+    }
+    let delta = link_binary::number(image.sections[0].bytes, 10, 4)?
+    return testing::expect(address + 14 + delta == image.symbols[1], "x64 call reaches import thunk")
+}
+
+fn absolute_relocation() -> Result<void, Text> {
+    var object = fixture(object::ArchitectureX86_64())
+    object.sections.push(object::Section {
+            name: "pointer", kind: object::SectionData(), alignment: 8, data: std::bytes::filled(8, 0), memory_size: 8
+        })
+    object.relocations.push(object::Relocation {
+            section: 1, offset: 0, kind: object::RelocationAbsolute64(), symbol: 0, subtract: None(), addend: 0
+        })
+    var image = pe::layout(object)?
+    pe::prepare_imports(image, object, Vec<pe::Import>.new())?
+    pe::relocate(image, object)?
+    testing::expect(link_binary::number(image.sections[2].bytes, 0, 8)? == image.symbols[0], "absolute pointer")?
+    testing::expect(image.fixups.length() == 2, "GOT and data pointer require rebasing")?
+    pe::base_relocations(image)?
+    return testing::expect(image.relocation_size == 24, "base relocation block sizes")
+}
+
+fn relocation_rejections() -> Result<void, Text> {
+    var object = process_fixture(object::ArchitectureX86_64())
+    object.relocations[0].kind = object::RelocationThreadOffset64()
+    testing::error(pe::executable(object, process_imports()))?
+    object.relocations[0].kind = object::RelocationArmBranch26()
+    testing::error(pe::executable(object, process_imports()))?
+    object.relocations[0].kind = object::RelocationPcRelativeCall32()
+    object.symbols[1].kind = object::SymbolData()
+    testing::error(pe::executable(object, process_imports()))?
+    object.relocations[0].kind = object::RelocationGotPcRelative32()
+    pe::executable(object, process_imports())?;
+    testing::error(pe::relocation_value(object::RelocationAbsolute32(), 0, 0))?
+    return testing::expect(pe::relocation_value(object::RelocationDifference64(), -8, 0)? == -8, "negative symbol difference")
+}
+
+fn relocation_tests() -> Result<void, Text> {
+    grouped_base_relocations(object::ArchitectureX86_64())?
+    grouped_base_relocations(object::ArchitectureArm64())?
+    call_relocation(object::ArchitectureX86_64())?
+    call_relocation(object::ArchitectureArm64())?
+    absolute_relocation()?
+    return relocation_rejections()
+}
+
+fn grouped_base_relocations(architecture: object::Architecture) -> Result<void, Text> {
+    var image = pe::image_new(architecture)
+    let offsets = [8192, 4088, 16, 0, 8200]
+    for index in 0..5 {
+        image.fixups.push(usize.from(offsets[index]))
+    }
+    pe::base_relocations(image)?
+    grouped_block_bytes(image.sections[0].bytes)?
+    var empty = pe::image_new(architecture)
+    pe::base_relocations(empty)?
+    return testing::expect(empty.relocation_size == 0 && empty.relocations == 0, "empty relocation directory")
+}
+
+fn grouped_block_bytes(bytes: Vec<u8>) -> Result<void, Text> {
+    testing::expect(bytes.length() == 28, "one relocation block per page")?
+    grouped_first_page(bytes)?
+    testing::expect(link_binary::number(bytes, 8, 2)? == 40960 && link_binary::number(bytes, 12, 2)? == 45048, "sorted relocation offsets at page boundaries")?
+    testing::expect(link_binary::number(bytes, 14, 2)? == 0, "odd relocation count padded with ABSOLUTE")?
+    return grouped_second_page(bytes)
+}
+
+fn grouped_first_page(bytes: Vec<u8>) -> Result<void, Text> {
+    return testing::expect(link_binary::number(bytes, 0, 4)? == 0 && link_binary::number(bytes, 4, 4)? == 16, "first sorted page block")
+}
+
+fn grouped_second_page(bytes: Vec<u8>) -> Result<void, Text> {
+    testing::expect(link_binary::number(bytes, 16, 4)? == 8192 && link_binary::number(bytes, 20, 4)? == 12, "second page block")?
+    return testing::expect(link_binary::number(bytes, 24, 2)? == 40960 && link_binary::number(bytes, 26, 2)? == 40968, "even relocation count needs no padding")
+}

@@ -43,6 +43,11 @@ module arm64 {
         let size = value_size(function.values[value])?
         if size <= 8 {
             let base = value_register(compiler, address, 16)
+            if ir::type_is_float(function.values[value]) {
+                let register = float_value_register(compiler, value, 0, function.values[value])?
+                emit_encoding(compiler, simd_memory_word(register, base, 0, size, false))
+                return Ok(())
+            }
             let register = value_register(compiler, value, 9)
             emit_encoding(compiler, memory_word(register, base, 0, size, false))
             return Ok(())
@@ -62,6 +67,12 @@ module arm64 {
             return memory_load(compiler, value_type)
         }
         let base = value_register(compiler, address, 16)
+        if ir::type_is_float(value_type) {
+            compiler.float_result = true
+            compiler.result_register = compiler.float_target
+            emit_encoding(compiler, simd_memory_word(compiler.float_target, base, 0, size, true))
+            return Ok(())
+        }
         compiler.result_register = compiler.target
         compiler.normalized = integer_bits(value_type) != 1
         emit_encoding(compiler, memory_word(compiler.target, base, 0, size, true))

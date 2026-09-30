@@ -1,0 +1,43 @@
+module toolchain {
+    extern "c" {
+        fn raw_environment_size(name: RawPtr<u16>, buffer: RawPtr<u16>, size: u32) -> u32 = "GetEnvironmentVariableW"
+        fn raw_set_environment(name: RawPtr<u16>, value: RawPtr<u16>) -> i32 = "SetEnvironmentVariableW"
+    }
+
+    fn environment(name: Text) -> Text {
+        match windows_environment(name) {
+            Ok(value) => move value
+            Err(error) => {
+                error;
+                ""
+            }
+        }
+    }
+
+    fn windows_environment(name: Text) -> Result<Text, Text> {
+        let key = wstring(name)?
+        unsafe {
+            var size = raw_environment_size(std::wstr::as_raw(key), RawPtr<u16>.from_address(0), 0)
+            while size != 0 {
+                var buffer = wide_buffer(usize.from(size))
+                let actual = raw_environment_size(std::wstr::as_raw(key), buffer.as_raw(), size)
+                if actual < size {
+                    return wide_text(buffer.as_raw(), usize.from(actual))
+                }
+                size = actual
+            }
+        }
+        return Ok("")
+    }
+
+    fn set_environment(name: Text, value: Text) -> Result<void, Text> {
+        let key = wstring(name)?
+        let content = wstring(value)?
+        unsafe {
+            if raw_set_environment(std::wstr::as_raw(key), std::wstr::as_raw(content)) == 0 {
+                return Err("could not set environment variable")
+            }
+        }
+        return Ok(())
+    }
+}

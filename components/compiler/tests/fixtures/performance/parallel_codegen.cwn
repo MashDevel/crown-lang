@@ -1,5 +1,14 @@
-extern "c" {
-    fn test_environment(name: read RawPtr<u8>, value: read RawPtr<u8>, overwrite: read i32) -> i32 = "setenv"
+fn test_environment(value: Text) -> bool {
+    return match toolchain::set_environment("CROWN_JOBS", value) {
+        Ok(done) => {
+            done;
+            true
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            false
+        }
+    }
 }
 
 fn test_program(broken: read bool) -> ir::Program {
@@ -15,14 +24,38 @@ fn test_program(broken: read bool) -> ir::Program {
         let null = ir::ConstantNull()
         let result = ir::function_constant(function, value_type, null)
         var returned = result
-        match ir::function_add_block(function) { Ok(block) => { block } Err(error) => { error } }
-        if broken {
-            match ir::function_append(function, 0, ir::InstructionFunctionAddress(100000)) {
-                Ok(value) => { match value { Some(id) => { returned = id } None => {} } }
-                Err(error) => { error }
+        match ir::function_add_block(function) {
+            Ok(block) => {
+                block
+            }
+            Err(error) => {
+                error
             }
         }
-        match ir::function_terminate(function, 0, ir::TerminatorReturn(Some(returned))) { Ok(value) => { value } Err(error) => { error } }
+        if broken {
+            match ir::function_append(function, 0, ir::InstructionFunctionAddress(100000)) {
+                Ok(value) => {
+                    match value {
+                        Some(id) => {
+                            returned = id
+                        }
+                        None => {
+                        }
+                    }
+                }
+                Err(error) => {
+                    error
+                }
+            }
+        }
+        match ir::function_terminate(function, 0, ir::TerminatorReturn(Some(returned))) {
+            Ok(value) => {
+                value
+            }
+            Err(error) => {
+                error
+            }
+        }
         ir::program_add_function(program, move function)
         index = index + 1
     }
@@ -32,33 +65,64 @@ fn test_program(broken: read bool) -> ir::Program {
 
 fn test_assembly() -> Text {
     match x86::codegen(test_program(false)) {
-        Ok(object) => { match x86::assembly(object, x86::AssemblyFormat::MachO()) { Ok(value) => { return move value } Err(error) => { error } } }
-        Err(error) => { error }
+        Ok(object) => {
+            match x86::assembly(object, x86::AssemblyFormat::MachO()) {
+                Ok(value) => {
+                    return move value
+                }
+                Err(error) => {
+                    error
+                }
+            }
+        }
+        Err(error) => {
+            error
+        }
     }
     return ""
 }
 
 fn test_failure() -> bool {
     match x86::codegen_validated(test_program(true)) {
-        Ok(object) => { object; return false }
+        Ok(object) => {
+            object;
+            return false
+        }
         Err(error) => {
-            match read error.function { Some(id) => { return id == 0 } None => { return false } }
+            match read error.function {
+                Some(id) => {
+                    return id == 0
+                }
+                None => {
+                    return false
+                }
+            }
         }
     }
 }
 
 fn main() -> u32 {
-    unsafe { test_environment("CROWN_JOBS\0".as_raw(), "1\0".as_raw(), 1) }
+    if test_environment("1") == false {
+        return 4
+    }
     let serial = test_assembly()
-    if serial.length() == 0 || test_failure() == false { return 1 }
-    unsafe { test_environment("CROWN_JOBS\0".as_raw(), "4\0".as_raw(), 1) }
+    if serial.length() == 0 || test_failure() == false {
+        return 1
+    }
+    if test_environment("4") == false {
+        return 5
+    }
     let parallel = test_assembly()
-    if parallel.length() != serial.length() || test_failure() == false { return 2 }
+    if parallel.length() != serial.length() || test_failure() == false {
+        return 2
+    }
     loan read serial as left {
         loan read parallel as right {
             var index: usize = 0
             while index < left.length() {
-                if left[index] != right[index] { return 3 }
+                if left[index] != right[index] {
+                    return 3
+                }
                 index = index + 1
             }
         }

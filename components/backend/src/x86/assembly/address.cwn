@@ -1,0 +1,39 @@
+module x86 {
+    fn assembly_coff_function(symbol: object::Symbol, output: write AssemblyOutput) -> void {
+        if object::symbol_is_function(symbol.kind) && object::symbol_is_import(symbol.binding) == false {
+            let global = match read symbol.binding {
+                object::SymbolGlobal => true,
+                _ => false
+            }
+            assembly_append_text(output, object::coff_function_declaration(symbol.name, global))
+        }
+    }
+
+    fn assembly_symbol_address_source(symbol: object::Symbol, kind: object::RelocationKind, output: write AssemblyOutput) -> void {
+        match kind {
+            object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 => {
+                if output.format == AssemblyFormat::Coff() {
+                    assembly_coff_address(symbol, output)
+                } else {
+                    assembly_append(output, "movq ")
+                    assembly_append_symbol(output, symbol.name)
+                    assembly_append(output, "@GOTPCREL")
+                }
+            }
+            _ => {
+                assembly_append(output, "leaq ")
+                assembly_append_symbol(output, symbol.name)
+            }
+        }
+    }
+
+    fn assembly_coff_address(symbol: object::Symbol, output: write AssemblyOutput) -> void {
+        if object::symbol_is_import(symbol.binding) && object::symbol_is_function(symbol.kind) == false {
+            assembly_append(output, "movq ")
+            assembly_append_symbol(output, std::text::joined("__imp_", symbol.name))
+        } else {
+            assembly_append(output, "leaq ")
+            assembly_append_symbol(output, symbol.name)
+        }
+    }
+}

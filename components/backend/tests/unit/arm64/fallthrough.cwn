@@ -1,0 +1,16 @@
+fn run() -> Result<void, Text> {
+    var function = chain_function(0, ir::TypeInteger(ir::IntegerWidth64()))
+    function.blocks[0].terminator = Some(ir::TerminatorBranch(1))
+    var last = ir::basic_block_new()
+    last.terminator = Some(ir::TerminatorReturn(Some(0)))
+    function.blocks.push(move last)
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    let compiler = arm64::compile_function(program, 0, arm64::AbiVariant::Aapcs64())?
+    arm64::finish_encoding(compiler)?
+    return testing::expect(compiler.branches.length() == 0, "adjacent blocks use fallthrough without a jump")
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

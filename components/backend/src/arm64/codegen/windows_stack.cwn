@@ -1,0 +1,30 @@
+module arm64 {
+    fn emit_target_stack_adjust(bytes: write Vec<u8>, size: u64, subtract: bool, variant: AbiVariant) -> Result<void, Text> {
+        if size % 16 != 0 || size > FRAME_LIMIT {
+            return Err("ARM64 stack adjustment must be a supported multiple of 16")
+        }
+        if variant == AbiVariant::Windows() && subtract && size >= 4096 {
+            emit_stack_probe(bytes, size)?
+        }
+        return emit_stack_adjust(bytes, size, subtract)
+    }
+
+    fn emit_stack_probe(bytes: write Vec<u8>, size: u64) -> Result<void, Text> {
+        emit_immediate(bytes, 17, size / 4096)?
+        append_word(bytes, add_immediate(16, 31, 0, false)?)
+        append_word(bytes, add_immediate(16, 16, 1, true)? | 4194304)
+        append_word(bytes, memory_word(31, 16, 0, 8, false)?)
+        append_word(bytes, add_immediate(17, 17, 1, true)?)
+        append_word(bytes, compare_word(17, 31)?)
+        append_word(bytes, conditional_branch(-16, 1)?)
+        return emit_stack_probe_tail(bytes, size % 4096)
+    }
+
+    fn emit_stack_probe_tail(bytes: write Vec<u8>, size: u64) -> Result<void, Text> {
+        if size != 0 {
+            append_word(bytes, add_immediate(16, 16, u32.from(size), true)?)
+            append_word(bytes, memory_word(31, 16, 0, 8, false)?)
+        }
+        return Ok(())
+    }
+}

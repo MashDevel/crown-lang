@@ -1,0 +1,65 @@
+module windows_runtime {
+    fn instrumentation_mapping(program: write ir::Program, bytes: u64) -> Result<usize, Text> {
+        var code = builder(ir::function_new("crown_windows_map_counters", pointers(1, ir::TypePointer()), ir::LinkageLocal()))?
+        let file = code.function.parameters[0]
+        let mapping = instrumentation_create_mapping(program, code, bytes)?
+        instrumentation_close(program, code, file)?
+        let valid = instrumentation_nonnull(code, mapping)?
+        instrumentation_require_pointer(code, valid)?
+        let view = instrumentation_map_view(program, code, mapping, bytes)?
+        instrumentation_close(program, code, mapping)?
+        finish(code, ir::TerminatorReturn(Some(view)))?
+        return Ok(ir::program_add_function(program, take_function(code)))
+    }
+
+    fn instrumentation_create_mapping(program: write ir::Program, code: write Builder, bytes: u64) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(code.function.parameters[0])
+        arguments.push(null_pointer(code))
+        arguments.push(integer(code, ir::IntegerWidth32(), 4))
+        arguments.push(integer(code, ir::IntegerWidth32(), bytes >> 32))
+        arguments.push(integer(code, ir::IntegerWidth32(), bytes & 4294967295))
+        arguments.push(null_pointer(code))
+        return call_value(program, code, "CreateFileMappingW", move arguments, ir::TypePointer())
+    }
+
+    fn instrumentation_map_view(program: write ir::Program, code: write Builder, mapping: usize, bytes: u64) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(mapping)
+        arguments.push(integer(code, ir::IntegerWidth32(), 2))
+        arguments.push(integer(code, ir::IntegerWidth32(), 0))
+        arguments.push(integer(code, ir::IntegerWidth32(), 0))
+        arguments.push(integer(code, ir::IntegerWidth64(), bytes))
+        return call_value(program, code, "MapViewOfFile", move arguments, ir::TypePointer())
+    }
+
+    fn instrumentation_close(program: write ir::Program, code: write Builder, handle: usize) -> Result<void, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(handle)
+        call(program, code, "CloseHandle", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?;
+        return Ok(())
+    }
+
+    fn instrumentation_nonnull(code: write Builder, pointer: usize) -> Result<usize, Text> {
+        let zero = null_pointer(code)
+        return value(code, ir::InstructionCompare(ir::CompareNotEqual(), pointer, zero))
+    }
+
+    fn instrumentation_require_pointer(code: write Builder, condition: usize) -> Result<void, Text> {
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(condition, success, failure))?
+        code.block = failure
+        let zero = null_pointer(code)
+        finish(code, ir::TerminatorReturn(Some(zero)))?
+        code.block = success
+        return Ok(())
+    }
+
+    fn instrumentation_branch(code: write Builder, condition: usize, failure: usize) -> Result<void, Text> {
+        let success = new_block(code)?
+        finish(code, ir::TerminatorConditional(condition, success, failure))?
+        code.block = success
+        return Ok(())
+    }
+}

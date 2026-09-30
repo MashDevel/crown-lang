@@ -1,0 +1,46 @@
+module windows_runtime {
+    fn instrumentation_initialize(program: write ir::Program, configuration: Instrumentation, open: usize, profiling: bool) -> Result<void, Text> {
+        var code = builder(ir::function_new("crown_cov_init", pointers(0, ir::TypeVoid()), ir::LinkageExport()))?
+        let view = value(code, ir::InstructionCall(open, Vec<usize>.new(), ir::TypePointer()))?
+        let valid = instrumentation_nonnull(code, view)?
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(valid, success, failure))?
+        code.block = failure
+        instrumentation_failure(program, code, profiling)?
+        code.block = success
+        instrumentation_publish(program, code, configuration, view)?
+        ir::program_add_function(program, take_function(code));
+        return Ok(())
+    }
+
+    fn instrumentation_publish(program: write ir::Program, code: write Builder, configuration: Instrumentation, view: usize) -> Result<void, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(view)
+        arguments.push(integer(code, ir::IntegerWidth32(), 0))
+        arguments.push(integer(code, ir::IntegerWidth64(), configuration.bytes))
+        call(program, code, "memset", move arguments, ir::TypePointer())?;
+        let data = value(code, ir::InstructionGlobalAddress(configuration.data))?
+        store(code, data, 0, view)?
+        return finish(code, ir::TerminatorReturn(None()))
+    }
+
+    fn instrumentation_failure(program: write ir::Program, code: write Builder, profiling: bool) -> Result<void, Text> {
+        let message = toolchain::text_bytes(if profiling {
+                "cannot initialize Crown profiling\n"
+            } else {
+                "cannot initialize Crown coverage\n"
+            })
+        let length = u64.from(message.length())
+        let global = instrumentation_global(program, "crown_cov_error", move message, false)
+        var arguments = Vec<usize>.new()
+        arguments.push(integer(code, ir::IntegerWidth32(), 2))
+        arguments.push(value(code, ir::InstructionGlobalAddress(global))?)
+        arguments.push(integer(code, ir::IntegerWidth32(), length))
+        call(program, code, "_write", move arguments, ir::TypeInteger(ir::IntegerWidth32()))?;
+        var status = Vec<usize>.new()
+        status.push(integer(code, ir::IntegerWidth32(), 125))
+        call(program, code, "exit", move status, ir::TypeVoid())?;
+        return finish(code, ir::TerminatorUnreachable())
+    }
+}

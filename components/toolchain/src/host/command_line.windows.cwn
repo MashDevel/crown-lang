@@ -1,0 +1,55 @@
+module toolchain {
+    fn windows_command_line(arguments: Vec<Text>) -> Result<Text, Text> {
+        if arguments.length() == 0 || arguments[0].length() == 0 {
+            return Err("cannot start an empty command")
+        }
+        var output = ""
+        for index in 0..arguments.length() {
+            if index != 0 {
+                output.push(' ')
+            }
+            windows_quote(output, arguments[index])?
+        }
+        let units = std::utf16::encode(output)
+        if units.length() >= 32767 {
+            return Err("Windows command line exceeds 32767 UTF-16 code units")
+        }
+        return Ok(move output)
+    }
+
+    fn windows_quote(output: write Text, argument: TextView) -> Result<void, Text> {
+        output.push('"')
+        var slashes: usize = 0
+        loan read argument[0..argument.length()] as bytes {
+            var index: usize = 0
+            while index < bytes.length() {
+                let scalar = std::text::decode_scalar(bytes, index)
+                if scalar == '\0' {
+                    return Err("command argument contains a NUL byte")
+                }
+                if scalar == '\\' {
+                    slashes = slashes + 1
+                    continue
+                }
+                let count = if scalar == '"' {
+                    slashes * 2 + 1
+                } else {
+                    slashes
+                }
+                append_backslashes(output, count)
+                output.push(scalar)
+                slashes = 0
+            }
+        }
+        append_backslashes(output, slashes * 2)
+        output.push('"')
+        return Ok(())
+    }
+
+    fn append_backslashes(output: write Text, count: usize) -> void {
+        for index in 0..count {
+            index;
+            output.push('\\')
+        }
+    }
+}

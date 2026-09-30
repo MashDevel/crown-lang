@@ -1,0 +1,6 @@
+[package]
+name = "windows-linker-fixtures"
+sources = ["generate.cwn", "../../unit/windows/runtime/stack_execution.cwn", "../../unit/link/windows/fixture.cwn", "../../unit/link/windows/process.cwn", "../../unit/link/windows/calls.cwn", "../../unit/link/windows/startup.cwn", "../../unit/link/windows/aggregates.cwn", "../../unit/link/windows/variadic_crt.cwn", "../../unit/link/windows/programs.cwn", "../../unit/link/windows/wide.cwn", "../../unit/link/windows/capture.cwn", "../../unit/link/windows/coff_fixture.cwn", "../../../../compiler/tests/support/ir", "../../unit/windows/runtime/native_calls.cwn", "../../unit/windows/runtime/native_lock.cwn", "../../unit/windows/runtime/native_thread.cwn", "../../unit/windows/runtime/native_callback.cwn", "../../unit/windows/roots/fixture.cwn", "../../unit/windows/roots/declaration.cwn", "../../../src"]
+
+[toolchain]
+libraries = ["toolchain"]

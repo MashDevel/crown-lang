@@ -1,0 +1,20 @@
+module pe {
+    fn executable(object: object::CompilerObject, imports: Vec<Import>) -> Result<Vec<u8>, Text> {
+        match object::validate(object) {
+            Err(error) => {
+                error;
+                return Err("invalid PE executable object")
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        validate_imports(object, imports)?
+        var image = layout(object)?
+        prepare_imports(image, object, imports)?
+        relocate(image, object)?
+        prepare_exception_table(image)?
+        base_relocations(image)?
+        return header(image)
+    }
+}

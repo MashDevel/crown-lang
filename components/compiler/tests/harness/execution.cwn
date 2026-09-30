@@ -10,7 +10,7 @@ module harness {
             return run_case(value, environment, sources)
         }
         prepare_assembly(value, environment.output)?
-        let result = invoke(frontend_arguments(value, environment, sources), environment.output)?
+        let result = toolchain::capture_compiler(frontend_arguments(value, environment, sources), environment.output)?
         match verify_check(value, result) {
             Ok(done) => {
                 done;

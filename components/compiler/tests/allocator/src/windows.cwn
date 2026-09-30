@@ -1,0 +1,46 @@
+module auditor {
+    fn windows_wrappers(program: write x86::Program) -> Result<void, u32> {
+        let count = program.functions.length()
+        for index in 0..count {
+            let name = program.functions[index].name.clone()
+            windows_wrapper_body(program.functions[index])
+            program.functions[index].name = x86::windows_root_name(name)
+            program.functions[index].exported = false
+            add(program, x86::windows_root_entry(name))?
+        }
+        return Ok(())
+    }
+
+    fn windows_wrapper_body(function: write x86::Function) -> void {
+        var input = x86::normalize_reverse(replace(function.instructions, Vec<x86::Instruction>.new()))
+        while input.length() != 0 {
+            match input.pop() {
+                Some(instruction) => {
+                    windows_wrapper_instruction(function.instructions, move instruction)
+                }
+                None => {
+                }
+            }
+        }
+    }
+
+    fn windows_wrapper_instruction(output: write Vec<x86::Instruction>, instruction: take x86::Instruction) -> void {
+        match read instruction {
+            x86::Call(name) => {
+                if std::text::starts(name, "crown_test_") {
+                    output.push(x86::Call(x86::windows_root_name(name)))
+                    return
+                }
+                output.push(x86::SubtractImmediate(x86::Rsp(), 32))
+                output.push(x86::Move(x86::Rcx(), x86::Rdi()))
+                output.push(x86::Move(x86::Rdx(), x86::Rsi()))
+                output.push(x86::Call(name.clone()))
+                output.push(x86::AddImmediate(x86::Rsp(), 32))
+                return
+            }
+            _ => {
+            }
+        }
+        output.push(move instruction)
+    }
+}

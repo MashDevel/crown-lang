@@ -1,0 +1,38 @@
+fn native_thread_callback(program: write ir::Program) -> Result<usize, Text> {
+    var code = windows_runtime::builder(ir::function_new("windows_native_thread_callback", windows_runtime::pointers(1, ir::TypePointer()), ir::LinkageLocal()))?
+    let shared = code.function.parameters[0]
+    let counter = windows_runtime::value(code, ir::InstructionStackSlot(8, 8))?
+    let zero = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+    windows_runtime::store(code, counter, 0, zero)?
+    native_thread_loop(program, code, shared, counter)?
+    windows_runtime::finish(code, ir::TerminatorReturn(Some(shared)))?
+    return Ok(ir::program_add_function(program, windows_runtime::take_function(code)))
+}
+
+fn native_thread_loop(program: write ir::Program, code: write windows_runtime::Builder, shared: usize, counter: usize) -> Result<void, Text> {
+    let repeat = windows_runtime::new_block(code)?
+    let done = windows_runtime::new_block(code)?
+    windows_runtime::finish(code, ir::TerminatorBranch(repeat))?
+    code.block = repeat
+    native_thread_update(program, code, shared)?
+    let next = native_runtime_increment(code, counter)?
+    let limit = windows_runtime::integer(code, ir::IntegerWidth64(), 1000)
+    let finished = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), next, limit))?
+    windows_runtime::finish(code, ir::TerminatorConditional(finished, done, repeat))?
+    code.block = done
+    return Ok(())
+}
+
+fn native_thread_update(program: write ir::Program, code: write windows_runtime::Builder, shared: usize) -> Result<void, Text> {
+    native_thread_lock(program, code, "pthread_mutex_lock", shared)?
+    let count = windows_runtime::offset(code, shared, 16)?
+    native_runtime_increment(code, count)?;
+    return native_thread_lock(program, code, "pthread_mutex_unlock", shared)
+}
+
+fn native_thread_lock(program: write ir::Program, code: write windows_runtime::Builder, name: Text, shared: usize) -> Result<void, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(shared)
+    windows_runtime::call_value(program, code, name, move arguments, ir::TypeInteger(ir::IntegerWidth32()))?;
+    return Ok(())
+}

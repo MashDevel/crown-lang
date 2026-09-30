@@ -2,6 +2,9 @@ module x86 {
     fn assembly_emit_globals(object: object::CompilerObject, output: write AssemblyOutput) -> void {
         var index: usize = 0
         while index < object.symbols.length() {
+            if output.format == AssemblyFormat::Coff() {
+                assembly_coff_function(object.symbols[index], output)
+            }
             match read object.symbols[index].binding {
                 object::SymbolGlobal => {
                     assembly_append(output, ".globl ")
@@ -127,17 +130,7 @@ module x86 {
                     None => {
                     }
                 }
-                match read object.relocations[relocation_id].kind {
-                    object::RelocationGotPcRelative32 | object::RelocationGotLoadPcRelative32 => {
-                        assembly_append(output, "movq ");
-                        assembly_append_symbol(output, object.symbols[object.relocations[relocation_id].symbol].name);
-                        assembly_append(output, "@GOTPCREL")
-                    }
-                    _ => {
-                        assembly_append(output, "leaq ");
-                        assembly_append_symbol(output, object.symbols[object.relocations[relocation_id].symbol].name)
-                    }
-                }
+                assembly_symbol_address_source(object.symbols[object.relocations[relocation_id].symbol], object.relocations[relocation_id].kind, output)
                 assembly_append(output, "(%rip), ")
                 assembly_append_register(output, register)
                 output.text.push('\n')

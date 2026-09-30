@@ -1,0 +1,92 @@
+module coff {
+    copy struct RelocationTable {
+        offset: usize, count: usize
+    }
+
+    fn relocation_table(bytes: Vec<u8>, header: Header) -> Result<RelocationTable, Text> {
+        var offset = header.relocations
+        var count = header.relocation_count
+        if header.flags & 16777216 != 0 {
+            if count != 65535 {
+                return Err("invalid COFF relocation overflow marker")
+            }
+            let total = usize.from(link_binary::number(bytes, offset, 4)?)
+            if total == 0 || link_binary::number(bytes, offset + 4, 6)? != 0 {
+                return Err("invalid COFF extended relocation count")
+            }
+            table_bounds(bytes, offset, total, 10)?
+            offset = offset + 10
+            count = total - 1
+        }
+        table_bounds(bytes, offset, count, 10)?
+        return Ok(RelocationTable {
+                offset: offset, count: count
+            })
+    }
+
+    fn mark_required_symbols(reader: write Reader) -> Result<void, Text> {
+        for section in 0..reader.headers.length() {
+            match reader.sections[section] {
+                Some(target) => {
+                    target;
+                    mark_section_symbols(reader, section)?
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn mark_section_symbols(reader: write Reader, section: usize) -> Result<void, Text> {
+        let table = relocation_table(reader.bytes, reader.headers[section])?
+        for index in 0..table.count {
+            let offset = table.offset + index * 10
+            if link_binary::number(reader.bytes, offset + 8, 2)? != 0 {
+                let symbol = usize.from(link_binary::number(reader.bytes, offset + 4, 4)?)
+                if symbol >= reader.required.length() {
+                    return Err("COFF relocation has an invalid symbol index")
+                }
+                reader.required[symbol] = true
+            }
+        }
+        return Ok(())
+    }
+
+    fn read_relocations(reader: write Reader) -> Result<void, Text> {
+        for index in 0..reader.headers.length() {
+            match reader.sections[index] {
+                Some(section) => {
+                    let table = relocation_table(reader.bytes, reader.headers[index])?
+                    for record in 0..table.count {
+                        read_relocation(reader, section, table.offset + record * 10)?
+                    }
+                }
+                None => {
+                }
+            }
+        }
+        return Ok(())
+    }
+
+    fn read_relocation(reader: write Reader, section: usize, offset: usize) -> Result<void, Text> {
+        let raw = link_binary::number(reader.bytes, offset + 8, 2)?
+        if raw == 0 {
+            return Ok(())
+        }
+        let index = usize.from(link_binary::number(reader.bytes, offset + 4, 4)?)
+        let symbol = match reader.symbols[index] {
+            Some(value) => value
+            None => {
+                return Err("COFF relocation references an unavailable symbol")
+            }
+        }
+        let address = usize.from(link_binary::number(reader.bytes, offset, 4)?)
+        let relocation = decoded_relocation(reader.output.architecture, reader.output.sections[section].data, address, raw)?
+        reader.output.relocations.push(object::Relocation {
+                section: section, offset: u64.from(address), kind: relocation.kind,
+                symbol: symbol, subtract: None(), addend: relocation.addend
+            })
+        return Ok(())
+    }
+}

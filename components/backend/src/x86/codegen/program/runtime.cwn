@@ -1,0 +1,12 @@
+module x86 {
+    fn codegen_add_runtime(machine: write Program, windows: bool) -> Result<void, CodegenError> {
+        codegen_add_root_runtime(machine)?
+        if windows {
+            windows_root_runtime(machine)?
+            windows_stack_runtime(machine)?
+        }
+        codegen_add_stack_runtime(machine)?
+        codegen_add_process_runtime(machine)?
+        return codegen_add_arena_runtime(machine)
+    }
+}

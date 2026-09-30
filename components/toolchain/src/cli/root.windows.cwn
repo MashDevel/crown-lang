@@ -1,0 +1,31 @@
+module toolchain {
+    extern "c" {
+        fn raw_binary_type(path: RawPtr<u16>, kind: write u32) -> i32 = "GetBinaryTypeW"
+    }
+
+    fn program_candidates(program: Text) -> Vec<Text> {
+        var output = Vec<Text>.new()
+        output.push(program.clone())
+        if std::text::contains(program, ".") == false {
+            output.push(std::text::joined(program, ".exe"))
+        }
+        return move output
+    }
+
+    fn executable_file(path: Text) -> Result<bool, Text> {
+        if exists(path) == false || is_directory(path) {
+            return Ok(false)
+        }
+        let encoded = wstring(absolute(path)?)?
+        var kind: u32 = 0
+        unsafe {
+            return Ok(raw_binary_type(std::wstr::as_raw(encoded), kind) != 0 &&(kind == 0 || kind == 6))
+        }
+    }
+    fn program_has_path(program: Text) -> bool {
+        return std::text::contains(program, "/") || std::text::contains(program, "\\") || std::text::contains(program, ":")
+    }
+    fn path_list_separator() -> u8 {
+        return 59
+    }
+}

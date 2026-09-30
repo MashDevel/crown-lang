@@ -1,0 +1,17 @@
+fn native_lock_program() -> Result<ir::Program, Text> {
+    var program = ir::program_new()
+    var code = windows_runtime::builder(ir::function_new("windows_native_lock_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let lock = windows_runtime::value(code, ir::InstructionStackSlot(16, 8))?
+    native_lock_sequence(program, code, lock)?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}
+
+fn native_lock_sequence(program: write ir::Program, code: write windows_runtime::Builder, lock: usize) -> Result<void, Text> {
+    let names = std::text::split("pthread_mutex_init|pthread_mutex_lock|pthread_mutex_unlock|pthread_mutex_destroy|pthread_rwlock_init|pthread_rwlock_rdlock|pthread_rwlock_unlock|pthread_rwlock_wrlock|pthread_rwlock_unlock|pthread_rwlock_destroy", 124)
+    for index in 0..names.length() {
+        native_runtime_lock(program, code, names[index], lock)?
+    }
+    return Ok(())
+}

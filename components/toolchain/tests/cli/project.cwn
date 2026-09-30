@@ -2,7 +2,7 @@ fn lifecycle(root: Text) -> Result<void, Text> {
     let source = testing::project_fixture(root)?
     testing::clean_call(root, std::text::joined("check|", root))?
     testing::clean_call(root, std::text::joined("build|", root))?
-    let binary = toolchain::path_join(root, "target/debug/demo")
+    let binary = toolchain::path_join(root, toolchain::path_join("target/debug", toolchain::executable_name("demo", toolchain::host_target())))
     repeated_build(root, binary)?
     project_rebuild(root, source, binary)?
     return Ok(())

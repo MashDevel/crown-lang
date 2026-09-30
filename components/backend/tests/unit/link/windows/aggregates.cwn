@@ -1,0 +1,60 @@
+fn windows_aggregate_type(size: u64) -> ir::Type {
+    return ir::TypeInteger(if size == 4 {
+            ir::IntegerWidth32()
+        } else {
+            ir::IntegerWidth64()
+        })
+}
+
+fn windows_aggregate_callee(size: u64) -> Result<ir::Function, u32> {
+    let value_type = windows_aggregate_type(size)
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypePointer())
+    parameters.push(value_type)
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    signature.parameter_abi[0] = ir::ParameterReturn(ir::AggregateMemory(size, 4))
+    signature.parameter_abi[1] = ir::ParameterAggregate(ir::AggregateMemory(size, 4))
+    var function = ir::function_new("windows_aggregate", move signature, ir::LinkageLocal())
+    let block = safety_block(function)?
+    let value = safety_append(function, block, ir::InstructionLoad(1, value_type, 4, false))?
+    let sum = safety_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), value, 2))?
+    safety_append(function, block, ir::InstructionStore(0, sum, 4, false))?
+    let modified = ir::function_constant(function, value_type, ir::ConstantInteger(99))
+    safety_append(function, block, ir::InstructionStore(1, modified, 4, false))?
+    safety_terminate(function, block, ir::TerminatorReturn(None()))?
+    return Ok(move function)
+}
+
+fn windows_aggregate_caller(target: usize, size: u64) -> Result<ir::Function, u32> {
+    var function = ir::function_new("windows_aggregate_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    let value_type = windows_aggregate_type(size)
+    let output = safety_append(function, block, ir::InstructionStackSlot(size, 16))?
+    let input = safety_append(function, block, ir::InstructionStackSlot(size, 16))?
+    let initial = ir::function_constant(function, value_type, ir::ConstantInteger(35))
+    safety_append(function, block, ir::InstructionStore(input, initial, 4, false))?
+    var arguments = Vec<usize>.new()
+    arguments.push(output)
+    arguments.push(input)
+    arguments.push(ir::function_constant(function, value_type, ir::ConstantInteger(7)))
+    safety_append(function, block, ir::InstructionCall(target, move arguments, ir::TypeVoid()))?
+    windows_aggregate_check(function, input, output, size)?
+    return Ok(move function)
+}
+
+fn windows_aggregate_check(function: write ir::Function, input: usize, output: usize, size: u64) -> Result<void, u32> {
+    let value_type = windows_aggregate_type(size)
+    let result = safety_append(function, 0, ir::InstructionLoad(output, value_type, 4, false))?
+    let preserved = safety_append(function, 0, ir::InstructionLoad(input, value_type, 4, false))?
+    let total = safety_append(function, 0, ir::InstructionBinary(ir::BinaryAdd(), result, preserved))?
+    let expected = ir::function_constant(function, value_type, ir::ConstantInteger(77))
+    return safety_return_equal(function, 0, total, expected)
+}
+
+fn windows_aggregate_program(size: u64) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    let target = ir::program_add_function(program, windows_aggregate_callee(size)?)
+    program.entry = Some(ir::program_add_function(program, windows_aggregate_caller(target, size)?))
+    return Ok(move program)
+}

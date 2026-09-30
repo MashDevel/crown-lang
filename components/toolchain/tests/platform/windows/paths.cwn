@@ -1,0 +1,12 @@
+fn path_roots() -> Result<void, Text> {
+    let paths = ["", "relative", "C:", "C:file", "C:/", "C:\\folder", "/", "//server/share/file", "\\\\server\\share\\file"]
+    let lengths: [usize; 9] = if toolchain::host_target().platform == toolchain::Platform::Windows() {
+        [0, 0, 2, 2, 3, 3, 1, 15, 15]
+    } else {
+        [0, 0, 0, 0, 0, 0, 1, 1, 0]
+    }
+    for index in 0..9 {
+        check(toolchain::path_root_length(paths[index]) == lengths[index], "native path root length")?
+    }
+    return Ok(())
+}

@@ -1,0 +1,44 @@
+module arm64 {
+    fn append_windows_stack_runtime(output: write object::CompilerObject) -> Result<void, Text> {
+        append_windows_teb(output)?
+        let name = "__crown_windows_stack_call"
+        if runtime_required(output, name) == false {
+            return Ok(())
+        }
+        var compiler = runtime_compiler(32)
+        prologue(compiler)
+        for index in 0..3 {
+            frame_access(compiler, 19 + u32.from(index), u64.from(index) * 8, 8, false)
+        }
+        runtime_move(compiler, 19, 4)
+        runtime_memory(compiler, 20, 19, 8, true)
+        runtime_memory(compiler, 21, 19, 16, true)
+        runtime_move(compiler, 16, 0)
+        runtime_move(compiler, 0, 1)
+        emit_registers(compiler, 2332033024, 9, 2, 3)
+        immediate(compiler, 10, 18446744073709551600)
+        emit_registers(compiler, 2315255808, 9, 9, 10)
+        runtime_memory(compiler, 9, 19, 8, false)
+        runtime_memory(compiler, 2, 19, 16, false)
+        emit_encoding(compiler, add_immediate(31, 9, 0, false))
+        emit_encoding(compiler, indirect_branch(16, true))
+        runtime_memory(compiler, 20, 19, 8, false)
+        runtime_memory(compiler, 21, 19, 16, false)
+        emit_encoding(compiler, add_immediate(31, 28, 0, false))
+        for index in 0..3 {
+            frame_access(compiler, 19 + u32.from(index), u64.from(index) * 8, 8, true)
+        }
+        epilogue(compiler)
+        return runtime_finish(output, compiler, name)
+    }
+    fn append_windows_teb(output: write object::CompilerObject) -> Result<void, Text> {
+        let name = "__crown_windows_teb"
+        if runtime_required(output, name) == false {
+            return Ok(())
+        }
+        var compiler = runtime_compiler(0)
+        runtime_move(compiler, 0, 18)
+        emit(compiler, 3596551104)
+        return runtime_finish(output, compiler, name)
+    }
+}

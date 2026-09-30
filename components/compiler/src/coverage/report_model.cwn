@@ -44,7 +44,7 @@ module coverage {
 
     fn test_source(path: Text) -> bool {
         var directory = toolchain::parent_path(path)
-        while directory.length() > 1 {
+        while std::text::equal(directory, toolchain::parent_path(directory)) == false {
             let name = toolchain::file_name(directory)
             if std::text::equal(name, "src") {
                 return false
@@ -59,7 +59,7 @@ module coverage {
 
     fn package_path(path: Text) -> Text {
         var directory = toolchain::parent_path(path)
-        while directory.length() > 1 {
+        while std::text::equal(directory, toolchain::parent_path(directory)) == false {
             let name = toolchain::file_name(directory)
             if std::text::equal(name, "src") || std::text::equal(name, "tests") {
                 return toolchain::parent_path(directory)

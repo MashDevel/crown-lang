@@ -7,6 +7,7 @@ fn target_projects(root: Text) -> Result<void, Text> {
     let linux = toolchain::load_project(path, toolchain::target(toolchain::Architecture::X86_64(), toolchain::Platform::Linux()))?
     target_source_selection(macos, linux)?
     target_link_selection(macos, linux)?
+    windows_target_project(path, directory)?
     return bedrock_target_project(path, directory)
 }
 
@@ -14,8 +15,20 @@ fn target_project_fixture(directory: Text) -> Result<Text, Text> {
     testing::write_file(directory, "src/main.cwn", "fn main() -> u32 { 0 }")?
     testing::write_file(directory, "src/native.macos.cwn", "macos")?
     testing::write_file(directory, "src/native.linux.cwn", "linux")?
-    let manifest = "[package]\nname='targets'\nsource='src'\n[target.macos]\nframeworks=['AppKit']\nlibraries=['objc']\n[target.linux]\nlibraries=['m']\n"
+    testing::write_file(directory, "src/native.windows.cwn", "windows")?
+    let manifest = "[package]\nname='targets'\nsource='src'\n[target.macos]\nframeworks=['AppKit']\nlibraries=['objc']\n[target.linux]\nlibraries=['m']\n[target.windows]\nlibraries=['kernel32']\n"
     return testing::write_file(directory, "Crown.toml", manifest)
+}
+
+fn windows_target_project(path: Text, directory: Text) -> Result<void, Text> {
+    let target = toolchain::parse_target("arm64-windows")?
+    let project = toolchain::load_project(path, target)?
+    testing::expect(project.sources.length() == 2, "Windows source count")?
+    testing::expect(std::text::ends(project.sources[1], "native.windows.cwn"), "Windows source selection")?
+    testing::expect(testing::equal_lists(project.links, testing::list("-lkernel32")), "Windows link selection")?
+    testing::expect(std::text::equal(project.output, toolchain::path_join(directory, "target/debug/targets.exe")), "Windows executable extension")?
+    testing::expect(toolchain::target_source("main.arm64.windows.cwn", target), "combined ARM64 Windows source")?
+    return testing::expect(toolchain::target_source("main.x86_64.windows.cwn", target) == false, "exclude other Windows architecture")
 }
 
 fn invalid_target_projects(root: Text) -> Result<void, Text> {
@@ -51,7 +64,7 @@ fn target_link_selection(macos: toolchain::Project, linux: toolchain::Project) -
 }
 
 fn target_matrix() -> Result<void, Text> {
-    let names = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock")
+    let names = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock|x86_64-windows|arm64-windows")
     for index in 0..names.length() {
         let value = toolchain::parse_target(names[index])?
         testing::expect(std::text::equal(toolchain::target_name(value), names[index]), "target round trip")?
@@ -59,6 +72,10 @@ fn target_matrix() -> Result<void, Text> {
         target_architecture_sources(value)?
         let macos = value.platform == toolchain::Platform::Macos()
         let linux = value.platform == toolchain::Platform::Linux()
+        let windows = std::text::ends(names[index], "-windows")
+        testing::expect(toolchain::target_source("main.windows.cwn", value) == windows, "Windows source across architectures")?
+        testing::expect(toolchain::target_source("main.posix.cwn", value) != windows, "POSIX sources excluded on Windows")?
+        testing::expect(toolchain::target_source("main.arm64.posix.cwn", value) ==(windows == false && value.architecture == toolchain::Architecture::Arm64()), "POSIX architecture selection")?
         testing::expect(toolchain::target_source("main.macos.cwn", value) == macos, "macOS source across architectures")?
         testing::expect(toolchain::target_source("main.linux.cwn", value) == linux, "Linux source across architectures")?
     }
@@ -87,7 +104,7 @@ fn target_architecture_sources(value: toolchain::Target) -> Result<void, Text> {
 }
 
 fn host_source_matrix() -> Result<void, Text> {
-    let names = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock")
+    let names = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-bedrock|x86_64-windows|arm64-windows")
     let root = toolchain::path_join(toolchain::repository_root()?, "components/toolchain/src/host")
     for index in 0..names.length() {
         let value = toolchain::parse_target(names[index])?

@@ -95,8 +95,14 @@ fn split_cases() -> Result<void, u32> {
     return safety_require(candidates.length() == 16, 6)
 }
 
-extern "c" {
-    fn split_environment(name: RawPtr<u8>, value: RawPtr<u8>, overwrite: i32) -> i32 = "setenv"
+fn split_environment(value: Text) -> Result<void, u32> {
+    return match toolchain::set_environment("CROWN_JOBS", value) {
+        Ok(done) => Ok(done)
+        Err(error) => {
+            toolchain::failure(error);
+            Err(12)
+        }
+    }
 }
 
 fn split_preparation_fixture() -> Result<ir::Program, u32> {
@@ -132,22 +138,16 @@ fn split_prepared_assembly(program: take ir::Program) -> Result<Text, u32> {
 fn split_parallel() -> Result<void, u32> {
     var serial = split_preparation_fixture()?
     var parallel = split_preparation_fixture()?
-    unsafe {
-        split_environment("CROWN_JOBS\0".as_raw(), "1\0".as_raw(), 1)
-    }
+    split_environment("1")?
     x86::codegen_prepare_functions(serial)
     let expected = split_prepared_assembly(move serial)?
-    unsafe {
-        split_environment("CROWN_JOBS\0".as_raw(), "4\0".as_raw(), 1)
-    }
+    split_environment("4")?
     x86::codegen_prepare_functions(parallel)
     safety_require(ir::function_is_import(parallel.functions[0]), 9)?
     safety_require(parallel.functions.length() == 7, 10)?
     let actual = split_prepared_assembly(move parallel)?
     var empty = ir::program_new()
     x86::codegen_prepare_functions(empty)
-    unsafe {
-        split_environment("CROWN_JOBS\0".as_raw(), "1\0".as_raw(), 1)
-    }
+    split_environment("1")?
     return safety_require(std::text::equal(expected, actual), 11)
 }

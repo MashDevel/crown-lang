@@ -1,0 +1,88 @@
+fn runtime_lock_names() -> Vec<Text> {
+    return std::text::split("pthread_mutex_init|pthread_mutex_lock|pthread_mutex_unlock|pthread_mutex_destroy|pthread_rwlock_init|pthread_rwlock_rdlock|pthread_rwlock_wrlock|pthread_rwlock_unlock|pthread_rwlock_destroy", 124)
+}
+
+fn runtime_lock_program() -> ir::Program {
+    var program = ir::program_new()
+    let names = runtime_lock_names()
+    for index in 0..names.length() {
+        let count: usize = if std::text::ends(names[index], "_init") {
+            2
+        } else {
+            1
+        }
+        let signature = windows_runtime::pointers(count, ir::TypeInteger(ir::IntegerWidth32()))
+        ir::program_add_function(program, ir::function_new(names[index].clone(), move signature, ir::LinkageImport()));
+    }
+    program.entry = Some(0)
+    return move program
+}
+
+fn runtime_lock_structure() -> Result<void, Text> {
+    var program = runtime_lock_program()
+    windows_runtime::prepare(program)?
+    testing::expect(program.functions.length() == 14, "lock runtime adds five SRW imports")?
+    for index in 0..9 {
+        testing::expect(ir::function_is_import(program.functions[index]) == false, "lock runtime replaces compiler imports")?
+    }
+    runtime_validate(program)?
+    windows_runtime::prepare(program)?
+    return testing::expect(program.functions.length() == 14, "runtime preparation is idempotent")
+}
+
+fn runtime_validate(program: ir::Program) -> Result<void, Text> {
+    return match ir::validate_program(program) {
+        Ok(value) => Ok(value)
+        Err(error) => {
+            error;
+            Err("invalid generated Windows runtime IR")
+        }
+    }
+}
+
+fn runtime_lock_errors() -> Result<void, Text> {
+    var program = runtime_lock_program()
+    program.functions[0].signature.result = ir::TypeVoid()
+    testing::error(windows_runtime::prepare(program))?
+    program = runtime_lock_program()
+    let signature = windows_runtime::pointers(2, ir::TypeVoid())
+    ir::program_add_function(program, ir::function_new("InitializeSRWLock", move signature, ir::LinkageImport()));
+    return testing::error(windows_runtime::prepare(program))
+}
+
+fn runtime_environment_structure() -> Result<void, Text> {
+    runtime_environment_signature(ir::TypeVoid())?
+    return runtime_environment_signature(ir::TypePointer())
+}
+
+fn runtime_environment_signature(result: ir::Type) -> Result<void, Text> {
+    var program = ir::program_new()
+    let signature = windows_runtime::pointers(0, result)
+    program.entry = Some(ir::program_add_function(program, ir::function_new("crown_process_environment", move signature, ir::LinkageImport())))
+    windows_runtime::prepare(program)?
+    testing::expect(program.functions.length() == 2 && std::text::equal(program.functions[1].name, "__p__environ"), "Windows CRT environment accessor")?
+    return runtime_validate(program)
+}
+
+fn runtime_structures() -> Result<void, Text> {
+    runtime_lock_structure()?
+    runtime_lock_errors()?
+    runtime_thread_structure()?
+    runtime_thread_errors()?
+    runtime_placeholder_imports()?
+    return runtime_environment_structure()
+}
+
+fn run() -> Result<void, Text> {
+    runtime_structures()?
+    formatted_tests()?
+    instrumentation_tests()?
+    runtime_execute_program(runtime_lock_execution_program()?)?
+    runtime_thread_executions()?
+    runtime_execute_program(runtime_stack_program()?)?
+    return runtime_native_images()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

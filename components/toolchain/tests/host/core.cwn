@@ -40,7 +40,7 @@ fn text_tests() -> bool {
     }
 }
 
-fn host_tests() -> Result<bool, Text> {
+fn host_tests(executable: Text) -> Result<bool, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
     let directory = toolchain::path_join(root, "é nested/deeper")
@@ -54,13 +54,13 @@ fn host_tests() -> Result<bool, Text> {
     if files.length() != 1 || std::text::equal(files[0], toolchain::absolute(path)?) == false {
         return Ok(false)
     }
-    return process_tests(root)
+    return process_tests(root, executable)
 }
 
-fn process_tests(root: Text) -> Result<bool, Text> {
+fn process_tests(root: Text, executable: Text) -> Result<bool, Text> {
     var arguments = Vec<Text>.new()
-    arguments.push("printf")
-    arguments.push("%s|%s|%s")
+    arguments.push(executable.clone())
+    arguments.push("echo")
     arguments.push("")
     arguments.push("é")
     arguments.push("hello world")
@@ -72,17 +72,30 @@ fn process_tests(root: Text) -> Result<bool, Text> {
     if std::text::equal(result.stdout, "|é|hello world") == false {
         return Ok(false)
     }
-    if toolchain::process_status(6) != -6 || toolchain::process_status(42 << 8) != 42 {
-        return Ok(false)
-    }
     return Ok(true)
 }
 
-fn main() -> u32 {
+fn child(arguments: Arguments) -> u32 {
+    if arguments.length() != 5 || std::text::equal(arguments[1], "echo") == false {
+        return 1
+    }
+    for index in 2..5 {
+        if index != 2 {
+            toolchain::write_stream(1, "|")
+        }
+        toolchain::write_stream(1, arguments[index].clone())
+    }
+    return 0
+}
+
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() > 1 {
+        return child(arguments)
+    }
     if text_tests() == false {
         return 1
     }
-    match host_tests() {
+    match host_tests(arguments[0].clone()) {
         Err(error) => {
             toolchain::failure(error);
             return 2
