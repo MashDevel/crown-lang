@@ -1,0 +1,81 @@
+module loop_test {
+    fn enter(data: RawPtr<u8>) -> void {
+        unsafe {
+            RawPtr<i32>.cast(data).write(1)
+        }
+    }
+
+    fn leave(data: RawPtr<u8>) -> void {
+        unsafe {
+            RawPtr<i32>.cast(data).write(2)
+        }
+    }
+
+    fn iterate(data: RawPtr<u8>, timeout: i32) -> i32 {
+        unsafe {
+            RawPtr<i32>.cast(data).write(timeout)
+        }
+        return timeout - 1
+    }
+
+    fn run() -> u32 {
+        unsafe {
+            var state = Vec<i32>.new()
+            state.push(0)
+            let notifications = [enter, leave]
+            let iterations = [iterate]
+            let notification_pointers = RawPtr<RawPtr<u8>>.cast(notifications.as_raw())
+            let iteration_pointer = RawPtr<RawPtr<u8>>.cast(iterations.as_raw()).read()
+            let zero = RawPtr<u8>.from_address(0)
+            var methods = [zero, zero, zero, notification_pointers.read(), notification_pointers.offset(1).read(), iteration_pointer]
+            var control = [zero, zero, RawPtr<u8>.cast(methods.as_raw()), RawPtr<u8>.cast(state.as_raw())]
+            let loop = [zero, zero, RawPtr<u8>.cast(control.as_raw()), zero]
+            let pointer = RawPtr<u8>.cast(loop.as_raw())
+            let result = dispatch(pointer, state)
+            if result != 0 {
+                return result
+            }
+            methods[3] = zero
+            methods[4] = zero
+            methods[5] = zero
+            let absent = missing(pointer, state)
+            if absent != 0 {
+                return absent
+            }
+            control[2] = zero
+            return missing(pointer, state)
+        }
+    }
+
+    unsafe fn dispatch(loop: RawPtr<u8>, state: write Vec<i32>) -> u32 {
+        unsafe {
+            native::pipewire::enter(loop)
+            if state[0] != 1 {
+                return 41
+            }
+            let timeouts: [i32; 3] = [7, -1, 0]
+            for index in 0..3 {
+                let timeout = timeouts[index]
+                if native::pipewire::iterate(loop, timeout) != timeout - 1 || state[0] != timeout {
+                    return 42
+                }
+            }
+            native::pipewire::leave(loop)
+            if state[0] != 2 {
+                return 45
+            }
+            return 0
+        }
+    }
+
+    unsafe fn missing(loop: RawPtr<u8>, state: write Vec<i32>) -> u32 {
+        unsafe {
+            native::pipewire::enter(loop)
+            native::pipewire::leave(loop)
+            if native::pipewire::iterate(loop, 0) != -95 || state[0] != 2 {
+                return 46
+            }
+            return 0
+        }
+    }
+}

@@ -11,7 +11,7 @@ module integration::audio {
                     native::pipewire::stream_destroy(library, stream)
                 }
                 if loop != null() {
-                    native::pipewire::leave(library, loop)
+                    native::pipewire::leave(loop)
                 }
                 if main_loop != null() {
                     native::pipewire::main_loop_destroy(library, main_loop)
@@ -38,7 +38,7 @@ module integration::audio {
                 return Err(91)
             }
             output.loop = native::pipewire::main_loop_get_loop(output.library, main_loop)
-            native::pipewire::enter(output.library, output.loop)
+            native::pipewire::enter(output.loop)
             configure_stream(output, configuration)?
             return Ok(move output)
         }
@@ -72,7 +72,7 @@ module integration::audio {
 
     unsafe fn poll(connection: Connection, timeout: i32) -> Result<i32, u32> {
         unsafe {
-            if native::pipewire::iterate(connection.library, connection.loop, timeout) < 0 {
+            if native::pipewire::iterate(connection.loop, timeout) < 0 {
                 return Err(95)
             }
             let state = native::pipewire::stream_state(connection.library, connection.stream, null())

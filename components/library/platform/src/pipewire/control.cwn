@@ -1,0 +1,58 @@
+module native::pipewire {
+    copy struct LoopControl {
+        methods: RawPtr<u8>, data: RawPtr<u8>
+    }
+
+    unsafe fn loop_control(loop: RawPtr<u8>) -> LoopControl {
+        unsafe {
+            let control = RawPtr<RawPtr<u8>>.cast(loop.offset(16)).read()
+            return RawPtr<LoopControl>.cast(control.offset(16)).read()
+        }
+    }
+
+    unsafe fn control_method(control: LoopControl, offset: usize) -> RawPtr<u8> {
+        unsafe {
+            if control.methods == RawPtr<u8>.from_address(0) {
+                return RawPtr<u8>.from_address(0)
+            }
+            return RawPtr<RawPtr<u8>>.cast(control.methods.offset(offset)).read()
+        }
+    }
+
+    unsafe fn iterate(loop: RawPtr<u8>, timeout: i32) -> i32 {
+        unsafe {
+            let control = loop_control(loop)
+            let method = control_method(control, 40)
+            if method == RawPtr<u8>.from_address(0) {
+                return -95
+            }
+            let pointers = [method]
+            let action = RawPtr<fn(read RawPtr<u8>, read i32) -> i32>.cast(pointers.as_raw()).read()
+            return action(control.data, timeout)
+        }
+    }
+
+    unsafe fn control_notify(loop: RawPtr<u8>, offset: usize) -> void {
+        unsafe {
+            let control = loop_control(loop)
+            let method = control_method(control, offset)
+            if method != RawPtr<u8>.from_address(0) {
+                let pointers = [method]
+                let action = RawPtr<fn(read RawPtr<u8>) -> void>.cast(pointers.as_raw()).read()
+                action(control.data)
+            }
+        }
+    }
+
+    unsafe fn enter(loop: RawPtr<u8>) -> void {
+        unsafe {
+            control_notify(loop, 24)
+        }
+    }
+
+    unsafe fn leave(loop: RawPtr<u8>) -> void {
+        unsafe {
+            control_notify(loop, 32)
+        }
+    }
+}

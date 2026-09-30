@@ -1,6 +1,6 @@
 module native::pipewire {
     fn open() -> Result<std::dylib::Library, std::dylib::Error> {
-        let names = std::text::split("pw_init|pw_main_loop_new|pw_main_loop_destroy|pw_main_loop_get_loop|pw_loop_iterate|pw_properties_new_string|pw_properties_free|pw_stream_new_simple|pw_stream_connect|pw_stream_destroy|pw_stream_dequeue_buffer|pw_stream_queue_buffer|pw_stream_get_state|pw_loop_enter|pw_loop_leave|pw_deinit", 124)
+        let names = std::text::split("pw_init|pw_main_loop_new|pw_main_loop_destroy|pw_main_loop_get_loop|pw_deinit|pw_properties_new_string|pw_properties_free|pw_stream_new_simple|pw_stream_connect|pw_stream_destroy|pw_stream_dequeue_buffer|pw_stream_queue_buffer|pw_stream_get_state", 124)
         unsafe {
             return std::dylib::open("libpipewire-0.3.so.0", names)
         }
