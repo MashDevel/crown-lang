@@ -2,6 +2,8 @@ module arm64 {
     const REGISTER_FIRST: u32 = 19
     const REGISTER_COUNT: usize = 9
     const REGISTER_SPILLED: u32 = 31
+    const FLOAT_REGISTER_FIRST: u32 = 8
+    const FLOAT_REGISTER_COUNT: usize = 8
 
     fn validate_register_inputs(function: ir::Function) -> Result<void, Text> {
         for index in 0..function.parameters.length() {
@@ -27,7 +29,14 @@ module arm64 {
     }
 
     fn allocate_registers(function: ir::Function) -> Vec<u32> {
-        let eligible = register_eligibility(function)
+        return allocate_register_class(function, false)
+    }
+
+    fn allocate_register_class(function: ir::Function, floating: bool) -> Vec<u32> {
+        var eligible = register_eligibility(function)
+        for index in 0..eligible.length() {
+            eligible[index] = eligible[index] && ir::type_is_float(function.values[index]) == floating
+        }
         let liveness = ir::value_liveness(function, eligible)
         let intervals = register_intervals(function, liveness)
         var entries = Vec<ir::IndexEntry>.new()
@@ -42,31 +51,41 @@ module arm64 {
         }
         ir::index_sort(entries)
         var active = Vec<usize>.new()
-        for index in 0..REGISTER_COUNT {
+        let count = if floating {
+            FLOAT_REGISTER_COUNT
+        } else {
+            REGISTER_COUNT
+        }
+        let first = if floating {
+            FLOAT_REGISTER_FIRST
+        } else {
+            REGISTER_FIRST
+        }
+        for index in 0..count {
             index;
             active.push(usize.from_bits(-1))
         }
         for index in 0..entries.length() {
-            register_assign(registers, active, intervals, entries[index].value)
+            register_assign(registers, active, intervals, entries[index].value, first)
         }
         return move registers
     }
 
-    fn register_assign(registers: write Vec<u32>, active: write Vec<usize>, intervals: Vec<RegisterInterval>, value: usize) -> void {
+    fn register_assign(registers: write Vec<u32>, active: write Vec<usize>, intervals: Vec<RegisterInterval>, value: usize, first: u32) -> void {
         let selected = register_slot(active, intervals, value)
-        if selected == REGISTER_COUNT {
+        if selected == active.length() {
             return
         }
         let previous = active[selected]
         if previous != usize.from_bits(-1) && intervals[previous].last >= intervals[value].first {
             registers[previous] = REGISTER_SPILLED
         }
-        registers[value] = REGISTER_FIRST + u32.from(selected)
+        registers[value] = first + u32.from(selected)
         active[selected] = value
     }
 
     fn register_slot(active: Vec<usize>, intervals: Vec<RegisterInterval>, value: usize) -> usize {
-        var selected = REGISTER_COUNT
+        var selected = active.length()
         var last = intervals[value].last
         for index in 0..active.length() {
             let previous = active[index]
@@ -82,20 +101,43 @@ module arm64 {
     }
 
     fn reserve_saved_registers(frame: write Frame) -> Result<void, Text> {
-        var used = ir::flags_new(REGISTER_COUNT)
+        reserve_register_class(frame, false)?
+        return reserve_register_class(frame, true)
+    }
+
+    fn reserve_register_class(frame: write Frame, floating: bool) -> Result<void, Text> {
+        let count = if floating {
+            FLOAT_REGISTER_COUNT
+        } else {
+            REGISTER_COUNT
+        }
+        let first = if floating {
+            FLOAT_REGISTER_FIRST
+        } else {
+            REGISTER_FIRST
+        }
+        var used = ir::flags_new(count)
         for index in 0..frame.registers.length() {
-            let register = frame.registers[index]
+            let register = if floating {
+                frame.float_registers[index]
+            } else {
+                frame.registers[index]
+            }
             if register != REGISTER_SPILLED {
-                used[usize.from(register - REGISTER_FIRST)] = true
+                used[usize.from(register - first)] = true
             }
         }
-        for index in 0..REGISTER_COUNT {
+        for index in 0..count {
             let offset = if used[index] {
                 frame_reserve(frame, 8, 8)?
             } else {
                 18446744073709551615
             }
-            frame.saved.push(offset)
+            if floating {
+                frame.float_saved.push(offset)
+            } else {
+                frame.saved.push(offset)
+            }
         }
         return Ok(())
     }

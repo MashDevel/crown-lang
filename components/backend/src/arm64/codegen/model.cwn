@@ -18,12 +18,14 @@ module arm64 {
         target: u32
         result_register: u32
         normalized: bool
+        float_target: u32
+        float_result: bool
     }
     fn compiler_new(function: ir::Function, variant: AbiVariant) -> Result<Compiler, Text> {
         return Ok(Compiler {
                 variant: variant, frame: frame_new(function)?, constants: value_constants(function), bytes: Vec<u8>.new(),
                 symbols: Vec<SymbolFixup>.new(), branches: Vec<BranchFixup>.new(),
-                blocks: Vec<usize>.new(), error: "", block: 0, target: 9, result_register: 9, normalized: false
+                blocks: Vec<usize>.new(), error: "", block: 0, target: 9, result_register: 9, normalized: false, float_target: 2, float_result: false
             })
     }
     fn emit(compiler: write Compiler, word: u32) -> void {

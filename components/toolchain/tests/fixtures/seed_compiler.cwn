@@ -1,17 +1,39 @@
 fn main(arguments: Arguments) -> u32 {
-    match emit(arguments) { Ok(done) => { done; 0 } Err(error) => { toolchain::failure(error); 1 } }
+    match emit(arguments) {
+        Ok(done) => {
+            done;
+            0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            1
+        }
+    }
 }
 
-fn emit(arguments: Arguments) -> Result<void, Text> {
-    if arguments.length() < 3 { return Err("stub compiler requires an output") }
+fn emit(input: Arguments) -> Result<void, Text> {
+    let arguments = toolchain::compiler_response_arguments(toolchain::arguments(input))?
+    if arguments.length() < 3 {
+        return Err("stub compiler requires an output")
+    }
     let counter = toolchain::environment("CROWN_STUB_COUNTER")
-    let count = if toolchain::exists(counter) { std::text::unsigned(toolchain::read_text(counter)?)? } else { 0 }
+    let count = if toolchain::exists(counter) {
+        std::text::unsigned(toolchain::read_text(counter)?)?
+    } else {
+        0
+    }
     toolchain::write_text(counter, std::text::decimal(count + 1))?
     let mode = toolchain::environment("CROWN_STUB_MODE")
     var source = toolchain::read_text(toolchain::environment("CROWN_STUB_ASSEMBLY"))?
-    if std::text::equal(mode, "mismatch") && count > 0 { std::text::append(source, "\n") }
-    if std::text::equal(mode, "first-different") && count == 0 { std::text::append(source, "\n") }
-    if std::text::equal(mode, "change-source") { toolchain::write_text(toolchain::environment("CROWN_STUB_SOURCE"), "changed source")? }
+    if std::text::equal(mode, "mismatch") && count > 0 {
+        std::text::append(source, "\n")
+    }
+    if std::text::equal(mode, "first-different") && count == 0 {
+        std::text::append(source, "\n")
+    }
+    if std::text::equal(mode, "change-source") {
+        toolchain::write_text(toolchain::environment("CROWN_STUB_SOURCE"), "changed source")?
+    }
     toolchain::write_text(arguments[2].clone(), source)?
     return Ok(())
 }

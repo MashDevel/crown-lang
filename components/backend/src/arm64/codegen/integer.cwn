@@ -10,11 +10,11 @@ module arm64 {
         if ir::binary_is_float(operator) == false && ir::binary_may_trap(operator) == false {
             return register_binary(compiler, operator, value_type, left, right)
         }
+        if ir::binary_is_float(operator) {
+            return compile_float_binary(compiler, operator, value_type, left, right)
+        }
         value_load(compiler, left, 9)
         value_load(compiler, right, 10)
-        if ir::binary_is_float(operator) {
-            return compile_float_binary(compiler, operator, value_type)
-        }
         if signed_binary(operator) {
             normalize(compiler, value_type, 9, true)
             normalize(compiler, value_type, 10, true)
@@ -52,6 +52,9 @@ module arm64 {
         return Ok(())
     }
     fn compile_unary(function: ir::Function, compiler: write Compiler, operator: ir::UnaryOperator, value: usize) -> Result<void, Text> {
+        if operator == ir::UnaryFloatNegate() {
+            return compile_float_negate(compiler, value, function.values[value])
+        }
         value_load(compiler, value, 9)
         if value_size(function.values[value])? == 16 {
             value_high(compiler, value, 10)
@@ -67,10 +70,7 @@ module arm64 {
             ir::UnaryNegate => emit_registers(compiler, 3405774848, 9, 31, 9)
             ir::UnaryNot => emit_registers(compiler, 2854223872, 9, 31, 9)
             ir::UnaryFloatNegate => {
-                let double = ir::type_is_float64(function.values[value])
-                emit_encoding(compiler, float_move_bits(0, 9, true, double))
-                emit_encoding(compiler, float_negate(0, 0, double))
-                emit_encoding(compiler, float_move_bits(9, 0, false, double))
+                return Err("floating negate requires floating operands")
             }
         }
         return Ok(())

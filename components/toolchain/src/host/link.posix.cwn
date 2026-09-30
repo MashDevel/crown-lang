@@ -1,0 +1,17 @@
+module toolchain {
+    extern "c" {
+        fn raw_symbolic_link(target: RawPtr<u8>, path: RawPtr<u8>) -> i32 = "symlink"
+    }
+
+    fn symbolic_link(target: Text, path: Text, directory: bool) -> Result<void, Text> {
+        directory;
+        let source = cstring(target)?
+        let destination = cstring(path)?
+        unsafe {
+            if raw_symbolic_link(std::cstr::as_raw(source), std::cstr::as_raw(destination)) != 0 {
+                return Err(std::text::joined("could not create symbolic link: ", path))
+            }
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,28 @@
+module windows_runtime {
+    fn instrumentation_random_path(code: write Builder, state: InstrumentationFile, suffix: u64) -> Result<void, Text> {
+        for index in 0..16 {
+            let address = offset(code, state.random, u64.from(index))?
+            let byte = value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth8()), 1, false))?
+            let four = integer(code, ir::IntegerWidth8(), 4)
+            let high = value(code, ir::InstructionBinary(ir::BinaryShiftRightUnsigned(), byte, four))?
+            let mask = integer(code, ir::IntegerWidth8(), 15)
+            let low = value(code, ir::InstructionBinary(ir::BinaryAnd(), byte, mask))?
+            instrumentation_hex(code, state.path, suffix + u64.from(index) * 4, high)?
+            instrumentation_hex(code, state.path, suffix + u64.from(index) * 4 + 2, low)?
+        }
+        return Ok(())
+    }
+
+    fn instrumentation_hex(code: write Builder, path: usize, position: u64, nibble: usize) -> Result<void, Text> {
+        let ten = integer(code, ir::IntegerWidth8(), 10)
+        let digit = value(code, ir::InstructionCompare(ir::CompareUnsignedLess(), nibble, ten))?
+        let number = integer(code, ir::IntegerWidth8(), 48)
+        let letter = integer(code, ir::IntegerWidth8(), 87)
+        let base = value(code, ir::InstructionSelect(digit, number, letter))?
+        let ascii = value(code, ir::InstructionBinary(ir::BinaryAdd(), base, nibble))?
+        let wide = value(code, ir::InstructionCast(ir::CastZeroExtend(), ascii, ir::TypeInteger(ir::IntegerWidth16())))?
+        let address = offset(code, path, position)?
+        emit(code, ir::InstructionStore(address, wide, 2, false))?;
+        return Ok(())
+    }
+}

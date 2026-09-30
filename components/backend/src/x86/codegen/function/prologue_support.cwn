@@ -1,6 +1,7 @@
 module x86 {
     fn codegen_argument_location_copy(location: ArgumentLocation) -> ArgumentLocation {
         match read location {
+            ArgumentIndirect(argument) => ArgumentIndirect(argument)
             ArgumentInteger(register) => {
                 return ArgumentInteger(register)
             }
@@ -95,6 +96,7 @@ module x86 {
     }
 
     fn codegen_epilogue(compiler: write FunctionCompiler) -> void {
+        codegen_windows_saved_floats(compiler, true)
         if compiler.frame.size != 0 {
             codegen_emit(compiler, AddImmediate(Rsp(), compiler.frame.size))
         }

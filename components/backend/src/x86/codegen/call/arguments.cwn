@@ -32,59 +32,39 @@ module x86 {
     }
 
     fn codegen_prepare_stack_arguments(program: ir::Program, compiler: write FunctionCompiler, state: ArgumentState) -> Result<i32, CodegenError> {
-        let stacked = abi_stack_count(state.locations)
+        var stacked = abi_stack_count(state.locations)
+        if state.input.signature.calling_convention == ir::CallingConvention::WindowsX64() && stacked < 4 {
+            stacked = 4
+        }
         let aligned = stacked + stacked % 2
         if aligned > 268435455 {
             return Err(codegen_error_here(compiler, CodegenNumericOverflow()))
         }
         let cleanup = i32.from(aligned * 8)
         if cleanup != 0 {
-            codegen_emit(compiler, SubtractImmediate(Rsp(), cleanup))
+            codegen_stack_allocate(compiler, cleanup)
         }
-        var index: usize = 0
-        while index < state.input.values.length() {
-            match read state.locations[index] {
-                ArgumentStack(slot) => {
-                    var value_type = ir::TypeVoid()
-                    loan read state.input.signature.parameters[index] as source {
-                        value_type = source
-                    }
-                    let argument = StackArgument {
-                        value: state.input.values[index]
-                        value_type: value_type
-                        slot: slot
-                    }
-                    match codegen_store_stack_argument(program, compiler, move argument) {
-                        Err(error) => {
-                            return Err(move error)
-                        }
-                        Ok(done) => {
-                            done
-                        }
-                    }
-                }
-                ArgumentMemory(slot, slots, size) => {
-                    slots
-                    let input = MemoryArgument {
-                        value: state.input.values[index]
-                        slot: slot
-                        size: size
-                    }
-                    match codegen_copy_stack_argument(program, compiler, input) {
-                        Err(error) => {
-                            return Err(move error)
-                        }
-                        Ok(done) => {
-                            done
-                        }
-                    }
-                }
-                _ => {
-                }
-            }
-            index = index + 1
+        for index in 0..state.input.values.length() {
+            codegen_stack_argument(program, compiler, state, index)?
         }
         return Ok(cleanup)
+    }
+
+    fn codegen_stack_argument(program: ir::Program, compiler: write FunctionCompiler, state: ArgumentState, index: usize) -> Result<void, CodegenError> {
+        let value = state.input.values[index]
+        match read state.locations[index] {
+            ArgumentIndirect(argument) => codegen_copy_indirect_argument(program, compiler, value, argument)
+            ArgumentStack(slot) => codegen_store_stack_argument(program, compiler, StackArgument {
+                    value: value, value_type: state.input.signature.parameters[index], slot: slot
+                })
+            ArgumentMemory(slot, slots, size) => {
+                slots;
+                codegen_copy_stack_argument(program, compiler, MemoryArgument {
+                        value: value, slot: slot, size: size
+                    })
+            }
+            _ => Ok(())
+        }
     }
 
     fn codegen_copy_stack_argument(program: ir::Program, compiler: write FunctionCompiler, input: MemoryArgument) -> Result<void, CodegenError> {

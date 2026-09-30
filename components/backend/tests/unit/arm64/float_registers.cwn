@@ -1,0 +1,69 @@
+fn check_float_chain(value_type: ir::Type) -> Result<void, Text> {
+    var program = ir::program_new()
+    ir::program_add_function(program, float_chain(value_type))
+    let compiler = arm64::compile_function(program, 0, arm64::AbiVariant::Aapcs64())?
+    arm64::finish_encoding(compiler)?
+    var transfers: usize = 0
+    for index in 0..compiler.bytes.length() / 4 {
+        let word = u32.from(link_binary::number(compiler.bytes, index * 4, 4)?)
+        let opcode = word & 4294900736
+        if opcode == 2657484800 || opcode == 2657550336 || opcode == 505806848 || opcode == 505872384 {
+            transfers = transfers + 1
+        }
+    }
+    return testing::expect(transfers == 0, "floating arithmetic chains never transfer through integer registers")
+}
+
+fn run() -> Result<void, Text> {
+    check_float_chain(ir::TypeFloat(ir::FloatWidth32()))?
+    check_float_chain(ir::TypeFloat(ir::FloatWidth64()))?
+    float_pressure(ir::TypeFloat(ir::FloatWidth32()))?
+    float_pressure(ir::TypeFloat(ir::FloatWidth64()))?
+    return float_encoding_boundaries()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn float_pressure(value_type: ir::Type) -> Result<void, Text> {
+    let function = float_pressure_function(value_type)
+    let frame = arm64::frame_new(function)?
+    float_allocations(frame)?
+    for index in 8..24 {
+        testing::expect(arm64::frame_float_register(frame, index) == arm64::REGISTER_SPILLED, "excess floats spill")?
+        testing::expect(arm64::frame_value(frame, index)? % 8 == 0, "float spills remain aligned")?
+    }
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    let compiler = arm64::compile_function(program, 0, arm64::AbiVariant::Darwin())?
+    return arm64::finish_encoding(compiler)
+}
+
+fn float_encoding_boundaries() -> Result<void, Text> {
+    testing::expect(arm64::float_move(8, 0, true)? == 509624328, "FMOV D8 D0 matches assembler")?
+    testing::expect(arm64::float_move(8, 0, false)? == 505430024, "FMOV S8 S0 matches assembler")?
+    testing::error(arm64::float_move(32, 0, true))?
+    testing::error(arm64::float_move(0, 32, false))?
+    return float_frame_boundaries()
+}
+
+fn float_frame_boundaries() -> Result<void, Text> {
+    var bytes = Vec<u8>.new()
+    arm64::emit_float_frame_access(bytes, 8, 32760, 8, true)?
+    testing::expect(bytes.length() == 4, "largest scaled float spill offset uses one instruction")?
+    arm64::emit_float_frame_access(bytes, 8, 32768, 8, false)?
+    testing::expect(bytes.length() > 8, "large float frames materialize the address")?
+    testing::error(arm64::emit_float_frame_access(bytes, 8, arm64::FRAME_LIMIT + 1, 8, true))?
+    return testing::error(arm64::emit_float_frame_access(bytes, 8, 0, 3, true))
+}
+
+fn float_allocations(frame: arm64::Frame) -> Result<void, Text> {
+    for index in 0..8 {
+        testing::expect(arm64::frame_float_register(frame, index) == 8 + u32.from(index), "overlapping floats occupy preserved SIMD registers")?
+        testing::expect(arm64::frame_register(frame, index) == arm64::REGISTER_SPILLED, "float values do not consume integer registers")?
+        testing::expect(frame.float_saved[index] < frame.size, "allocated float registers have ABI save slots")?
+        testing::error(arm64::frame_value(frame, index))?
+    }
+    return Ok(())
+}

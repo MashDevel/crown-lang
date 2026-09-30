@@ -1,0 +1,47 @@
+module guest {
+    extern "c" {
+        fn raw_bind(socket: u64, address: RawPtr<u8>, length: i32) -> i32 = "bind"
+        fn raw_listen(socket: u64, backlog: i32) -> i32 = "listen"
+        fn raw_accept(socket: u64, address: RawPtr<u8>, length: RawPtr<i32>) -> u64 = "accept"
+    }
+
+    fn socket_pair_test() -> Result<void, Text> {
+        testing::expect(socket_count(0) == 0, "empty socket transfer")?
+        testing::expect(socket_count(2147483647) == 2147483647, "maximum socket transfer")?
+        testing::expect(socket_count(2147483648) == 2147483647, "large socket transfer is chunked")?
+        let temporary = toolchain::temporary(toolchain::temporary_directory())?
+        let path = toolchain::path_join(toolchain::temporary_path(temporary), "guest.sock")
+        let listener = socket_listener(path)?
+        var client = connect(path)?
+        var server = socket_accept(listener)?
+        return socket_responses(client, server)
+    }
+
+    fn socket_listener(path: Text) -> Result<Socket, Text> {
+        let address = socket_address(path)?
+        unsafe {
+            let listener = Socket {
+                descriptor: native_socket_create()?, buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+            }
+            unsafe {
+                testing::expect(raw_bind(listener.descriptor, address.as_raw(), i32.from(address.length())) == 0, "guest socket bind")?
+                testing::expect(raw_listen(listener.descriptor, 1) == 0, "guest socket listen")?
+            }
+            return Ok(move listener)
+        }
+    }
+
+    fn socket_accept(listener: Socket) -> Result<Socket, Text> {
+        socket_startup()?
+        unsafe {
+            let descriptor = raw_accept(listener.descriptor, RawPtr<u8>.from_address(0), RawPtr<i32>.from_address(0))
+            if descriptor == 18446744073709551615 {
+                raw_cleanup();
+                return Err("guest socket accept")
+            }
+            return Ok(Socket {
+                    descriptor: descriptor, buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+                })
+        }
+    }
+}

@@ -3,6 +3,9 @@ module arm64 {
         let width = integer_bits(value_type)
         compiler.result_register = compiler.target
         compiler.normalized = width == 32
+        if arithmetic_immediate(compiler, operator, width, left, right) {
+            return Ok(())
+        }
         if ir::binary_is_shift(operator) {
             return register_shift(compiler, operator, width, left, right)
         }

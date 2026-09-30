@@ -114,7 +114,7 @@ fn stack_encoding() -> Result<void, Text> {
 fn frame_object() -> Result<object::CompilerObject, Text> {
     let frame = arm64::frame_new(function_fixture())?
     var bytes = Vec<u8>.new()
-    arm64::emit_prologue(bytes, frame)?
+    arm64::emit_prologue(bytes, frame, arm64::AbiVariant::Aapcs64())?
     arm64::emit_immediate(bytes, 9, 42)?
     arm64::emit_frame_access(bytes, 9, arm64::frame_value(frame, 0)?, 8, false)?
     arm64::emit_frame_access(bytes, 0, arm64::frame_value(frame, 0)?, 8, true)?

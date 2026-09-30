@@ -1,0 +1,34 @@
+fn emit(input: Arguments) -> Result<void, Text> {
+    let arguments = toolchain::compiler_response_arguments(toolchain::arguments(input))?
+    if arguments.length() < 4 {
+        return Err("stub compiler requires an output")
+    }
+    if std::text::equal(arguments[1], "_executable") == false || std::text::equal(arguments[2], "-o") == false {
+        return Err("stub compiler requires a native executable request")
+    }
+    toolchain::copy_file(arguments[0], arguments[3])?
+    toolchain::executable(arguments[3])?
+    let counter = std::text::joined(arguments[0], ".calls")
+    let previous = if toolchain::exists(counter) {
+        toolchain::read_text(counter)?
+    } else {
+        ""
+    }
+    return toolchain::write_text(counter, std::text::joined(previous, "built\n"))
+}
+
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() == 1 {
+        return 37
+    }
+    match emit(arguments) {
+        Ok(done) => {
+            done;
+            return 0
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
+}

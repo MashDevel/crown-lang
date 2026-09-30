@@ -39,6 +39,7 @@ module x86 {
                 return Err(move error)
             }
             Ok(entry) => {
+                let windows = program.functions[entry].signature.calling_convention == ir::CallingConvention::WindowsX64()
                 var machine = program_new(program.functions[entry].name.clone())
                 match codegen_add_globals(program, machine) {
                     Err(error) => {
@@ -64,10 +65,7 @@ module x86 {
                         value
                     }
                 }
-                codegen_add_root_runtime(machine)?
-                codegen_add_stack_runtime(machine)?
-                codegen_add_process_runtime(machine)?
-                codegen_add_arena_runtime(machine)?
+                codegen_add_runtime(machine, windows)?
                 return Ok(move machine)
             }
         }

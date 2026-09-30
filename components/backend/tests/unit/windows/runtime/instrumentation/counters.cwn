@@ -1,0 +1,84 @@
+fn instrumentation_counter_call(code: write windows_runtime::Builder, target: usize, index: u64) -> Result<void, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(windows_runtime::integer(code, ir::IntegerWidth64(), index))
+    windows_runtime::emit(code, ir::InstructionCall(target, move arguments, ir::TypeVoid()))?;
+    return Ok(())
+}
+
+fn instrumentation_counter_entry(program: write ir::Program, profiling: bool) -> Result<void, Text> {
+    let storage = windows_runtime::instrumentation_global(program, "test_counters", std::bytes::filled(16, 0), false)
+    let pointer = instrumentation_mock_global(program, "crown_cov_data")
+    program.globals[pointer].exported = true
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    let name = if profiling {
+        "crown_profile_hit"
+    } else {
+        "crown_cov_hit"
+    }
+    let target = ir::program_add_function(program, ir::function_new(move name, ir::signature_new(move parameters, ir::TypeVoid()), ir::LinkageImport()))
+    var code = windows_runtime::builder(ir::function_new("counter_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    instrumentation_counter_checks(code, storage, pointer, target, profiling)?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return runtime_validate(program)
+}
+
+fn instrumentation_counter_checks(code: write windows_runtime::Builder, storage: usize, pointer: usize, target: usize, profiling: bool) -> Result<void, Text> {
+    let address = windows_runtime::value(code, ir::InstructionGlobalAddress(storage))?
+    let data = windows_runtime::value(code, ir::InstructionGlobalAddress(pointer))?
+    windows_runtime::store(code, data, 0, address)?
+    instrumentation_counter_call(code, target, 0)?
+    instrumentation_counter_call(code, target, 0)?
+    instrumentation_mock_counter(code, storage, if profiling {
+            2
+        } else {
+            1
+        })?
+    return instrumentation_counter_boundary(code, target, address, profiling)
+}
+
+fn instrumentation_counter_boundary(code: write windows_runtime::Builder, target: usize, address: usize, profiling: bool) -> Result<void, Text> {
+    if profiling {
+        let initial = windows_runtime::integer(code, ir::IntegerWidth64(), 18446744073709551614)
+        windows_runtime::store(code, address, 8, initial)?
+    }
+    let index: u64 = if profiling {
+        1
+    } else {
+        65
+    }
+    instrumentation_counter_call(code, target, index)?
+    instrumentation_counter_call(code, target, index)?
+    let second = windows_runtime::offset(code, address, 8)?
+    let actual = windows_runtime::value(code, ir::InstructionLoad(second, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth64(), if profiling {
+            18446744073709551615
+        } else {
+            2
+        })
+    return instrumentation_mock_equal(code, actual, expected)
+}
+
+fn instrumentation_counter_test(profiling: bool) -> Result<void, Text> {
+    var program = ir::program_new()
+    instrumentation_counter_entry(program, profiling)?
+    var object = match windows_call_object(move program, toolchain::host_target().architecture) {
+        Ok(value) => move value,
+        Err(error) => {
+            error;
+            return Err("could not compile instrumentation counter test")
+        }
+    }
+    if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+        arm64::instrumentation_hit(object, profiling)?
+    } else {
+        let hit = if profiling {
+            profile::runtime_hit(x86::Rcx())
+        } else {
+            coverage::runtime_hit(x86::Rcx())
+        }
+        link_object::merge(object, windows_runtime::instrumentation_counter(move hit)?)?
+    }
+    return safety_run_object(move object)
+}

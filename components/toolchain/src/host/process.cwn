@@ -13,14 +13,8 @@ module toolchain {
     }
 
     fn execute(request: Command) -> Result<i32, Text> {
-        return wait_process(start_process(request)?, request.timeout)
-    }
-
-    fn start_process(request: Command) -> Result<i32, Text> {
-        var actions = spawn_actions()?
-        redirect(actions, 1, request.stdout)?
-        redirect(actions, 2, request.stderr)?
-        return spawn_process(request.arguments, actions)
+        var process = start_process(request)?
+        return wait_process(process, request.timeout)
     }
 
     fn capture(request: Command, directory: Text) -> Result<ProcessResult, Text> {

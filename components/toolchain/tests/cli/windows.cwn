@@ -1,0 +1,28 @@
+fn run() -> Result<void, Text> {
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    let source = testing::write_file(root, "main.cwn", "fn main() -> u32 { print(42); return 42 }")?
+    let output = toolchain::path_join(root, "program.exe")
+    let targets = testing::list("x86_64-windows|arm64-windows")
+    for index in 0..targets.length() {
+        let command = std::text::joined("build|", source)
+        let destination = std::text::joined("|-o|", output)
+        let target = std::text::joined("|--target|", targets[index])
+        testing::clean_call(root, std::text::joined(std::text::joined(command, destination), target))?;
+        let bytes = toolchain::read_bytes(output)?
+        testing::expect(bytes.length() > 512 && bytes[0] == 77 && bytes[1] == 90, "Windows compiler emits PE executable")?
+        let offset = usize.from(bytes[60]) + usize.from(bytes[61]) * 256
+        let machine = usize.from(bytes[offset + 4]) + usize.from(bytes[offset + 5]) * 256
+        let expected: usize = if index == 0 {
+            34404
+        } else {
+            43620
+        }
+        testing::expect(machine == expected, "Windows compiler selects requested architecture")?
+    }
+    return Ok(())
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

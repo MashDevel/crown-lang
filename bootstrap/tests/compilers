@@ -52,7 +52,27 @@ launcher_dispatch() {
     fetch
     mkdir -p "$project/target/bootstrap"
     binary="$project/target/bootstrap/crown"
-    printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "$CROWN_TEST_ARGV"\n' > "$binary"
+    for component in compiler backend library toolchain; do
+        mkdir -p "$project/components/$component/src"
+        printf '%s\n' 'fn placeholder() -> u32 { return 0 }' > "$project/components/$component/src/common.cwn"
+    done
+    cat > "$binary" <<'SH'
+#!/bin/sh
+set -eu
+if [ "${1:-}" = build ]; then
+    test "$#" -eq 6
+    test -f "$2/Crown.toml"
+    test "$3" = --target
+    test "$5" = -o
+    for component in compiler backend library toolchain; do
+        grep -F "/components/$component/src/common.cwn" "$2/Crown.toml" > /dev/null
+    done
+    cp "$0" "$6"
+    chmod +x "$6"
+    exit 0
+fi
+printf '%s\n' "$*" > "$CROWN_TEST_ARGV"
+SH
     chmod +x "$binary"
     compiler_digest=$(sh "$root/bootstrap/checksum" "$binary")
     seed_digest=$(sh "$root/bootstrap/checksum" "$project/bootstrap/$host/compiler.s")
@@ -74,4 +94,26 @@ SH
     chmod +x "$project/cc"
     env CC="$project/cc" CROWN_TEST_COMPILER="$project/fake-compiler" CROWN_TEST_ARGV="$project/arguments" sh "$project/bootstrap/crown" bootstrap --force
     test "$(cat "$project/arguments")" = 'bootstrap --force'
+}
+windows_compiler_downloads() {
+    for host in x86_64-windows arm64-windows; do
+        fixture
+        seed
+        package="$project/crown-$host"
+        mkdir "$package"
+        printf 'Windows fixture executable\n' > "$package/crown.exe"
+        archive="$assets/crown-$host.tar.gz"
+        tar -czf "$archive" -C "$project" "crown-$host"
+        record=$(cat "$project/bootstrap/locks/$host.json")
+        compiler_digest=$(sh "$root/bootstrap/checksum" "$package/crown.exe")
+        archive_digest=$(sh "$root/bootstrap/checksum" "$archive")
+        printf '%s,"compiler_sha256":"%s","compiler_archive_sha256":"%s"}\n' "${record%?}" "$compiler_digest" "$archive_digest" > "$project/bootstrap/locks/$host.json"
+        binary=$(CROWN_BOOTSTRAP_ASSETS="$assets" sh "$project/bootstrap/fetch-compiler" "$host")
+        test "${binary##*/}" = crown.exe
+        cmp "$binary" "$package/crown.exe"
+        repeated=$(CROWN_BOOTSTRAP_ASSETS=/unavailable sh "$project/bootstrap/fetch-compiler" "$host")
+        test "$repeated" = "$binary"
+        printf 'corrupt' >> "$binary"
+        expect_failure env CROWN_BOOTSTRAP_ASSETS="$assets" sh "$project/bootstrap/fetch-compiler" "$host"
+    done
 }

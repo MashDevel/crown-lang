@@ -1,0 +1,55 @@
+module windows_runtime {
+    fn prepare(program: write ir::Program) -> Result<void, Text> {
+        prepare_variadic(program)?
+        let count = program.functions.length()
+        for index in 0..count {
+            if ir::function_is_import(program.functions[index]) {
+                prepare_function(program, index)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn prepare_function(program: write ir::Program, index: usize) -> Result<void, Text> {
+        let name = program.functions[index].name.clone()
+        if runtime_name(name) == false {
+            return Ok(())
+        }
+        if std::text::equal(name, "printf") && placeholder_signature(program.functions[index].signature) {
+            return Ok(())
+        }
+        let function = runtime_import(ir::function_copy(program.functions[index]))
+        let output = runtime_function(program, move function)?
+        program.functions[index] = move output
+        return Ok(())
+    }
+
+    fn runtime_function(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        let name = input.name.clone()
+        return match read name {
+            "crown_process_environment" => process_environment(program, move input)
+            "pthread_create" => thread_create(program, move input)
+            "pthread_join" => thread_join(program, move input)
+            "crown_pthread_create_stack" => stack_create(program, move input)
+            "write" => console_write(program, move input)
+            "printf" => console_printf(program, move input)
+            "dprintf" => console_print(program, move input)
+            _ => lock_runtime(program, move input)
+        }
+    }
+
+    fn runtime_name(name: Text) -> bool {
+        return match read name {
+            "crown_process_environment" | "pthread_create" | "pthread_join" | "write" | "dprintf" | "printf" | "crown_pthread_create_stack" => true
+            _ => lock_name(name)
+        }
+    }
+
+    fn lock_name(name: Text) -> bool {
+        return match read name {
+            "pthread_mutex_init" | "pthread_mutex_destroy" | "pthread_mutex_lock" | "pthread_mutex_unlock" => true
+            "pthread_rwlock_init" | "pthread_rwlock_destroy" | "pthread_rwlock_rdlock" | "pthread_rwlock_wrlock" | "pthread_rwlock_unlock" => true
+            _ => false
+        }
+    }
+}

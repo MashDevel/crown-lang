@@ -1,0 +1,45 @@
+fn windows_probe_word(bytes: Vec<u8>, index: usize, expected: u32) -> Result<void, Text> {
+    return testing::expect(link_binary::number(bytes, index * 4, 4)? == u64.from(expected), "Windows probe instruction")
+}
+
+fn windows_probe_loop(size: u64) -> Result<void, Text> {
+    var bytes = Vec<u8>.new()
+    arm64::emit_target_stack_adjust(bytes, size, true, arm64::AbiVariant::Windows())?
+    windows_probe_word(bytes, 0, arm64::move_wide(17, u16.from(size / 4096), 0, false)?)?
+    windows_probe_word(bytes, 1, arm64::add_immediate(16, 31, 0, false)?)?
+    windows_probe_word(bytes, 2, arm64::add_immediate(16, 16, 1, true)? | 4194304)?
+    return windows_probe_loop_end(bytes)
+}
+
+fn windows_probe_loop_end(bytes: Vec<u8>) -> Result<void, Text> {
+    windows_probe_word(bytes, 3, arm64::memory_word(31, 16, 0, 8, false)?)?
+    windows_probe_word(bytes, 4, arm64::add_immediate(17, 17, 1, true)?)?
+    windows_probe_word(bytes, 5, arm64::compare_word(17, 31)?)?
+    return windows_probe_word(bytes, 6, arm64::conditional_branch(-16, 1)?)
+}
+
+fn windows_probe_tail() -> Result<void, Text> {
+    var bytes = Vec<u8>.new()
+    arm64::emit_target_stack_adjust(bytes, 4112, true, arm64::AbiVariant::Windows())?
+    windows_probe_word(bytes, 7, arm64::add_immediate(16, 16, 16, true)?)?
+    windows_probe_word(bytes, 8, arm64::memory_word(31, 16, 0, 8, false)?)?
+    return testing::expect(bytes.length() == 44, "partial page touched before stack allocation")
+}
+
+fn windows_unprobed_stack() -> Result<void, Text> {
+    var bytes = Vec<u8>.new()
+    arm64::emit_target_stack_adjust(bytes, 4080, true, arm64::AbiVariant::Windows())?
+    arm64::emit_target_stack_adjust(bytes, 8192, false, arm64::AbiVariant::Windows())?
+    arm64::emit_target_stack_adjust(bytes, 8192, true, arm64::AbiVariant::Aapcs64())?
+    testing::expect(bytes.length() == 12, "small allocations, deallocations and other ABIs keep existing encodings")?
+    testing::error(arm64::emit_target_stack_adjust(bytes, 4097, true, arm64::AbiVariant::Windows()))?
+    testing::error(arm64::emit_target_stack_adjust(bytes, arm64::FRAME_LIMIT + 16, true, arm64::AbiVariant::Windows()))?
+    return testing::expect(bytes.length() == 12, "invalid allocation emits no instructions")
+}
+
+fn windows_stack_probes() -> Result<void, Text> {
+    windows_probe_loop(4096)?
+    windows_probe_loop(12288)?
+    windows_probe_tail()?
+    return windows_unprobed_stack()
+}

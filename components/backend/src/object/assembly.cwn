@@ -1,4 +1,22 @@
 module object {
+    fn coff_function_declaration(name: Text, global: bool) -> Text {
+        var output = std::text::joined(".def ", assembly_symbol_name(name))
+        std::text::append(output, if global {
+                "\n.scl 2\n"
+            } else {
+                "\n.scl 3\n"
+            })
+        std::text::append(output, ".type 32\n.endef\n")
+        return move output
+    }
+
+    fn assembly_symbol_name(name: Text) -> Text {
+        if std::text::contains(name, ":") {
+            return std::text::joined("\"", std::text::joined(name, "\""))
+        }
+        return name.clone()
+    }
+
     fn assembly_byte(output: write Text, value: u8) -> void {
         output.push('\\')
         output.push(char.from(48 + u32.from(value >> 6)))

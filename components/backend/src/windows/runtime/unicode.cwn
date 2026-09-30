@@ -1,0 +1,28 @@
+module windows_runtime {
+    fn startup_utf8(program: write ir::Program, code: write Builder, source: usize) -> Result<usize, Text> {
+        let null = null_pointer(code)
+        let zero = integer(code, ir::IntegerWidth32(), 0)
+        let count = utf8_conversion(program, code, source, null, zero)?
+        let valid = value(code, ir::InstructionCompare(ir::CompareSignedGreater(), count, zero))?
+        startup_require(program, code, valid)?
+        let size = value(code, ir::InstructionCast(ir::CastZeroExtend(), count, ir::TypeInteger(ir::IntegerWidth64())))?
+        let output = startup_allocate(program, code, size)?
+        let written = utf8_conversion(program, code, source, output, count)?
+        let complete = value(code, ir::InstructionCompare(ir::CompareEqual(), written, count))?
+        startup_require(program, code, complete)?
+        return Ok(output)
+    }
+
+    fn utf8_conversion(program: write ir::Program, code: write Builder, source: usize, output: usize, size: usize) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(integer(code, ir::IntegerWidth32(), 65001))
+        arguments.push(integer(code, ir::IntegerWidth32(), 128))
+        arguments.push(source)
+        arguments.push(integer(code, ir::IntegerWidth32(), 4294967295))
+        arguments.push(output)
+        arguments.push(size)
+        arguments.push(null_pointer(code))
+        arguments.push(null_pointer(code))
+        return call_value(program, code, "WideCharToMultiByte", move arguments, ir::TypeInteger(ir::IntegerWidth32()))
+    }
+}

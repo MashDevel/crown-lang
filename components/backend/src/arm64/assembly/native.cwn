@@ -1,0 +1,129 @@
+module arm64 {
+    struct NativeAssembly {
+        text: Text, prefix: Text, windows: bool
+    }
+
+    fn native_assembly(object: object::CompilerObject, prefix: Text, windows: bool) -> Result<Text, Text> {
+        if object.architecture != object::ArchitectureArm64() {
+            return Err("ARM64 assembly requires an ARM64 object")
+        }
+        let relocations = assembly_relocation_index(object)?
+        var output = NativeAssembly {
+            text: if windows {
+                ""
+            } else {
+                ".build_version macos, 11, 0\n"
+            },
+            prefix: prefix.clone(), windows: windows
+        }
+        for index in 0..object.sections.length() {
+            native_assembly_section(object, output, index, relocations[index])?
+        }
+        native_assembly_symbols(object, output)
+        return Ok(replace(output.text, ""))
+    }
+
+    fn native_assembly_section(object: object::CompilerObject, output: write NativeAssembly, index: usize, relocations: Vec<usize>) -> Result<void, Text> {
+        loan read object.sections[index] as section {
+            std::text::append(output.text, native_section_header(section.kind, output.windows))
+            std::text::append(output.text, std::text::joined(".balign ", std::text::decimal(section.alignment)))
+            std::text::append(output.text, std::text::joined("\n", assembly_base(output.prefix, index)))
+            std::text::append(output.text, ":\n")
+            native_assembly_contents(object, output, index, relocations)?
+            if section.memory_size > u64.from(section.data.length()) {
+                std::text::append(output.text, std::text::joined(".space ", std::text::decimal(section.memory_size - u64.from(section.data.length()))))
+                output.text.push('\n')
+            }
+        }
+        return Ok(())
+    }
+
+    fn native_section_header(kind: object::SectionKind, windows: bool) -> Text {
+        if object::section_is_executable(kind) {
+            return ".text\n"
+        }
+        if windows {
+            return match read kind {
+                object::SectionReadOnlyData => ".section .rdata,\"dr\"\n",
+                object::SectionZeroFill => ".bss\n",
+                _ => ".data\n"
+            }
+        }
+        return ".data\n"
+    }
+
+    fn native_symbol(name: Text, windows: bool) -> Text {
+        let symbol = if windows {
+            name.clone()
+        } else {
+            std::text::joined("_", name)
+        }
+        return object::assembly_symbol_name(symbol)
+    }
+
+    fn native_assembly_symbols(object: object::CompilerObject, output: write NativeAssembly) -> void {
+        for index in 0..object.symbols.length() {
+            loan read object.symbols[index] as symbol {
+                let name = native_symbol(symbol.name, output.windows)
+                native_coff_function(symbol, output)
+                match read symbol.binding {
+                    object::SymbolGlobal => {
+                        std::text::append(output.text, std::text::joined(".globl ", std::text::joined(name, "\n")))
+                    }
+                    _ => {
+                    }
+                }
+                match symbol.section {
+                    Some(section) => {
+                        std::text::append(output.text, std::text::joined(".set ", name))
+                        std::text::append(output.text, std::text::joined(", ", assembly_base(output.prefix, section)))
+                        std::text::append(output.text, std::text::joined("+", std::text::decimal(symbol.offset)))
+                        output.text.push('\n')
+                    }
+                    None => {
+                    }
+                }
+            }
+        }
+        native_assembly_entry(object, output)
+    }
+
+    fn native_assembly_entry(object: object::CompilerObject, output: write NativeAssembly) -> void {
+        match object.entry {
+            Some(index) => {
+                if output.windows {
+                    std::text::append(output.text, object::coff_function_declaration("main", true))
+                }
+                let entry = native_symbol("main", output.windows)
+                std::text::append(output.text, std::text::joined(".globl ", std::text::joined(entry, "\n")))
+                if std::text::equal(object.symbols[index].name, "main") == false {
+                    std::text::append(output.text, std::text::joined(".set ", std::text::joined(entry, ", ")))
+                    std::text::append(output.text, native_symbol(object.symbols[index].name, output.windows))
+                    output.text.push('\n')
+                }
+            }
+            None => {
+            }
+        }
+    }
+
+    fn native_assembly_contents(object: object::CompilerObject, output: write NativeAssembly, index: usize, relocations: Vec<usize>) -> Result<void, Text> {
+        var offset: usize = 0
+        for position in 0..relocations.length() {
+            loan read object.relocations[relocations[position]] as relocation {
+                let end = usize.from(relocation.offset)
+                if end < offset {
+                    return Err("overlapping assembly relocations")
+                }
+                assembly_bytes(output.text, link_binary::part(object.sections[index].data, offset, end - offset)?)
+                native_assembly_relocation(object, output, relocation)?
+                offset = end + usize.from(object::relocation_width(relocation.kind))
+            }
+        }
+        if offset > object.sections[index].data.length() {
+            return Err("assembly relocation exceeds its section")
+        }
+        assembly_bytes(output.text, link_binary::part(object.sections[index].data, offset, object.sections[index].data.length() - offset)?)
+        return Ok(())
+    }
+}

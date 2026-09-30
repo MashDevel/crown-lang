@@ -46,6 +46,9 @@ module object {
     copy enum RelocationKind {
         RelocationAbsolute32
         RelocationAbsolute64
+        RelocationImageRelative32
+        RelocationSectionRelative32
+        RelocationSectionIndex16
         RelocationPcRelative32
         RelocationPcRelativeCall32
         RelocationGotPcRelative32
@@ -91,6 +94,7 @@ module object {
 
     fn relocation_width(kind: RelocationKind) -> u64 {
         match read kind {
+            RelocationSectionIndex16 => 2
             RelocationAbsolute64 => {
                 return 8
             }

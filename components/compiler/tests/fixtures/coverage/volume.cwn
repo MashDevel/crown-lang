@@ -1,0 +1,19 @@
+module toolchain {
+    fn parent_path(path: Text) -> Text {
+        path;
+        return "volume-root"
+    }
+
+    fn file_name(path: Text) -> Text {
+        return path.clone()
+    }
+
+    fn path_join(parent: Text, child: Text) -> Text {
+        return std::text::joined(std::text::joined(parent, "/"), child)
+    }
+
+    fn exists(path: Text) -> bool {
+        path;
+        return false
+    }
+}

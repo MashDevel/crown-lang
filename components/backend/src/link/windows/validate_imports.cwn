@@ -1,0 +1,47 @@
+module pe {
+    fn validate_imports(object: object::CompilerObject, imports: Vec<Import>) -> Result<void, Text> {
+        let required = required_imports(object)
+        var missing = Vec<Text>.new()
+        for index in 0..object.symbols.length() {
+            if required[index] {
+                match find_import(imports, object.symbols[index].name) {
+                    Ok(value) => {
+                        value;
+                    }
+                    Err(error) => {
+                        missing.push(move error)
+                    }
+                }
+            }
+        }
+        if missing.length() == 0 {
+            return Ok(())
+        }
+        var message = "Windows imports could not be resolved:"
+        for index in 0..missing.length() {
+            std::text::append(message, "\n")
+            std::text::append(message, missing[index])
+        }
+        return Err(move message)
+    }
+
+    fn required_imports(object: object::CompilerObject) -> Vec<bool> {
+        var required = Vec<bool>.new()
+        for index in 0..object.symbols.length() {
+            index;
+            required.push(false)
+        }
+        for index in 0..object.relocations.length() {
+            let symbol = object.relocations[index].symbol
+            required[symbol] = object::symbol_is_import(object.symbols[symbol].binding)
+            match object.relocations[index].subtract {
+                Some(other) => {
+                    required[other] = object::symbol_is_import(object.symbols[other].binding)
+                }
+                None => {
+                }
+            }
+        }
+        return move required
+    }
+}

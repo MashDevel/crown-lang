@@ -1,0 +1,117 @@
+module toolchain {
+    extern "c" {
+        fn raw_create_process(application: RawPtr<u16>, command_line: RawPtr<u16>, process_security: RawPtr<u8>, thread_security: RawPtr<u8>, inherit: i32, flags: u32, environment: RawPtr<u8>, directory: RawPtr<u16>, startup: RawPtr<u64>, information: RawPtr<u64>) -> i32 = "CreateProcessW"
+        fn raw_create_job(security: RawPtr<u8>, name: RawPtr<u16>) -> RawPtr<u8> = "CreateJobObjectW"
+        fn raw_job_limits(job: RawPtr<u8>, kind: u32, data: RawPtr<u64>, size: u32) -> i32 = "SetInformationJobObject"
+        fn raw_assign_job(job: RawPtr<u8>, process: RawPtr<u8>) -> i32 = "AssignProcessToJobObject"
+        fn raw_resume_thread(thread: RawPtr<u8>) -> u32 = "ResumeThread"
+        fn raw_terminate_process(process: RawPtr<u8>, status: u32) -> i32 = "TerminateProcess"
+        fn raw_terminate_job(job: RawPtr<u8>, status: u32) -> i32 = "TerminateJobObject"
+        fn raw_wait_handle(handle: RawPtr<u8>, timeout: u32) -> u32 = "WaitForSingleObject"
+        fn raw_exit_code(handle: RawPtr<u8>, status: RawPtr<i32>) -> i32 = "GetExitCodeProcess"
+    }
+
+    opaque resource NativeHandle {
+        private value: RawPtr<u8>
+        drop {
+            if value != null() && value != invalid_handle() {
+                unsafe {
+                    raw_close_handle(value);
+                }
+            }
+        }
+    }
+
+    opaque resource Process {
+        private handle: NativeHandle
+        private job: NativeHandle
+        private active: bool
+        drop {
+            if active {
+                unsafe {
+                    raw_terminate_job(job.value, 1);
+                    raw_wait_handle(handle.value, 4294967295);
+                }
+            }
+        }
+    }
+
+    fn process_job() -> Result<NativeHandle, Text> {
+        unsafe {
+            let handle = raw_create_job(null(), RawPtr<u16>.from_address(0))
+            if handle == null() {
+                return Err("could not create child process job")
+            }
+            let job = NativeHandle {
+                value: handle
+            }
+            var limits = native_words(18)
+            limits[2] = 8192
+            if raw_job_limits(handle, 9, limits.as_raw(), 144) == 0 {
+                return Err("could not configure child process job")
+            }
+            return Ok(move job)
+        }
+    }
+
+    fn start_process(request: Command) -> Result<Process, Text> {
+        let line = windows_command_line(request.arguments)?
+        var command_line = std::utf16::encode(line)
+        command_line.push(0)
+        let job = process_job()?
+        var handles = process_handles(request)?
+        let attributes = process_handle_attributes(handles)?
+        var startup = process_startup(handles, attributes)?
+        var information = native_words(3)
+        unsafe {
+            let wide_null = RawPtr<u16>.from_address(0)
+            if raw_create_process(wide_null, command_line.as_raw(), null(), null(), 1, 524292, null(), wide_null, startup.as_raw(), information.as_raw()) == 0 {
+                return Err(std::text::joined("cannot start: ", request.arguments[0]))
+            }
+            let process = NativeHandle {
+                value: RawPtr<u8>.from_address(usize.from(information[0]))
+            }
+            let thread = NativeHandle {
+                value: RawPtr<u8>.from_address(usize.from(information[1]))
+            }
+            if raw_assign_job(job.value, process.value) == 0 {
+                raw_terminate_process(process.value, 1);
+                raw_wait_handle(process.value, 4294967295);
+                return Err("could not assign child process to job")
+            }
+            let child = Process {
+                handle: move process, job: move job, active: true
+            }
+            if raw_resume_thread(thread.value) == 4294967295 {
+                return Err("could not start child process thread")
+            }
+            return Ok(move child)
+        }
+    }
+
+    fn poll_process(process: write Process, status: write Vec<i32>) -> Result<Option<i32>, Text> {
+        unsafe {
+            if process.active == false {
+                return Err("process has already been reaped")
+            }
+            let result = raw_wait_handle(process.handle.value, 0)
+            if result == 258 {
+                return Ok(None())
+            }
+            if result != 0 || raw_exit_code(process.handle.value, status.as_raw()) == 0 {
+                return Err("could not wait for process")
+            }
+            process.active = false
+            return Ok(Some(status[0]))
+        }
+    }
+
+    unsafe fn terminate_process(process: write Process, status: write Vec<i32>) -> void {
+        unsafe {
+            raw_terminate_job(process.job.value, 1);
+            raw_wait_handle(process.handle.value, 4294967295);
+            raw_exit_code(process.handle.value, status.as_raw());
+            process.active = false
+        }
+    }
+}

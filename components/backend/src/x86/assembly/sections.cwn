@@ -5,35 +5,43 @@ module x86 {
                 assembly_append(output, ".text\n")
             }
             object::SectionReadOnlyData => {
-                if assembly_section_has_relocations(object, section_id) {
-                    assembly_append(output, if output.format == AssemblyFormat::Elf() {
-                            ".section .data.rel.ro,\"aw\",@progbits\n"
-                        } else {
-                            ".section __DATA_CONST,__const\n"
-                        })
-                }
-                else {
-                    assembly_append(output, if output.format == AssemblyFormat::Elf() {
-                            ".section .rodata\n"
-                        } else {
-                            ".section __TEXT,__const\n"
-                        })
+                if output.format == AssemblyFormat::Coff() {
+                    assembly_append(output, ".section .rdata,\"dr\"\n")
+                } else {
+                    assembly_read_only_header(object, section_id, output)
                 }
             }
             object::SectionData => {
                 assembly_append(output, ".data\n")
             }
             object::SectionZeroFill => {
-                assembly_append(output, if output.format == AssemblyFormat::Elf() {
-                        ".bss\n"
-                    } else {
+                assembly_append(output, if output.format == AssemblyFormat::MachO() {
                         ".section __DATA,__bss\n"
+                    } else {
+                        ".bss\n"
                     })
             }
         }
         assembly_append(output, ".p2align ")
         assembly_append_u64(output, assembly_alignment_power(object.sections[section_id].alignment))
         output.text.push('\n')
+    }
+
+    fn assembly_read_only_header(object: object::CompilerObject, section_id: usize, output: write AssemblyOutput) -> void {
+        if assembly_section_has_relocations(object, section_id) {
+            assembly_append(output, if output.format == AssemblyFormat::Elf() {
+                    ".section .data.rel.ro,\"aw\",@progbits\n"
+                } else {
+                    ".section __DATA_CONST,__const\n"
+                })
+        }
+        else {
+            assembly_append(output, if output.format == AssemblyFormat::Elf() {
+                    ".section .rodata\n"
+                } else {
+                    ".section __TEXT,__const\n"
+                })
+        }
     }
 
 }

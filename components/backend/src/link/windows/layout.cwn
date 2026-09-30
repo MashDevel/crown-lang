@@ -1,0 +1,75 @@
+module pe {
+    fn layout(object: object::CompilerObject) -> Result<Image, Text> {
+        var image = initial_sections(object)?
+        for index in 0..object.sections.length() {
+            place_section(image, object.sections[index])?
+        }
+        var rva = SECTION_ALIGNMENT
+        for index in 0..image.sections.length() {
+            image.sections[index].rva = rva
+            image.sections[index].size = image.sections[index].bytes.length()
+            rva = link_binary::aligned(rva + image.sections[index].size, SECTION_ALIGNMENT)
+        }
+        for index in 0..object.symbols.length() {
+            image.symbols.push(symbol_address(image, object, index)?)
+            image.slots.push(0)
+        }
+        match object.entry {
+            Some(entry) => {
+                image.entry = usize.from(image.symbols[entry] - IMAGE_BASE)
+            }
+            None => {
+                return Err("PE executable requires an entry function")
+            }
+        }
+        return Ok(move image)
+    }
+
+    fn initial_sections(object: object::CompilerObject) -> Result<Image, Text> {
+        var image = image_new(object.architecture)
+        section_append(image, section_new(".text", 1610612768))?;
+        section_append(image, section_new(".rdata", 1073741888))?;
+        section_append(image, section_new(".data", 3221225536))?;
+        prepare_exception_section(image, object)?
+        return Ok(move image)
+    }
+
+    fn section_index(kind: object::SectionKind) -> usize {
+        match read kind {
+            object::SectionText => 0
+            object::SectionReadOnlyData => 1
+            _ => 2
+        }
+    }
+
+    fn place_section(image: write Image, section: object::Section) -> Result<void, Text> {
+        if section.alignment > u64.from(SECTION_ALIGNMENT) || section.memory_size > 2147483647 {
+            return Err("PE section size or alignment exceeds supported range")
+        }
+        let target = input_section_index(image, section)
+        let offset = reserve(image.sections[target], usize.from(section.memory_size), usize.from(section.alignment))
+        for index in 0..section.data.length() {
+            image.sections[target].bytes[offset + index] = section.data[index]
+        }
+        image.locations.push(offset)
+        image.section_map.push(target)
+        return Ok(())
+    }
+
+    fn symbol_address(image: Image, object: object::CompilerObject, index: usize) -> Result<u64, Text> {
+        loan read object.symbols[index] as symbol {
+            match symbol.section {
+                Some(section) => {
+                    let target = image.section_map[section]
+                    return Ok(IMAGE_BASE + u64.from(image.sections[target].rva + image.locations[section]) + symbol.offset)
+                }
+                None => {
+                    if object::symbol_is_import(symbol.binding) {
+                        return Ok(0)
+                    }
+                    return Err("PE symbol has no section")
+                }
+            }
+        }
+    }
+}

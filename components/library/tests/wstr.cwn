@@ -1,0 +1,51 @@
+fn test_wide_strings() -> u32 {
+    let status = test_utf16()
+    if status != 0 {
+        return status
+    }
+    match std::wstr::new("bad\0path") {
+        Some(value) => {
+            value;
+            return 13
+        }
+        None => {
+        }
+    }
+    let empty = match std::wstr::new("") {
+        Some(value) => move value
+        None => {
+            return 14
+        }
+    }
+    if std::wstr::length(empty) != 0 {
+        return 15
+    }
+    unsafe {
+        if std::wstr::as_raw(empty).read() != 0 {
+            return 16
+        }
+    }
+    return test_wide_unicode()
+}
+
+fn test_wide_unicode() -> u32 {
+    let value = match std::wstr::new("😀é") {
+        Some(result) => move result
+        None => {
+            return 17
+        }
+    }
+    if std::wstr::length(value) != 3 {
+        return 18
+    }
+    let expected: [u16; 4] = [55357, 56832, 233, 0]
+    unsafe {
+        let pointer = std::wstr::as_raw(value)
+        for index in 0..4 {
+            if pointer.offset(index).read() != expected[index] {
+                return 19
+            }
+        }
+    }
+    return 0
+}

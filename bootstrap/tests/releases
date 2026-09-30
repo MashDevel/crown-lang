@@ -46,7 +46,7 @@ SH
 publication_fixture() {
     fixture
     mkdir "$project/bin"
-    for target in x86_64-macos arm64-macos x86_64-linux arm64-linux; do
+    for target in x86_64-macos arm64-macos x86_64-linux arm64-linux x86_64-windows arm64-windows; do
         for file in "crown-$target.tar.gz" "crown-bootstrap-$target.s.gz" "crown-bootstrap-$target.json" "crown-bootstrap-$target.lock.json"; do
             printf 'fixture %s\n' "$file" > "$assets/$file"
             printf '%s  %s\n' "$(sh "$root/bootstrap/checksum" "$assets/$file")" "$file" >> "$assets/SHA256SUMS-$target"
@@ -74,11 +74,15 @@ release_publication() {
     publication_fixture
     publish > "$scratch/publish.log"
     test "$(wc -l < "$project/gh.log" | tr -d ' ')" = 3
-    test "$(wc -l < "$assets/SHA256SUMS" | tr -d ' ')" = 16
+    test "$(wc -l < "$assets/SHA256SUMS" | tr -d ' ')" = 24
     : > "$project/gh.log"
     CROWN_TEST_CREATE_FAILURE=1 expect_failure publish
     test "$(wc -l < "$project/gh.log" | tr -d ' ')" = 2
     : > "$project/gh.log"
+    mv "$assets/crown-arm64-windows.tar.gz" "$assets/held-archive"
+    expect_failure publish
+    test ! -s "$project/gh.log"
+    mv "$assets/held-archive" "$assets/crown-arm64-windows.tar.gz"
     printf 'corrupt' >> "$assets/crown-arm64-linux.tar.gz"
     expect_failure publish
     test ! -s "$project/gh.log"

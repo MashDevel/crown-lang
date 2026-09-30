@@ -21,6 +21,7 @@ module ir {
             signed.push(signature.signed_parameters[position])
         }
         return Signature {
+            calling_convention: signature.calling_convention
             parameters: move parameters
             result: signature.result
             parameter_abi: move abi

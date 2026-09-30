@@ -1,0 +1,5 @@
+module ir {
+    copy enum CallingConvention {
+        Default, WindowsX64
+    }
+}

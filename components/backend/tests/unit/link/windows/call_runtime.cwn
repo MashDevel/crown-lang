@@ -1,0 +1,17 @@
+fn windows_call_runtime() -> Result<void, u32> {
+    for index in 0..7 {
+        windows_execute(windows_fixture_program(index))?
+    }
+    windows_execute(windows_capture_program())?
+    return windows_cross_link()
+}
+
+fn windows_execute(input: take Result<ir::Program, u32>) -> Result<void, u32> {
+    let program = (move input)?
+    let object = windows_call_object(move program, toolchain::host_target().architecture)?
+    return safety_execute_object(move object)
+}
+
+fn main() -> u32 {
+    return safety_status(windows_call_runtime())
+}

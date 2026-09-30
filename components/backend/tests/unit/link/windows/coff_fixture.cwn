@@ -1,0 +1,55 @@
+fn windows_coff_bytes(architecture: toolchain::Architecture) -> Result<Vec<u8>, Text> {
+    let name = std::text::joined(std::text::joined("native-", toolchain::architecture_name(architecture)), ".obj")
+    let directory = toolchain::path_join(toolchain::environment("CROWN_ROOT"), "components/backend/tests/fixtures/windows")
+    return toolchain::read_bytes(toolchain::path_join(directory, name))
+}
+
+fn windows_coff_signature() -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth32()))
+    return ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+}
+
+fn windows_coff_callback() -> Result<ir::Function, u32> {
+    var function = ir::function_new("crown_callback", windows_coff_signature(), ir::LinkageExport())
+    let block = safety_block(function)?
+    let one = safety_integer(function, ir::IntegerWidth32(), 1)
+    let value = safety_append(function, block, ir::InstructionBinary(ir::BinaryAdd(), 0, one))?
+    safety_terminate(function, block, ir::TerminatorReturn(Some(value)))?
+    return Ok(move function)
+}
+
+fn windows_coff_program() -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, windows_coff_callback()?)
+    let target = ir::program_add_function(program, ir::function_new("native_value", windows_coff_signature(), ir::LinkageImport()))
+    var function = ir::function_new("windows_coff_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    var arguments = Vec<usize>.new()
+    arguments.push(safety_integer(function, ir::IntegerWidth32(), 40))
+    let result = safety_append(function, block, ir::InstructionCall(target, move arguments, ir::TypeInteger(ir::IntegerWidth32())))?
+    let expected = safety_integer(function, ir::IntegerWidth32(), 42)
+    safety_return_equal(function, block, result, expected)?
+    program.entry = Some(ir::program_add_function(program, move function))
+    return Ok(move program)
+}
+
+fn windows_coff_object(architecture: toolchain::Architecture) -> Result<object::CompilerObject, Text> {
+    let program = match windows_coff_program() {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err("could not create COFF test IR")
+        }
+    }
+    var object = match windows_call_object(move program, architecture) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err("could not compile COFF test IR")
+        }
+    }
+    link_object::merge(object, coff::read_object(windows_coff_bytes(architecture)?)?)?
+    windows_test_startup(object)?
+    return Ok(move object)
+}

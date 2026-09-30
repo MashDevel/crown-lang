@@ -10,13 +10,17 @@ module testing_cache {
     }
 
     fn fixture(root: Text) -> Result<void, Text> {
-        let compiler = "#!/bin/sh\nset -eu\ncase \"$1\" in _link_inputs) printf '[]'; exit 0;; _executable) ;; *) exit 1;; esac\nprintf x >> \"${0%/*}/compiles\"\nif [ -f \"${0%/*}/fail\" ]; then exit 1; fi\nif [ -f \"${0%/*}/change\" ]; then printf x >> \"${0%/*}/source.cwn\"; fi\ncp \"${0%/*}/fixture\" \"$3\"\nchmod +x \"$3\"\n"
-        let path = testing::write_file(root, "compiler", compiler)?
-        toolchain::executable(path)?
+        var arguments = testing::list("build")
+        arguments.push(toolchain::path_join(toolchain::repository_root()?, "components/compiler/tests/fixtures/cache_compiler.cwn"))
+        arguments.push("--toolchain-library");
+        arguments.push("toolchain")
+        arguments.push("-o");
+        arguments.push(toolchain::path_join(root, "compiler"))
+        let result = testing::invoke(move arguments, root)?
+        testing::expect(toolchain::clean_result(result), result.stderr)?
         testing::write_file(root, "source.cwn", "first")?
         testing::write_file(root, "compiles", "")?
         testing::write_file(root, "runs", "")?
-        testing::write_file(root, "fixture", "#!/bin/sh\nprintf x >> \"${0%/*}/../runs\"\nexit 42\n")?
         return Ok(())
     }
 

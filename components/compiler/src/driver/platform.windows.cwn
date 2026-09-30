@@ -1,0 +1,7 @@
+fn crown_platform_command(arguments: Vec<Text>) -> Result<u32, Text> {
+    return crown_host_command(arguments)
+}
+
+fn crown_platform_options(arguments: Vec<Text>, options: toolchain::Options) -> Result<u32, Text> {
+    return crown_options(arguments, options)
+}

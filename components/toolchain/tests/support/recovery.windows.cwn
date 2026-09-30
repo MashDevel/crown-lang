@@ -1,0 +1,25 @@
+module testing_recovery {
+    fn launcher_path() -> Text {
+        return "bootstrap/crown.ps1"
+    }
+    fn launcher_tools() -> Vec<Text> {
+        return testing::list("windows-support.ps1|build-compiler.ps1")
+    }
+    fn launcher_arguments(root: Text) -> Vec<Text> {
+        var arguments = testing::list("powershell.exe|-NoProfile|-NonInteractive|-ExecutionPolicy|Bypass|-File")
+        arguments.push(toolchain::path_join(root, launcher_path()))
+        return move arguments
+    }
+    fn isolation_wrapper() -> Text {
+        return "$ErrorActionPreference = 'Stop'\n$null = [IO.Directory]::CreateDirectory($env:CROWN_BOOTSTRAP_DIR)\n[IO.File]::WriteAllText((Join-Path $env:CROWN_BOOTSTRAP_DIR 'crown.exe'), 'reference compiler')\n[Console]::WriteLine('crown 0.1.0')\n"
+    }
+    fn host_selection(root: Text) -> Result<void, Text> {
+        let script = toolchain::path_join(toolchain::repository_root()?, "bootstrap/tests/windows-host.ps1")
+        var arguments = testing::list("powershell.exe|-NoProfile|-NonInteractive|-ExecutionPolicy|Bypass|-File")
+        arguments.push(script.clone())
+        arguments.push("-Expected")
+        arguments.push(toolchain::target_name(toolchain::host_target()))
+        let result = toolchain::capture(toolchain::command(move arguments), root)?
+        return testing::expect(toolchain::clean_result(result), std::text::joined("Windows host selection: ", result.stderr))
+    }
+}

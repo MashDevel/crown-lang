@@ -1,0 +1,67 @@
+module x86 {
+    fn codegen_copy_indirect_argument(program: ir::Program, compiler: write FunctionCompiler, value: usize, argument: IndirectArgument) -> Result<void, CodegenError> {
+        let destination = i32.from(argument.copy_slot * 8)
+        let value_type = codegen_value_type(program, compiler, value)?
+        if ir::type_is_vector(value_type) {
+            codegen_load_vector(compiler, FloatValueAccess {
+                    value: value, register: Xmm0()
+                })?
+            codegen_emit(compiler, StorePackedFloat(StoreFloatMemoryArgs {
+                        width: Float64(), source: Xmm0(), base: Rsp(), offset: destination
+                    }))
+            return Ok(())
+        }
+        if codegen_type_is_wide(value_type) {
+            codegen_load_wide(program, compiler, WideValueAccess {
+                    value: value, registers: WideRegisters {
+                        low: Rax(), high: R10()
+                    }
+                })?
+            codegen_emit(compiler, Store(Rsp(), destination, Rax()))
+            codegen_emit(compiler, Store(Rsp(), destination + 8, R10()))
+            return Ok(())
+        }
+        return codegen_copy_stack_argument(program, compiler, MemoryArgument {
+                value: value, slot: argument.copy_slot, size: argument.size
+            })
+    }
+
+    fn codegen_load_indirect_argument(compiler: write FunctionCompiler, argument: IndirectArgument) -> Result<void, CodegenError> {
+        let register = match argument.register {
+            Some(value) => value
+            None => Rax()
+        }
+        codegen_emit(compiler, LoadAddress(register, Rsp(), i32.from(argument.copy_slot * 8)))
+        match argument.register {
+            None => codegen_emit(compiler, Store(Rsp(), i32.from(argument.slot * 8), register))
+            Some(value) => {
+                value;
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_windows_variadic_arguments(compiler: write FunctionCompiler, signature: ir::Signature) -> Result<void, CodegenError> {
+        let locations = windows_abi_locations(signature)?
+        var position: usize = 0
+        for index in 0..locations.length() {
+            match read locations[index] {
+                ArgumentFloat(register) => {
+                    let integer = match windows_integer_register(position) {
+                        Some(value) => value
+                        None => {
+                            return Err(codegen_error(CodegenInvalidIr()))
+                        }
+                    }
+                    codegen_emit(compiler, MoveFromFloat(codegen_float_width(signature.parameters[index])?, integer, register))
+                }
+                _ => {
+                }
+            }
+            if windows_argument_omitted(locations[index]) == false {
+                position = position + 1
+            }
+        }
+        return Ok(())
+    }
+}

@@ -26,7 +26,7 @@ module toolchain {
         }
         let sources = project_sources(document, root, target)?
         let links = manifest_links(document, target)?
-        let output = path_join(path_join(root, "target/debug"), name)
+        let output = path_join(path_join(root, "target/debug"), executable_name(name, target))
         return Ok(Project {
                 manifest: manifest.clone(), name: move name, sources: move sources, libraries: library_names(document)?, links: move links, output: move output
             })
@@ -98,6 +98,7 @@ module toolchain {
         let frameworks = link_names(document, "target.macos.frameworks")?
         let macos = link_names(document, "target.macos.libraries")?
         let linux = link_names(document, "target.linux.libraries")?
+        let windows = link_names(document, "target.windows.libraries")?
         var output = Vec<Text>.new()
         if target.platform == Platform::Macos() {
             for index in 0..frameworks.length() {
@@ -108,6 +109,9 @@ module toolchain {
         }
         if target.platform == Platform::Linux() {
             append_libraries(output, linux)
+        }
+        if target.platform == Platform::Windows() {
+            append_libraries(output, windows)
         }
         return Ok(move output)
     }

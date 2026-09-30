@@ -80,6 +80,26 @@ fn incompatible_profiles(root: Text) -> Result<void, Text> {
     return rejected_merge(root, first, count, "coverage point layouts differ")
 }
 
+fn uninstrumented_profiles(root: Text) -> Result<void, Text> {
+    let path = toolchain::path_join(root, "components/compiler/src/bundled.cwn")
+    let source = source_entry(path, "same")
+    let other = toolchain::path_join(root, "components/compiler/src/other.cwn")
+    let extra = std::text::joined(",", source_entry(other, "other"))
+    let empty = profile(root, "uninstrumented", map_document(std::text::joined(source, extra), point_entry(other, 0)), 1)?
+    let instrumented = profile(root, "instrumented", map_document(source, point_entry(path, 0)), 1)?
+    verify_uninstrumented_merge(root, empty, instrumented)?
+    verify_uninstrumented_merge(root, instrumented, empty)?
+    let changed = profile(root, "uninstrumented-changed", map_document(std::text::joined(source_entry(path, "different"), extra), point_entry(other, 0)), 1)?
+    return rejected_merge(root, instrumented, changed, "coverage sources differ")
+}
+
+fn verify_uninstrumented_merge(root: Text, first: Text, second: Text) -> Result<void, Text> {
+    let directories = testing::list(std::text::joined(first, std::text::joined("|", second)))
+    let result = report(root, directories, 0)?
+    testing::expect(report_count(result, "lines")? == 2, "uninstrumented source metadata does not erase instrumented points")?
+    return testing::expect(report_count(result, "covered_lines")? == 2, "instrumented hits survive either merge order")
+}
+
 fn rejected_merge(root: Text, first: Text, second: Text, message: Text) -> Result<void, Text> {
     let arguments = testing::list(std::text::joined("coverage|", std::text::joined(first, std::text::joined("|", second))))
     let result = testing::invoke(move arguments, root)?
@@ -142,6 +162,7 @@ fn run() -> Result<void, Text> {
     invalid_maps(root)?
     package_thresholds(root)?
     test_only_profile(root)?
+    uninstrumented_profiles(root)?
     return Ok(())
 }
 

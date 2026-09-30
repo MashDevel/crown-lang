@@ -1,0 +1,86 @@
+fn windows_crt_program() -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeFloat(ir::FloatWidth64()))
+    var signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+    signature.variadic_start = Some(1)
+    let target = ir::program_add_function(program, ir::function_new("_scprintf", move signature, ir::LinkageImport()))
+    let format = windows_crt_format(program)
+    program.entry = Some(ir::program_add_function(program, windows_crt_caller(target, format)?))
+    return Ok(move program)
+}
+
+fn windows_crt_format(program: write ir::Program) -> usize {
+    var bytes = Vec<u8>.new()
+    let format = "%I64d %.1f"
+    loan read format as view {
+        for index in 0..view.length() {
+            bytes.push(view[index])
+        }
+    }
+    bytes.push(0)
+    let size = u64.from(bytes.length())
+    return ir::program_add_global(program, ir::Global {
+            name: "windows_crt_format", bytes: move bytes, size: size, alignment: 1,
+            kind: ir::GlobalReadOnly(), exported: false, references: Vec<ir::GlobalReference>.new()
+        })
+}
+
+fn windows_crt_caller(target: usize, format: usize) -> Result<ir::Function, u32> {
+    var function = ir::function_new("windows_crt_entry", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    var arguments = Vec<usize>.new()
+    arguments.push(safety_append(function, block, ir::InstructionGlobalAddress(format))?)
+    arguments.push(safety_integer(function, ir::IntegerWidth64(), 42))
+    arguments.push(ir::function_constant(function, ir::TypeFloat(ir::FloatWidth64()), ir::ConstantFloat64(4615063718147915776)))
+    let result = safety_append(function, block, ir::InstructionCall(target, move arguments, ir::TypeInteger(ir::IntegerWidth32())))?
+    let expected = safety_integer(function, ir::IntegerWidth32(), 6)
+    safety_return_equal(function, block, result, expected)?
+    return Ok(move function)
+}
+
+fn windows_abi_imports() -> Vec<pe::Import> {
+    var imports = process_imports()
+    imports.push(pe::Import {
+            symbol: "_scprintf", library: "msvcrt.dll", name: "_scprintf"
+        })
+    imports.push(pe::Import {
+            symbol: "memcpy", library: "ucrtbase.dll", name: "memcpy"
+        })
+    return move imports
+}
+
+fn windows_cross_link() -> Result<void, u32> {
+    let architectures = [toolchain::Architecture::X86_64(), toolchain::Architecture::Arm64()]
+    for index in 0..2 {
+        for fixture in 0..9 {
+            windows_cross_fixture(fixture, architectures[index])?
+        }
+    }
+    return Ok(())
+}
+
+fn windows_cross_fixture(fixture: usize, architecture: toolchain::Architecture) -> Result<void, u32> {
+    var object = windows_call_object(windows_fixture_program(fixture)?, architecture)?
+    match windows_test_startup(object) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            return Err(80)
+        }
+    }
+    match pe::executable(object, windows_abi_imports()) {
+        Ok(bytes) => {
+            safety_require(bytes.length() > 512, 81)?
+        }
+        Err(error) => {
+            toolchain::failure(error);
+            return Err(82)
+        }
+    }
+    return Ok(())
+}

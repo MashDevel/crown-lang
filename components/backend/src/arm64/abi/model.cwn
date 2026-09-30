@@ -1,6 +1,6 @@
 module arm64 {
     copy enum AbiVariant {
-        Aapcs64, Darwin
+        Aapcs64, Darwin, Windows
     }
 
     copy enum AbiKind {

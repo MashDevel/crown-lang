@@ -5,7 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 asset_directory=${CROWN_BOOTSTRAP_ASSETS:-}
 host=${1:-$(sh "$root/bootstrap/host")}
 case "$host" in
-    x86_64-macos|arm64-macos|x86_64-linux|arm64-linux) ;;
+    x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-windows|arm64-windows) ;;
     *) printf '%s\n' 'error: unsupported bootstrap host' >&2; exit 1 ;;
 esac
 lock="$root/bootstrap/locks/$host.json"

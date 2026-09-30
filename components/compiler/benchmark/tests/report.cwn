@@ -1,24 +1,22 @@
-fn run() -> Result<void, Text> {
+fn run(executable: Text) -> Result<void, Text> {
     finished_provenance()?
     preparation()?
     rejected_preparation()?
-    check_reports()?
+    check_reports(executable)?
+    benchmark_measurement_tests(executable)?
     return native_stage()
 }
 
-fn check_reports() -> Result<void, Text> {
+fn check_reports(executable: Text) -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
     var current = benchmark::Benchmark {
         directory: root.clone(), results: Vec<Text>.new()
     }
-    let before = benchmark::usage()?
-    benchmark::measure(current, "success", testing::list("true"))?
-    testing::error(benchmark::measure(current, "failure", testing::list("false")))?
-    testing::error(benchmark::measure(current, "warning", testing::list("/bin/sh|-c|printf warning >&2")))?
-    testing::error(benchmark::measure(current, "maximum", testing::list("/bin/sh|-c|exit 255")))?
-    let after = benchmark::usage()?
-    testing::expect(after.user >= before.user && after.system >= before.system, "cumulative child CPU usage")?
+    benchmark::measure(current, "success", benchmark_worker_command(executable, "success"))?
+    testing::error(benchmark::measure(current, "failure", benchmark_worker_command(executable, "failure")))?
+    testing::error(benchmark::measure(current, "warning", benchmark_worker_command(executable, "warning")))?
+    testing::error(benchmark::measure(current, "maximum", benchmark_worker_command(executable, "maximum")))?
     return validate_report(root)
 }
 
@@ -48,6 +46,9 @@ fn validate_timing(document: toolchain::Json, row: usize) -> Result<void, Text> 
     field_number(document, row, "system_microseconds")?
     return Ok(())
 }
-fn main() -> u32 {
-    return testing::done(run())
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() == 3 && std::text::equal(arguments[1], "worker") {
+        return benchmark_worker(arguments[0].clone(), arguments[2].clone())
+    }
+    return testing::done(run(arguments[0].clone()))
 }

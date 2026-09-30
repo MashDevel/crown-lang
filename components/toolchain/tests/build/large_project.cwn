@@ -1,0 +1,42 @@
+fn write_project(root: Text) -> Result<void, Text> {
+    var name = ""
+    for index in 0..160 {
+        index;
+        name.push('a')
+    }
+    for index in 0..256 {
+        let suffix = std::text::decimal(u64.from(index))
+        let path = std::text::joined("src/", std::text::joined(name, std::text::joined(suffix, ".cwn")))
+        let source = std::text::joined("fn generated_", std::text::joined(suffix, "() -> u32 { return 0 }"))
+        testing::write_file(root, path, source)?
+    }
+    testing::write_file(root, "src/main.cwn", "fn main() -> u32 { return 42 }")?
+    testing::write_file(root, "Crown.toml", "[package]\nname = \"large-project\"\nsources = [\"src\"]\n")?
+    return Ok(())
+}
+
+fn large_project(root: Text) -> Result<void, Text> {
+    write_project(root)?
+    let output = toolchain::path_join(root, toolchain::executable_name("large program", toolchain::host_target()))
+    var arguments = testing::list("build")
+    arguments.push(root.clone())
+    arguments.push("-o")
+    arguments.push(output.clone())
+    let built = testing::invoke(move arguments, root)?
+    testing::expect(toolchain::clean_result(built), std::text::joined("large project build: ", built.stderr))?
+    var execution = Vec<Text>.new()
+    execution.push(output.clone())
+    let result = toolchain::capture(toolchain::command(move execution), root)?
+    return testing::expect(result.status == 42 && result.stdout.length() == 0 && result.stderr.length() == 0, "large project execution")
+}
+
+fn main() -> u32 {
+    let temporary = match toolchain::temporary(toolchain::temporary_directory()) {
+        Ok(value) => move value
+        Err(error) => {
+            toolchain::failure(error);
+            return 1
+        }
+    }
+    return testing::done(large_project(toolchain::temporary_path(temporary)))
+}

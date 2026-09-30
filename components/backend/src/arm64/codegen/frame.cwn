@@ -8,6 +8,8 @@ module arm64 {
         allocations: Vec<u64>
         registers: Vec<u32>
         saved: Vec<u64>
+        float_registers: Vec<u32>
+        float_saved: Vec<u64>
     }
 
     fn frame_new(function: ir::Function) -> Result<Frame, Text> {
@@ -19,7 +21,8 @@ module arm64 {
         validate_register_inputs(function)?
         var frame = Frame {
             size: 0, values: Vec<u64>.new(), copies: Vec<u64>.new(), allocations: Vec<u64>.new(),
-            registers: allocate_registers(function), saved: Vec<u64>.new()
+            registers: allocate_registers(function), saved: Vec<u64>.new(),
+            float_registers: allocate_register_class(function, true), float_saved: Vec<u64>.new()
         }
         frame_value_slots(frame, function, lifetimes)?
         for block in 0..function.blocks.length() {
@@ -34,7 +37,7 @@ module arm64 {
 
     fn frame_value_slots(frame: write Frame, function: ir::Function, lifetimes: Vec<FrameLifetime>) -> Result<void, Text> {
         for index in 0..function.values.length() {
-            let offset = if lifetimes[index].local || frame_register(frame, index) != REGISTER_SPILLED {
+            let offset = if lifetimes[index].local || frame_allocated(frame, index) {
                 18446744073709551615
             } else {
                 frame_reserve_value(frame, function, index)?

@@ -25,13 +25,13 @@ fn stage_integrity() -> Result<void, Text> {
 }
 
 fn saved_stage(root: Text) -> Result<void, Text> {
-    let source = testing::write_file(root, "stage-source", "#!/bin/sh\nexit 23\n")?
+    let source = testing::status_program(root, "stage-source", 23)?
     let output = toolchain::path_join(root, "stage-output")
     let stage = toolchain::Stage {
         assembly: "unused", binary: source.clone()
     }
     toolchain::save_stage(stage, output)?
-    testing::expect(std::text::equal(toolchain::read_text(output)?, toolchain::read_text(source)?), "saved stage preserves executable bytes")?
+    testing::expect(std::text::equal(toolchain::digest(output)?, toolchain::digest(source)?), "saved stage preserves executable bytes")?
     let result = toolchain::capture(toolchain::command(testing::list(output)), root)?
     testing::expect(result.status == 23, "saved stage is executable")?
     return rejected_stage(root)
@@ -142,7 +142,7 @@ fn backend_seed_removal(root: Text, path: Text) -> Result<void, Text> {
 }
 
 fn bootstrap_targets() -> Result<void, Text> {
-    let targets = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux")
+    let targets = testing::list("x86_64-macos|arm64-macos|x86_64-linux|arm64-linux|x86_64-windows|arm64-windows")
     for index in 0..targets.length() {
         bootstrap_target_flags(toolchain::parse_target(targets[index])?)?
     }
@@ -153,10 +153,25 @@ fn bootstrap_targets() -> Result<void, Text> {
 
 fn bootstrap_target_flags(target: toolchain::Target) -> Result<void, Text> {
     let flags = toolchain::bootstrap_flags(target)?
+    if target.platform == toolchain::Platform::Windows() {
+        return windows_bootstrap_flags(target, flags)
+    }
     if target.platform == toolchain::Platform::Macos() {
         return testing::expect(std::text::list_contains(flags, toolchain::architecture_name(target.architecture)), "bootstrap selects the requested macOS architecture")
     }
     testing::expect(std::text::list_contains(flags, "-no-pie"), "Linux bootstrap supports absolute assembly references")?
     testing::expect(std::text::list_contains(flags, "-Wl,--discard-all"), "Linux bootstrap excludes temporary object filenames")?
     return testing::expect(std::text::list_contains(flags, "-arch") == false, "Linux bootstrap uses the host compiler ABI")
+}
+
+fn windows_bootstrap_flags(target: toolchain::Target, flags: Vec<Text>) -> Result<void, Text> {
+    let triple = if target.architecture == toolchain::Architecture::Arm64() {
+        "--target=aarch64-pc-windows-msvc"
+    } else {
+        "--target=x86_64-pc-windows-msvc"
+    }
+    testing::expect(std::text::list_contains(flags, triple), "Windows bootstrap selects the native architecture")?
+    testing::expect(std::text::list_contains(flags, "-nostdlib") == false, "Windows bootstrap initializes the standard C runtime")?
+    testing::expect(std::text::list_contains(flags, "-Wl,/stack:8388608"), "Windows bootstrap preserves the native linker stack reserve")?
+    return testing::expect(std::text::list_contains(flags, "-Wl,/subsystem:console,/WX,/Brepro"), "Windows bootstrap uses reproducible native linking")
 }

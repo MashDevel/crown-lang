@@ -1,0 +1,89 @@
+module windows_runtime {
+    fn external(program: write ir::Program, name: Text, signature: take ir::Signature) -> Result<usize, Text> {
+        for index in 0..program.functions.length() {
+            if std::text::equal(program.functions[index].name, name) {
+                return existing_external(program, index, move signature)
+            }
+        }
+        return Ok(ir::program_add_function(program, ir::function_new(name.clone(), move signature, ir::LinkageImport())))
+    }
+
+    fn existing_external(program: write ir::Program, index: usize, signature: take ir::Signature) -> Result<usize, Text> {
+        let placeholder = placeholder_signature(program.functions[index].signature)
+        let compatible = placeholder || matching_signature(program.functions[index].signature, signature)
+        let name = program.functions[index].name.clone()
+        if ir::function_is_import(program.functions[index]) == false || compatible == false {
+            return Err(std::text::joined("incompatible Windows runtime import: ", name))
+        }
+        if placeholder {
+            program.functions[index] = ir::function_new(move name, move signature, ir::LinkageImport())
+            return Ok(index)
+        }
+        return Ok(index)
+    }
+
+    fn matching_signature(left: ir::Signature, right: ir::Signature) -> bool {
+        if left.result != right.result || left.parameters.length() != right.parameters.length() {
+            return false
+        }
+        if left.parameter_abi.length() != left.parameters.length() {
+            return false
+        }
+        match left.variadic_start {
+            Some(index) => {
+                index;
+                return false
+            }
+            None => {
+            }
+        }
+        for index in 0..left.parameters.length() {
+            if left.parameters[index] != right.parameters[index] {
+                return false
+            }
+            match read left.parameter_abi[index] {
+                ir::ParameterDirect => {
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    fn pointers(count: usize, result: ir::Type) -> ir::Signature {
+        var parameters = Vec<ir::Type>.new()
+        for index in 0..count {
+            index;
+            parameters.push(ir::TypePointer())
+        }
+        return ir::signature_new(move parameters, result)
+    }
+
+    fn pointer_call(program: write ir::Program, builder: write Builder, name: Text, argument: usize) -> Result<void, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(argument)
+        call(program, builder, name, move arguments, ir::TypeVoid())?;
+        return Ok(())
+    }
+
+    fn call(program: write ir::Program, code: write Builder, name: Text, arguments: take Vec<usize>, result: ir::Type) -> Result<Option<usize>, Text> {
+        var parameters = Vec<ir::Type>.new()
+        for index in 0..arguments.length() {
+            if arguments[index] >= code.function.values.length() {
+                return Err("Windows runtime call argument is outside its function")
+            }
+            parameters.push(code.function.values[arguments[index]])
+        }
+        let target = external(program, name, ir::signature_new(move parameters, result))?
+        return emit(code, ir::InstructionCall(target, move arguments, result))
+    }
+
+    fn call_value(program: write ir::Program, code: write Builder, name: Text, arguments: take Vec<usize>, result: ir::Type) -> Result<usize, Text> {
+        return match call(program, code, name, move arguments, result)? {
+            Some(value) => Ok(value)
+            None => Err("Windows runtime call requires a result")
+        }
+    }
+}

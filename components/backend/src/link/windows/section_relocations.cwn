@@ -1,0 +1,28 @@
+module pe {
+    fn section_relocation(kind: object::RelocationKind) -> bool {
+        return kind == object::RelocationSectionRelative32() || kind == object::RelocationSectionIndex16()
+    }
+
+    fn section_relocation_value(image: Image, object: object::CompilerObject, relocation: object::Relocation, value: i64) -> Result<i64, Text> {
+        let input = match object.symbols[relocation.symbol].section {
+            Some(section) => section
+            None => {
+                return Err("PE section relocation requires a defined symbol")
+            }
+        }
+        let section = image.section_map[input]
+        if relocation.kind == object::RelocationSectionIndex16() {
+            let index = link_binary::signed_add(i64.from(emitted_sections(image, section + 1)), relocation.addend)?
+            return unsigned_relocation(index, 65535)
+        }
+        let base = IMAGE_BASE + u64.from(image.sections[section].rva)
+        return unsigned_relocation(link_binary::signed_subtract(value, i64.from(base))?, 4294967295)
+    }
+
+    fn unsigned_relocation(value: i64, maximum: i64) -> Result<i64, Text> {
+        if value < 0 || value > maximum {
+            return Err("PE relocation exceeds unsigned field range")
+        }
+        return Ok(value)
+    }
+}

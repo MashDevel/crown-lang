@@ -64,10 +64,12 @@ module x86 {
     }
 
     fn assembly_append_symbol(output: write AssemblyOutput, name: Text) -> void {
-        if output.format == AssemblyFormat::MachO() {
-            output.text.push('_')
+        let symbol = if output.format == AssemblyFormat::MachO() {
+            std::text::joined("_", name)
+        } else {
+            name.clone()
         }
-        assembly_append_text(output, name)
+        assembly_append_text(output, object::assembly_symbol_name(symbol))
     }
 
     fn assembly_alignment_power(alignment: u64) -> u64 {

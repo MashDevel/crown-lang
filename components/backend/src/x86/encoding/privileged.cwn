@@ -34,6 +34,9 @@ module x86 {
                 output.push(1);
                 output.push(249)
             }
+            ReadThreadEnvironment(register) => {
+                emit_thread_environment(register, output)
+            }
             ReadMsr => {
                 output.push(15);
                 output.push(50)
@@ -44,6 +47,22 @@ module x86 {
             }
             _ => {
             }
+        }
+    }
+
+    fn emit_thread_environment(register: Register, output: write Vec<u8>) -> void {
+        let code = register_code(register)
+        output.push(101)
+        output.push(rex(code, 0, 0))
+        output.push(139)
+        output.push(modrm(0, code, 4))
+        output.push(37)
+        for index in 0..4 {
+            output.push(if index == 0 {
+                    48
+                } else {
+                    0
+                })
         }
     }
 

@@ -1,57 +1,6 @@
 module toolchain {
-    opaque resource Directory {
-        private handle: RawPtr<u8>
-        drop {
-            if handle != null() {
-                unsafe {
-                    raw_closedir(handle)
-                }
-            }
-        }
-    }
-
-    fn open_directory(path: Text) -> Result<Directory, Text> {
-        let encoded = cstring(path)?
-        unsafe {
-            let handle = raw_opendir(std::cstr::as_raw(encoded))
-            if handle == null() {
-                return Err(std::text::joined("could not open directory: ", path))
-            }
-            return Ok(Directory {
-                    handle: handle
-                })
-        }
-    }
-
-    fn is_directory(path: Text) -> bool {
-        match open_directory(path) {
-            Ok(directory) => {
-                directory;
-                return true
-            }
-            Err(error) => {
-                error;
-                return false
-            }
-        }
-    }
-
-    fn directory_next(directory: Directory) -> Result<Option<Text>, Text> {
-        unsafe {
-            raw_errno().write(0)
-            let entry = raw_readdir(directory.handle)
-            if entry != null() {
-                return Ok(Some(pointer_text(entry.offset(DIRECTORY_NAME_OFFSET))))
-            }
-            if raw_errno().read() != 0 {
-                return Err("could not read directory entry")
-            }
-        }
-        return Ok(None())
-    }
-
     fn directory_entries(path: Text) -> Result<Vec<Text>, Text> {
-        let directory = open_directory(path)?
+        var directory = open_directory(path)?
         var output = Vec<Text>.new()
         while true {
             match directory_next(directory)? {

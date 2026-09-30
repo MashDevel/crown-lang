@@ -8,9 +8,13 @@ module toolchain {
     }
 
     fn require_compiler(arguments: take Vec<Text>) -> Result<void, Text> {
-        var request = command(move arguments)
-        request.timeout = 0
-        return require_execution(request)
+        let temporary = temporary(temporary_directory())?
+        return require_execution(compiler_command(arguments, temporary_path(temporary))?)
+    }
+
+    fn capture_compiler(arguments: take Vec<Text>, directory: Text) -> Result<ProcessResult, Text> {
+        let temporary = temporary(temporary_directory())?
+        return capture(compiler_command(arguments, temporary_path(temporary))?, directory)
     }
 
     fn compiler_arguments(request: CompileRequest, command: Text) -> Vec<Text> {

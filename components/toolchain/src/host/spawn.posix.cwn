@@ -72,38 +72,15 @@ module toolchain {
         return Ok(pid[0])
     }
 
-    fn wait_process(pid: i32, timeout: u64) -> Result<i32, Text> {
-        let started = milliseconds()
-        var status = process_status_slot()
-        while true {
-            match poll_process(pid, status)? {
-                Some(value) => {
-                    return Ok(value)
-                }
-                None => {
-                }
-            }
-            if deadline_reached(started, timeout) {
-                unsafe {
-                    terminate_process(pid, status)
-                }
-                return Err("process timed out")
-            }
-            wait_briefly()
-        }
-        return Err("could not wait for process")
-    }
-
-    fn process_status_slot() -> Vec<i32> {
-        var status = Vec<i32>.new()
-        status.push(0)
-        return move status
-    }
-
-    fn poll_process(pid: i32, status: write Vec<i32>) -> Result<Option<i32>, Text> {
+    fn poll_process(process: write Process, status: write Vec<i32>) -> Result<Option<i32>, Text> {
         unsafe {
-            let result = raw_waitpid(pid, status.as_raw(), 1)
+            if process.active == false {
+                return Err("process has already been reaped")
+            }
+            let pid = process.pid
+            let result = raw_wait4(pid, status.as_raw(), 1, process.accounting.as_raw())
             if result == pid {
+                process.active = false
                 return Ok(Some(process_status(status[0])))
             }
             if result == 0 ||(result < 0 && raw_errno().read() == 4) {
@@ -113,12 +90,10 @@ module toolchain {
         return Err("could not wait for process")
     }
 
-    fn deadline_reached(started: u64, timeout: u64) -> bool {
-        return timeout != 0 && milliseconds() - started >= timeout
-    }
-
-    unsafe fn terminate_process(pid: i32, status: write Vec<i32>) -> void {
+    unsafe fn terminate_process(process: write Process, status: write Vec<i32>) -> void {
         unsafe {
+            let pid = process.pid
+            process.active = false
             raw_kill(-pid, 9);
             raw_kill(pid, 9);
             raw_waitpid(pid, status.as_raw(), 0)

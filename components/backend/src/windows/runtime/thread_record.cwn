@@ -1,0 +1,34 @@
+module windows_runtime {
+    const THREAD_HANDLE: u64 = 0
+    const THREAD_START: u64 = 8
+    const THREAD_ARGUMENT: u64 = 16
+    const THREAD_RESULT: u64 = 24
+    const THREAD_RECORD_SIZE: u64 = 32
+
+    fn thread_allocate(program: write ir::Program, code: write Builder) -> Result<usize, Text> {
+        let size = integer(code, ir::IntegerWidth64(), THREAD_RECORD_SIZE)
+        var arguments = Vec<usize>.new()
+        arguments.push(size)
+        let record = call_value(program, code, "malloc", move arguments, ir::TypePointer())?
+        require_nonnull(code, record, 12)?
+        let start = code.function.parameters[2]
+        let argument = code.function.parameters[3]
+        store(code, record, THREAD_START, start)?
+        store(code, record, THREAD_ARGUMENT, argument)?
+        return Ok(record)
+    }
+
+    fn thread_entry(program: write ir::Program) -> Result<usize, Text> {
+        let signature = pointers(1, ir::TypeInteger(ir::IntegerWidth32()))
+        var code = builder(ir::function_new("__crown_windows_thread_start", move signature, ir::LinkageLocal()))?
+        let record = code.function.parameters[0]
+        let start = load_pointer(code, record, THREAD_START)?
+        let argument = load_pointer(code, record, THREAD_ARGUMENT)?
+        var arguments = Vec<usize>.new()
+        arguments.push(argument)
+        let result = value(code, ir::InstructionCallIndirect(start, pointers(1, ir::TypePointer()), move arguments))?
+        store(code, record, THREAD_RESULT, result)?
+        return_status(code, 0)?
+        return Ok(ir::program_add_function(program, take_function(code)))
+    }
+}

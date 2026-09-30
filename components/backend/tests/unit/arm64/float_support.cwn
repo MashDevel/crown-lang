@@ -1,0 +1,67 @@
+fn float_constant(function: write ir::Function, value_type: ir::Type, narrow: u32, wide: u64) -> usize {
+    return ir::function_constant(function, value_type, if ir::type_is_float64(value_type) {
+            ir::ConstantFloat64(wide)
+        } else {
+            ir::ConstantFloat32(narrow)
+        })
+}
+
+fn float_chain(value_type: ir::Type) -> ir::Function {
+    var function = chain_function(32, value_type)
+    for index in 0..function.blocks[0].instructions.length() {
+        function.blocks[0].instructions[index].kind = ir::InstructionBinary(ir::BinaryFloatAdd(), index, index)
+    }
+    return move function
+}
+
+fn float_pressure_function(value_type: ir::Type) -> ir::Function {
+    var function = pressure_function(24)
+    for index in 0..function.values.length() {
+        function.values[index] = value_type
+    }
+    for index in 0..function.signature.parameters.length() {
+        function.signature.parameters[index] = value_type
+    }
+    function.signature.result = value_type
+    for index in 0..function.blocks[0].instructions.length() {
+        function.blocks[0].instructions[index].kind = ir::InstructionBinary(ir::BinaryFloatAdd(), if index == 0 {
+                0
+            } else {
+                23 + index
+            }, index + 1)
+    }
+    return move function
+}
+
+fn float_rotating_function(value_type: ir::Type) -> ir::Function {
+    var function = rotating_function()
+    function.signature.result = value_type
+    function.values[5] = value_type
+    function.values[6] = value_type
+    function.values[10] = value_type
+    function.values[11] = value_type
+    let one = float_constant(function, value_type, 1065353216, 4607182418800017408)
+    let two = float_constant(function, value_type, 1073741824, 4611686018427387904)
+    let ten = float_constant(function, value_type, 1092616192, 4621819117588971520)
+    for index in 0..2 {
+        var incoming = Vec<ir::PhiIncoming>.new()
+        incoming.push(ir::PhiIncoming {
+                block: 0, value: if index == 0 {
+                    one
+                } else {
+                    two
+                }
+            })
+        incoming.push(ir::PhiIncoming {
+                block: 2, value: if index == 0 {
+                    6
+                } else {
+                    5
+                }
+            })
+        function.blocks[1].instructions[index + 1].kind = ir::InstructionPhi(value_type, move incoming)
+    }
+    function.blocks[3].instructions[0].kind = ir::InstructionBinary(ir::BinaryFloatMultiply(), 5, ten)
+    function.blocks[3].instructions[1].kind = ir::InstructionBinary(ir::BinaryFloatAdd(), 10, 6)
+    return move function
+}

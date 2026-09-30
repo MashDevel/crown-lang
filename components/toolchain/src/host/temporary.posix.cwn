@@ -1,0 +1,35 @@
+module toolchain {
+    extern "c" {
+        fn raw_mkdtemp(path: RawPtr<u8>) -> RawPtr<u8> = "mkdtemp"
+    }
+
+    fn temporary(parent: Text) -> Result<Temporary, Text> {
+        make_directory(parent)?
+        let pattern = path_join(absolute(parent)?, "crown-XXXXXX")
+        var bytes = Vec<u8>.new()
+        loan read pattern as view {
+            for index in 0..view.length() {
+                bytes.push(view[index])
+            }
+        }
+        bytes.push(0)
+        unsafe {
+            let pointer = raw_mkdtemp(bytes.as_raw())
+            if pointer == null() {
+                return Err(std::text::joined("could not create temporary directory in: ", parent))
+            }
+            return Ok(Temporary {
+                    path: pointer_text(pointer)
+                })
+        }
+    }
+
+    fn temporary_directory() -> Text {
+        let value = environment("TMPDIR")
+        if value.length() != 0 {
+            return move value
+        }
+        return "/tmp"
+    }
+
+}

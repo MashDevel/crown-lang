@@ -1,0 +1,115 @@
+module windows_runtime {
+    fn prepare_variadic(program: write ir::Program) -> Result<void, Text> {
+        if has_printf_import(program) == false {
+            return Ok(())
+        }
+        let count = program.functions.length()
+        for index in 0..count {
+            var function = ir::function_copy(program.functions[index])
+            prepare_variadic_function(program, function)?
+            program.functions[index] = move function
+        }
+        return Ok(())
+    }
+
+    fn has_printf_import(program: ir::Program) -> bool {
+        for index in 0..program.functions.length() {
+            if ir::function_is_import(program.functions[index]) && std::text::equal(program.functions[index].name, "printf") {
+                return true
+            }
+        }
+        return false
+    }
+
+    fn printf_addresses(program: ir::Program, function: ir::Function) -> Vec<bool> {
+        var addresses = Vec<bool>.new()
+        for index in 0..function.values.length() {
+            index;
+            addresses.push(false)
+        }
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                record_printf_address(program, function.blocks[block].instructions[index], addresses)
+            }
+        }
+        return move addresses
+    }
+
+    fn record_printf_address(program: ir::Program, instruction: ir::Instruction, addresses: write Vec<bool>) -> void {
+        match printf_address_target(instruction.kind) {
+            Some(target) => {
+                match instruction.result {
+                    Some(result) => {
+                        addresses[result] = ir::function_is_import(program.functions[target]) && std::text::equal(program.functions[target].name, "printf")
+                    }
+                    None => {
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+    }
+
+    fn printf_address_target(kind: ir::InstructionKind) -> Option<usize> {
+        match read kind {
+            ir::InstructionMemory(memory) => {
+                match read memory {
+                    ir::MemoryFunctionAddress(target) => {
+                        return Some(target)
+                    }
+                    _ => {
+                        return None()
+                    }
+                }
+            }
+            _ => {
+                return None()
+            }
+        }
+    }
+
+    fn prepare_variadic_function(program: write ir::Program, function: write ir::Function) -> Result<void, Text> {
+        let addresses = printf_addresses(program, function)
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                prepare_variadic_site(program, function, block, index, addresses)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn prepare_variadic_site(program: write ir::Program, function: write ir::Function, block: usize, index: usize, addresses: Vec<bool>) -> Result<void, Text> {
+        let original = ir::instruction_copy(function.blocks[block].instructions[index])
+        match read original.kind {
+            ir::InstructionCallIndirect(address, signature, arguments) => {
+                if addresses[address] {
+                    let target = printf_wrapper(program, signature)?
+                    function.blocks[block].instructions[index].kind = ir::InstructionCall(target, ir::usize_values_copy(arguments), signature.result)
+                    redirect_printf_address(function, address, target)
+                }
+            }
+            _ => {
+            }
+        }
+        return Ok(())
+    }
+
+    fn printf_wrapper(program: write ir::Program, signature: ir::Signature) -> Result<usize, Text> {
+        let name = std::text::joined("crown_windows_printf_", std::text::decimal(u64.from(program.functions.length())))
+        let input = ir::function_new(move name, ir::signature_copy(signature), ir::LinkageLocal())
+        let function = console_printf(program, move input)?
+        return Ok(ir::program_add_function(program, move function))
+    }
+
+    fn redirect_printf_address(function: write ir::Function, address: usize, target: usize) -> void {
+        for block in 0..function.blocks.length() {
+            for index in 0..function.blocks[block].instructions.length() {
+                if function.blocks[block].instructions[index].result == Some(address) {
+                    function.blocks[block].instructions[index].kind = ir::InstructionFunctionAddress(target)
+                    return
+                }
+            }
+        }
+    }
+}

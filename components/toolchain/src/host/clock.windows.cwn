@@ -1,0 +1,18 @@
+module toolchain {
+    extern "c" {
+        fn raw_tick_count() -> u64 = "GetTickCount64"
+        fn raw_sleep(milliseconds: u32) -> void = "Sleep"
+    }
+
+    fn milliseconds() -> u64 {
+        unsafe {
+            return raw_tick_count()
+        }
+    }
+
+    fn wait_interval(milliseconds: u32) -> void {
+        unsafe {
+            raw_sleep(milliseconds)
+        }
+    }
+}

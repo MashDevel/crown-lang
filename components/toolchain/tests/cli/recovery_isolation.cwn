@@ -2,7 +2,7 @@ fn isolation(root: Text) -> Result<void, Text> {
     let repository = toolchain::path_join(root, "repository")
     let global = toolchain::path_join(root, "global-bootstrap")
     let sentinel = testing::write_file(global, "crown", "preserved bootstrap")?
-    let wrapper = testing::write_file(repository, "bootstrap/crown", "#!/bin/sh\nset -eu\nmkdir -p \"$CROWN_BOOTSTRAP_DIR\"\nprintf 'reference compiler' > \"$CROWN_BOOTSTRAP_DIR/crown\"\nprintf 'crown 0.1.0\\n'\n")?
+    let wrapper = testing::write_file(repository, testing_recovery::launcher_path(), testing_recovery::isolation_wrapper())?
     toolchain::executable(wrapper)?
     let previous_root = toolchain::environment("CROWN_ROOT")
     let previous_cache = toolchain::environment("CROWN_BOOTSTRAP_DIR")
@@ -31,7 +31,7 @@ fn main() -> u32 {
 
 fn verify_isolated_cache(root: Text, sentinel: Text, digest: Text) -> Result<void, Text> {
     testing::expect(std::text::equal(toolchain::read_text(sentinel)?, "preserved bootstrap"), "reference recovery preserves configured bootstrap")?
-    let reference = toolchain::path_join(root, "reference-bootstrap/crown")
+    let reference = toolchain::path_join(root, toolchain::executable_name("reference-bootstrap/crown", toolchain::host_target()))
     testing::expect(std::text::equal(toolchain::read_text(reference)?, "reference compiler"), "reference recovery uses owned temporary cache")?
     return testing::expect(std::text::equal(digest, toolchain::digest(reference)?), "reference recovery returns isolated compiler digest")
 }

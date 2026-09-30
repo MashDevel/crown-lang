@@ -4,14 +4,13 @@ module arm64 {
         if value_size(value_type)? == 16 {
             return wide_compare(function, compiler, operator, left, right)
         }
-        value_load(compiler, left, 9)
-        value_load(compiler, right, 10)
         if ir::compare_is_float(operator) {
-            let double = ir::type_is_float64(value_type)
-            emit_encoding(compiler, float_move_bits(0, 9, true, double))
-            emit_encoding(compiler, float_move_bits(1, 10, true, double))
-            emit_encoding(compiler, float_compare(0, 1, double))
+            let first = float_value_register(compiler, left, 0, value_type)?
+            let second = float_value_register(compiler, right, 1, value_type)?
+            emit_encoding(compiler, float_compare(first, second, ir::type_is_float64(value_type)))
         } else {
+            value_load(compiler, left, 9)
+            value_load(compiler, right, 10)
             normalize(compiler, value_type, 9, ir::compare_is_signed(operator))
             normalize(compiler, value_type, 10, ir::compare_is_signed(operator))
             emit_encoding(compiler, compare_word(9, 10))

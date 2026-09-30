@@ -1,31 +1,19 @@
 module coverage {
     fn runtime_assembly(bytes: u64, path: Text, target: toolchain::Target) -> Result<Text, Text> {
-        if target.architecture == toolchain::Architecture::Arm64() {
-            let object = arm64::instrumentation_object(bytes, path, false)?
-            let variant = if target.platform == toolchain::Platform::Macos() {
-                arm64::AbiVariant::Darwin()
-            } else {
-                arm64::AbiVariant::Aapcs64()
-            }
-            return arm64::assembly(object, "coverage", variant)
-        }
-        let object = runtime_object(bytes, path)?
-        let format = if target.platform == toolchain::Platform::Macos() {
-            x86::AssemblyFormat::MachO()
+        let object = if target.platform == toolchain::Platform::Windows() {
+            windows_runtime::instrumentation_object(bytes, path, target, false)?
         } else {
-            x86::AssemblyFormat::Elf()
-        }
-        return match x86::assembly_relocatable(object, format) {
-            Ok(value) => Ok(move value),
-            Err(error) => {
-                error;
-                Err("could not render coverage runtime")
+            if target.architecture == toolchain::Architecture::Arm64() {
+                arm64::instrumentation_object(bytes, path, false)?
+            } else {
+                runtime_object(bytes, path)?
             }
         }
+        return backend_assembly::render(object, target, "coverage")
     }
 
     fn runtime_object(bytes: u64, path: Text) -> Result<object::CompilerObject, Text> {
-        return instrumentation_object(bytes, path, runtime_hit(), "cannot initialize Crown coverage")
+        return instrumentation_object(bytes, path, runtime_hit(x86::Rdi()), "cannot initialize Crown coverage")
     }
 
     fn instrumentation_object(bytes: u64, path: Text, hit: take x86::Function, failure: Text) -> Result<object::CompilerObject, Text> {

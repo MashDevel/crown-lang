@@ -1,11 +1,5 @@
 module std {
     module dylib {
-        extern "c" {
-            fn raw_open(name: RawPtr<u8>, flags: i32) -> RawPtr<u8> = "dlopen"
-            fn raw_symbol(handle: RawPtr<u8>, name: RawPtr<u8>) -> RawPtr<u8> = "dlsym"
-            fn raw_close(handle: RawPtr<u8>) -> i32 = "dlclose"
-        }
-
         copy enum Error {
             InvalidName, Open, MissingSymbol
         }
@@ -34,9 +28,8 @@ module std {
         }
 
         unsafe fn open(name: Text, symbols: Vec<Text>) -> Result<Library, Error> {
-            let path = encoded(name)?
             unsafe {
-                let handle = raw_open(cstr::as_raw(path), 2)
+                let handle = open_handle(name)?
                 if handle == RawPtr<u8>.from_address(0) {
                     return Err(Error::Open())
                 }

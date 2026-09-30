@@ -1,4 +1,5 @@
-fn crown_host_command(arguments: Vec<Text>) -> Result<u32, Text> {
+fn crown_host_command(input: Vec<Text>) -> Result<u32, Text> {
+    let arguments = toolchain::compiler_response_arguments(input)?
     toolchain::configure_toolchain(arguments[0])?
     if arguments.length() > 1 && std::text::equal(arguments[1], "_launch") {
         toolchain::launch(arguments)?;

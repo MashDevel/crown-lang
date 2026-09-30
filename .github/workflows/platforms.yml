@@ -2,6 +2,9 @@ name: Native platforms
 on:
   workflow_call:
     inputs:
+      bootstrap_run:
+        type: string
+        default: ''
       release:
         type: boolean
         default: false
@@ -16,6 +19,7 @@ on:
         default: ''
 permissions:
   contents: read
+  actions: read
 jobs:
   native:
     name: ${{ matrix.host }}
@@ -37,8 +41,17 @@ jobs:
           - host: arm64-macos
             runner: macos-15
             jobs: 3
+          - host: x86_64-windows
+            runner: windows-2025
+            jobs: 3
+            suffix: .exe
+          - host: arm64-windows
+            runner: windows-11-arm
+            jobs: 3
+            suffix: .exe
     env:
       CROWN_ROOT: ${{ github.workspace }}
+      CROWN_COMPILER: target/bootstrap/crown${{ matrix.suffix }}
       CROWN_JOBS: ${{ matrix.jobs }}
       CROWN_CACHE_PATHS: |
         target/bootstrap
@@ -59,6 +72,7 @@ jobs:
           sudo sysctl -w kernel.core_pattern=core
           test "$(cat /proc/sys/kernel/core_pattern)" = core
       - name: Check host and bootstrap scripts
+        if: ${{ runner.os != 'Windows' }}
         id: host
         env:
           EXPECTED_HOST: ${{ matrix.host }}
@@ -66,9 +80,21 @@ jobs:
           test "$(sh bootstrap/host)" = "$EXPECTED_HOST"
           printf 'image=%s-%s\n' "$ImageOS" "$ImageVersion" >> "$GITHUB_OUTPUT"
           sh bootstrap/tests/run
+      - name: Check Windows host and bootstrap scripts
+        id: windows-host
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          "image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          foreach ($test in @('windows-host', 'windows-metadata', 'windows-assets')) {
+            $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "bootstrap/tests/$test.ps1")
+            if ($test -eq 'windows-host') { $arguments += @('-Expected', '${{ matrix.host }}') }
+            & powershell.exe @arguments
+            if ($LASTEXITCODE -ne 0) { throw "$test failed" }
+          }
       - name: Restore pinned bootstrap assets
         id: assets
-        if: ${{ !inputs.release }}
+        if: ${{ !inputs.release && !inputs.bootstrap_run }}
         timeout-minutes: 5
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
@@ -78,6 +104,7 @@ jobs:
             target/bootstrap-release
           key: seed-v2-${{ matrix.host }}-${{ hashFiles('bootstrap/locks/*.json', 'bootstrap/seed-release') }}
       - name: Fetch and verify bootstrap assets
+        if: ${{ runner.os != 'Windows' }}
         id: seed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,8 +112,26 @@ jobs:
           sh bootstrap/fetch
           compiler=$(sh bootstrap/fetch-compiler)
           printf 'compiler=%s\n' "$compiler" >> "$GITHUB_OUTPUT"
+      - name: Fetch and verify Windows bootstrap assets
+        if: ${{ runner.os == 'Windows' && !inputs.bootstrap_run }}
+        id: windows-seed
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $compiler = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File bootstrap/fetch.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows bootstrap download failed' }
+          "compiler=$compiler" >> $env:GITHUB_OUTPUT
+      - name: Download initial Windows bootstrap compiler
+        if: ${{ runner.os == 'Windows' && inputs.bootstrap_run != '' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: windows-compilers
+          path: target/bootstrap-initial
+          run-id: ${{ inputs.bootstrap_run }}
+          github-token: ${{ github.token }}
       - name: Save pinned bootstrap assets
-        if: ${{ !inputs.release && steps.assets.outputs.cache-hit != 'true' }}
+        if: ${{ !inputs.release && !inputs.bootstrap_run && steps.assets.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -102,30 +147,64 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: ${{ env.CROWN_CACHE_PATHS }}
-          key: builds-v1-${{ matrix.host }}-${{ steps.host.outputs.image }}-${{ hashFiles('components/**/*.cwn', 'components/**/Crown.toml', 'components/compiler/tests/cases.json', 'bootstrap/crown', 'bootstrap/digest.awk', 'bootstrap/locks/*.json', 'Crown.toml') }}
+          key: builds-v2-${{ matrix.host }}-${{ steps.host.outputs.image || steps.windows-host.outputs.image }}-${{ hashFiles('components/**/*.cwn', 'components/**/Crown.toml', 'components/compiler/tests/cases.json', 'bootstrap/*', 'bootstrap/locks/*.json', 'Crown.toml') }}
           restore-keys: |
-            builds-v1-${{ matrix.host }}-${{ steps.host.outputs.image }}-
+            builds-v2-${{ matrix.host }}-${{ steps.host.outputs.image || steps.windows-host.outputs.image }}-
       - name: Bootstrap compiler
+        if: ${{ runner.os != 'Windows' }}
         id: bootstrap
         env:
           VERIFY_BUILD: ${{ inputs.release || inputs.verify }}
           STARTING_COMPILER: ${{ steps.seed.outputs.compiler }}
         run: |
+          mkdir -p target/bootstrap
+          sh bootstrap/build-compiler "$STARTING_COMPILER" target/bootstrap/current
           if [ "$VERIFY_BUILD" = true ]; then
-            "$STARTING_COMPILER" bootstrap --force
+            target/bootstrap/current bootstrap --force
           else
-            "$STARTING_COMPILER" _launch --version
+            target/bootstrap/current _launch --version
           fi
+      - name: Bootstrap Windows compiler
+        if: ${{ runner.os == 'Windows' }}
+        id: windows-bootstrap
+        shell: pwsh
+        env:
+          STARTING_COMPILER: ${{ steps.windows-seed.outputs.compiler }}
+          INITIAL_BOOTSTRAP: ${{ inputs.bootstrap_run }}
+          VERIFY_BUILD: ${{ inputs.release || inputs.verify }}
+        run: |
+          if ($env:INITIAL_BOOTSTRAP) {
+            $env:STARTING_COMPILER = 'target/bootstrap-initial/crown-${{ startsWith(matrix.host, 'arm64') && 'arm64' || 'x86_64' }}.exe'
+          }
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File bootstrap/build-compiler.ps1 $env:STARTING_COMPILER target/bootstrap/current.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Native compiler build failed' }
+          if ($env:INITIAL_BOOTSTRAP) {
+            & target/bootstrap/current.exe refresh-seed
+            if ($LASTEXITCODE -ne 0) { throw 'Initial seed refresh failed' }
+          }
+          if ($env:VERIFY_BUILD -eq 'true') {
+            & target/bootstrap/current.exe bootstrap --force
+          } else {
+            & target/bootstrap/current.exe _launch --version
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Native compiler bootstrap failed' }
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File bootstrap/tests/windows-launcher.ps1 -Compiler $env:CROWN_COMPILER
+          if ($LASTEXITCODE -ne 0) { throw 'Windows launcher argument tests failed' }
       - name: Format and structural checks
         run: |
           mkdir -p target/ci
           sources=(components/compiler/src components/backend/src components/library/src components/toolchain/src)
           sources+=(components/compiler/tests/runner components/compiler/tests/harness components/compiler/tests/campaigns)
-          target/bootstrap/crown fmt "${sources[@]}" --check
-          target/bootstrap/crown lint components/compiler --output target/ci/metrics.json
-          target/bootstrap/crown lint components/compiler/tests/runner --output target/ci/runner-metrics.json
+          "$CROWN_COMPILER" fmt "${sources[@]}" --check
+          "$CROWN_COMPILER" lint components/compiler --output target/ci/metrics.json
+          "$CROWN_COMPILER" lint components/compiler/tests/runner --output target/ci/runner-metrics.json
+      - name: Native library and Unicode file tests
+        run: |
+          "$CROWN_COMPILER" build components/library/tests -o "target/ci/library-tests${{ matrix.suffix }}"
+          "target/ci/library-tests${{ matrix.suffix }}" 'target/ci/library-é中😀.bin'
       - name: Build allocation test tool
-        run: target/bootstrap/crown build components/compiler/tests/allocator -o target/toolchain/crown-allocation-auditor
+        run: |
+          "$CROWN_COMPILER" build components/compiler/tests/allocator -o target/toolchain/crown-allocation-auditor
       - name: Full test registry
         id: tests
         env:
@@ -136,7 +215,7 @@ jobs:
           if [ "$COLLECT_COVERAGE" = true ]; then
             arguments+=(--coverage target/ci/coverage)
           fi
-          target/bootstrap/crown test "${arguments[@]}"
+          "$CROWN_COMPILER" test "${arguments[@]}"
       - name: Verify Linux crash-report isolation
         if: ${{ !cancelled() && runner.os == 'Linux' && steps.tests.outcome != 'skipped' }}
         run: |
@@ -146,9 +225,10 @@ jobs:
           fi
       - name: Require coverage thresholds
         if: ${{ !cancelled() && inputs.coverage && steps.tests.outcome != 'skipped' }}
-        run: target/bootstrap/crown coverage target/ci/coverage --output target/ci/coverage.json
+        run: |
+          "$CROWN_COMPILER" coverage target/ci/coverage --output target/ci/coverage.json
       - name: Release stress campaigns
-        if: ${{ inputs.release }}
+        if: ${{ inputs.release && runner.os != 'Windows' }}
         timeout-minutes: 15
         run: |
           ulimit -c 0
@@ -169,12 +249,24 @@ jobs:
           monitor > >(tee target/ci/stress-monitor.log) 2>&1 &
           monitor_pid=$!
           trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
-          target/bootstrap/crown release --seed 20260928 --jobs "$CROWN_JOBS" --output target/ci/release 2>&1 | tee target/ci/stress.log
+          "$CROWN_COMPILER" release --seed 20260928 --jobs "$CROWN_JOBS" --output target/ci/release 2>&1 | tee target/ci/stress.log
+      - name: Windows release stress campaigns
+        if: ${{ inputs.release && runner.os == 'Windows' }}
+        timeout-minutes: 15
+        run: |
+          mkdir -p target/ci/release
+          "$CROWN_COMPILER" release --seed 20260928 --jobs "$CROWN_JOBS" --output target/ci/release 2>&1 | tee target/ci/stress.log
       - name: Refresh and package release
         if: ${{ inputs.release }}
         run: |
-          target/bootstrap/crown refresh-seed
+          "$CROWN_COMPILER" refresh-seed
           sh bootstrap/package-release target/dist
+      - name: Verify Windows distribution downloads
+        if: ${{ inputs.release && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File bootstrap/tests/windows-distribution.ps1 -Assets target/dist
+          if ($LASTEXITCODE -ne 0) { throw 'Windows distribution download tests failed' }
       - name: Upload release assets
         if: ${{ inputs.release }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -197,7 +289,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Save compiler and test executables
-        if: ${{ !cancelled() && !inputs.release && steps.bootstrap.outcome == 'success' && steps.builds.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && !inputs.release && (steps.bootstrap.outcome == 'success' || steps.windows-bootstrap.outcome == 'success') && steps.builds.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25

@@ -1,0 +1,35 @@
+extern "c" {
+    fn formatted_output(format: RawPtr<u8>,...number: i8, fraction: f32, text: RawPtr<u8>, wide: i64) -> i32 = "printf"
+}
+
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() != 3 {
+        return 1
+    }
+    if arguments[1].length() != 11 || arguments[2].length() != 0 {
+        return 2
+    }
+    loan read arguments[1] as bytes {
+        if bytes[0] != 104 || bytes[6] != 240 || bytes[10] != 33 {
+            return 3
+        }
+    }
+    var values = Vec<u64>.new()
+    for index in 0..100 {
+        values.push(u64.from(index))
+    }
+    var sum: u64 = 0
+    for index in 0..values.length() {
+        sum = sum + values[index]
+    }
+    if sum != 4950 {
+        return 4
+    }
+    print(u32.from(sum))
+    unsafe {
+        if formatted_output("%d %.1f %s %lld\n\0".as_raw(), -8, 1.5, "ok\0".as_raw(), 2147483648) != 21 {
+            return 5
+        }
+    }
+    return 42
+}

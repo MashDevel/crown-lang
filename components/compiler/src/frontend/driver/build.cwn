@@ -18,6 +18,9 @@ module frontend {
         if options.target.platform == toolchain::Platform::Linux() {
             return linux_executable(move object, options)
         }
+        if options.target.platform == toolchain::Platform::Windows() {
+            return windows_executable(move object, options)
+        }
         append_external_objects(object, options.objects)?
         let bytes = macho::executable(object, macho::libraries(options.links)?)?
         return write_native_executable(options.output, bytes)
@@ -54,7 +57,7 @@ module frontend {
                     }
                     Ok(value) => {
                         var object = move value
-                        append_coverage(object, directory, bytes)?
+                        append_coverage(object, directory, bytes, target)?
                         return Ok(move object)
                     }
                 }

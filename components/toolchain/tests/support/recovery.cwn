@@ -1,20 +1,27 @@
 module testing_recovery {
     fn launcher(root: Text, cache: Text) -> Result<toolchain::ProcessResult, Text> {
         let repository = toolchain::repository_root()?
-        var arguments = Vec<Text>.new()
-        arguments.push("/usr/bin/env")
-        arguments.push("CROWN_JOBS=4")
-        arguments.push(std::text::joined("CROWN_BOOTSTRAP_DIR=", cache))
-        arguments.push(toolchain::path_join(repository, "bootstrap/crown"));
-        arguments.push("--version")
-        return testing::capture_compiler(move arguments, root)
+        return capture_launcher(repository, cache, root, true)
     }
 
     fn current_digest(root: Text) -> Result<Text, Text> {
         let cache = toolchain::path_join(root, "reference-bootstrap")
         let current = launcher(root, cache)?
         testing::expect(current.status == 0, "current checkout compiler")?
-        return toolchain::digest(toolchain::path_join(cache, "crown"))
+        return toolchain::digest(toolchain::path_join(cache, toolchain::executable_name("crown", toolchain::host_target())))
     }
 
+    fn capture_launcher(repository: Text, cache: Text, root: Text, compiler: bool) -> Result<toolchain::ProcessResult, Text> {
+        let previous = toolchain::environment("CROWN_BOOTSTRAP_DIR")
+        toolchain::set_environment("CROWN_BOOTSTRAP_DIR", cache)?
+        var arguments = launcher_arguments(repository)
+        arguments.push("--version")
+        let result = if compiler {
+            testing::capture_compiler(move arguments, root)
+        } else {
+            toolchain::capture(toolchain::command(move arguments), root)
+        }
+        toolchain::set_environment("CROWN_BOOTSTRAP_DIR", previous)?
+        return move result
+    }
 }

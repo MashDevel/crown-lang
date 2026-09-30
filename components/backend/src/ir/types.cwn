@@ -39,6 +39,7 @@ module ir {
     }
 
     struct Signature {
+        calling_convention: CallingConvention
         parameters: Vec<Type>
         result: Type
         parameter_abi: Vec<ParameterAbi>
@@ -262,6 +263,7 @@ module ir {
             index = index + 1
         }
         return Signature {
+            calling_convention: CallingConvention::Default(),
             parameters: move parameters, result: result, parameter_abi: move parameter_abi,
             signed_parameters: Vec<usize>.new(), result_signed: false, variadic_start: None()
         }

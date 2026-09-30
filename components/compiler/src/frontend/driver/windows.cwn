@@ -1,0 +1,41 @@
+module frontend {
+    fn windows_executable(input: take object::CompilerObject, options: toolchain::Options) -> Result<u32, Text> {
+        var object = move input
+        for index in 0..options.objects.length() {
+            let external = coff::read_object(toolchain::read_bytes(options.objects[index])?)?
+            link_object::merge(object, move external)?
+        }
+        if options.links.length() != 0 {
+            return Err("Windows external libraries require DLL export resolution")
+        }
+        let bytes = pe::executable(object, pe::system_imports())?
+        toolchain::write_bytes(options.output, bytes)?
+        return Ok(0)
+    }
+
+    fn prepare_windows(program: write ir::Program, target: toolchain::Target) -> Result<void, u32> {
+        if target.platform != toolchain::Platform::Windows() {
+            return Ok(())
+        }
+        match windows_runtime::startup(program) {
+            Err(error) => {
+                toolchain::failure(error)
+                return Err(255)
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        if target.architecture == toolchain::Architecture::X86_64() {
+            match x86::windows_program(program) {
+                Err(error) => {
+                    return Err(codegen_error(error))
+                }
+                Ok(value) => {
+                    value;
+                }
+            }
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,42 @@
+fn response_round_trip(root: Text) -> Result<void, Text> {
+    var arguments = testing::list("compiler|_executable|| spaces \"quoted\"|C:\\路径\\😀\\tail\\")
+    for index in 0..2000 {
+        arguments.push(std::text::joined("long source path with spaces 😀/", std::text::decimal(u64.from(index))))
+    }
+    let encoded = toolchain::compiler_response_text(arguments)
+    testing::expect(encoded.length() > 32767, "response exceeds Windows command-line limit")?
+    let request = toolchain::compiler_command(arguments, root)?
+    testing::expect(request.arguments.length() == 3 && request.timeout == 0, "bounded compiler command with no build deadline")?
+    let decoded = toolchain::compiler_response_arguments(request.arguments)?
+    return testing::expect(testing::equal_lists(arguments, decoded), "lossless compiler argument transport")
+}
+
+fn response_errors(root: Text) -> Result<void, Text> {
+    testing::error(toolchain::compiler_command(Vec<Text>.new(), root))?
+    testing::error(toolchain::compiler_command(testing::list("compiler"), root))?
+    testing::error(toolchain::compiler_command(testing::list("compiler|check"), toolchain::path_join(root, "missing")))?
+    let path = toolchain::path_join(root, "invalid.json")
+    var invocation = testing::list("compiler|_arguments")
+    testing::error(toolchain::compiler_response_arguments(invocation))?
+    invocation.push(path.clone())
+    testing::error(toolchain::compiler_response_arguments(invocation))?
+    let invalid = ["{}", "[]", "[1]", "[\"compile\",\"bad\\u0000argument\"]", "["]
+    for index in 0..5 {
+        toolchain::write_text(path, invalid[index])?
+        testing::error(toolchain::compiler_response_arguments(invocation))?
+    }
+    return Ok(())
+}
+
+fn run() -> Result<void, Text> {
+    let direct = testing::list("compiler|--version")
+    testing::expect(testing::equal_lists(direct, toolchain::compiler_response_arguments(direct)?), "direct invocation preserved")?
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    response_round_trip(root)?
+    return response_errors(root)
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}

@@ -1,0 +1,132 @@
+fn formatted_type(index: usize) -> ir::Type {
+    return match index % 4 {
+        0 => ir::TypeInteger(ir::IntegerWidth32())
+        1 => ir::TypeFloat(ir::FloatWidth64())
+        2 => ir::TypeInteger(ir::IntegerWidth64())
+        _ => ir::TypePointer()
+    }
+}
+
+fn formatted_bits(index: usize) -> u64 {
+    return match index % 4 {
+        1 => 4609434218613702656
+        3 => 0
+        _ => 42
+    }
+}
+
+fn formatted_constant(index: usize) -> ir::Constant {
+    return match index % 4 {
+        1 => ir::ConstantFloat64(formatted_bits(index))
+        3 => ir::ConstantNull()
+        _ => ir::ConstantInteger(formatted_bits(index))
+    }
+}
+
+fn formatted_signature(count: usize) -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypePointer())
+    for index in 0..count {
+        parameters.push(formatted_type(index))
+    }
+    var signature = ir::signature_new(move parameters, ir::TypeInteger(ir::IntegerWidth32()))
+    signature.variadic_start = Some(1)
+    return move signature
+}
+
+fn formatted_mock(code: write windows_runtime::Builder, count: usize) -> Result<void, Text> {
+    if std::text::equal(code.function.name, "__acrt_iob_func") {
+        let pointer = windows_runtime::null_pointer(code)
+        return windows_runtime::finish(code, ir::TerminatorReturn(Some(pointer)))
+    }
+    let list = code.function.parameters[4]
+    for index in 0..count {
+        let width = if index % 4 == 0 {
+            ir::IntegerWidth32()
+        } else {
+            ir::IntegerWidth64()
+        }
+        let address = windows_runtime::offset(code, list, u64.from(index) * 8)?
+        let actual = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypeInteger(width), 8, false))?
+        let expected = windows_runtime::integer(code, width, formatted_bits(index))
+        let valid = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), actual, expected))?
+        windows_runtime::require_condition(code, valid, 1)?
+    }
+    return windows_runtime::return_status(code, 7)
+}
+
+fn formatted_caller(count: usize, indirect: bool) -> Result<ir::Function, Text> {
+    var code = windows_runtime::builder(ir::function_new("formatted_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    var arguments = Vec<usize>.new()
+    arguments.push(windows_runtime::null_pointer(code))
+    for index in 0..count {
+        let constant = formatted_constant(index)
+        arguments.push(ir::function_constant(code.function, formatted_type(index), constant))
+    }
+    let call = if indirect {
+        let address = windows_runtime::value(code, ir::InstructionFunctionAddress(0))?
+        ir::InstructionCallIndirect(address, formatted_signature(count), move arguments)
+    } else {
+        ir::InstructionCall(0, move arguments, ir::TypeInteger(ir::IntegerWidth32()))
+    }
+    let result = windows_runtime::value(code, move call)?
+    let expected = windows_runtime::integer(code, ir::IntegerWidth32(), 7)
+    let valid = windows_runtime::value(code, ir::InstructionCompare(ir::CompareEqual(), result, expected))?
+    windows_runtime::require_condition(code, valid, 1)?
+    windows_runtime::return_status(code, 0)?
+    return Ok(windows_runtime::take_function(code))
+}
+
+fn formatted_program(count: usize, indirect: bool) -> Result<ir::Program, Text> {
+    var program = ir::program_new()
+    let signature = if indirect {
+        windows_runtime::pointers(0, ir::TypeVoid())
+    } else {
+        formatted_signature(count)
+    }
+    ir::program_add_function(program, ir::function_new("printf", move signature, ir::LinkageImport()))
+    program.entry = Some(ir::program_add_function(program, formatted_caller(count, indirect)?))
+    windows_runtime::prepare(program)?
+    for index in 0..program.functions.length() {
+        if ir::function_is_import(program.functions[index]) && std::text::equal(program.functions[index].name, "printf") == false {
+            var code = windows_runtime::builder(ir::function_copy(program.functions[index]))?
+            formatted_mock(code, count)?
+            program.functions[index] = windows_runtime::take_function(code)
+        }
+    }
+    runtime_validate(program)?
+    return Ok(move program)
+}
+
+fn formatted_rejections() -> Result<void, Text> {
+    var signature = formatted_signature(1)
+    signature.parameters[0] = ir::TypeInteger(ir::IntegerWidth64())
+    testing::expect(windows_runtime::printf_signature(signature) == false, "printf requires a format pointer")?
+    signature = formatted_signature(1)
+    signature.result = ir::TypeVoid()
+    testing::expect(windows_runtime::printf_signature(signature) == false, "printf returns a C int")?
+    signature = formatted_signature(1)
+    signature.parameters[1] = ir::TypeInteger(ir::IntegerWidth128())
+    var program = ir::program_new()
+    ir::program_add_function(program, ir::function_new("printf", move signature, ir::LinkageImport()))
+    testing::error(windows_runtime::prepare(program))?
+    return testing::expect(windows_runtime::printf_signature(windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32()))) == false, "printf rejects a missing format")
+}
+
+fn formatted_tests() -> Result<void, Text> {
+    let counts: [usize; 3] = [0, 2, 8]
+    for index in 0..3 {
+        match runtime_execute_program(formatted_program(counts[index], false)?) {
+            Ok(done) => {
+                done;
+            }
+            Err(error) => {
+                return Err(std::text::joined(std::text::decimal(u64.from(counts[index])), std::text::joined(" printf arguments: ", error)))
+            }
+        }
+    }
+    for index in 0..3 {
+        runtime_execute_program(formatted_program(counts[index], true)?)?
+    }
+    return formatted_rejections()
+}

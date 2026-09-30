@@ -1,0 +1,107 @@
+fn child(arguments: Arguments) -> u32 {
+    if std::text::equal(arguments[1], "wait") {
+        let started = toolchain::milliseconds()
+        while toolchain::milliseconds() - started < 60000 {
+            toolchain::wait_briefly()
+        }
+        return 5
+    }
+    if arguments.length() != 6 {
+        return 1
+    }
+    let expected = ["echo", " spaces \"", "tail\\", "", "😀"]
+    for index in 0..5 {
+        if std::text::equal(arguments[index + 1], expected[index]) == false {
+            return 2
+        }
+    }
+    toolchain::write_stream(1, "hello 😀\n")
+    toolchain::write_stream(2, "error stream\n")
+    return 37
+}
+
+fn check(condition: bool, message: Text) -> Result<void, Text> {
+    if condition == false {
+        return Err(message.clone())
+    }
+    return Ok(())
+}
+
+fn filesystem(root: Text) -> Result<void, Text> {
+    let directory = toolchain::path_join(root, "é中😀")
+    toolchain::make_directory(directory)?
+    let source = toolchain::path_join(directory, "data.txt")
+    let target = toolchain::path_join(directory, "renamed.txt")
+    toolchain::write_text(source, "Unicode 😀\n")?
+    check(std::text::equal(toolchain::read_text(source)?, "Unicode 😀\n"), "Unicode file round trip")?
+    toolchain::write_text(target, "old")?
+    toolchain::rename_file(source, target)?
+    check(toolchain::exists(source) == false, "rename removes source")?
+    let entries = toolchain::directory_entries(directory)?
+    check(entries.length() == 1 && std::text::equal(entries[0], target), "directory enumeration")?
+    let lock = toolchain::lock_file(toolchain::path_join(directory, "lock"))?
+    lock;
+    toolchain::remove_file(target)?
+    return check(toolchain::exists(target) == false, "file deletion")
+}
+
+fn processes(root: Text, executable: Text) -> Result<void, Text> {
+    var arguments = Vec<Text>.new()
+    arguments.push(executable.clone())
+    let values = ["echo", " spaces \"", "tail\\", "", "😀"]
+    for index in 0..5 {
+        arguments.push(values[index].clone())
+    }
+    let result = toolchain::capture(toolchain::command(move arguments), root)?
+    check(result.status == 37, "child exit code and argument quoting")?
+    check(std::text::equal(result.stdout, "hello 😀\n"), "redirected stdout")?
+    check(std::text::equal(result.stderr, "error stream\n"), "redirected stderr")?
+    var timeout_arguments = Vec<Text>.new()
+    timeout_arguments.push(executable.clone())
+    timeout_arguments.push("wait")
+    var request = toolchain::command(move timeout_arguments)
+    request.timeout = 50
+    let started = toolchain::milliseconds()
+    match toolchain::capture(request, root) {
+        Ok(value) => {
+            value;
+            return Err("child should time out")
+        }
+        Err(error) => {
+            check(std::text::contains(error, "timed out"), "timeout diagnostic")?
+        }
+    }
+    return check(toolchain::milliseconds() - started < 5000, "bounded process timeout")
+}
+
+fn run(executable: Text) -> Result<void, Text> {
+    path_roots()?
+    clock_checks()?
+    let temporary = toolchain::temporary(toolchain::temporary_directory())?
+    let root = toolchain::temporary_path(temporary)
+    filesystem(root)?
+    links(root)?
+    toolchain::set_environment("CROWN_WINDOWS_TEST_😀", "é中😀")?
+    check(std::text::equal(toolchain::environment("CROWN_WINDOWS_TEST_😀"), "é中😀"), "Unicode environment")?
+    processes(root, executable)?
+    let copied = toolchain::path_join(root, "extensionless executable 😀")
+    toolchain::copy_file(executable, copied)?
+    toolchain::executable(copied)?
+    return processes(root, copied)
+}
+
+fn main(arguments: Arguments) -> u32 {
+    if arguments.length() > 1 {
+        return child(arguments)
+    }
+    match run(arguments[0].clone()) {
+        Ok(value) => {
+            value;
+            return 0
+        }
+        Err(error) => {
+            toolchain::failure(error)
+            return 1
+        }
+    }
+}

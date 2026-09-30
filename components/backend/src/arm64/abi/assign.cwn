@@ -1,6 +1,9 @@
 module arm64 {
     fn abi_argument(state: write AbiState, value: AbiValue, variadic: bool) -> Result<AbiArgument, Text> {
         abi_validate(value)?
+        if state.variant == AbiVariant::Windows() && variadic {
+            return abi_windows_variadic(state, value)
+        }
         let indirect = value.kind == AbiKind::Aggregate() && value.size > 16
         let actual = if indirect {
             AbiValue {
@@ -34,7 +37,7 @@ module arm64 {
 
     fn abi_general(state: write AbiState, value: AbiValue) -> Result<AbiLocation, Text> {
         let count = u32.from((value.size + 7) / 8)
-        if state.variant == AbiVariant::Aapcs64() && value.alignment >= 16 {
+        if state.variant != AbiVariant::Darwin() && value.alignment >= 16 {
             state.integer = (state.integer + 1) & 4294967294
         }
         if count <= 8 - state.integer {
@@ -59,7 +62,7 @@ module arm64 {
     fn abi_stack(state: write AbiState, value: AbiValue, variadic: bool) -> Result<AbiLocation, Text> {
         var alignment = u64.from(value.alignment)
         var size = value.size
-        if state.variant == AbiVariant::Aapcs64() || variadic {
+        if state.variant != AbiVariant::Darwin() || variadic {
             if alignment < 8 {
                 alignment = 8
             }

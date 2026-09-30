@@ -1,0 +1,26 @@
+module x86 {
+    fn codegen_windows_wide_return(program: ir::Program, compiler: write FunctionCompiler, value: usize) -> Result<void, CodegenError> {
+        codegen_load_wide(program, compiler, WideValueAccess {
+                value: value, registers: WideRegisters {
+                    low: Rax(), high: R10()
+                }
+            })?
+        codegen_emit(compiler, SubtractImmediate(Rsp(), 16))
+        codegen_emit(compiler, Store(Rsp(), 0, Rax()))
+        codegen_emit(compiler, Store(Rsp(), 8, R10()))
+        codegen_emit(compiler, LoadPackedFloat(LoadFloatMemoryArgs {
+                    width: Float64(), destination: Xmm0(), base: Rsp(), offset: 0
+                }))
+        codegen_emit(compiler, AddImmediate(Rsp(), 16))
+        return Ok(())
+    }
+
+    fn codegen_windows_wide_result(compiler: write FunctionCompiler, result: Option<usize>) -> Result<void, CodegenError> {
+        match result {
+            Some(value) => codegen_store_vector(compiler, FloatValueAccess {
+                    value: value, register: Xmm0()
+                })
+            None => Ok(())
+        }
+    }
+}

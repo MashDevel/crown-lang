@@ -1,0 +1,61 @@
+module guest {
+    extern "c" {
+        fn raw_socket(domain: i32, kind: i32, protocol: i32) -> i32 = "socket"
+        fn raw_connect(socket: i32, address: RawPtr<u8>, length: u32) -> i32 = "connect"
+        fn raw_recv(socket: i32, data: RawPtr<u8>, length: usize, flags: i32) -> isize = "recv"
+        fn raw_send(socket: i32, data: RawPtr<u8>, length: usize, flags: i32) -> isize = "send"
+        fn raw_option(socket: i32, level: i32, name: i32, value: RawPtr<u64>, length: u32) -> i32 = "setsockopt"
+        fn raw_close(socket: i32) -> i32 = "close"
+    }
+
+    fn native_socket_create() -> Result<u64, Text> {
+        unsafe {
+            let descriptor = raw_socket(1, 1, 0)
+            if descriptor < 0 {
+                return Err("could not create guest socket")
+            }
+            return Ok(u64.from(descriptor))
+        }
+    }
+
+    fn native_socket_close(descriptor: u64) -> void {
+        unsafe {
+            if descriptor != 18446744073709551615 {
+                raw_close(i32.from(descriptor));
+            }
+        }
+    }
+
+    fn native_socket_connect(descriptor: u64, address: Vec<u8>) -> i32 {
+        unsafe {
+            return raw_connect(i32.from(descriptor), address.as_raw(), u32.from(address.length()))
+        }
+    }
+
+    unsafe fn native_socket_send(descriptor: u64, data: RawPtr<u8>, length: usize) -> isize {
+        unsafe {
+            return raw_send(i32.from(descriptor), data, length, NO_SIGNAL)
+        }
+    }
+
+    unsafe fn native_socket_receive(descriptor: u64, data: RawPtr<u8>, length: usize) -> isize {
+        unsafe {
+            return raw_recv(i32.from(descriptor), data, length, 0)
+        }
+    }
+
+    fn native_socket_timeout(descriptor: u64) -> Result<void, Text> {
+        var timeout = Vec<u64>.new()
+        timeout.push(30)
+        timeout.push(0)
+        unsafe {
+            if raw_option(i32.from(descriptor), SOCKET_LEVEL, RECEIVE_TIMEOUT, timeout.as_raw(), 16) != 0 {
+                return Err("could not set guest receive timeout")
+            }
+            if raw_option(i32.from(descriptor), SOCKET_LEVEL, SEND_TIMEOUT, timeout.as_raw(), 16) != 0 {
+                return Err("could not set guest send timeout")
+            }
+        }
+        return Ok(())
+    }
+}

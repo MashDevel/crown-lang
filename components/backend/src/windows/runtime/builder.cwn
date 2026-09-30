@@ -1,0 +1,72 @@
+module windows_runtime {
+    struct Builder {
+        function: ir::Function, block: usize
+    }
+
+    fn builder(input: take ir::Function) -> Result<Builder, Text> {
+        var function = move input
+        if ir::function_is_import(function) {
+            function.linkage = ir::LinkageLocal()
+        }
+        let block = match ir::function_add_block(function) {
+            Ok(value) => value
+            Err(error) => {
+                error;
+                return Err("could not create Windows runtime block")
+            }
+        }
+        return Ok(Builder {
+                function: move function, block: block
+            })
+    }
+
+    fn emit(builder: write Builder, instruction: take ir::InstructionKind) -> Result<Option<usize>, Text> {
+        return match ir::function_append(builder.function, builder.block, move instruction) {
+            Ok(value) => Ok(value)
+            Err(error) => {
+                error;
+                Err("could not create Windows runtime instruction")
+            }
+        }
+    }
+
+    fn value(builder: write Builder, instruction: take ir::InstructionKind) -> Result<usize, Text> {
+        return match emit(builder, move instruction)? {
+            Some(result) => Ok(result)
+            None => Err("Windows runtime instruction requires a result")
+        }
+    }
+
+    fn finish(builder: write Builder, terminator: take ir::Terminator) -> Result<void, Text> {
+        return match ir::function_terminate(builder.function, builder.block, move terminator) {
+            Ok(result) => Ok(result)
+            Err(error) => {
+                error;
+                Err("could not finish Windows runtime block")
+            }
+        }
+    }
+
+    fn new_block(builder: write Builder) -> Result<usize, Text> {
+        return match ir::function_add_block(builder.function) {
+            Ok(result) => Ok(result)
+            Err(error) => {
+                error;
+                Err("could not create Windows runtime branch")
+            }
+        }
+    }
+
+    fn integer(builder: write Builder, width: ir::IntegerWidth, number: u64) -> usize {
+        return ir::function_constant(builder.function, ir::TypeInteger(width), ir::ConstantInteger(number))
+    }
+
+    fn return_status(builder: write Builder, status: u64) -> Result<void, Text> {
+        let result = integer(builder, ir::IntegerWidth32(), status)
+        return finish(builder, ir::TerminatorReturn(Some(result)))
+    }
+
+    fn take_function(builder: write Builder) -> ir::Function {
+        return replace(builder.function, ir::function_new("", ir::signature_new(Vec<ir::Type>.new(), ir::TypeVoid()), ir::LinkageLocal()))
+    }
+}

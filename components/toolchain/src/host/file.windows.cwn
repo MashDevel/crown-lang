@@ -1,0 +1,101 @@
+module toolchain {
+    extern "c" {
+        fn raw_file_attributes(path: RawPtr<u16>) -> u32 = "GetFileAttributesW"
+        fn raw_create_directory(path: RawPtr<u16>, security: RawPtr<u8>) -> i32 = "CreateDirectoryW"
+        fn raw_delete_file(path: RawPtr<u16>) -> i32 = "DeleteFileW"
+        fn raw_remove_directory(path: RawPtr<u16>) -> i32 = "RemoveDirectoryW"
+        fn raw_move_file(source: RawPtr<u16>, destination: RawPtr<u16>, flags: u32) -> i32 = "MoveFileExW"
+        fn raw_last_error() -> u32 = "GetLastError"
+        fn raw_close_handle(handle: RawPtr<u8>) -> i32 = "CloseHandle"
+    }
+
+    fn file_attributes(path: Text) -> u32 {
+        match wstring(path) {
+            Err(error) => {
+                error;
+                return 4294967295
+            }
+            Ok(encoded) => {
+                unsafe {
+                    return raw_file_attributes(std::wstr::as_raw(encoded))
+                }
+            }
+        }
+    }
+
+    fn exists(path: Text) -> bool {
+        return file_attributes(path) != 4294967295
+    }
+
+    fn is_directory(path: Text) -> bool {
+        let attributes = file_attributes(path)
+        return attributes != 4294967295 && attributes & 16 != 0
+    }
+
+    fn make_directory(path: Text) -> Result<void, Text> {
+        if is_directory(path) {
+            return Ok(())
+        }
+        let parent = parent_path(path)
+        if std::text::equal(parent, path) == false {
+            make_directory(parent)?
+        }
+        let encoded = wstring(path)?
+        unsafe {
+            if raw_create_directory(std::wstr::as_raw(encoded), null()) != 0 {
+                return Ok(())
+            }
+        }
+        if is_directory(path) {
+            return Ok(())
+        }
+        return Err(std::text::joined("could not create directory: ", path))
+    }
+
+    fn remove_file(path: Text) -> Result<void, Text> {
+        let encoded = wstring(path)?
+        unsafe {
+            let attributes = raw_file_attributes(std::wstr::as_raw(encoded))
+            let removed = if attributes != 4294967295 && attributes & 1040 == 1040 {
+                raw_remove_directory(std::wstr::as_raw(encoded))
+            } else {
+                raw_delete_file(std::wstr::as_raw(encoded))
+            }
+            if removed == 0 {
+                return Err(std::text::joined("could not remove file: ", path))
+            }
+        }
+        return Ok(())
+    }
+
+    fn remove_directory(path: Text) -> void {
+        match wstring(path) {
+            Ok(encoded) => {
+                unsafe {
+                    raw_remove_directory(std::wstr::as_raw(encoded));
+                }
+            }
+            Err(error) => {
+                error;
+            }
+        }
+    }
+
+    fn rename_file(source: Text, destination: Text) -> Result<void, Text> {
+        let from = wstring(source)?
+        let to = wstring(destination)?
+        unsafe {
+            if raw_move_file(std::wstr::as_raw(from), std::wstr::as_raw(to), 9) == 0 {
+                return Err(std::text::joined("could not replace: ", destination))
+            }
+        }
+        return Ok(())
+    }
+
+    fn executable(path: Text) -> Result<void, Text> {
+        if exists(path) == false {
+            return Err(std::text::joined("executable does not exist: ", path))
+        }
+        return Ok(())
+    }
+}

@@ -10,6 +10,7 @@ module x86 {
                 }
                 Ok(frame) => {
                     var compiler = FunctionCompiler {
+                        calling_convention: function.signature.calling_convention
                         id: id
                         frame: move frame
                         instructions: Some(Vec<Instruction>.new())

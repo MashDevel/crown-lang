@@ -1,0 +1,63 @@
+module toolchain {
+    extern "c" {
+        fn raw_random(buffer: RawPtr<u8>, length: u32) -> u8 = "SystemFunction036"
+        fn raw_temp_path(size: u32, buffer: RawPtr<u16>) -> u32 = "GetTempPathW"
+    }
+
+    fn temporary(parent: Text) -> Result<Temporary, Text> {
+        make_directory(parent)?
+        let base = absolute(parent)?
+        for attempt in 0..128 {
+            attempt;
+            let path = path_join(base, temporary_name()?)
+            let encoded = wstring(path)?
+            unsafe {
+                if raw_create_directory(std::wstr::as_raw(encoded), null()) != 0 {
+                    return Ok(Temporary {
+                            path: path.clone()
+                        })
+                }
+                if raw_last_error() != 183 {
+                    return Err(std::text::joined("could not create temporary directory in: ", base))
+                }
+            }
+        }
+        return Err("could not choose an unused temporary directory")
+    }
+
+    fn temporary_name() -> Result<Text, Text> {
+        var bytes = std::bytes::filled(16, 0)
+        unsafe {
+            if raw_random(bytes.as_raw(), 16) == 0 {
+                return Err("could not generate a temporary directory name")
+            }
+        }
+        var name = "crown-"
+        for index in 0..bytes.length() {
+            std::text::hex_byte(name, bytes[index])
+        }
+        return Ok(move name)
+    }
+
+    fn temporary_directory() -> Text {
+        let configured = environment("TMPDIR")
+        if configured.length() != 0 {
+            return move configured
+        }
+        var buffer = wide_buffer(32768)
+        unsafe {
+            let size = raw_temp_path(32768, buffer.as_raw())
+            if size != 0 && size < 32768 {
+                match wide_text(buffer.as_raw(), usize.from(size)) {
+                    Ok(path) => {
+                        return normalized_windows_path(path)
+                    }
+                    Err(error) => {
+                        error;
+                    }
+                }
+            }
+        }
+        return "."
+    }
+}

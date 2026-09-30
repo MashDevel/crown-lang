@@ -50,5 +50,25 @@ fn main() -> u32 {
     if invalid_symbols() == false {
         return 2
     }
+    if builtin_conflict() == false {
+        return 3
+    }
     return 42
+}
+
+fn builtin_conflict() -> bool {
+    let source = frontend_test_source("struct Text { value: u32 }\n")
+    match frontend::parse(source.bytes.share(), source.length, 0) {
+        Err(diagnostics) => {
+            diagnostics;
+            return false
+        }
+        Ok(program) => {
+            let symbols = sema::collect_symbols(source.bytes.share(), program)
+            if symbols.diagnostics.length() == 0 {
+                return false
+            }
+            return std::text::equal(symbols.diagnostics[0].message, "type name conflicts with a built-in type: Text -> Text")
+        }
+    }
 }

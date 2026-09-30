@@ -5,5 +5,9 @@ case "$(uname -s):$(uname -m)" in
     Darwin:arm64) printf '%s\n' arm64-macos ;;
     Linux:x86_64) printf '%s\n' x86_64-linux ;;
     Linux:aarch64) printf '%s\n' arm64-linux ;;
-    *) printf '%s\n' 'error: Crown requires a 64-bit ARM or x86 macOS or Linux host' >&2; exit 1 ;;
+    MINGW*:*|MSYS*:*)
+        target=$(powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$(dirname -- "$0")/host.ps1")
+        printf '%s\n' "$target" | tr -d '\r'
+        ;;
+    *) printf '%s\n' 'error: Crown requires a 64-bit ARM or x86 macOS, Linux or Windows host' >&2; exit 1 ;;
 esac

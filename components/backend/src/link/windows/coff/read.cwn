@@ -1,0 +1,69 @@
+module coff {
+    struct Header {
+        name: Text, size: usize, offset: usize, relocations: usize, relocation_count: usize, flags: u32
+    }
+
+    struct Reader {
+        bytes: Vec<u8>, headers: Vec<Header>, sections: Vec<Option<usize>>, symbols: Vec<Option<usize>>,
+        required: Vec<bool>, symbol_offset: usize, symbol_count: usize, strings: Vec<u8>, output: object::CompilerObject
+    }
+
+    fn read_object(bytes: take Vec<u8>) -> Result<object::CompilerObject, Text> {
+        let machine = architecture(bytes)?
+        let symbol_offset = usize.from(link_binary::number(bytes, 8, 4)?)
+        let symbol_count = usize.from(link_binary::number(bytes, 12, 4)?)
+        table_bounds(bytes, symbol_offset, symbol_count, 18)?
+        let strings = string_table(bytes, symbol_offset, symbol_count)?
+        let headers = section_headers(bytes, strings)?
+        var reader = Reader {
+            bytes: move bytes, headers: move headers, sections: Vec<Option<usize>>.new(), symbols: Vec<Option<usize>>.new(),
+            required: Vec<bool>.new(), symbol_offset: symbol_offset, symbol_count: symbol_count,
+            strings: move strings, output: object::new()
+        }
+        reader.output.architecture = machine
+        read_sections(reader)?
+        read_symbols(reader)?
+        read_relocations(reader)?
+        return finish_reader(reader)
+    }
+
+    fn finish_reader(reader: write Reader) -> Result<object::CompilerObject, Text> {
+        match object::validate_relocatable(reader.output) {
+            Err(error) => {
+                error;
+                return Err("invalid COFF object contents")
+            }
+            Ok(value) => {
+                value;
+            }
+        }
+        return Ok(replace(reader.output, object::new()))
+    }
+
+    fn architecture(bytes: Vec<u8>) -> Result<object::Architecture, Text> {
+        return match link_binary::number(bytes, 0, 2)? {
+            34404 => Ok(object::ArchitectureX86_64())
+            43620 => Ok(object::ArchitectureArm64())
+            _ => Err("COFF object must target x86-64 or ARM64 Windows")
+        }
+    }
+
+    fn table_bounds(bytes: Vec<u8>, offset: usize, count: usize, width: usize) -> Result<void, Text> {
+        if offset > bytes.length() || count >(bytes.length() - offset) / width {
+            return Err("COFF table exceeds object bounds")
+        }
+        return Ok(())
+    }
+
+    fn string_table(bytes: Vec<u8>, offset: usize, count: usize) -> Result<Vec<u8>, Text> {
+        if offset == 0 && count == 0 {
+            return Ok(Vec<u8>.new())
+        }
+        let start = offset + count * 18
+        let length = usize.from(link_binary::number(bytes, start, 4)?)
+        if length < 4 {
+            return Err("COFF string table is shorter than its length field")
+        }
+        return link_binary::part(bytes, start, length)
+    }
+}

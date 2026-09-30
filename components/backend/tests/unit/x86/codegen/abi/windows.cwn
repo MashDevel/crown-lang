@@ -1,0 +1,149 @@
+fn windows_locations(signature: ir::Signature) -> Result<Vec<x86::ArgumentLocation>, u32> {
+    match x86::abi_locations(signature) {
+        Ok(value) => Ok(move value)
+        Err(error) => {
+            error;
+            Err(1)
+        }
+    }
+}
+
+fn windows_mixed_signature() -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+    parameters.push(ir::TypeFloat(ir::FloatWidth64()))
+    parameters.push(ir::TypePointer())
+    parameters.push(ir::TypeFloat(ir::FloatWidth32()))
+    parameters.push(ir::TypeInteger(ir::IntegerWidth8()))
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    signature.calling_convention = ir::CallingConvention::WindowsX64()
+    return move signature
+}
+
+fn windows_scalar_locations() -> Result<void, u32> {
+    let locations = windows_locations(windows_mixed_signature())?
+    let codes: [u8; 4] = [1, 1, 8, 3]
+    for index in 0..4 {
+        let actual = match read locations[index] {
+            x86::ArgumentInteger(register) => register.code
+            x86::ArgumentFloat(register) => register.code
+            _ => {
+                return Err(2)
+            }
+        }
+        safety_require(actual == codes[index], 3)?
+    }
+    match read locations[4] {
+        x86::ArgumentStack(slot) => safety_require(slot == 4, 4)
+        _ => Err(5)
+    }
+}
+
+fn windows_aggregate_signature(size: u64) -> ir::Signature {
+    var parameters = Vec<ir::Type>.new()
+    for index in 0..5 {
+        index;
+        parameters.push(ir::TypePointer())
+    }
+    var signature = ir::signature_new(move parameters, ir::TypeVoid())
+    signature.calling_convention = ir::CallingConvention::WindowsX64()
+    for index in 0..5 {
+        signature.parameter_abi[index] = ir::ParameterAggregate(ir::AggregateMemory(size, 8))
+    }
+    return move signature
+}
+
+fn windows_indirect_locations() -> Result<void, u32> {
+    let locations = windows_locations(windows_aggregate_signature(24))?
+    for index in 0..5 {
+        match read locations[index] {
+            x86::ArgumentIndirect(argument) => {
+                safety_require(argument.copy_slot == 6 + index * 4, 6)?
+                safety_require(argument.slot == index && argument.size == 24, 7)?
+            }
+            _ => {
+                return Err(8)
+            }
+        }
+    }
+    return safety_require(x86::abi_stack_count(locations) == 25, 9)
+}
+
+fn windows_small_aggregate_locations() -> Result<void, u32> {
+    let locations = windows_locations(windows_aggregate_signature(8))?
+    match read locations[0] {
+        x86::ArgumentRegisters(components) => {
+            safety_require(components.length() == 1, 10)?
+            safety_require(components[0].component.value_type == ir::TypeInteger(ir::IntegerWidth64()), 11)?
+        }
+        _ => {
+            return Err(12)
+        }
+    }
+    match read locations[4] {
+        x86::ArgumentMemory(slot, slots, size) => safety_require(slot == 4 && slots == 1 && size == 8, 13)
+        _ => Err(14)
+    }
+}
+
+fn windows_signature_metadata() -> Result<void, u32> {
+    var signature = windows_aggregate_signature(16)
+    signature.parameter_abi[0] = ir::ParameterReturn(ir::AggregateRegisters(16, 8, safety_components(16)))
+    match x86::windows_signature(signature) {
+        Err(error) => {
+            error;
+            return Err(15)
+        }
+        Ok(value) => {
+            value;
+        }
+    }
+    let copied = ir::signature_copy(signature)
+    safety_require(copied.calling_convention == ir::CallingConvention::WindowsX64(), 16)?
+    match read copied.parameter_abi[0] {
+        ir::ParameterReturn(aggregate) => {
+            match read aggregate {
+                ir::AggregateMemory(size, alignment) => safety_require(size == 16 && alignment == 8, 17)
+                _ => Err(18)
+            }
+        }
+        _ => Err(19)
+    }
+}
+
+fn windows_invalid_locations() -> Result<void, u32> {
+    let overflow = x86::abi_locations(windows_aggregate_signature(2147483648))
+    match read overflow {
+        Ok(value) => {
+            value;
+            return Err(20)
+        }
+        Err(error) => {
+            error;
+        }
+    }
+    var signature = windows_mixed_signature()
+    signature.parameters[0] = ir::TypeVoid()
+    match x86::abi_locations(signature) {
+        Ok(value) => {
+            value;
+            Err(21)
+        }
+        Err(error) => {
+            error;
+            Ok(())
+        }
+    }
+}
+
+fn windows_abi_tests() -> Result<void, u32> {
+    windows_scalar_locations()?
+    windows_indirect_locations()?
+    windows_small_aggregate_locations()?
+    windows_signature_metadata()?
+    return windows_invalid_locations()
+}
+
+fn main() -> u32 {
+    return safety_status(windows_abi_tests())
+}

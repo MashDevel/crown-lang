@@ -71,6 +71,10 @@ module toolchain {
         std::text::append(output, json_quoted(checksum))
         std::text::append(output, ",\"source_sha256\":")
         std::text::append(output, json_quoted(digest_text(sources)?))
+        if host_target().platform == Platform::Windows() {
+            std::text::append(output, ",\"link_arguments\":")
+            std::text::append(output, bootstrap_link_record(host_target()))
+        }
         std::text::append(output, ",\"source_files\":")
         std::text::append(output, sources)
         std::text::append(output, "}\n")

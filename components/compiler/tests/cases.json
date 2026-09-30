@@ -1762,7 +1762,7 @@
     "arguments": [
       "hello",
       "",
-      "\u00e9",
+      "é",
       "tail"
     ],
     "source": "components/compiler/tests/conformance/native/arguments/passes_process_arguments_as_checked_text_views.cwn",
@@ -3064,6 +3064,7 @@
     "roots": [
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/backend/src/ir",
       "components/library/src"
     ],
@@ -3078,6 +3079,7 @@
     "roots": [
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/backend/src/ir",
       "components/library/src"
     ],
@@ -3092,6 +3094,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3107,6 +3110,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/arithmetic/compiles_integer_binary_ir.cwn",
@@ -3121,6 +3125,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3136,6 +3141,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/arithmetic/compiles_float_ir.cwn",
@@ -3150,6 +3156,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/arithmetic/branches_directly_from_single_use_comparisons.cwn",
@@ -3164,6 +3171,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/core/assigns_scalar_arguments_with_sysv_abi.cwn",
@@ -3178,6 +3186,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/core/spills_excess_integer_arguments_to_stack.cwn",
@@ -3192,6 +3201,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/core/allocates_interfering_values_with_rust_liveness_model.cwn",
@@ -3206,6 +3216,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3232,6 +3243,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/division/lowers_constant_unsigned_division.cwn",
@@ -3246,6 +3258,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3261,6 +3274,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3276,6 +3290,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/memory/compiles_direct_calls_with_abi_arguments.cwn",
@@ -3290,6 +3305,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/memory_binary/folds_spilled_arithmetic_and_comparisons.cwn",
@@ -3304,6 +3320,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/overflow/fuses_checked_addition_and_subtraction_branches.cwn",
@@ -3318,6 +3335,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/compiler/tests/fixtures/performance/memory_direct.cwn",
@@ -3338,7 +3356,9 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
-      "components/library/src"
+      "components/backend/src/windows",
+      "components/library/src",
+      "components/toolchain/src"
     ],
     "source": "components/compiler/tests/fixtures/performance/parallel_codegen.cwn",
     "origin": "components/compiler/tests/selfhost/codegen/program.rs::crown_parallel_codegen_preserves_output_and_first_error"
@@ -3351,6 +3371,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3366,6 +3387,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/codegen/program/rejects_invalid_ir_before_emission.cwn",
@@ -3380,6 +3402,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src",
       "components/backend/tests/unit/support/result.cwn"
     ],
@@ -3869,6 +3892,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/compiler/tests/support/encoding.cwn",
       "components/library/src"
@@ -3885,6 +3909,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/compiler/tests/support/encoding.cwn",
       "components/library/src"
@@ -3901,6 +3926,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/core/reports_symbolic_instructions_as_not_fixed.cwn",
@@ -3915,6 +3941,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/compiler/tests/support/encoding.cwn",
       "components/library/src"
@@ -3931,6 +3958,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/compiler/tests/support/encoding.cwn",
       "components/library/src"
@@ -3947,6 +3975,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/compiler/tests/support/encoding.cwn",
       "components/library/src"
@@ -3963,6 +3992,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/compiler/tests/support/encoding.cwn",
       "components/library/src"
@@ -3979,6 +4009,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/compiler/tests/support/bytes.cwn",
       "components/library/src"
     ],
@@ -3994,6 +4025,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/normalize/collapses_redundant_zero_extensions.cwn",
@@ -4008,6 +4040,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/encodes_memory_arithmetic.cwn",
@@ -4022,6 +4055,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/resolves_local_labels.cwn",
@@ -4036,6 +4070,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/normalizes_fallthroughs_and_identity_instructions.cwn",
@@ -4050,6 +4085,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/rejects_unknown_labels.cwn",
@@ -4064,6 +4100,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/builds_an_object_from_machine_instructions.cwn",
@@ -4078,6 +4115,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/emits_call_and_symbol_relocations.cwn",
@@ -4092,6 +4130,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/program/symbol_names.cwn",
@@ -4775,6 +4814,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "source": "components/backend/tests/unit/x86/model/registers.cwn",
@@ -5140,8 +5180,7 @@
     "roots": [
       "components/toolchain/src",
       "components/library/src"
-    ],
-    "unit": true
+    ]
   },
   {
     "name": "toolchain_data_json",
@@ -5242,14 +5281,15 @@
   {
     "name": "toolchain_host_failure",
     "mode": "run",
+    "hosts": ["x86_64-macos", "arm64-macos", "x86_64-linux", "arm64-linux", "x86_64-windows", "arm64-windows"],
     "status": 42,
     "source": "components/toolchain/tests/host/failure.cwn",
     "roots": [
       "components/toolchain/src",
+      "components/toolchain/tests/host/process",
       "components/toolchain/tests/support",
       "components/library/src"
-    ],
-    "unit": true
+    ]
   },
   {
     "name": "native_toolchain_tests_build_bootstrap",
@@ -5395,7 +5435,8 @@
       "components/toolchain/tests/support",
       "components/library/src",
       "components/compiler/benchmark/stages.cwn",
-      "components/compiler/benchmark/tests/native.cwn"
+      "components/compiler/benchmark/tests/native.cwn",
+      "components/compiler/benchmark/tests/process.cwn"
     ]
   },
   {
@@ -7607,6 +7648,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "unit": true
@@ -7632,6 +7674,7 @@
       "components/backend/src/ir",
       "components/backend/src/object",
       "components/backend/src/x86",
+      "components/backend/src/windows",
       "components/library/src"
     ],
     "unit": true
@@ -8247,6 +8290,7 @@
   {
     "name": "foreign_realpath_default_version",
     "mode": "run",
+    "hosts": ["x86_64-linux", "arm64-linux", "x86_64-macos", "arm64-macos"],
     "status": 42,
     "source": "components/compiler/tests/conformance/native/foreign/realpath_default_version.cwn"
   },
@@ -8637,9 +8681,19 @@
       "components/compiler/tests/platform/guest/tests/protocol.cwn",
       "components/compiler/tests/platform/guest/tests/upload.cwn",
       "components/compiler/tests/platform/guest/tests/socket.cwn",
+      "components/compiler/tests/platform/guest/tests/socket.posix.cwn",
+      "components/compiler/tests/platform/guest/tests/socket.windows.cwn",
       "components/toolchain/src",
       "components/toolchain/tests/support",
       "components/library/src"
+    ],
+    "hosts": [
+      "x86_64-macos",
+      "arm64-macos",
+      "x86_64-linux",
+      "arm64-linux",
+      "x86_64-windows",
+      "arm64-windows"
     ]
   },
   {
@@ -8872,8 +8926,7 @@
       "components/library/src",
       "components/compiler/tests/harness"
     ],
-    "status": 42,
-    "unit": true
+    "status": 42
   },
   {
     "name": "native_toolchain_tests_build_bootstrap_cache",
@@ -8930,6 +8983,320 @@
     "roots": [
       "components/backend",
       "components/toolchain/tests/support"
+    ]
+  },
+  {
+    "name": "arm64_float_registers",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/arm64/float_registers.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support",
+      "components/backend/tests/unit/arm64/register_support.cwn",
+      "components/backend/tests/unit/arm64/float_support.cwn"
+    ]
+  },
+  {
+    "name": "arm64_immediate_arithmetic",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/arm64/immediate_arithmetic.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support",
+      "components/backend/tests/unit/arm64/register_support.cwn"
+    ]
+  },
+  {
+    "name": "arm64_fallthrough",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/arm64/fallthrough.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support",
+      "components/backend/tests/unit/arm64/register_support.cwn"
+    ]
+  },
+  {
+    "name": "arm64_float_register_runtime",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/arm64/float_runtime.cwn",
+    "roots": [
+      "components/backend",
+      "components/compiler/tests/support/ir/safety.cwn",
+      "components/compiler/tests/support/backend/runtime.cwn",
+      "components/backend/tests/unit/arm64/support.cwn",
+      "components/backend/tests/unit/arm64/register_support.cwn",
+      "components/backend/tests/unit/arm64/float_support.cwn"
+    ]
+  },
+  {
+    "name": "windows_pe_executable",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/link/windows/executable.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support/assert.cwn",
+      "components/backend/tests/unit/link/windows/fixture.cwn",
+      "components/backend/tests/unit/link/windows/process.cwn",
+      "components/backend/tests/unit/link/windows/relocations.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "toolchain_cli_windows_target",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/cli/windows.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/toolchain/tests/support",
+      "components/library/src"
+    ]
+  },
+  {
+    "name": "arm64_windows_abi",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/arm64/windows_abi.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support/assert.cwn",
+      "components/backend/tests/unit/arm64/windows_stack.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "x86_windows_abi",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/x86/codegen/abi/windows.cwn",
+    "roots": [
+      "components/backend",
+      "components/compiler/tests/support/ir",
+      "components/compiler/tests/support/backend"
+    ],
+    "unit": true
+  },
+  {
+    "name": "windows_abi_runtime",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/link/windows/call_runtime.cwn",
+    "roots": [
+      "components/backend",
+      "components/compiler/tests/support/ir",
+      "components/compiler/tests/support/backend",
+      "components/backend/tests/unit/link/windows/calls.cwn",
+      "components/backend/tests/unit/link/windows/aggregates.cwn",
+      "components/backend/tests/unit/link/windows/startup.cwn",
+      "components/backend/tests/unit/link/windows/variadic_crt.cwn",
+      "components/backend/tests/unit/link/windows/programs.cwn",
+      "components/backend/tests/unit/link/windows/process.cwn",
+      "components/backend/tests/unit/link/windows/fixture.cwn",
+      "components/backend/tests/unit/link/windows/wide.cwn",
+      "components/backend/tests/unit/link/windows/capture.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "windows_coff_objects",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/link/windows/coff.cwn",
+    "roots": [
+      "components/backend",
+      "components/compiler/tests/support/ir",
+      "components/toolchain/tests/support/assert.cwn",
+      "components/backend/tests/unit/link/windows/coff_fixture.cwn",
+      "components/backend/tests/unit/link/windows/calls.cwn",
+      "components/backend/tests/unit/link/windows/startup.cwn",
+      "components/backend/tests/unit/link/windows/fixture.cwn",
+      "components/backend/tests/unit/link/windows/process.cwn",
+      "components/backend/tests/unit/link/windows/exceptions.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "windows_platform_runtime",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/windows/runtime/main.cwn",
+    "roots": [
+      "components/backend",
+      "components/backend/tests/unit/windows/runtime/formatted.cwn",
+      "components/backend/tests/unit/windows/runtime/instrumentation",
+      "components/toolchain/tests/support/assert.cwn",
+      "components/compiler/tests/support/ir",
+      "components/compiler/tests/support/backend",
+      "components/backend/tests/unit/link/windows/calls.cwn",
+      "components/backend/tests/unit/windows/runtime/lock_execution.cwn",
+      "components/backend/tests/unit/windows/runtime/thread_calls.cwn",
+      "components/backend/tests/unit/windows/runtime/thread_execution.cwn",
+      "components/backend/tests/unit/windows/runtime/thread_mocks.cwn",
+      "components/backend/tests/unit/windows/runtime/threads.cwn",
+      "components/backend/tests/unit/windows/runtime/native_calls.cwn",
+      "components/backend/tests/unit/windows/runtime/native_lock.cwn",
+      "components/backend/tests/unit/windows/runtime/native_thread.cwn",
+      "components/backend/tests/unit/windows/runtime/native_callback.cwn",
+      "components/backend/tests/unit/link/windows/startup.cwn",
+      "components/backend/tests/unit/link/windows/variadic_crt.cwn",
+      "components/backend/tests/unit/link/windows/process.cwn",
+      "components/backend/tests/unit/link/windows/fixture.cwn",
+      "components/backend/tests/unit/link/windows/aggregates.cwn",
+      "components/backend/tests/unit/link/windows/programs.cwn",
+      "components/backend/tests/unit/link/windows/wide.cwn",
+      "components/backend/tests/unit/link/windows/capture.cwn",
+      "components/backend/tests/unit/windows/runtime/native_link.cwn",
+      "components/backend/tests/unit/windows/runtime/execute.cwn",
+      "components/backend/tests/unit/windows/runtime/stack_execution.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "windows_root_runtime",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/windows/roots/main.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support/assert.cwn",
+      "components/compiler/tests/support/ir",
+      "components/compiler/tests/support/backend",
+      "components/backend/tests/unit/link/windows/calls.cwn",
+      "components/backend/tests/unit/link/windows/startup.cwn",
+      "components/backend/tests/unit/link/windows/variadic_crt.cwn",
+      "components/backend/tests/unit/link/windows/process.cwn",
+      "components/backend/tests/unit/link/windows/fixture.cwn",
+      "components/backend/tests/unit/link/windows/aggregates.cwn",
+      "components/backend/tests/unit/link/windows/programs.cwn",
+      "components/backend/tests/unit/link/windows/wide.cwn",
+      "components/backend/tests/unit/link/windows/capture.cwn",
+      "components/backend/tests/unit/windows/runtime/execute.cwn",
+      "components/backend/tests/unit/windows/runtime/native_calls.cwn",
+      "components/backend/tests/unit/windows/roots/fixture.cwn",
+      "components/backend/tests/unit/windows/roots/declaration.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "native_host_services",
+    "mode": "run",
+    "status": 0,
+    "source": "components/toolchain/tests/platform/windows/main.cwn",
+    "hosts": [
+      "x86_64-macos",
+      "arm64-macos",
+      "x86_64-linux",
+      "arm64-linux",
+      "x86_64-windows",
+      "arm64-windows"
+    ],
+    "roots": [
+      "components/toolchain/tests/platform/windows",
+      "components/toolchain/src",
+      "components/library/src"
+    ]
+  },
+  {
+    "name": "toolchain_posix_process_status",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/host/posix_status.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/library/src"
+    ],
+    "hosts": [
+      "x86_64-macos",
+      "arm64-macos",
+      "x86_64-linux",
+      "arm64-linux"
+    ],
+    "unit": true
+  },
+  {
+    "name": "toolchain_compiler_response",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/build/response.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/library/src",
+      "components/toolchain/tests/support/assert.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "toolchain_large_project",
+    "mode": "run",
+    "status": 42,
+    "source": "components/toolchain/tests/build/large_project.cwn",
+    "roots": [
+      "components/toolchain/src",
+      "components/library/src",
+      "components/toolchain/tests/support/assert.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "windows_coff_assembly",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/unit/link/windows/assembly.cwn",
+    "roots": [
+      "components/backend",
+      "components/toolchain/tests/support/assert.cwn",
+      "components/compiler/tests/support/ir",
+      "components/compiler/tests/support/backend",
+      "components/backend/tests/unit/link/windows/calls.cwn",
+      "components/backend/tests/unit/link/windows/assembly_fixture.cwn",
+      "components/backend/tests/unit/windows/runtime/instrumentation/model.cwn"
+    ],
+    "unit": true
+  },
+  {
+    "name": "coverage_package_paths",
+    "mode": "run",
+    "status": 42,
+    "source": "components/compiler/tests/unit/coverage/paths.cwn",
+    "roots": [
+      "components/compiler/src/coverage/report_model.cwn",
+      "components/toolchain/src",
+      "components/toolchain/tests/support",
+      "components/library/src"
+    ],
+    "timeout_ms": 10000,
+    "unit": true
+  },
+  {
+    "name": "coverage_volume_root_termination",
+    "mode": "run",
+    "status": 42,
+    "source": "components/compiler/tests/unit/coverage/volume.cwn",
+    "roots": [
+      "components/compiler/src/coverage/report_model.cwn",
+      "components/compiler/tests/fixtures/coverage/volume.cwn"
+    ],
+    "timeout_ms": 1000
+  },
+  {
+    "name": "windows_native_images",
+    "mode": "run",
+    "status": 42,
+    "source": "components/backend/tests/platform/windows/execution.cwn",
+    "hosts": [
+      "x86_64-windows",
+      "arm64-windows"
+    ],
+    "roots": [
+      "components/toolchain/src",
+      "components/toolchain/tests/support",
+      "components/library/src"
     ]
   }
 ]

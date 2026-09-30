@@ -1,13 +1,8 @@
 module frontend {
     fn compile_program(analysis: take sema::Analysis, program: take Program, output: CompileOutput, instrumentation: take Option<Shared<lowering::CoverageLayout>>, settings: CompileSettings) -> u32 {
-        let format = if output.target.platform == toolchain::Platform::Macos() {
-            x86::AssemblyFormat::MachO()
-        } else {
-            x86::AssemblyFormat::Elf()
-        }
         match compile_object(move analysis, move program, move instrumentation, settings) {
             Err(error) => error
-            Ok(object) => write_assembly(object, output.path, format)
+            Ok(object) => write_assembly(object, output.path, output.target)
         }
     }
 
@@ -24,7 +19,7 @@ module frontend {
         lower_required_program(compiler, input)?
         let bytes = optimize_program(compiler.output, settings)?
         var object = generate_object(replace(compiler.output, ir::program_new()), settings.target)?
-        match profile::append_runtime(object, bytes, settings.optimization.generate) {
+        match profile::append_runtime(object, bytes, settings.optimization.generate, settings.target) {
             Err(error) => Err(optimization_error(error))
             Ok(value) => {
                 value;
@@ -33,9 +28,11 @@ module frontend {
         }
     }
 
-    fn generate_object(program: take ir::Program, target: toolchain::Target) -> Result<object::CompilerObject, u32> {
+    fn generate_object(input: take ir::Program, target: toolchain::Target) -> Result<object::CompilerObject, u32> {
+        var program = move input
+        prepare_windows(program, target)?
         if target.architecture == toolchain::Architecture::Arm64() {
-            return match arm64::codegen_validated(move program, arm_variant(target)) {
+            return match arm64::codegen_validated(move program, backend_assembly::arm_variant(target)) {
                 Ok(value) => Ok(move value)
                 Err(error) => {
                     toolchain::failure(error);
@@ -51,34 +48,16 @@ module frontend {
         }
     }
 
-    fn write_assembly(object: object::CompilerObject, output_path: TextView, format: x86::AssemblyFormat) -> u32 {
-        if object.architecture == object::ArchitectureArm64() {
-            let variant = if format == x86::AssemblyFormat::MachO() {
-                arm64::AbiVariant::Darwin()
+    fn write_assembly(object: object::CompilerObject, output_path: TextView, target: toolchain::Target) -> u32 {
+        return match backend_assembly::render(object, target, "program") {
+            Ok(text) => if write_output(output_path, text) {
+                0
             } else {
-                arm64::AbiVariant::Aapcs64()
-            }
-            return match arm64::assembly(object, "program", variant) {
-                Ok(text) => if write_output(output_path, text) {
-                    0
-                } else {
-                    254
-                }
-                Err(error) => {
-                    toolchain::failure(error);
-                    255
-                }
-            }
-        }
-        match x86::assembly(object, format) {
+                254
+            },
             Err(error) => {
-                return 250 + error
-            }
-            Ok(output) => {
-                if write_output(output_path, output) {
-                    return 0
-                }
-                return 254
+                toolchain::failure(error);
+                255
             }
         }
     }

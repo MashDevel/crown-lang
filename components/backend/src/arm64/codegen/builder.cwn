@@ -32,11 +32,11 @@ module arm64 {
         encoded_operation(compiler, move result)
     }
     fn stack_adjust(compiler: write Compiler, size: u64, subtract: bool) -> void {
-        let result = emit_stack_adjust(compiler.bytes, size, subtract)
+        let result = emit_target_stack_adjust(compiler.bytes, size, subtract, compiler.variant)
         encoded_operation(compiler, move result)
     }
     fn prologue(compiler: write Compiler) -> void {
-        let result = emit_prologue(compiler.bytes, compiler.frame)
+        let result = emit_prologue(compiler.bytes, compiler.frame, compiler.variant)
         encoded_operation(compiler, move result)
     }
     fn epilogue(compiler: write Compiler) -> void {

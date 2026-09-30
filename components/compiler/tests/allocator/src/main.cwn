@@ -62,6 +62,9 @@ module auditor {
             }
         }
         add_wrappers(program)?
+        if toolchain::host_target().platform == toolchain::Platform::Windows() {
+            windows_wrappers(program)?
+        }
         let object = match x86::encode_program(program) {
             Ok(value) => move value,
             Err(error) => {

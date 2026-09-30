@@ -1,0 +1,76 @@
+module toolchain {
+    extern "c" {
+        fn raw_find_first(pattern: RawPtr<u16>, data: RawPtr<u64>) -> RawPtr<u8> = "FindFirstFileW"
+        fn raw_find_next(handle: RawPtr<u8>, data: RawPtr<u64>) -> i32 = "FindNextFileW"
+        fn raw_find_close(handle: RawPtr<u8>) -> i32 = "FindClose"
+    }
+
+    opaque resource Directory {
+        private handle: RawPtr<u8>
+        private first: Option<Text>
+        drop {
+            unsafe {
+                if handle != invalid_handle() {
+                    raw_find_close(handle);
+                }
+            }
+        }
+    }
+
+    fn invalid_handle() -> RawPtr<u8> {
+        unsafe {
+            return RawPtr<u8>.from_address(18446744073709551615)
+        }
+    }
+
+    fn directory_name(data: Vec<u64>) -> Result<Text, Text> {
+        unsafe {
+            let pointer = RawPtr<u16>.cast(data.as_raw()).offset(22)
+            return wide_text(pointer, 260)
+        }
+    }
+
+    fn open_directory(path: Text) -> Result<Directory, Text> {
+        let encoded = wstring(path_join(path, "*"))?
+        var data = native_words(74)
+        unsafe {
+            let handle = raw_find_first(std::wstr::as_raw(encoded), data.as_raw())
+            if handle == invalid_handle() {
+                if raw_last_error() == 2 && is_directory(path) {
+                    return Ok(Directory {
+                            handle: handle, first: None()
+                        })
+                }
+                return Err(std::text::joined("could not open directory: ", path))
+            }
+            var directory = Directory {
+                handle: handle, first: None()
+            }
+            directory.first = Some(directory_name(data)?)
+            return Ok(move directory)
+        }
+    }
+
+    fn directory_next(directory: write Directory) -> Result<Option<Text>, Text> {
+        unsafe {
+            match replace(directory.first, None()) {
+                Some(name) => {
+                    return Ok(Some(move name))
+                }
+                None => {
+                }
+            }
+            if directory.handle == invalid_handle() {
+                return Ok(None())
+            }
+            var data = native_words(74)
+            if raw_find_next(directory.handle, data.as_raw()) != 0 {
+                return Ok(Some(directory_name(data)?))
+            }
+            if raw_last_error() != 18 {
+                return Err("could not read directory entry")
+            }
+            return Ok(None())
+        }
+    }
+}

@@ -46,6 +46,10 @@ module arm64 {
         return immediate_word(opcode, destination, source, 0)
     }
 
+    fn float_move(destination: u32, source: u32, double: bool) -> Result<u32, Text> {
+        return immediate_word(505430016 | float_precision(double), destination, source, 0)
+    }
+
     fn float_precision(double: bool) -> u32 {
         return if double {
             4194304

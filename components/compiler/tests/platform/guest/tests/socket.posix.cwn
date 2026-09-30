@@ -1,0 +1,24 @@
+module guest {
+    extern "c" {
+        fn raw_pair(domain: i32, kind: i32, protocol: i32, pair: RawPtr<i32>) -> i32 = "socketpair"
+    }
+
+    fn socket_pair_test() -> Result<void, Text> {
+        var descriptors = Vec<i32>.new()
+        descriptors.push(-1)
+        descriptors.push(-1)
+        unsafe {
+            testing::expect(raw_pair(1, 1, 0, descriptors.as_raw()) == 0, "socket pair")?
+        }
+        unsafe {
+            var client = Socket {
+                descriptor: u64.from(descriptors[0]), buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+            }
+            var server = Socket {
+                descriptor: u64.from(descriptors[1]), buffer: std::bytes::filled(4096, 0), position: 0, length: 0
+            }
+            return socket_responses(client, server)
+        }
+    }
+
+}

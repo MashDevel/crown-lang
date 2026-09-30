@@ -1,0 +1,38 @@
+extern "c" {
+    fn process_abort() -> void = "abort"
+}
+
+fn process_command(executable: Text, mode: Text) -> toolchain::Command {
+    var arguments = Vec<Text>.new()
+    arguments.push(executable.clone())
+    arguments.push(mode.clone())
+    return toolchain::command(move arguments)
+}
+
+fn process_child(executable: Text, mode: Text) -> u32 {
+    return match read mode {
+        "poll" => process_delay(50)
+        "done" => process_delay(20)
+        "wait" => process_delay(10000)
+        "tree" => process_tree(executable)
+        "error" => {
+            toolchain::write_stream(2, "error");
+            19
+        }
+        "abort" => {
+            unsafe {
+                process_abort()
+            };
+            1
+        }
+        _ => 64
+    }
+}
+
+fn process_delay(duration: u64) -> u32 {
+    let started = toolchain::milliseconds()
+    while toolchain::milliseconds() - started < duration {
+        toolchain::wait_briefly()
+    }
+    return 42
+}

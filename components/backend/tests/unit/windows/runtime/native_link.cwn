@@ -1,0 +1,21 @@
+fn runtime_native_images() -> Result<void, Text> {
+    let architectures = [toolchain::Architecture::X86_64(), toolchain::Architecture::Arm64()]
+    for index in 0..2 {
+        runtime_native_image(native_lock_program()?, architectures[index])?
+        runtime_native_image(native_thread_program()?, architectures[index])?
+    }
+    return Ok(())
+}
+
+fn runtime_native_image(program: take ir::Program, architecture: toolchain::Architecture) -> Result<void, Text> {
+    var object = match windows_call_object(move program, architecture) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return Err("could not compile Windows native runtime fixture")
+        }
+    }
+    windows_test_startup(object)?
+    let bytes = pe::executable(object, native_runtime_imports())?
+    return testing::expect(bytes.length() > 512, "Windows runtime links with system DLL imports")
+}

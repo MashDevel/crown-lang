@@ -1,0 +1,73 @@
+fn immediate_function(constant: u64, subtract: bool) -> ir::Function {
+    let value_type = ir::TypeInteger(ir::IntegerWidth64())
+    var function = chain_function(1, value_type)
+    let operand = ir::function_constant(function, value_type, ir::ConstantInteger(constant))
+    let operator = if subtract {
+        ir::BinarySubtract()
+    } else {
+        ir::BinaryAdd()
+    }
+    function.blocks[0].instructions[0].kind = ir::InstructionBinary(operator, 0, operand)
+    return move function
+}
+
+fn immediate_case(constant: u64, subtract: bool, expected: bool) -> Result<void, Text> {
+    var program = ir::program_new()
+    ir::program_add_function(program, immediate_function(constant, subtract))
+    let compiler = arm64::compile_function(program, 0, arm64::AbiVariant::Aapcs64())?
+    arm64::finish_encoding(compiler)?
+    var found = false
+    for index in 0..compiler.bytes.length() / 4 {
+        let word = u32.from(link_binary::number(compiler.bytes, index * 4, 4)?)
+        let opcode = word & 4278190080
+        if (opcode == 2432696320 || opcode == 3506438144) &&((word >> 5) & 31) == 19 {
+            found = true
+        }
+    }
+    return testing::expect(found == expected, "constant arithmetic uses an immediate instruction")
+}
+
+fn run() -> Result<void, Text> {
+    let constants: [u64; 4] = [0, 4095, 4096, 16773120]
+    for index in 0..4 {
+        immediate_case(constants[index], false, true)?
+        immediate_case(constants[index], true, true)?
+    }
+    immediate_case(4097, false, false)?
+    immediate_case(16777216, true, false)?
+    immediate_case(18446744073709551615, false, false)?
+    return immediate_widths()
+}
+
+fn main() -> u32 {
+    return testing::done(run())
+}
+
+fn immediate_widths() -> Result<void, Text> {
+    let widths: [ir::IntegerWidth; 4] = [ir::IntegerWidth8(), ir::IntegerWidth16(), ir::IntegerWidth32(), ir::IntegerWidth64()]
+    for index in 0..4 {
+        immediate_width_case(widths[index])?
+    }
+    return Ok(())
+}
+
+fn immediate_width_case(width: ir::IntegerWidth) -> Result<void, Text> {
+    let value_type = ir::TypeInteger(width)
+    var function = chain_function(1, value_type)
+    let one = ir::function_constant(function, value_type, ir::ConstantInteger(1))
+    function.blocks[0].instructions[0].kind = ir::InstructionBinary(ir::BinaryAdd(), one, 0)
+    var program = ir::program_new()
+    ir::program_add_function(program, move function)
+    let compiler = arm64::compile_function(program, 0, arm64::AbiVariant::Darwin())?
+    arm64::finish_encoding(compiler)?
+    let result = arm64::frame_register(compiler.frame, 1)
+    let expected = arm64::integer_sized_word(arm64::add_immediate(result, 19, 1, false)?, ir::integer_width_bits(width))
+    var found = false
+    for offset in 0..compiler.bytes.length() / 4 {
+        if u32.from(link_binary::number(compiler.bytes, offset * 4, 4)?) == expected {
+            found = true
+        }
+    }
+    testing::expect(found, "commuted additions preserve integer widths")?
+    return Ok(())
+}

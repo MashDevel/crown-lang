@@ -4,7 +4,11 @@ module x86 {
             allocation: codegen_allocate_registers(function)
             locations: codegen_empty_locations(function.values.length())
             spill_slots: Vec<SpillSlot>.new()
-            cursor: 0
+            cursor: if function.signature.calling_convention == ir::CallingConvention::WindowsX64() {
+                160
+            } else {
+                0
+            }
         }
         match codegen_allocate_parameters(function, builder) {
             Err(error) => {
@@ -27,7 +31,11 @@ module x86 {
                 return Err(move error)
             }
             Ok(size) => {
-                let saved = codegen_saved_registers(builder.allocation)
+                var saved = codegen_saved_registers(builder.allocation)
+                if function.signature.calling_convention == ir::CallingConvention::WindowsX64() {
+                    saved.push(Rdi())
+                    saved.push(Rsi())
+                }
                 match codegen_shift_locations(builder.locations, saved.length()) {
                     Err(error) => {
                         return Err(move error)

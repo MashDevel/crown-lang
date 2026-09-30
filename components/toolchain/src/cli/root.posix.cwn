@@ -1,0 +1,24 @@
+module toolchain {
+    fn program_candidates(program: Text) -> Vec<Text> {
+        var output = Vec<Text>.new()
+        output.push(program.clone())
+        return move output
+    }
+
+    fn executable_file(path: Text) -> Result<bool, Text> {
+        if is_directory(path) {
+            return Ok(false)
+        }
+        let encoded = cstring(path)?
+        unsafe {
+            return Ok(raw_access(std::cstr::as_raw(encoded), 1) == 0)
+        }
+    }
+
+    fn program_has_path(program: Text) -> bool {
+        return std::text::contains(program, "/")
+    }
+    fn path_list_separator() -> u8 {
+        return 58
+    }
+}

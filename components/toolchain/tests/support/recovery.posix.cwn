@@ -1,0 +1,42 @@
+module testing_recovery {
+    fn launcher_path() -> Text {
+        return "bootstrap/crown"
+    }
+    fn launcher_tools() -> Vec<Text> {
+        return testing::list("digest.awk|build-compiler|host")
+    }
+    fn launcher_arguments(root: Text) -> Vec<Text> {
+        var arguments = Vec<Text>.new()
+        arguments.push(toolchain::path_join(root, launcher_path()))
+        return move arguments
+    }
+    fn isolation_wrapper() -> Text {
+        return "#!/bin/sh\nset -eu\nmkdir -p \"$CROWN_BOOTSTRAP_DIR\"\nprintf 'reference compiler' > \"$CROWN_BOOTSTRAP_DIR/crown\"\nprintf 'crown 0.1.0\\n'\n"
+    }
+    fn host_diagnostic(root: Text, host: Text, expected: Text) -> Result<void, Text> {
+        let names = testing::list(host)
+        let script = std::text::joined(std::text::joined("#!/bin/sh\ncase \"$1\" in -s) printf '%s\\n' '", names[0]), std::text::joined("';; -m) printf '%s\\n' '", names[1]))
+        let command = testing::write_file(root, "host/uname", std::text::joined(script, "';; esac\n"))?
+        toolchain::executable(command)?
+        var arguments = Vec<Text>.new();
+        arguments.push("/usr/bin/env")
+        arguments.push(std::text::joined(std::text::joined("PATH=", toolchain::parent_path(command)), std::text::joined(":", toolchain::environment("PATH"))))
+        let launcher = testing::write_file(root, "host-project/bootstrap/crown", toolchain::read_text(toolchain::path_join(toolchain::repository_root()?, "bootstrap/crown"))?)?
+        toolchain::executable(launcher)?
+        arguments.push(launcher.clone());
+        arguments.push("--help")
+        let result = toolchain::capture(toolchain::command(move arguments), root)?
+        testing::expect(result.status != 0 && std::text::contains(result.stderr, expected), "bootstrap host diagnostic")?
+        return Ok(())
+    }
+
+    fn host_selection(root: Text) -> Result<void, Text> {
+        host_diagnostic(root, "Linux|i386", "64-bit ARM or x86")?
+        host_diagnostic(root, "Darwin|powerpc", "64-bit ARM or x86")?
+        host_diagnostic(root, "Windows|x86_64", "64-bit ARM or x86")?
+        host_diagnostic(root, "Linux|x86_64", "missing seed")?
+        host_diagnostic(root, "Linux|aarch64", "missing seed")?
+        host_diagnostic(root, "Darwin|x86_64", "missing seed")?
+        return host_diagnostic(root, "Darwin|arm64", "missing seed")
+    }
+}

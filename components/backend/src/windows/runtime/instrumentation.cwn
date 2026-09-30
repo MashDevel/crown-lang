@@ -1,0 +1,12 @@
+module windows_runtime {
+    fn startup_instrumentation(program: write ir::Program, code: write Builder) -> Result<void, Text> {
+        for index in 0..program.functions.length() {
+            let name = program.functions[index].name.clone()
+            if std::text::equal(name, "crown_cov_hit") || std::text::equal(name, "crown_profile_hit") {
+                call(program, code, "crown_cov_init", Vec<usize>.new(), ir::TypeVoid())?;
+                return Ok(())
+            }
+        }
+        return Ok(())
+    }
+}

@@ -1,0 +1,34 @@
+module toolchain {
+    fn wait_process(pid: write Process, timeout: u64) -> Result<i32, Text> {
+        let started = milliseconds()
+        var status = process_status_slot()
+        while true {
+            match poll_process(pid, status)? {
+                Some(value) => {
+                    return Ok(value)
+                }
+                None => {
+                }
+            }
+            if deadline_reached(started, timeout) {
+                unsafe {
+                    terminate_process(pid, status)
+                }
+                return Err("process timed out")
+            }
+            wait_briefly()
+        }
+        return Err("could not wait for process")
+    }
+
+    fn process_status_slot() -> Vec<i32> {
+        var status = Vec<i32>.new()
+        status.push(0)
+        return move status
+    }
+
+    fn deadline_reached(started: u64, timeout: u64) -> bool {
+        return timeout != 0 && milliseconds() - started >= timeout
+    }
+
+}

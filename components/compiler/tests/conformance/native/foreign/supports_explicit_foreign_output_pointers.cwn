@@ -1,17 +1,18 @@
 extern "c" {
-    fn aligned(output: write RawPtr<u8>, alignment: read usize, size: read usize) -> i32 = "posix_memalign"
-    fn release(pointer: read RawPtr<u8>) -> void = "free"
+    fn parse(input: RawPtr<u8>, end: write RawPtr<u8>) -> f64 = "strtod"
 }
+
 fn main() -> u32 {
+    let input: Text = "11x\0"
     unsafe {
-        var pointer = RawPtr<u8>.from_address(0)
-        let result = aligned(pointer, 16, 16)
-        if result != 0 {
+        var end = RawPtr<u8>.from_address(0)
+        let result = parse(input.as_raw(), end)
+        if result != 11.0 || end != input.as_raw().offset(2) {
             return 1
         }
-        pointer.write_volatile(11)
-        let value = pointer.read_volatile()
-        release(pointer)
-        return u32.from(value)
+        if end.read_volatile() != 120 {
+            return 2
+        }
+        return 11
     }
 }

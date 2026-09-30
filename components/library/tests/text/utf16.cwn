@@ -1,0 +1,92 @@
+fn test_utf16() -> u32 {
+    let sample = "Aé中😀"
+    let units = std::utf16::encode(sample)
+    let expected: [u16; 5] = [65, 233, 20013, 55357, 56832]
+    if units.length() != 5 {
+        return 1
+    }
+    for index in 0..5 {
+        if units[index] != expected[index] {
+            return 2
+        }
+    }
+    let status = utf16_round_trip(units)
+    if status != 0 {
+        return status
+    }
+    return test_utf16_boundaries()
+}
+
+fn utf16_round_trip(units: Slice<u16>) -> u32 {
+    let text = match std::utf16::decode(units) {
+        Ok(value) => move value
+        Err(error) => {
+            error;
+            return 3
+        }
+    }
+    let encoded = std::utf16::encode(text)
+    if encoded.length() != units.length() {
+        return 4
+    }
+    for index in 0..units.length() {
+        if encoded[index] != units[index] {
+            return 5
+        }
+    }
+    return 0
+}
+
+fn test_utf16_boundaries() -> u32 {
+    let boundaries: [u16; 8] = [0, 55295, 57344, 65535, 55296, 56320, 56319, 57343]
+    let status = utf16_round_trip(boundaries)
+    if status != 0 {
+        return status
+    }
+    let empty = Vec<u16>.new()
+    if utf16_round_trip(empty) != 0 {
+        return 6
+    }
+    var index: usize = 0
+    match std::utf16::decode_scalar(empty, index) {
+        Ok(value) => {
+            value;
+            return 7
+        }
+        Err(error) => {
+            if error != std::utf16::Error::Truncated() {
+                return 8
+            }
+        }
+    }
+    return test_utf16_errors()
+}
+
+fn test_utf16_errors() -> u32 {
+    let inputs: [[u16; 2]; 5] = [[56320, 0], [57343, 0], [55296, 65], [55296, 55296], [55296, 57344]]
+    for index in 0..5 {
+        match std::utf16::decode(inputs[index]) {
+            Ok(value) => {
+                value;
+                return 9
+            }
+            Err(error) => {
+                if error != std::utf16::Error::Surrogate() {
+                    return 10
+                }
+            }
+        }
+    }
+    let truncated: [u16; 1] = [55296]
+    return match std::utf16::decode(truncated) {
+        Ok(value) => {
+            value;
+            11
+        }
+        Err(error) => if error == std::utf16::Error::Truncated() {
+            0
+        } else {
+            12
+        }
+    }
+}

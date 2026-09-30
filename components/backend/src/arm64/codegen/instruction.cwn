@@ -33,8 +33,14 @@ module arm64 {
         compiler.target = 9
         compiler.result_register = 9
         compiler.normalized = false
+        compiler.float_target = 2
+        compiler.float_result = false
         match result {
             Some(value) => {
+                let floating = frame_float_register(compiler.frame, value)
+                if floating != REGISTER_SPILLED {
+                    compiler.float_target = floating
+                }
                 let allocated = frame_register(compiler.frame, value)
                 if allocated != REGISTER_SPILLED {
                     compiler.target = allocated

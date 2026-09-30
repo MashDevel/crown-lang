@@ -9,13 +9,13 @@ fn missing_compiler(root: Text, cache: Text) -> Result<Text, Text> {
     let missing = testing_recovery::launcher(root, cache)?
     testing::expect(missing.status == 0 && std::text::contains(missing.stdout, "crown 0.1.0"), std::text::joined("missing-binary recovery: ", missing.stderr))?
     let expected = testing_recovery::current_digest(root)?
-    let binary = toolchain::path_join(cache, "crown")
+    let binary = toolchain::path_join(cache, toolchain::executable_name("crown", toolchain::host_target()))
     testing::expect(std::text::equal(toolchain::digest(binary)?, expected), "recovery compiler matches the current checkout")?
     return Ok(move expected)
 }
 
 fn corrupt_compiler(root: Text, cache: Text, expected: Text) -> Result<void, Text> {
-    let binary = toolchain::path_join(cache, "crown")
+    let binary = toolchain::path_join(cache, toolchain::executable_name("crown", toolchain::host_target()))
     toolchain::write_text(binary, "corrupted executable")?
     let corrupt = testing_recovery::launcher(root, cache)?
     testing::expect(corrupt.status == 0 && std::text::contains(corrupt.stdout, "crown 0.1.0"), "corrupt-binary recovery")?
@@ -23,7 +23,7 @@ fn corrupt_compiler(root: Text, cache: Text, expected: Text) -> Result<void, Tex
 }
 
 fn stale_compiler(root: Text, cache: Text, expected: Text) -> Result<void, Text> {
-    let binary = toolchain::path_join(cache, "crown")
+    let binary = toolchain::path_join(cache, toolchain::executable_name("crown", toolchain::host_target()))
     forge_stale(binary)?
     let stale = testing_recovery::launcher(root, cache)?
     testing::expect(stale.status == 0 && std::text::contains(stale.stdout, "crown 0.1.0"), "intact stale compiler recovery")?
@@ -32,7 +32,8 @@ fn stale_compiler(root: Text, cache: Text, expected: Text) -> Result<void, Text>
 }
 
 fn forge_stale(binary: Text) -> Result<void, Text> {
-    toolchain::write_text(binary, "#!/bin/sh\nexit 91\n")?
+    let program = testing::status_program(toolchain::parent_path(binary), "stale", 91)?
+    toolchain::copy_file(program, binary)?
     toolchain::executable(binary)?
     toolchain::record_build(binary, toolchain::digest_text("previous sources")?, Some(toolchain::digest_text("previous seed")?))?
     return Ok(())
@@ -45,40 +46,14 @@ fn recorded_lineage(binary: Text) -> Result<void, Text> {
     return testing::expect(std::text::equal(toolchain::digest(seed)?, expected), "cache records current seed")
 }
 
-fn host_diagnostic(root: Text, host: Text, expected: Text) -> Result<void, Text> {
-    let names = testing::list(host)
-    let script = std::text::joined(std::text::joined("#!/bin/sh\ncase \"$1\" in -s) printf '%s\\n' '", names[0]), std::text::joined("';; -m) printf '%s\\n' '", names[1]))
-    let command = testing::write_file(root, "host/uname", std::text::joined(script, "';; esac\n"))?
-    toolchain::executable(command)?
-    var arguments = Vec<Text>.new();
-    arguments.push("/usr/bin/env")
-    arguments.push(std::text::joined(std::text::joined("PATH=", toolchain::parent_path(command)), std::text::joined(":", toolchain::environment("PATH"))))
-    let launcher = testing::write_file(root, "host-project/bootstrap/crown", toolchain::read_text(toolchain::path_join(toolchain::repository_root()?, "bootstrap/crown"))?)?
-    toolchain::executable(launcher)?
-    arguments.push(launcher.clone());
-    arguments.push("--help")
-    let result = toolchain::capture(toolchain::command(move arguments), root)?
-    testing::expect(result.status != 0 && std::text::contains(result.stderr, expected), "bootstrap host diagnostic")?
-    return Ok(())
-}
-
 fn run() -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
-    host_selection(root)?
+    testing_recovery::host_selection(root)?
     recover(root)?
     return Ok(())
 }
 
-fn host_selection(root: Text) -> Result<void, Text> {
-    host_diagnostic(root, "Linux|i386", "64-bit ARM or x86")?
-    host_diagnostic(root, "Darwin|powerpc", "64-bit ARM or x86")?
-    host_diagnostic(root, "Windows|x86_64", "64-bit ARM or x86")?
-    host_diagnostic(root, "Linux|x86_64", "missing seed")?
-    host_diagnostic(root, "Linux|aarch64", "missing seed")?
-    host_diagnostic(root, "Darwin|x86_64", "missing seed")?
-    return host_diagnostic(root, "Darwin|arm64", "missing seed")
-}
 fn main() -> u32 {
     return testing::done(run())
 }

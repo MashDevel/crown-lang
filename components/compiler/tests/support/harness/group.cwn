@@ -1,12 +1,10 @@
 module testing_group {
     struct Fixture {
-        root: Text, executable: Text, registry: Text, source: Text
+        root: Text, executable: Text, registry: Text, source: Text, compiler: Text
     }
 
     fn fixture(root: Text, executable: Text) -> Result<Fixture, Text> {
-        testing::compiler()?;
-        let compiler = testing::write_file(root, "compiler", "#!/bin/sh\nexec \"$CROWN_TEST_COMPILER\" \"$@\"\n")?
-        toolchain::executable(compiler)?
+        let compiler = testing::compiler()?
         testing::write_file(root, "first.cwn", "fn value() -> u32 { 41 } fn main() -> u32 { value() }")?
         testing::write_file(root, "second.cwn", "fn value() -> u32 { 42 } fn main() -> u32 { value() }")?
         testing::write_file(root, "failure.cwn", "fn main() -> u32 { 0 }")?
@@ -19,7 +17,7 @@ module testing_group {
         source.push(']')
         let registry = testing::write_file(root, "cases.json", source)?
         return Ok(Fixture {
-                root: root.clone(), executable: executable.clone(), registry: move registry, source: move source
+                root: root.clone(), executable: executable.clone(), registry: move registry, source: move source, compiler: move compiler
             })
     }
 
@@ -36,7 +34,7 @@ module testing_group {
     fn execute(fixture: Fixture, filter: Text, coverage: Text) -> Result<u32, Text> {
         toolchain::write_text(fixture.registry, fixture.source)?
         let environment = harness::Environment {
-            compiler: toolchain::path_join(fixture.root, "compiler"), root: fixture.root.clone(), output: toolchain::path_join(fixture.root, "results"), coverage: coverage.clone()
+            compiler: fixture.compiler.clone(), root: fixture.root.clone(), output: toolchain::path_join(fixture.root, "results"), coverage: coverage.clone()
         }
         let request = harness::Suite {
             executable: fixture.executable.clone(), environment: move environment, registry: fixture.registry.clone(), jobs: 2, filter: filter.clone()

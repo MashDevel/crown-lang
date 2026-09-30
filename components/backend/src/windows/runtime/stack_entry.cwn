@@ -1,0 +1,22 @@
+module windows_runtime {
+    fn stack_entry(program: write ir::Program) -> Result<usize, Text> {
+        let signature = pointers(1, ir::TypeInteger(ir::IntegerWidth32()))
+        var code = builder(ir::function_new("__crown_windows_stack_start", move signature, ir::LinkageLocal()))?
+        let record = code.function.parameters[0]
+        let teb = thread_environment_block(program, code)?
+        var arguments = Vec<usize>.new()
+        arguments.push(load_pointer(code, record, THREAD_START)?)
+        arguments.push(load_pointer(code, record, THREAD_ARGUMENT)?)
+        arguments.push(load_pointer(code, record, 32)?)
+        arguments.push(load_pointer(code, record, 40)?)
+        arguments.push(teb)
+        let result = call_value(program, code, "__crown_windows_stack_call", move arguments, ir::TypePointer())?
+        store(code, record, THREAD_RESULT, result)?
+        return_status(code, 0)?
+        return Ok(ir::program_add_function(program, take_function(code)))
+    }
+
+    fn thread_environment_block(program: write ir::Program, code: write Builder) -> Result<usize, Text> {
+        return call_value(program, code, "__crown_windows_teb", Vec<usize>.new(), ir::TypePointer())
+    }
+}

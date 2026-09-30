@@ -1,4 +1,16 @@
-fn safety_execute(program: take ir::Program) -> Result<void, u32> {
+fn safety_execute(input: take ir::Program) -> Result<void, u32> {
+    var program = move input
+    if toolchain::host_target().platform == toolchain::Platform::Windows() && toolchain::host_target().architecture == toolchain::Architecture::X86_64() {
+        match x86::windows_program(program) {
+            Ok(value) => {
+                value;
+            }
+            Err(error) => {
+                error;
+                return Err(74)
+            }
+        }
+    }
     if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
         let object = match arm64::codegen(move program, safety_arm_variant()) {
             Ok(value) => move value
@@ -35,7 +47,7 @@ fn safety_execute_object(object: take object::CompilerObject) -> Result<void, u3
 fn safety_run_object(object: take object::CompilerObject) -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let directory = toolchain::temporary_path(temporary)
-    let path = toolchain::path_join(directory, "program")
+    let path = toolchain::path_join(directory, toolchain::executable_name("program", toolchain::host_target()))
     let bytes = safety_executable(move object)?
     toolchain::write_bytes(path, bytes)?
     toolchain::executable(path)?
@@ -55,13 +67,60 @@ fn safety_executable(input: take object::CompilerObject) -> Result<Vec<u8>, Text
         options.versions = elf::resolve_versions(object, options)?
         return elf::executable(move object, options)
     }
+    if toolchain::host_target().platform == toolchain::Platform::Windows() {
+        return safety_windows_executable(move object)
+    }
     return macho::executable(object, macho::libraries(Vec<Text>.new())?)
 }
 
 fn safety_arm_variant() -> arm64::AbiVariant {
+    if toolchain::host_target().platform == toolchain::Platform::Windows() {
+        return arm64::AbiVariant::Windows()
+    }
     return if toolchain::host_target().platform == toolchain::Platform::Macos() {
         arm64::AbiVariant::Darwin()
     } else {
         arm64::AbiVariant::Aapcs64()
+    }
+}
+
+fn safety_windows_executable(input: take object::CompilerObject) -> Result<Vec<u8>, Text> {
+    var object = move input
+    let entry = match object.entry {
+        Some(index) => index
+        None => {
+            return Err("test object has no entry")
+        }
+    }
+    object.symbols[entry].binding = object::SymbolGlobal()
+    var program = ir::program_new()
+    let signature = windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32()))
+    program.entry = Some(ir::program_add_function(program, ir::function_new(object.symbols[entry].name.clone(), move signature, ir::LinkageImport())))
+    windows_runtime::startup(program)?
+    var startup = safety_windows_object(move program)?
+    link_object::merge(startup, move object)?
+    return pe::executable(startup, pe::system_imports())
+}
+
+fn safety_windows_object(input: take ir::Program) -> Result<object::CompilerObject, Text> {
+    var program = move input
+    if toolchain::host_target().architecture == toolchain::Architecture::Arm64() {
+        return arm64::codegen(move program, arm64::AbiVariant::Windows())
+    }
+    match x86::windows_program(program) {
+        Ok(value) => {
+            value;
+        }
+        Err(error) => {
+            error;
+            return Err("could not prepare Windows test startup")
+        }
+    }
+    return match x86::codegen(move program) {
+        Ok(object) => Ok(move object)
+        Err(error) => {
+            error;
+            Err("could not compile Windows test startup")
+        }
     }
 }

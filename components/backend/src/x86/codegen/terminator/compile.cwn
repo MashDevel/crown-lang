@@ -69,62 +69,64 @@ module x86 {
     }
 
     fn codegen_compile_return(program: ir::Program, compiler: write FunctionCompiler, value: Option<usize>) -> Result<void, CodegenError> {
-        match read value {
-            Some(result) => {
-                let value_type = codegen_value_type(program, compiler, result)?
-                if codegen_type_is_wide(value_type) {
-                    return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
-                }
-                match codegen_load_value(program, compiler, ValueAccess {
-                        value: result, register: Rax()
-                    }) {
-                    Err(error) => {
-                        return Err(move error)
-                    }
-                    Ok(done) => {
-                        done
-                    }
-                }
-                if ir::type_is_float(value_type) {
-                    let width = codegen_float_width(value_type)?
-                    codegen_emit(compiler, MoveToFloat(width, Xmm0(), Rax()))
-                }
-            }
-            None => {
-                let done = codegen_load_register_aggregate_return(program, compiler)?
-                done
-            }
+        match value {
+            Some(result) => codegen_scalar_return(program, compiler, result)?
+            None => codegen_load_register_aggregate_return(program, compiler)?
         }
         codegen_epilogue(compiler)
         return Ok(())
     }
 
+    fn codegen_scalar_return(program: ir::Program, compiler: write FunctionCompiler, value: usize) -> Result<void, CodegenError> {
+        let value_type = codegen_value_type(program, compiler, value)?
+        if codegen_type_is_wide(value_type) {
+            if compiler.calling_convention == ir::CallingConvention::WindowsX64() {
+                return codegen_windows_wide_return(program, compiler, value)
+            }
+            return Err(codegen_error_here(compiler, CodegenUnsupportedInstruction()))
+        }
+        codegen_load_value(program, compiler, ValueAccess {
+                value: value, register: Rax()
+            })?
+        if ir::type_is_float(value_type) {
+            let width = codegen_float_width(value_type)?
+            codegen_emit(compiler, MoveToFloat(width, Xmm0(), Rax()))
+        }
+        return Ok(())
+    }
+
     fn codegen_load_register_aggregate_return(program: ir::Program, compiler: write FunctionCompiler) -> Result<void, CodegenError> {
         loan read program.functions[compiler.id] as function {
-            var index: usize = 0
-            while index < function.parameters.length() {
+            for index in 0..function.parameters.length() {
                 match read function.signature.parameter_abi[index] {
                     ir::ParameterReturn(aggregate) => {
-                        match read aggregate {
-                            ir::AggregateRegisters(size, alignment, components) => {
-                                size;
-                                alignment
-                                let returned = ReturnAggregate {
-                                    value: function.parameters[index]
-                                    components: codegen_abi_components_copy(components)
-                                }
-                                return codegen_load_return_components(program, compiler, move returned)
-                            }
-                            ir::AggregateMemory(size, alignment) => {
-                                size;
-                                alignment
-                            }
-                        }
+                        return codegen_load_aggregate_return(program, compiler, function.parameters[index], aggregate)
                     }
                     _ => {
                     }
                 }
-                index = index + 1
+            }
+        }
+        return Ok(())
+    }
+
+    fn codegen_load_aggregate_return(program: ir::Program, compiler: write FunctionCompiler, value: usize, aggregate: ir::AggregateAbi) -> Result<void, CodegenError> {
+        match read aggregate {
+            ir::AggregateRegisters(size, alignment, components) => {
+                size;
+                alignment;
+                return codegen_load_return_components(program, compiler, ReturnAggregate {
+                        value: value, components: codegen_abi_components_copy(components)
+                    })
+            }
+            ir::AggregateMemory(size, alignment) => {
+                size;
+                alignment;
+                if compiler.calling_convention == ir::CallingConvention::WindowsX64() {
+                    return codegen_load_value(program, compiler, ValueAccess {
+                            value: value, register: Rax()
+                        })
+                }
             }
         }
         return Ok(())

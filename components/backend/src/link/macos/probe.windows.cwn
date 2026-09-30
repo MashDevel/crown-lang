@@ -1,0 +1,7 @@
+module macho {
+    fn probe_valid_export(path: Text, name: Text) -> Result<bool, std::dylib::Error> {
+        path;
+        name;
+        return Err(std::dylib::Error::Open())
+    }
+}

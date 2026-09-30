@@ -1,11 +1,13 @@
 #!/bin/sh
 set -eu
 . "$(dirname -- "$0")/assets"
+binary=crown
+case "$host" in *-windows) binary=crown.exe ;; esac
 destination="$root/target/bootstrap-release/$release/$host"
 name="crown-$host.tar.gz"
 existing() {
-    verify "$destination/crown" compiler_sha256
-    test -x "$destination/crown"
+    verify "$destination/$binary" compiler_sha256
+    test -x "$destination/$binary"
 }
 if [ -e "$destination" ]; then
     existing
@@ -14,9 +16,9 @@ else
     download "$name"
     verify "$stage/$name" compiler_archive_sha256
     mkdir "$stage/compiler"
-    tar -xzOf "$stage/$name" "crown-$host/crown" > "$stage/compiler/crown"
-    verify "$stage/compiler/crown" compiler_sha256
-    chmod +x "$stage/compiler/crown"
+    tar -xzOf "$stage/$name" "crown-$host/$binary" > "$stage/compiler/$binary"
+    verify "$stage/compiler/$binary" compiler_sha256
+    chmod +x "$stage/compiler/$binary"
     install_directory compiler
 fi
-printf '%s\n' "$destination/crown"
+printf '%s\n' "$destination/$binary"

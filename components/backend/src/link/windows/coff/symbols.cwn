@@ -1,0 +1,103 @@
+module coff {
+    fn read_symbols(reader: write Reader) -> Result<void, Text> {
+        for index in 0..reader.symbol_count {
+            index;
+            reader.symbols.push(None())
+            reader.required.push(false)
+        }
+        mark_required_symbols(reader)?
+        var index: usize = 0
+        while index < reader.symbol_count {
+            let offset = reader.symbol_offset + index * 18
+            let auxiliary = usize.from(link_binary::number(reader.bytes, offset + 17, 1)?)
+            if auxiliary >= reader.symbol_count - index {
+                return Err("COFF auxiliary symbols exceed the symbol table")
+            }
+            read_symbol(reader, index, offset)?
+            for next in index + 1..index + auxiliary + 1 {
+                if reader.required[next] {
+                    return Err("COFF relocation references an auxiliary symbol")
+                }
+            }
+            index = index + auxiliary + 1
+        }
+        return Ok(())
+    }
+
+    fn read_symbol(reader: write Reader, index: usize, offset: usize) -> Result<void, Text> {
+        let storage = link_binary::number(reader.bytes, offset + 16, 1)?
+        let section = usize.from(link_binary::number(reader.bytes, offset + 12, 2)?)
+        let value = link_binary::number(reader.bytes, offset + 8, 4)?
+        if supported_storage(storage) == false {
+            return unused_symbol(reader, index)
+        }
+        if section > reader.sections.length() {
+            return missing_section(reader, index, section)
+        }
+        if section == 0 {
+            if storage != 2 || value != 0 {
+                return unused_symbol(reader, index)
+            }
+            return import_symbol(reader, index, offset)
+        }
+        match reader.sections[section - 1] {
+            Some(target) => defined_symbol(reader, index, offset, target)
+            None => unused_symbol(reader, index)
+        }
+    }
+
+    fn supported_storage(storage: u64) -> bool {
+        return storage == 2 || storage == 3 || storage == 6
+    }
+
+    fn missing_section(reader: Reader, index: usize, section: usize) -> Result<void, Text> {
+        if section < 65534 {
+            return Err("COFF symbol references an invalid section")
+        }
+        return unused_symbol(reader, index)
+    }
+
+    fn unused_symbol(reader: Reader, index: usize) -> Result<void, Text> {
+        if reader.required[index] {
+            return Err("COFF relocation requires an unsupported or discarded symbol")
+        }
+        return Ok(())
+    }
+
+    fn import_symbol(reader: write Reader, index: usize, offset: usize) -> Result<void, Text> {
+        if reader.required[index] == false {
+            return Ok(())
+        }
+        let name = symbol_name(reader, offset)?
+        let kind = if std::text::starts(name, "__imp_") {
+            object::SymbolData()
+        } else {
+            object::SymbolFunction()
+        }
+        reader.symbols[index] = Some(reader.output.symbols.length())
+        reader.output.symbols.push(object::Symbol {
+                name: move name, kind: kind, binding: object::SymbolImport(), section: None(), offset: 0, size: 0
+            })
+        return Ok(())
+    }
+
+    fn defined_symbol(reader: write Reader, index: usize, offset: usize, section: usize) -> Result<void, Text> {
+        let name = symbol_name(reader, offset)?
+        let value = link_binary::number(reader.bytes, offset + 8, 4)?
+        let kind = if link_binary::number(reader.bytes, offset + 14, 2)? & 32 != 0 {
+            object::SymbolFunction()
+        } else {
+            object::SymbolData()
+        }
+        let binding = if link_binary::number(reader.bytes, offset + 16, 1)? == 2 {
+            object::SymbolGlobal()
+        } else {
+            object::SymbolLocal()
+        }
+        reader.symbols[index] = Some(reader.output.symbols.length())
+        reader.output.symbols.push(object::Symbol {
+                name: move name, kind: kind, binding: move binding, section: Some(section), offset: value, size: 0
+            })
+        return Ok(())
+    }
+}

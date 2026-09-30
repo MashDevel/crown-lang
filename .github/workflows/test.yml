@@ -5,6 +5,14 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      bootstrap_run:
+        description: Run supplying initial Windows compilers for seed preparation
+        type: string
+        default: ''
+      prepare_release:
+        description: Verify and package all six native distributions without publishing
+        type: boolean
+        default: false
       coverage:
         description: Collect coverage and require 95% per package
         type: boolean
@@ -13,12 +21,15 @@ on:
     - cron: '17 4 * * 1'
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: test-${{ github.event.pull_request.number || github.ref }}
+  group: test-${{ github.event.pull_request.number || github.ref }}-${{ inputs.prepare_release || 'test' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   platforms:
     uses: ./.github/workflows/platforms.yml
     with:
+      bootstrap_run: ${{ inputs.bootstrap_run || '' }}
+      release: ${{ inputs.prepare_release == true }}
       coverage: ${{ github.event_name == 'schedule' || inputs.coverage == true }}
       verify: ${{ github.event_name == 'schedule' }}

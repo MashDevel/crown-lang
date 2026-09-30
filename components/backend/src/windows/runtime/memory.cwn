@@ -1,0 +1,37 @@
+module windows_runtime {
+    fn offset(code: write Builder, base: usize, bytes: u64) -> Result<usize, Text> {
+        let amount = integer(code, ir::IntegerWidth64(), bytes)
+        return value(code, ir::InstructionOffset(base, amount))
+    }
+
+    fn load_pointer(code: write Builder, base: usize, bytes: u64) -> Result<usize, Text> {
+        let address = offset(code, base, bytes)?
+        return value(code, ir::InstructionLoad(address, ir::TypePointer(), 8, false))
+    }
+
+    fn store(code: write Builder, base: usize, bytes: u64, stored: usize) -> Result<void, Text> {
+        let address = offset(code, base, bytes)?
+        emit(code, ir::InstructionStore(address, stored, 8, false))?;
+        return Ok(())
+    }
+
+    fn null_pointer(code: write Builder) -> usize {
+        return ir::function_constant(code.function, ir::TypePointer(), ir::ConstantNull())
+    }
+
+    fn require_nonnull(code: write Builder, pointer: usize, status: u64) -> Result<void, Text> {
+        let null = null_pointer(code)
+        let valid = value(code, ir::InstructionCompare(ir::CompareNotEqual(), pointer, null))?
+        return require_condition(code, valid, status)
+    }
+
+    fn require_condition(code: write Builder, condition: usize, status: u64) -> Result<void, Text> {
+        let success = new_block(code)?
+        let failure = new_block(code)?
+        finish(code, ir::TerminatorConditional(condition, success, failure))?
+        code.block = failure
+        return_status(code, status)?
+        code.block = success
+        return Ok(())
+    }
+}

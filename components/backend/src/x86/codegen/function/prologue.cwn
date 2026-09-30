@@ -15,8 +15,9 @@ module x86 {
             codegen_emit(compiler, SubtractImmediate(Rsp(), 8))
         }
         if compiler.frame.size != 0 {
-            codegen_emit(compiler, SubtractImmediate(Rsp(), compiler.frame.size))
+            codegen_stack_allocate(compiler, compiler.frame.size)
         }
+        codegen_windows_saved_floats(compiler, false)
         return codegen_capture_parameters(program, compiler)
     }
 
@@ -55,6 +56,9 @@ module x86 {
 
     fn codegen_capture_parameter(program: ir::Program, compiler: write FunctionCompiler, request: take ParameterCapture) -> Result<void, CodegenError> {
         match read request.location {
+            ArgumentIndirect(argument) => {
+                return codegen_capture_indirect(program, compiler, request.value, argument)
+            }
             ArgumentInteger(register) => {
                 match codegen_frame_register(compiler.frame, request.value) {
                     Some(destination) => {
@@ -70,24 +74,9 @@ module x86 {
                     })
             }
             ArgumentFloat(register) => {
-                match codegen_value_type(program, compiler, request.value) {
-                    Err(error) => {
-                        return Err(move error)
-                    }
-                    Ok(value_type) => {
-                        match codegen_float_width(value_type) {
-                            Err(error) => {
-                                return Err(move error)
-                            }
-                            Ok(width) => {
-                                codegen_emit(compiler, MoveFromFloat(width, Rax(), register))
-                                return codegen_store_value(program, compiler, ValueAccess {
-                                        value: request.value, register: Rax()
-                                    })
-                            }
-                        }
-                    }
-                }
+                return codegen_capture_float(program, compiler, FloatValueAccess {
+                        value: request.value, register: register
+                    })
             }
             ArgumentStack(slot) => {
                 let input = StackParameter {
@@ -109,6 +98,15 @@ module x86 {
                 return Ok(())
             }
         }
+    }
+
+    fn codegen_capture_float(program: ir::Program, compiler: write FunctionCompiler, access: FloatValueAccess) -> Result<void, CodegenError> {
+        let value_type = codegen_value_type(program, compiler, access.value)?
+        let width = codegen_float_width(value_type)?
+        codegen_emit(compiler, MoveFromFloat(width, Rax(), access.register))
+        return codegen_store_value(program, compiler, ValueAccess {
+                value: access.value, register: Rax()
+            })
     }
 
     fn codegen_capture_aggregate_registers(compiler: write FunctionCompiler, value: usize, components: Vec<AbiComponentLocation>) -> Result<void, CodegenError> {

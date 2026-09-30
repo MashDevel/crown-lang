@@ -1,0 +1,55 @@
+fn windows_root_declaration(program: write ir::Program, code: write windows_runtime::Builder, data: usize, destructor: usize) -> Result<void, Text> {
+    let zero = windows_runtime::integer(code, ir::IntegerWidth64(), 0)
+    windows_runtime::store(code, data, 0, zero)?
+    let factory = windows_runtime::value(code, ir::InstructionFunctionAddress(destructor))?
+    let output = windows_runtime::value(code, ir::InstructionStackSlot(24, 8))?
+    let initial = windows_root_declare(program, code, output, factory, data)?
+    windows_root_status(code, initial, 1)?
+    windows_root_pending(program, code, factory, data)?
+    windows_root_publish(program, code, output, factory, data)?
+    windows_root_ready(program, code, output, factory, data)?
+    let token = windows_runtime::offset(code, output, 8)?
+    return windows_root_lifecycle(program, code, token, data)
+}
+
+fn windows_root_declare(program: write ir::Program, code: write windows_runtime::Builder, output: usize, factory: usize, data: usize) -> Result<usize, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(output)
+    arguments.push(factory)
+    arguments.push(data)
+    return windows_runtime::call_value(program, code, "crown_root_declare", move arguments, ir::TypeInteger(ir::IntegerWidth32()))
+}
+
+fn windows_root_status(code: write windows_runtime::Builder, actual: usize, number: u64) -> Result<void, Text> {
+    let expected = windows_runtime::integer(code, ir::IntegerWidth32(), number)
+    return native_runtime_expect(code, actual, expected)
+}
+
+fn windows_root_pending(program: write ir::Program, code: write windows_runtime::Builder, factory: usize, data: usize) -> Result<void, Text> {
+    let output = windows_runtime::value(code, ir::InstructionStackSlot(24, 8))?
+    let status = windows_root_declare(program, code, output, factory, data)?
+    windows_root_status(code, status, 2)?
+    return windows_root_expect(code, output, 0)
+}
+
+fn windows_root_publish(program: write ir::Program, code: write windows_runtime::Builder, output: usize, factory: usize, data: usize) -> Result<void, Text> {
+    var arguments = Vec<usize>.new()
+    arguments.push(output)
+    arguments.push(data)
+    arguments.push(factory)
+    arguments.push(data)
+    return native_runtime_status(program, code, "crown_root_declare_publish", move arguments)
+}
+
+fn windows_root_ready(program: write ir::Program, code: write windows_runtime::Builder, published: usize, factory: usize, data: usize) -> Result<void, Text> {
+    let output = windows_runtime::value(code, ir::InstructionStackSlot(24, 8))?
+    let status = windows_root_declare(program, code, output, factory, data)?
+    windows_root_status(code, status, 0)?
+    windows_root_expect(code, output, 1)?
+    for index in 1..3 {
+        let expected = windows_runtime::load_pointer(code, published, u64.from(index * 8))?
+        let actual = windows_runtime::load_pointer(code, output, u64.from(index * 8))?
+        native_runtime_expect(code, actual, expected)?
+    }
+    return Ok(())
+}

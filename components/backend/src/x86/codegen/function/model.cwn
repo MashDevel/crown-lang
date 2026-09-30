@@ -5,6 +5,7 @@ module x86 {
     }
 
     struct FunctionCompiler {
+        calling_convention: ir::CallingConvention
         id: usize
         frame: Frame
         instructions: Option<Vec<Instruction>>

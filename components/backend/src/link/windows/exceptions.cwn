@@ -1,0 +1,91 @@
+module pe {
+    fn exception_input(section: object::Section) -> bool {
+        return std::text::equal(section.name, ".pdata") || std::text::starts(section.name, ".pdata$")
+    }
+
+    fn prepare_exception_section(image: write Image, object: object::CompilerObject) -> Result<void, Text> {
+        for index in 0..object.sections.length() {
+            if exception_input(object.sections[index]) {
+                image.exception_section = Some(section_append(image, section_new(".pdata", 1073741888))?)
+                return Ok(())
+            }
+        }
+        return Ok(())
+    }
+
+    fn input_section_index(image: Image, section: object::Section) -> usize {
+        if exception_input(section) {
+            match image.exception_section {
+                Some(index) => {
+                    return index
+                }
+                None => {
+                }
+            }
+        }
+        return section_index(section.kind)
+    }
+
+    fn exception_directory(bytes: write Vec<u8>, image: Image) -> void {
+        match image.exception_section {
+            Some(index) => {
+                link_binary::put(bytes, 288, u64.from(image.sections[index].rva), 4)
+                link_binary::put(bytes, 292, u64.from(image.sections[index].size), 4)
+            }
+            None => {
+            }
+        }
+    }
+
+    fn prepare_exception_table(image: write Image) -> Result<void, Text> {
+        match image.exception_section {
+            Some(index) => {
+                let stride: usize = if image.architecture == object::ArchitectureArm64() {
+                    8
+                } else {
+                    12
+                }
+                return sort_exception_table(image.sections[index].bytes, stride)
+            }
+            None => Ok(())
+        }
+    }
+
+    fn sort_exception_table(bytes: write Vec<u8>, stride: usize) -> Result<void, Text> {
+        if stride != 8 && stride != 12 {
+            return Err("unsupported PE exception record size")
+        }
+        if bytes.length() % stride != 0 {
+            return Err("PE exception table contains an incomplete function record")
+        }
+        for index in 1..bytes.length() / stride {
+            insert_exception_record(bytes, index, stride)?
+        }
+        return Ok(())
+    }
+
+    fn insert_exception_record(bytes: write Vec<u8>, index: usize, stride: usize) -> Result<void, Text> {
+        var cursor = index
+        while cursor > 0 {
+            let current = link_binary::number(bytes, cursor * stride, 4)?
+            let previous = link_binary::number(bytes, (cursor - 1) * stride, 4)?
+            if previous < current {
+                break
+            }
+            if previous == current {
+                return Err("PE exception table has duplicate function addresses")
+            }
+            swap_exception_record(bytes, (cursor - 1) * stride, cursor * stride, stride)
+            cursor = cursor - 1
+        }
+        return Ok(())
+    }
+
+    fn swap_exception_record(bytes: write Vec<u8>, left: usize, right: usize, stride: usize) -> void {
+        for index in 0..stride {
+            let value = bytes[left + index]
+            bytes[left + index] = bytes[right + index]
+            bytes[right + index] = value
+        }
+    }
+}

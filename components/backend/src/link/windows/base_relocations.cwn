@@ -1,0 +1,48 @@
+module pe {
+    fn base_relocations(image: write Image) -> Result<void, Text> {
+        if image.fixups.length() == 0 {
+            image.relocations = 0
+            image.relocation_size = 0
+            return Ok(())
+        }
+        std::sequence::sort(image.fixups, fn(left, right) {
+                if left < right {
+                    return -1
+                }
+                if left > right {
+                    return 1
+                }
+                return 0
+            })
+        let section = section_append(image, section_new(".reloc", 1107296320))?
+        var start: usize = 0
+        while start < image.fixups.length() {
+            let end = relocation_page_end(image.fixups, start)
+            relocation_block(image.sections[section], image.fixups, start, end)
+            start = end
+        }
+        image.sections[section].size = image.sections[section].bytes.length()
+        image.relocations = image.sections[section].rva
+        image.relocation_size = image.sections[section].size
+        return Ok(())
+    }
+
+    fn relocation_page_end(fixups: Vec<usize>, start: usize) -> usize {
+        let page = fixups[start] / 4096
+        var end = start + 1
+        while end < fixups.length() && fixups[end] / 4096 == page {
+            end = end + 1
+        }
+        return end
+    }
+
+    fn relocation_block(section: write Section, fixups: Vec<usize>, start: usize, end: usize) -> void {
+        let size = link_binary::aligned(8 +(end - start) * 2, 4)
+        let offset = reserve(section, size, 4)
+        link_binary::put(section.bytes, offset, u64.from(fixups[start] / 4096 * 4096), 4)
+        link_binary::put(section.bytes, offset + 4, u64.from(size), 4)
+        for index in start..end {
+            link_binary::put(section.bytes, offset + 8 +(index - start) * 2, 40960 + u64.from(fixups[index] % 4096), 2)
+        }
+    }
+}

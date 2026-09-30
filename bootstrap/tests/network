@@ -42,15 +42,22 @@ case "$1" in
     -m) printf '%s\n' "$CROWN_TEST_MACHINE" ;;
 esac
 SH
-    chmod +x "$project/bin/uname"
-    for entry in Darwin:x86_64:x86_64-macos Darwin:arm64:arm64-macos Linux:x86_64:x86_64-linux Linux:aarch64:arm64-linux; do
+    cat > "$project/bin/powershell.exe" <<'SH'
+#!/bin/sh
+set -eu
+test "${CROWN_TEST_NATIVE_TARGET:-}" != invalid
+printf '%s\r\n' "$CROWN_TEST_NATIVE_TARGET"
+SH
+    chmod +x "$project/bin/uname" "$project/bin/powershell.exe"
+    for entry in Darwin:x86_64:x86_64-macos Darwin:arm64:arm64-macos Linux:x86_64:x86_64-linux Linux:aarch64:arm64-linux MINGW64_NT:x86_64:x86_64-windows MINGW64_NT:x86_64:arm64-windows; do
         system=${entry%%:*}
         rest=${entry#*:}
         machine=${rest%%:*}
         expected=${rest#*:}
-        actual=$(env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM="$system" CROWN_TEST_MACHINE="$machine" sh "$project/bootstrap/host")
+        actual=$(env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM="$system" CROWN_TEST_MACHINE="$machine" CROWN_TEST_NATIVE_TARGET="$expected" sh "$project/bootstrap/host")
         test "$actual" = "$expected"
     done
+    expect_failure env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM=MINGW64_NT CROWN_TEST_MACHINE=x86_64 CROWN_TEST_NATIVE_TARGET=invalid sh "$project/bootstrap/host"
     expect_failure env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM=Windows CROWN_TEST_MACHINE=x86_64 sh "$project/bootstrap/host"
     expect_failure env PATH="$project/bin:$PATH" CROWN_TEST_SYSTEM=Windows sh "$project/bootstrap/checksum" /unavailable
 }

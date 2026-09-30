@@ -1,0 +1,45 @@
+module toolchain {
+    extern "c" {
+        fn raw_final_path(handle: RawPtr<u8>, buffer: RawPtr<u16>, size: u32, flags: u32) -> u32 = "GetFinalPathNameByHandleW"
+    }
+
+    fn windows_resolved_path(path: Text) -> Result<Text, Text> {
+        let encoded = wstring(path)?
+        unsafe {
+            let value = raw_create_file(std::wstr::as_raw(encoded), 0, 7, null(), 3, 33554432, null())
+            if value != invalid_handle() {
+                let handle = NativeHandle {
+                    value: value
+                }
+                return windows_handle_path(handle)
+            }
+            let error = raw_last_error()
+            if error != 2 && error != 3 {
+                return Err(std::text::joined("could not resolve path: ", path))
+            }
+        }
+        let parent = parent_path(path)
+        if std::text::equal(parent, path) {
+            return Ok(path.clone())
+        }
+        return Ok(path_join(windows_resolved_path(parent)?, file_name(path)))
+    }
+
+    fn windows_handle_path(handle: NativeHandle) -> Result<Text, Text> {
+        var buffer = wide_buffer(32768)
+        unsafe {
+            let size = raw_final_path(handle.value, buffer.as_raw(), 32768, 0)
+            if size == 0 || size >= 32768 {
+                return Err("could not read resolved path")
+            }
+            let path = normalized_windows_path(wide_text(buffer.as_raw(), usize.from(size))?)
+            if std::text::starts(path, "//?/UNC/") {
+                return Ok(std::text::joined("//", std::text::slice(path, 8, path.length())))
+            }
+            if std::text::starts(path, "//?/") {
+                return Ok(std::text::slice(path, 4, path.length()))
+            }
+            return Ok(move path)
+        }
+    }
+}

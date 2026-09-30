@@ -1,0 +1,62 @@
+module toolchain {
+    extern "c" {
+        fn raw_standard_handle(descriptor: u32) -> RawPtr<u8> = "GetStdHandle"
+        fn raw_current_process() -> RawPtr<u8> = "GetCurrentProcess"
+        fn raw_duplicate_handle(source_process: RawPtr<u8>, source: RawPtr<u8>, target_process: RawPtr<u8>, target: RawPtr<RawPtr<u8>>, access: u32, inherit: i32, options: u32) -> i32 = "DuplicateHandle"
+    }
+
+    fn process_handles(request: Command) -> Result<Vec<NativeHandle>, Text> {
+        var handles = Vec<NativeHandle>.new()
+        handles.push(process_standard_handle(4294967286, "", false)?)
+        handles.push(process_standard_handle(4294967285, request.stdout, true)?)
+        handles.push(process_standard_handle(4294967284, request.stderr, true)?)
+        return Ok(move handles)
+    }
+
+    fn process_standard_handle(descriptor: u32, path: Text, output: bool) -> Result<NativeHandle, Text> {
+        if path.length() != 0 {
+            return process_file_handle(path, output)
+        }
+        unsafe {
+            let source = raw_standard_handle(descriptor)
+            if source == null() || source == invalid_handle() {
+                return process_file_handle("NUL", output)
+            }
+            let current = raw_current_process()
+            var slot = Vec<RawPtr<u8>>.new()
+            slot.push(null())
+            if raw_duplicate_handle(current, source, current, slot.as_raw(), 0, 1, 2) == 0 {
+                return Err("could not inherit standard stream")
+            }
+            return Ok(NativeHandle {
+                    value: slot[0]
+                })
+        }
+    }
+
+    fn process_file_handle(path: Text, output: bool) -> Result<NativeHandle, Text> {
+        let encoded = wstring(path)?
+        var security = native_words(3)
+        security[0] = 24
+        security[2] = 1
+        let access: u32 = if output {
+            1073741824
+        } else {
+            2147483648
+        }
+        let disposition: u32 = if output {
+            2
+        } else {
+            3
+        }
+        unsafe {
+            let handle = raw_create_file(std::wstr::as_raw(encoded), access, 3, RawPtr<u8>.cast(security.as_raw()), disposition, 128, null())
+            if handle == invalid_handle() {
+                return Err(std::text::joined("could not redirect process stream: ", path))
+            }
+            return Ok(NativeHandle {
+                    value: handle
+                })
+        }
+    }
+}

@@ -1,0 +1,79 @@
+fn runtime_join_execution(code: write windows_runtime::Builder, output: usize, fault: RuntimeThreadFault) -> Result<void, Text> {
+    let thread = windows_runtime::value(code, ir::InstructionLoad(output, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let result = windows_runtime::value(code, ir::InstructionStackSlot(8, 8))?
+    let status = runtime_call_join(code, thread, result)?
+    let failed = fault == RuntimeThreadFault::Wait() || fault == RuntimeThreadFault::Close()
+    runtime_expect_value(code, status, if failed {
+            22
+        } else {
+            0
+        })?
+    if failed == false {
+        runtime_check_thread_result(code, result)?
+    }
+    return Ok(())
+}
+
+fn runtime_join_without_result(code: write windows_runtime::Builder, callback: usize, output: usize) -> Result<void, Text> {
+    let arguments = runtime_create_arguments(code, callback, output)?
+    let created = runtime_call_create(code, move arguments)?
+    runtime_expect_value(code, created, 0)?
+    let thread = windows_runtime::value(code, ir::InstructionLoad(output, ir::TypeInteger(ir::IntegerWidth64()), 8, false))?
+    let null = windows_runtime::null_pointer(code)
+    let joined = runtime_call_join(code, thread, null)?
+    return runtime_expect_value(code, joined, 0)
+}
+
+fn runtime_thread_sequence(code: write windows_runtime::Builder, callback: usize, output: usize, fault: RuntimeThreadFault) -> Result<void, Text> {
+    runtime_invalid_thread_calls(code, callback, output)?
+    let arguments = runtime_create_arguments(code, callback, output)?
+    let created = runtime_call_create(code, move arguments)?
+    let expected = runtime_expected_create(fault)
+    runtime_expect_value(code, created, expected)?
+    if expected == 0 {
+        runtime_join_execution(code, output, fault)?
+    }
+    if fault == RuntimeThreadFault::Success() {
+        runtime_join_without_result(code, callback, output)?
+    }
+    return Ok(())
+}
+
+fn runtime_expected_create(fault: RuntimeThreadFault) -> u64 {
+    return match fault {
+        RuntimeThreadFault::Allocate => 12
+        RuntimeThreadFault::Start => 11
+        _ => 0
+    }
+}
+
+fn runtime_expected_frees(fault: RuntimeThreadFault) -> u64 {
+    return match fault {
+        RuntimeThreadFault::Success => 2
+        RuntimeThreadFault::Start => 1
+        _ => 0
+    }
+}
+
+fn runtime_thread_execution_program(fault: RuntimeThreadFault) -> Result<ir::Program, Text> {
+    var program = runtime_thread_program()
+    windows_runtime::prepare(program)?
+    let state = runtime_mock_threads(program, fault)?
+    let callback = runtime_test_callback(program)?
+    var code = windows_runtime::builder(ir::function_new("windows_runtime_thread_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let output = windows_runtime::value(code, ir::InstructionStackSlot(8, 8))?
+    runtime_thread_sequence(code, callback, output, fault)?
+    let freed = windows_runtime::value(code, ir::InstructionGlobalAddress(state.freed))?
+    runtime_expect_memory(code, freed, 0, runtime_expected_frees(fault))?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}
+
+fn runtime_thread_executions() -> Result<void, Text> {
+    let faults = [RuntimeThreadFault::Success(), RuntimeThreadFault::Allocate(), RuntimeThreadFault::Start(), RuntimeThreadFault::Wait(), RuntimeThreadFault::Close()]
+    for index in 0..5 {
+        runtime_execute_program(runtime_thread_execution_program(faults[index])?)?
+    }
+    return Ok(())
+}

@@ -1,0 +1,15 @@
+module toolchain {
+    extern "c" {
+        fn raw_exit(status: i32) -> void = "exit"
+    }
+
+    fn replace_process(arguments: Vec<Text>) -> Result<void, Text> {
+        var request = command(std::text::clone_list(arguments))
+        request.timeout = 0
+        let status = execute(request)?
+        unsafe {
+            raw_exit(status)
+        }
+        return Err("process exit unexpectedly returned")
+    }
+}

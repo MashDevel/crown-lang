@@ -1,0 +1,27 @@
+fn pe_exception_tests() -> Result<void, Text> {
+    var bytes = Vec<u8>.new()
+    link_binary::pad(bytes, 36)
+    link_binary::put(bytes, 0, 12288, 4)
+    link_binary::put(bytes, 8, 30, 4)
+    link_binary::put(bytes, 12, 4096, 4)
+    link_binary::put(bytes, 20, 10, 4)
+    link_binary::put(bytes, 24, 8192, 4)
+    link_binary::put(bytes, 32, 20, 4)
+    pe::sort_exception_table(bytes, 12)?
+    for index in 0..3 {
+        testing::expect(link_binary::number(bytes, index * 12, 4)? == u64.from(index + 1) * 4096, "exception directory sorted by function RVA")?
+        testing::expect(link_binary::number(bytes, index * 12 + 8, 4)? == u64.from(index + 1) * 10, "unwind pointer stays with its function")?
+    }
+    return pe_exception_failures(bytes)
+}
+
+fn pe_exception_failures(input: Vec<u8>) -> Result<void, Text> {
+    var bytes = link_binary::part(input, 0, input.length())?
+    link_binary::put(bytes, 12, 4096, 4)
+    testing::error(pe::sort_exception_table(bytes, 12))?
+    testing::error(pe::sort_exception_table(bytes, 0))?
+    bytes.push(0)
+    testing::error(pe::sort_exception_table(bytes, 12))?
+    testing::error(pe::unsigned_relocation(-1, 4294967295))?
+    return testing::error(pe::unsigned_relocation(65536, 65535))
+}

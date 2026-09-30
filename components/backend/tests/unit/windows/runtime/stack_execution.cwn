@@ -1,0 +1,51 @@
+fn runtime_stack_program() -> Result<ir::Program, Text> {
+    var program = ir::program_new()
+    let stack = ir::program_add_global(program, ir::Global {
+            name: "windows_supplied_stack", bytes: Vec<u8>.new(), size: 262144, alignment: 16,
+            kind: ir::GlobalZeroFill(), exported: false, references: Vec<ir::GlobalReference>.new()
+        })
+    let callback = runtime_stack_callback(program)?
+    var code = windows_runtime::builder(ir::function_new("windows_stack_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let base = windows_runtime::value(code, ir::InstructionGlobalAddress(stack))?
+    let teb = windows_runtime::value(code, ir::InstructionStackSlot(24, 8))?
+    let expected_base = windows_runtime::integer(code, ir::IntegerWidth64(), 123456)
+    let expected_limit = windows_runtime::integer(code, ir::IntegerWidth64(), 65432)
+    windows_runtime::store(code, teb, 8, expected_base)?
+    windows_runtime::store(code, teb, 16, expected_limit)?
+    var arguments = Vec<usize>.new()
+    arguments.push(windows_runtime::value(code, ir::InstructionFunctionAddress(callback))?)
+    arguments.push(teb)
+    arguments.push(base)
+    arguments.push(windows_runtime::integer(code, ir::IntegerWidth64(), 262144))
+    arguments.push(teb)
+    let result = windows_runtime::call_value(program, code, "__crown_windows_stack_call", move arguments, ir::TypePointer())?
+    runtime_stack_bounds(code, result, base)?
+    let base_slot = windows_runtime::offset(code, teb, 8)?
+    let limit_slot = windows_runtime::offset(code, teb, 16)?
+    let restored_base = native_runtime_load(code, base_slot)?
+    let restored_limit = native_runtime_load(code, limit_slot)?
+    native_runtime_expect(code, restored_base, expected_base)?
+    native_runtime_expect(code, restored_limit, expected_limit)?
+    windows_runtime::return_status(code, 0)?
+    program.entry = Some(ir::program_add_function(program, windows_runtime::take_function(code)))
+    return Ok(move program)
+}
+
+fn runtime_stack_bounds(code: write windows_runtime::Builder, pointer: usize, base: usize) -> Result<void, Text> {
+    let integer = ir::TypeInteger(ir::IntegerWidth64())
+    let address = windows_runtime::value(code, ir::InstructionCast(ir::CastPointerToInteger(), pointer, integer))?
+    let bottom = windows_runtime::value(code, ir::InstructionCast(ir::CastPointerToInteger(), base, integer))?
+    let size = windows_runtime::integer(code, ir::IntegerWidth64(), 262144)
+    let top = windows_runtime::value(code, ir::InstructionBinary(ir::BinaryAdd(), bottom, size))?
+    let above = windows_runtime::value(code, ir::InstructionCompare(ir::CompareUnsignedGreaterEqual(), address, bottom))?
+    windows_runtime::require_condition(code, above, 3)?
+    let below = windows_runtime::value(code, ir::InstructionCompare(ir::CompareUnsignedLess(), address, top))?
+    return windows_runtime::require_condition(code, below, 4)
+}
+
+fn runtime_stack_callback(program: write ir::Program) -> Result<usize, Text> {
+    var code = windows_runtime::builder(ir::function_new("windows_stack_callback", windows_runtime::pointers(1, ir::TypePointer()), ir::LinkageLocal()))?
+    let local = windows_runtime::value(code, ir::InstructionStackSlot(32, 16))?
+    windows_runtime::finish(code, ir::TerminatorReturn(Some(local)))?
+    return Ok(ir::program_add_function(program, windows_runtime::take_function(code)))
+}

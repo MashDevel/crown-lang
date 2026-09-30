@@ -1,0 +1,55 @@
+module x86 {
+    fn windows_aggregate_size(aggregate: ir::AggregateAbi) -> u64 {
+        return match read aggregate {
+            ir::AggregateMemory(size, alignment) => {
+                alignment;
+                size
+            }
+            ir::AggregateRegisters(size, alignment, components) => {
+                alignment;
+                components;
+                size
+            }
+        }
+    }
+
+    fn windows_register_aggregate(aggregate: ir::AggregateAbi) -> bool {
+        let size = windows_aggregate_size(aggregate)
+        return size == 0 || size == 1 || size == 2 || size == 4 || size == 8
+    }
+
+    fn windows_aggregate_argument(aggregate: ir::AggregateAbi, position: usize) -> Result<ArgumentLocation, CodegenError> {
+        let size = windows_aggregate_size(aggregate)
+        if size == 0 {
+            return Ok(ArgumentOmitted())
+        }
+        if windows_register_aggregate(aggregate) == false {
+            return Ok(windows_indirect_argument(position, size))
+        }
+        match windows_integer_register(position) {
+            None => Ok(ArgumentMemory(position, 1, size))
+            Some(register) => {
+                var components = Vec<AbiComponentLocation>.new()
+                components.push(AbiComponentLocation {
+                        component: windows_aggregate_component(size)?, location: ScalarInteger(register)
+                    })
+                return Ok(ArgumentRegisters(move components))
+            }
+        }
+    }
+
+    fn windows_aggregate_component(size: u64) -> Result<ir::AbiComponent, CodegenError> {
+        let width = match size {
+            1 => ir::IntegerWidth8()
+            2 => ir::IntegerWidth16()
+            4 => ir::IntegerWidth32()
+            8 => ir::IntegerWidth64()
+            _ => {
+                return Err(codegen_error(CodegenInvalidIr()))
+            }
+        }
+        return Ok(ir::AbiComponent {
+                offset: 0, value_type: ir::TypeInteger(width)
+            })
+    }
+}

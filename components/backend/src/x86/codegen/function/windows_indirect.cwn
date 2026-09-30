@@ -1,0 +1,30 @@
+module x86 {
+    fn codegen_capture_indirect(program: ir::Program, compiler: write FunctionCompiler, value: usize, argument: IndirectArgument) -> Result<void, CodegenError> {
+        match argument.register {
+            Some(register) => codegen_emit(compiler, Move(R11(), register))
+            None => codegen_emit(compiler, Load(R11(), Rbp(), i32.from(argument.slot * 8 + 16)))
+        }
+        let value_type = codegen_value_type(program, compiler, value)?
+        if ir::type_is_vector(value_type) {
+            codegen_emit(compiler, LoadPackedFloat(LoadFloatMemoryArgs {
+                        width: Float64(), destination: Xmm0(), base: R11(), offset: 0
+                    }))
+            return codegen_store_vector(compiler, FloatValueAccess {
+                    value: value, register: Xmm0()
+                })
+        }
+        if codegen_type_is_wide(value_type) {
+            codegen_emit(compiler, Load(Rax(), R11(), 0))
+            codegen_emit(compiler, Load(R11(), R11(), 8))
+            return codegen_store_wide(compiler, value, WideRegisters {
+                    low: Rax(), high: R11()
+                })
+        }
+        let destination = codegen_parameter_offset(compiler, value)?
+        return codegen_copy_exact(compiler, MemoryCopyAddress {
+                base: R11(), offset: 0
+            }, MemoryCopyAddress {
+                base: Rbp(), offset: destination
+            }, argument.size)
+    }
+}

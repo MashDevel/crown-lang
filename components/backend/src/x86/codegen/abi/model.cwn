@@ -16,6 +16,14 @@ module x86 {
         ArgumentMemory(usize, usize, u64)
         ArgumentRegisters(Vec<AbiComponentLocation>)
         ArgumentOmitted
+        ArgumentIndirect(IndirectArgument)
+    }
+
+    copy struct IndirectArgument {
+        register: Option<Register>
+        slot: usize
+        copy_slot: usize
+        size: u64
     }
 
     struct AbiAssignment {

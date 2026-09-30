@@ -1,0 +1,30 @@
+module backend_assembly {
+    fn arm_variant(target: toolchain::Target) -> arm64::AbiVariant {
+        return match target.platform {
+            toolchain::Platform::Macos => arm64::AbiVariant::Darwin(),
+            toolchain::Platform::Windows => arm64::AbiVariant::Windows(),
+            _ => arm64::AbiVariant::Aapcs64()
+        }
+    }
+
+    fn format(target: toolchain::Target) -> x86::AssemblyFormat {
+        return match target.platform {
+            toolchain::Platform::Macos => x86::AssemblyFormat::MachO(),
+            toolchain::Platform::Windows => x86::AssemblyFormat::Coff(),
+            _ => x86::AssemblyFormat::Elf()
+        }
+    }
+
+    fn render(object: object::CompilerObject, target: toolchain::Target, prefix: Text) -> Result<Text, Text> {
+        if object.architecture == object::ArchitectureArm64() {
+            return arm64::assembly(object, prefix, arm_variant(target))
+        }
+        return match x86::assembly_relocatable(object, format(target)) {
+            Ok(text) => Ok(move text),
+            Err(error) => {
+                error;
+                Err("could not render native assembly")
+            }
+        }
+    }
+}

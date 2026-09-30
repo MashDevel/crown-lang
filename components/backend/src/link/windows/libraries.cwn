@@ -1,0 +1,21 @@
+module pe {
+    fn system_imports() -> Vec<Import> {
+        var imports = Vec<Import>.new()
+        library_symbols(imports, "kernel32.dll", "InitializeSRWLock|AcquireSRWLockExclusive|ReleaseSRWLockExclusive|AcquireSRWLockShared|ReleaseSRWLockShared|WaitForSingleObject|CloseHandle|WideCharToMultiByte|MultiByteToWideChar|ExitProcess|LoadLibraryW|GetProcAddress|FreeLibrary")
+        library_symbols(imports, "ucrtbase.dll", "abs|frexp|strtof|strtod|getenv|abort|exit|malloc|calloc|realloc|free|memcpy|memmove|memcmp|memset|strlen|_beginthreadex|__p__environ|_write|_setmode|__acrt_iob_func|__stdio_common_vfprintf|_configure_wide_argv|_initialize_narrow_environment|__p___argc|__p___wargv|_wfopen|_fseeki64|_ftelli64|fread|fwrite|fclose")
+        library_symbols(imports, "kernel32.dll", "CreateFileMappingW|MapViewOfFile|GetBinaryTypeW|GetFileAttributesW|CreateDirectoryW|DeleteFileW|RemoveDirectoryW|MoveFileExW|GetLastError|FindFirstFileW|FindNextFileW|FindClose|GetEnvironmentVariableW|SetEnvironmentVariableW|GetCurrentDirectoryW|GetFullPathNameW|GetFinalPathNameByHandleW|CreateSymbolicLinkW|GetTempPathW|GetTickCount64|Sleep|CreateFileW|LockFileEx|UnlockFileEx")
+        library_symbols(imports, "kernel32.dll", "CreateProcessW|CreateJobObjectW|QueryInformationJobObject|SetInformationJobObject|AssignProcessToJobObject|ResumeThread|TerminateProcess|TerminateJobObject|GetExitCodeProcess|GetStdHandle|GetCurrentProcess|DuplicateHandle|InitializeProcThreadAttributeList|UpdateProcThreadAttribute|DeleteProcThreadAttributeList")
+        library_symbols(imports, "advapi32.dll", "SystemFunction036")
+        library_symbols(imports, "ws2_32.dll", "WSAStartup|WSACleanup|socket|connect|recv|send|setsockopt|closesocket|bind|listen|accept")
+        return move imports
+    }
+
+    fn library_symbols(imports: write Vec<Import>, library: Text, names: Text) -> void {
+        let symbols = std::text::split(names, 124)
+        for index in 0..symbols.length() {
+            imports.push(Import {
+                    symbol: symbols[index].clone(), library: library.clone(), name: symbols[index].clone()
+                })
+        }
+    }
+}

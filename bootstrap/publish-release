@@ -5,7 +5,7 @@ tag=${RELEASE_TAG:?expected release tag}
 commit=${RELEASE_COMMIT:?expected release commit}
 repository=${GH_REPO:?expected GitHub repository}
 cd "$directory"
-for host in x86_64-macos arm64-macos x86_64-linux arm64-linux; do
+for host in x86_64-macos arm64-macos x86_64-linux arm64-linux x86_64-windows arm64-windows; do
     for file in "crown-$host.tar.gz" "crown-bootstrap-$host.s.gz" "crown-bootstrap-$host.json" "crown-bootstrap-$host.lock.json"; do
         test -s "$file"
     done

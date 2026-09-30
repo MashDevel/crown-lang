@@ -1,0 +1,98 @@
+module windows_runtime {
+    copy struct Instrumentation {
+        bytes: u64, path: usize, data: usize, suffix: u64
+    }
+
+    fn instrumentation_program(bytes: u64, path: Text, profiling: bool) -> Result<ir::Program, Text> {
+        if bytes == 0 || std::text::ends(path, "XXXXXX") == false || std::text::contains(path, "\0") {
+            return Err("invalid Windows instrumentation output")
+        }
+        var program = ir::program_new()
+        let data = instrumentation_global(program, "crown_cov_data", std::bytes::filled(8, 0), true)
+        let prefix = std::text::slice(path, 0, path.length() - 6)
+        var units = std::utf16::encode(prefix)
+        let suffix = u64.from(units.length()) * 2
+        for index in 0..32 {
+            index;
+            units.push(48)
+        }
+        units.push(0)
+        var encoded = Vec<u8>.new()
+        for index in 0..units.length() {
+            encoded.push(u8.from(units[index] & 255))
+            encoded.push(u8.from(units[index] >> 8))
+        }
+        let pathname = instrumentation_global(program, "crown_cov_path", move encoded, false)
+        let configuration = Instrumentation {
+            bytes: bytes, path: pathname, data: data, suffix: suffix
+        }
+        let mapping = instrumentation_mapping(program, bytes)?
+        let open = instrumentation_open(program, configuration, mapping)?
+        instrumentation_initialize(program, configuration, open, profiling)?
+        return Ok(move program)
+    }
+
+    fn instrumentation_global(program: write ir::Program, name: Text, bytes: take Vec<u8>, exported: bool) -> usize {
+        let size = u64.from(bytes.length())
+        return ir::program_add_global(program, ir::Global {
+                name: name.clone(), bytes: move bytes, size: size, alignment: 8,
+                kind: ir::GlobalWritable(), exported: exported, references: Vec<ir::GlobalReference>.new()
+            })
+    }
+
+    fn instrumentation_object(bytes: u64, path: Text, target: toolchain::Target, profiling: bool) -> Result<object::CompilerObject, Text> {
+        var program = instrumentation_program(bytes, path, profiling)?
+        if target.architecture == toolchain::Architecture::Arm64() {
+            var output = arm64::codegen(move program, arm64::AbiVariant::Windows())?
+            output.entry = None()
+            arm64::instrumentation_hit(output, profiling)?
+            return Ok(move output)
+        }
+        match x86::windows_program(program) {
+            Err(error) => {
+                error;
+                return Err("could not prepare Windows instrumentation ABI")
+            }
+            Ok(done) => {
+                done;
+            }
+        }
+        var output = match x86::codegen(move program) {
+            Err(error) => {
+                error;
+                return Err("could not compile Windows instrumentation")
+            }
+            Ok(value) => move value
+        }
+        let hit = if profiling {
+            profile::runtime_hit(x86::Rcx())
+        } else {
+            coverage::runtime_hit(x86::Rcx())
+        }
+        let counter = instrumentation_counter(move hit)?
+        output.entry = None()
+        link_object::merge(output, move counter)?
+        return Ok(move output)
+    }
+
+    fn instrumentation_counter(hit: take x86::Function) -> Result<object::CompilerObject, Text> {
+        var program = x86::program_relocatable()
+        coverage::runtime_function(program, move hit)?
+        match x86::program_add_typed_import(program, "crown_cov_data", object::SymbolData()) {
+            Err(error) => {
+                error;
+                return Err("could not declare Windows instrumentation storage")
+            }
+            Ok(done) => {
+                done;
+            }
+        }
+        return match x86::encode_program(program) {
+            Err(error) => {
+                error;
+                Err("could not encode Windows instrumentation counter")
+            }
+            Ok(value) => Ok(move value)
+        }
+    }
+}

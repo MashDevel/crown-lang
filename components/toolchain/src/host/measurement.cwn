@@ -1,0 +1,17 @@
+module toolchain {
+    copy struct ProcessUsage {
+        user_microseconds: u64, system_microseconds: u64
+    }
+
+    copy struct ProcessMeasurement {
+        status: i32, usage: ProcessUsage
+    }
+
+    fn execute_measured(request: Command) -> Result<ProcessMeasurement, Text> {
+        var process = start_process(request)?
+        let status = wait_process(process, request.timeout)?
+        return Ok(ProcessMeasurement {
+                status: status, usage: process_usage(process)?
+            })
+    }
+}

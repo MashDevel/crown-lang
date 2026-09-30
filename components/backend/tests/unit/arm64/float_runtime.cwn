@@ -1,0 +1,64 @@
+fn float_pressure_program(value_type: ir::Type) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, float_pressure_function(value_type))
+    var function = ir::function_new("main", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    let one = float_constant(function, value_type, 1065353216, 4607182418800017408)
+    var arguments = Vec<usize>.new()
+    var retained = Vec<usize>.new()
+    for index in 0..24 {
+        index;
+        let value = safety_append(function, block, ir::InstructionBinary(ir::BinaryFloatAdd(), one, one))?
+        arguments.push(value)
+        retained.push(value)
+    }
+    var result = safety_append(function, block, ir::InstructionCall(0, move arguments, value_type))?
+    for index in 0..retained.length() {
+        result = safety_append(function, block, ir::InstructionBinary(ir::BinaryFloatAdd(), result, retained[index]))?
+    }
+    let expected = float_constant(function, value_type, 1119879168, 4636455816377925632)
+    let equal = safety_append(function, block, ir::InstructionCompare(ir::CompareFloatOrderedEqual(), result, expected))?
+    let truth = safety_integer(function, ir::IntegerWidth1(), 1)
+    safety_return_equal(function, block, equal, truth)?
+    let entry = ir::program_add_function(program, move function)
+    ir::program_set_entry(program, entry)
+    return Ok(move program)
+}
+
+fn run_case(value_type: ir::Type) -> Result<void, u32> {
+    arm_execute(float_pressure_program(value_type)?)?
+    safety_execute(float_pressure_program(value_type)?)?
+    arm_execute(float_rotating_program(value_type)?)?
+    return safety_execute(float_rotating_program(value_type)?)
+}
+
+fn main() -> u32 {
+    return safety_status(run())
+}
+
+fn run() -> Result<void, u32> {
+    run_case(ir::TypeFloat(ir::FloatWidth32()))?
+    return run_case(ir::TypeFloat(ir::FloatWidth64()))
+}
+
+fn float_rotating_program(value_type: ir::Type) -> Result<ir::Program, u32> {
+    var program = ir::program_new()
+    ir::program_add_function(program, float_rotating_function(value_type))
+    var function = ir::function_new("main", ir::signature_new(Vec<ir::Type>.new(), ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageExport())
+    let block = safety_block(function)?
+    var result = float_constant(function, value_type, 0, 0)
+    let counts: [u64; 4] = [0, 1, 2, 31]
+    for index in 0..4 {
+        var arguments = Vec<usize>.new()
+        arguments.push(safety_integer(function, ir::IntegerWidth64(), counts[index]))
+        let value = safety_append(function, block, ir::InstructionCall(0, move arguments, value_type))?
+        result = safety_append(function, block, ir::InstructionBinary(ir::BinaryFloatAdd(), result, value))?
+    }
+    let expected = float_constant(function, value_type, 1115947008, 4634344754052595712)
+    let equal = safety_append(function, block, ir::InstructionCompare(ir::CompareFloatOrderedEqual(), result, expected))?
+    let truth = safety_integer(function, ir::IntegerWidth1(), 1)
+    safety_return_equal(function, block, equal, truth)?
+    let entry = ir::program_add_function(program, move function)
+    ir::program_set_entry(program, entry)
+    return Ok(move program)
+}

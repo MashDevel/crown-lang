@@ -1,0 +1,30 @@
+fn instrumentation_startup_case(count: usize) -> Result<void, Text> {
+    var program = ir::program_new()
+    let names = std::text::split("crown_cov_hit|crown_profile_hit", 124)
+    for index in 0..count {
+        let signature = windows_runtime::pointers(0, ir::TypeVoid())
+        ir::program_add_function(program, ir::function_new(names[index].clone(), move signature, ir::LinkageImport()));
+    }
+    var code = windows_runtime::builder(ir::function_new("test_startup", windows_runtime::pointers(0, ir::TypeVoid()), ir::LinkageLocal()))?
+    windows_runtime::startup_instrumentation(program, code)?
+    windows_runtime::finish(code, ir::TerminatorReturn(None()))?
+    let expected: usize = if count == 0 {
+        0
+    } else {
+        1
+    }
+    testing::expect(program.functions.length() == count + expected, "startup declares exactly one initializer when instrumented")?
+    testing::expect(code.function.blocks[0].instructions.length() == expected, "startup calls instrumentation once")?
+    if count != 0 {
+        testing::expect(std::text::equal(program.functions[count].name, "crown_cov_init"), "startup uses shared counter initializer")?
+    }
+    ir::program_add_function(program, windows_runtime::take_function(code));
+    return runtime_validate(program)
+}
+
+fn instrumentation_startup_tests() -> Result<void, Text> {
+    for count in 0..3 {
+        instrumentation_startup_case(count)?
+    }
+    return Ok(())
+}

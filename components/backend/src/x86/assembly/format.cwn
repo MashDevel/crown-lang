@@ -1,6 +1,6 @@
 module x86 {
     copy enum AssemblyFormat {
-        MachO, Elf
+        MachO, Elf, Coff
     }
 
     struct AssemblyOutput {
@@ -12,6 +12,9 @@ module x86 {
             assembly_append(output, ".subsections_via_symbols\n")
         }
         if entry {
+            if output.format == AssemblyFormat::Coff() {
+                assembly_append_text(output, object::coff_function_declaration("main", true))
+            }
             assembly_append(output, ".globl ")
             assembly_append_symbol(output, "main")
             assembly_append(output, "\n")

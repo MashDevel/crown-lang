@@ -74,6 +74,7 @@ fn option_value_tests() -> Result<void, Text> {
 fn option_tests() -> Result<void, Text> {
     option_target_tests()?
     apple_target_tests()?
+    windows_target_tests()?
     option_numeric_tests()?
     option_rejection_tests()?
     option_special_tests()?
@@ -167,4 +168,14 @@ fn link_input_options() -> Result<void, Text> {
 fn removed_linker_options() -> Result<void, Text> {
     testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|--clang|extra")))?
     return testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|--target|x86_64-bedrock|--clang|extra")))
+}
+
+fn windows_target_tests() -> Result<void, Text> {
+    let names = testing::list("x86_64-windows|arm64-windows")
+    for index in 0..names.length() {
+        let options = toolchain::parse_options(testing::list(std::text::joined("crown|build|hello.cwn|--target|", names[index])))?
+        testing::expect(options.target == toolchain::parse_target(names[index])?, "Windows build target")?
+        testing::expect(std::text::contains(toolchain::help(), names[index]), "documented Windows target")?
+    }
+    return testing::error(toolchain::parse_options(testing::list("crown|build|hello.cwn|--target|x86-windows")))
 }

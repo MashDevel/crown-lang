@@ -1,0 +1,99 @@
+module windows_runtime {
+    fn lock_runtime(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        let name = code.function.name.clone()
+        let count: usize = if std::text::ends(name, "_init") {
+            2
+        } else {
+            1
+        }
+        if matching_signature(code.function.signature, pointers(count, ir::TypeInteger(ir::IntegerWidth32()))) == false {
+            return Err(std::text::joined("incompatible Windows lock signature: ", name))
+        }
+        if count == 2 {
+            lock_initialize(program, code)?
+        } else {
+            lock_operation(program, code)?
+        }
+        return Ok(take_function(code))
+    }
+
+    fn lock_initialize(program: write ir::Program, code: write Builder) -> Result<void, Text> {
+        let null = ir::function_constant(code.function, ir::TypePointer(), ir::ConstantNull())
+        let attributes = code.function.parameters[1]
+        let valid = value(code, ir::InstructionCompare(ir::CompareEqual(), attributes, null))?
+        let initialize = new_block(code)?
+        let reject = new_block(code)?
+        finish(code, ir::TerminatorConditional(valid, initialize, reject))?
+        code.block = reject
+        return_status(code, 22)?
+        code.block = initialize
+        let lock = code.function.parameters[0]
+        pointer_call(program, code, "InitializeSRWLock", lock)?
+        if std::text::equal(code.function.name, "pthread_rwlock_init") {
+            lock_mode(code, 0)?
+        }
+        return return_status(code, 0)
+    }
+
+    fn lock_operation(program: write ir::Program, code: write Builder) -> Result<void, Text> {
+        let name = code.function.name.clone()
+        let lock = code.function.parameters[0]
+        if std::text::equal(name, "pthread_rwlock_unlock") {
+            return lock_release(program, code)
+        }
+        let api = lock_api(name)?
+        if api.length() != 0 {
+            pointer_call(program, code, api, lock)?
+        }
+        if std::text::equal(name, "pthread_rwlock_wrlock") {
+            lock_mode(code, 1)?
+        }
+        return return_status(code, 0)
+    }
+
+    fn lock_api(name: Text) -> Result<Text, Text> {
+        return match read name {
+            "pthread_mutex_lock" | "pthread_rwlock_wrlock" => Ok("AcquireSRWLockExclusive")
+            "pthread_mutex_unlock" => Ok("ReleaseSRWLockExclusive")
+            "pthread_rwlock_rdlock" => Ok("AcquireSRWLockShared")
+            "pthread_mutex_destroy" | "pthread_rwlock_destroy" => Ok("")
+            _ => Err("unsupported Windows lock operation")
+        }
+    }
+
+    fn lock_mode_address(code: write Builder) -> Result<usize, Text> {
+        let lock = code.function.parameters[0]
+        let offset = integer(code, ir::IntegerWidth64(), 8)
+        return value(code, ir::InstructionOffset(lock, offset))
+    }
+
+    fn lock_mode(code: write Builder, mode: u64) -> Result<void, Text> {
+        let address = lock_mode_address(code)?
+        let number = integer(code, ir::IntegerWidth32(), mode)
+        emit(code, ir::InstructionStore(address, number, 4, false))?;
+        return Ok(())
+    }
+
+    fn lock_release(program: write ir::Program, code: write Builder) -> Result<void, Text> {
+        let address = lock_mode_address(code)?
+        let mode = value(code, ir::InstructionLoad(address, ir::TypeInteger(ir::IntegerWidth32()), 4, false))?
+        let zero = integer(code, ir::IntegerWidth32(), 0)
+        let shared = value(code, ir::InstructionCompare(ir::CompareEqual(), mode, zero))?
+        let shared_block = new_block(code)?
+        let exclusive_block = new_block(code)?
+        finish(code, ir::TerminatorConditional(shared, shared_block, exclusive_block))?
+        return lock_release_paths(program, code, shared_block, exclusive_block)
+    }
+
+    fn lock_release_paths(program: write ir::Program, code: write Builder, shared_block: usize, exclusive_block: usize) -> Result<void, Text> {
+        let lock = code.function.parameters[0]
+        code.block = shared_block
+        pointer_call(program, code, "ReleaseSRWLockShared", lock)?
+        return_status(code, 0)?
+        code.block = exclusive_block
+        lock_mode(code, 0)?
+        pointer_call(program, code, "ReleaseSRWLockExclusive", lock)?
+        return return_status(code, 0)
+    }
+}

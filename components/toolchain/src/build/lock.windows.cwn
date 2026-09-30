@@ -1,0 +1,40 @@
+module toolchain {
+    extern "c" {
+        fn raw_create_file(path: RawPtr<u16>, access: u32, sharing: u32, security: RawPtr<u8>, disposition: u32, flags: u32, template: RawPtr<u8>) -> RawPtr<u8> = "CreateFileW"
+        fn raw_lock_file(handle: RawPtr<u8>, flags: u32, reserved: u32, low: u32, high: u32, overlapped: RawPtr<u64>) -> i32 = "LockFileEx"
+        fn raw_unlock_file(handle: RawPtr<u8>, reserved: u32, low: u32, high: u32, overlapped: RawPtr<u64>) -> i32 = "UnlockFileEx"
+    }
+
+    opaque resource FileLock {
+        private handle: RawPtr<u8>
+        private overlapped: Vec<u64>
+        private locked: bool
+        drop {
+            unsafe {
+                if locked {
+                    raw_unlock_file(handle, 0, 1, 0, overlapped.as_raw());
+                }
+                raw_close_handle(handle);
+            }
+        }
+    }
+
+    fn lock_file(path: Text) -> Result<FileLock, Text> {
+        make_directory(parent_path(path))?
+        let encoded = wstring(path)?
+        unsafe {
+            let handle = raw_create_file(std::wstr::as_raw(encoded), 3221225472, 3, null(), 4, 128, null())
+            if handle == invalid_handle() {
+                return Err(std::text::joined("could not open lock: ", path))
+            }
+            var lock = FileLock {
+                handle: handle, overlapped: native_words(4), locked: false
+            }
+            if raw_lock_file(handle, 2, 0, 1, 0, lock.overlapped.as_raw()) == 0 {
+                return Err(std::text::joined("could not acquire lock: ", path))
+            }
+            lock.locked = true
+            return Ok(move lock)
+        }
+    }
+}

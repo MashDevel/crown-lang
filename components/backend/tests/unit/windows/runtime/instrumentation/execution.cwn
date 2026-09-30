@@ -1,0 +1,95 @@
+fn instrumentation_test_program(mode: usize) -> Result<ir::Program, Text> {
+    var program = windows_runtime::instrumentation_program(8, "C:/é😀/run.XXXXXX", false)?
+    let initializer = instrumentation_mock_function(program, "crown_cov_init")?
+    program.functions[initializer].name = "test_cov_init"
+    let state = InstrumentationMock {
+        mode: mode,
+        view: instrumentation_mock_global(program, "test_view"),
+        calls: instrumentation_mock_global(program, "test_calls"),
+        closed: instrumentation_mock_global(program, "test_closed"),
+        removed: instrumentation_mock_global(program, "test_removed")
+    }
+    for index in 0..program.functions.length() {
+        if ir::function_is_import(program.functions[index]) {
+            var code = windows_runtime::builder(ir::function_copy(program.functions[index]))?
+            instrumentation_mock(code, state)?
+            program.functions[index] = windows_runtime::take_function(code)
+        }
+    }
+    let entry = instrumentation_test_entry(program, state)?
+    program.entry = Some(ir::program_add_function(program, move entry))
+    runtime_validate(program)?
+    return Ok(move program)
+}
+
+fn instrumentation_test_entry(program: ir::Program, state: InstrumentationMock) -> Result<ir::Function, Text> {
+    var code = windows_runtime::builder(ir::function_new("instrumentation_test_entry", windows_runtime::pointers(0, ir::TypeInteger(ir::IntegerWidth32())), ir::LinkageLocal()))?
+    let success = state.mode == 0 || state.mode == 5
+    if success {
+        instrumentation_test_initialize(program, code, state)?
+    } else {
+        let open = instrumentation_mock_function(program, "crown_windows_open_counters")?
+        let result = windows_runtime::value(code, ir::InstructionCall(open, Vec<usize>.new(), ir::TypePointer()))?
+        let zero = windows_runtime::null_pointer(code)
+        instrumentation_mock_equal(code, result, zero)?
+    }
+    instrumentation_test_counts(code, state)?
+    windows_runtime::return_status(code, 0)?
+    return Ok(windows_runtime::take_function(code))
+}
+
+fn instrumentation_test_initialize(program: ir::Program, code: write windows_runtime::Builder, state: InstrumentationMock) -> Result<void, Text> {
+    let initializer = instrumentation_mock_function(program, "test_cov_init")?
+    windows_runtime::emit(code, ir::InstructionCall(initializer, Vec<usize>.new(), ir::TypeVoid()))?;
+    let address = windows_runtime::value(code, ir::InstructionGlobalAddress(0))?
+    let actual = windows_runtime::value(code, ir::InstructionLoad(address, ir::TypePointer(), 8, false))?
+    let expected = windows_runtime::value(code, ir::InstructionGlobalAddress(state.view))?
+    return instrumentation_mock_equal(code, actual, expected)
+}
+
+fn instrumentation_test_counts(code: write windows_runtime::Builder, state: InstrumentationMock) -> Result<void, Text> {
+    let calls: u64 = match state.mode {
+        1 => 0,
+        5 => 2,
+        6 => 128,
+        _ => 1
+    }
+    let closed: u64 = match state.mode {
+        1 | 2 | 6 => 0,
+        3 => 1,
+        _ => 2
+    }
+    let removed: u64 = if state.mode == 3 || state.mode == 4 {
+        1
+    } else {
+        0
+    }
+    instrumentation_mock_counter(code, state.calls, calls)?
+    instrumentation_mock_counter(code, state.closed, closed)?
+    return instrumentation_mock_counter(code, state.removed, removed)
+}
+
+fn instrumentation_tests() -> Result<void, Text> {
+    instrumentation_startup_tests()?
+    instrumentation_link_tests()?
+    instrumentation_counter_test(false)?
+    instrumentation_counter_test(true)?
+    testing::error(windows_runtime::instrumentation_program(0, "run.XXXXXX", false))?
+    testing::error(windows_runtime::instrumentation_program(8, "missing-template", false))?
+    testing::error(windows_runtime::instrumentation_program(8, "bad\0.XXXXXX", false))?
+    return instrumentation_mapping_tests()
+}
+
+fn instrumentation_mapping_tests() -> Result<void, Text> {
+    for mode in 0..7 {
+        match runtime_execute_program(instrumentation_test_program(mode)?) {
+            Ok(done) => {
+                done;
+            }
+            Err(error) => {
+                return Err(std::text::joined(std::text::decimal(u64.from(mode)), std::text::joined(": ", error)))
+            }
+        }
+    }
+    return Ok(())
+}

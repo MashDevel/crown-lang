@@ -1,0 +1,53 @@
+module windows_runtime {
+    fn console_format(program: write ir::Program, code: write Builder, stream: usize, format: usize, list: usize) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(integer(code, ir::IntegerWidth64(), 0))
+        arguments.push(stream)
+        arguments.push(format)
+        arguments.push(null_pointer(code))
+        arguments.push(list)
+        return call_value(program, code, "__stdio_common_vfprintf", move arguments, ir::TypeInteger(ir::IntegerWidth32()))
+    }
+
+    fn printf_signature(signature: ir::Signature) -> bool {
+        if signature.parameters.length() == 0 || signature.result != ir::TypeInteger(ir::IntegerWidth32()) {
+            return false
+        }
+        if signature.parameters[0] != ir::TypePointer() {
+            return false
+        }
+        for index in 1..signature.parameters.length() {
+            if printf_argument(signature.parameters[index]) == false {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn printf_argument(value_type: ir::Type) -> bool {
+        return value_type == ir::TypePointer() || value_type == ir::TypeInteger(ir::IntegerWidth32()) || value_type == ir::TypeInteger(ir::IntegerWidth64()) || value_type == ir::TypeFloat(ir::FloatWidth64())
+    }
+
+    fn console_printf(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        if printf_signature(input.signature) == false {
+            return Err("incompatible Windows printf signature")
+        }
+        var code = builder(move input)?
+        var descriptor = Vec<usize>.new()
+        descriptor.push(integer(code, ir::IntegerWidth32(), 1))
+        let stream = call_value(program, code, "__acrt_iob_func", move descriptor, ir::TypePointer())?
+        let list = printf_arguments(code)?
+        let result = console_format(program, code, stream, code.function.parameters[0], list)?
+        finish(code, ir::TerminatorReturn(Some(result)))?
+        return Ok(take_function(code))
+    }
+
+    fn printf_arguments(code: write Builder) -> Result<usize, Text> {
+        let size = u64.from(code.function.parameters.length()) * 8
+        let list = value(code, ir::InstructionStackSlot(size, 8))?
+        for index in 1..code.function.parameters.length() {
+            store(code, list, u64.from(index - 1) * 8, code.function.parameters[index])?
+        }
+        return Ok(list)
+    }
+}

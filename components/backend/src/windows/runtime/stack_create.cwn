@@ -1,0 +1,88 @@
+module windows_runtime {
+    fn stack_signature() -> ir::Signature {
+        var signature = pointers(3, ir::TypeInteger(ir::IntegerWidth32()))
+        for index in 0..2 {
+            index;
+            signature.parameters.push(ir::TypeInteger(ir::IntegerWidth64()))
+            signature.parameter_abi.push(ir::ParameterDirect())
+        }
+        return move signature
+    }
+
+    fn stack_create(program: write ir::Program, input: take ir::Function) -> Result<ir::Function, Text> {
+        var code = builder(move input)?
+        stack_parameters(code)?
+        stack_validate_pointers(code)?
+        stack_validate(code)?
+        let record = stack_record(program, code)?
+        let start = stack_entry(program)?
+        let handle = thread_launch(program, code, record, start)?
+        thread_create_result(program, code, record, handle)?
+        return Ok(take_function(code))
+    }
+
+    fn stack_parameters(code: Builder) -> Result<void, Text> {
+        if code.function.parameters.length() != 5 || code.function.signature.result != ir::TypeInteger(ir::IntegerWidth32()) {
+            return Err("incompatible Windows supplied-stack signature")
+        }
+        for index in 0..5 {
+            let kind = code.function.signature.parameters[index]
+            if kind != ir::TypePointer() && kind != ir::TypeInteger(ir::IntegerWidth64()) {
+                return Err("Windows supplied-stack parameters must be pointer-sized")
+            }
+        }
+        if code.function.signature.parameters[0] != ir::TypePointer() {
+            return Err("Windows supplied-stack output must be a pointer")
+        }
+        return Ok(())
+    }
+
+    fn stack_integer(code: write Builder, index: usize) -> Result<usize, Text> {
+        let parameter = code.function.parameters[index]
+        if code.function.signature.parameters[index] == ir::TypePointer() {
+            return value(code, ir::InstructionCast(ir::CastPointerToInteger(), parameter, ir::TypeInteger(ir::IntegerWidth64())))
+        }
+        return Ok(parameter)
+    }
+
+    fn stack_validate(code: write Builder) -> Result<void, Text> {
+        let zero = integer(code, ir::IntegerWidth64(), 0)
+        let base = stack_integer(code, 3)?
+        let length = stack_integer(code, 4)?
+        let mask = integer(code, ir::IntegerWidth64(), 15)
+        let alignment = value(code, ir::InstructionBinary(ir::BinaryAnd(), base, mask))?
+        let aligned = value(code, ir::InstructionCompare(ir::CompareEqual(), alignment, zero))?
+        require_condition(code, aligned, 22)?
+        let minimum = integer(code, ir::IntegerWidth64(), 131072)
+        let sufficient = value(code, ir::InstructionCompare(ir::CompareUnsignedGreaterEqual(), length, minimum))?
+        require_condition(code, sufficient, 22)?
+        let end = value(code, ir::InstructionBinary(ir::BinaryAdd(), base, length))?
+        let bounded = value(code, ir::InstructionCompare(ir::CompareUnsignedGreater(), end, base))?
+        return require_condition(code, bounded, 22)
+    }
+
+    fn stack_validate_pointers(code: write Builder) -> Result<void, Text> {
+        let zero = integer(code, ir::IntegerWidth64(), 0)
+        for index in 0..4 {
+            if index != 2 {
+                let parameter = stack_integer(code, index)?
+                let valid = value(code, ir::InstructionCompare(ir::CompareNotEqual(), parameter, zero))?
+                require_condition(code, valid, 22)?
+            }
+        }
+        return Ok(())
+    }
+
+    fn stack_record(program: write ir::Program, code: write Builder) -> Result<usize, Text> {
+        var arguments = Vec<usize>.new()
+        arguments.push(integer(code, ir::IntegerWidth64(), 48))
+        let record = call_value(program, code, "malloc", move arguments, ir::TypePointer())?
+        require_nonnull(code, record, 12)?
+        let offsets: [u64; 4] = [THREAD_START, THREAD_ARGUMENT, 32, 40]
+        for index in 0..4 {
+            let parameter = code.function.parameters[index + 1]
+            store(code, record, offsets[index], parameter)?
+        }
+        return Ok(record)
+    }
+}

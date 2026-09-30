@@ -1,0 +1,83 @@
+module arm64 {
+    fn frame_float_register(frame: Frame, value: usize) -> u32 {
+        if value >= frame.float_registers.length() {
+            return REGISTER_SPILLED
+        }
+        return frame.float_registers[value]
+    }
+
+    fn frame_allocated(frame: Frame, value: usize) -> bool {
+        return frame_register(frame, value) != REGISTER_SPILLED || frame_float_register(frame, value) != REGISTER_SPILLED
+    }
+
+    fn float_register_move(compiler: write Compiler, destination: u32, source: u32, value_type: ir::Type) -> void {
+        if destination != source {
+            emit_encoding(compiler, float_move(destination, source, ir::type_is_float64(value_type)))
+        }
+    }
+
+    fn float_value_load(compiler: write Compiler, value: usize, register: u32, value_type: ir::Type) -> Result<void, Text> {
+        let allocated = frame_float_register(compiler.frame, value)
+        if allocated != REGISTER_SPILLED {
+            float_register_move(compiler, register, allocated, value_type)
+            return Ok(())
+        }
+        if load_constant(compiler, value, 9, false) {
+            emit_encoding(compiler, float_move_bits(register, 9, true, ir::type_is_float64(value_type)))
+            return Ok(())
+        }
+        return float_frame_access(compiler, register, frame_value(compiler.frame, value)?, value_size(value_type)?, true)
+    }
+
+    fn float_value_register(compiler: write Compiler, value: usize, fallback: u32, value_type: ir::Type) -> Result<u32, Text> {
+        let allocated = frame_float_register(compiler.frame, value)
+        if allocated != REGISTER_SPILLED {
+            return Ok(allocated)
+        }
+        float_value_load(compiler, value, fallback, value_type)?
+        return Ok(fallback)
+    }
+
+    fn float_value_store(compiler: write Compiler, value: usize, register: u32, value_type: ir::Type) -> Result<void, Text> {
+        let allocated = frame_float_register(compiler.frame, value)
+        if allocated != REGISTER_SPILLED {
+            float_register_move(compiler, allocated, register, value_type)
+            return Ok(())
+        }
+        return float_frame_access(compiler, register, frame_value(compiler.frame, value)?, value_size(value_type)?, false)
+    }
+
+    fn float_frame_access(compiler: write Compiler, register: u32, offset: u64, size: u32, load: bool) -> Result<void, Text> {
+        return emit_float_frame_access(compiler.bytes, register, offset, size, load)
+    }
+
+    fn emit_float_frame_access(bytes: write Vec<u8>, register: u32, offset: u64, size: u32, load: bool) -> Result<void, Text> {
+        if offset <= FRAME_LIMIT && size != 0 && offset % u64.from(size) == 0 && offset / u64.from(size) <= 4095 {
+            append_word(bytes, simd_memory_word(register, 28, u32.from(offset), size, load)?)
+        } else {
+            emit_frame_address(bytes, 17, offset)?
+            append_word(bytes, simd_memory_word(register, 17, 0, size, load)?)
+        }
+        return Ok(())
+    }
+
+    fn emit_saved_floats(bytes: write Vec<u8>, frame: Frame, load: bool) -> Result<void, Text> {
+        for index in 0..frame.float_saved.length() {
+            let offset = frame.float_saved[index]
+            if offset != 18446744073709551615 {
+                emit_float_frame_access(bytes, FLOAT_REGISTER_FIRST + u32.from(index), offset, 8, load)?
+            }
+        }
+        return Ok(())
+    }
+    fn float_phi_copy(compiler: write Compiler, source: usize, result: usize, value_type: ir::Type, stage: bool) -> Result<void, Text> {
+        let offset = frame_copy(compiler.frame, result)?
+        let size = value_size(value_type)?
+        if stage {
+            let register = float_value_register(compiler, source, 0, value_type)?
+            return float_frame_access(compiler, register, offset, size, false)
+        }
+        float_frame_access(compiler, 0, offset, size, true)?
+        return float_value_store(compiler, result, 0, value_type)
+    }
+}

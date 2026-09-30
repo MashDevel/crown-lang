@@ -6,7 +6,8 @@ fn allowed_file(path: Text) -> bool {
         }
     }
     let fixtures = testing::list("components/compiler/tests/platform/linux/abi_probe.c|components/compiler/tests/platform/linux/external.c|components/compiler/tests/platform/linux/arm_external.c|components/compiler/tests/fixtures/arm64_macos/abi.c|components/compiler/tests/fixtures/arm64_macos/host_abi.c")
-    return std::text::list_contains(fixtures, path)
+    let windows = testing::list("components/backend/tests/fixtures/windows/native.c|components/backend/tests/fixtures/windows/native-x86_64.obj|components/backend/tests/fixtures/windows/native-arm64.obj")
+    return std::text::list_contains(fixtures, path) || std::text::list_contains(windows, path)
 }
 
 fn scan(root: Text, relative: Text) -> Result<void, Text> {
@@ -31,6 +32,8 @@ fn run() -> Result<void, Text> {
     testing::expect(allowed_file("components/compiler/src/unexpected.c") == false, "C exception must be explicit")?
     testing::expect(allowed_file("components/library/tools/tool.py") == false, "Python implementation rejected")?
     testing::expect(allowed_file("components/compiler/src/main.cwn"), "Crown source accepted")?
+    testing::expect(allowed_file("components/backend/tests/fixtures/windows/native-arm64.obj"), "independent Windows COFF fixture accepted")?
+    testing::expect(allowed_file("components/backend/src/native-arm64.obj") == false, "COFF fixture exception is confined to tests")?
     return scan(toolchain::repository_root()?, "components")
 }
 

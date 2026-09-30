@@ -9,7 +9,7 @@ fixture() {
     project="$scratch/project $fixture_number"
     assets="$scratch/assets $fixture_number"
     mkdir -p "$project/bootstrap/locks" "$assets"
-    for file in download assets crown fetch fetch-compiler host checksum digest.awk package-seed package-release publish-release seed-release repository; do
+    for file in download assets crown build-compiler fetch fetch-compiler host checksum digest.awk package-seed package-release publish-release seed-release repository; do
         cp "$root/bootstrap/$file" "$project/bootstrap/$file"
     done
 }
