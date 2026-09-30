@@ -50,7 +50,7 @@ module pe {
         let size = link_binary::aligned(image.sections[last].rva + image.sections[last].size, SECTION_ALIGNMENT)
         link_binary::put(bytes, 208, u64.from(size), 4)
         link_binary::put(bytes, 212, u64.from(headers), 4)
-        link_binary::put(bytes, 220, 3, 2)
+        link_binary::put(bytes, 220, u64.from(image.subsystem), 2)
         link_binary::put(bytes, 222, 352, 2)
         link_binary::put(bytes, 224, 8388608, 8)
         link_binary::put(bytes, 232, 4096, 8)

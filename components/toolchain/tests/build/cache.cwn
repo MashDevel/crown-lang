@@ -59,6 +59,7 @@ fn run() -> Result<void, Text> {
     hash_tests()?
     bootstrap_record(root)?
     interpreter_cache(root)?
+    subsystem_cache(root)?
     record_symlinks(root)?
     return Ok(())
 }
@@ -83,6 +84,7 @@ fn interpreter_cache(root: Text) -> Result<void, Text> {
     let compiler = fingerprint_compiler(root)?
     let inputs = testing::write_file(root, "link-inputs.json", "[]")?
     let project = toolchain::Project {
+        windows_subsystem: "console",
         manifest: source.clone(), name: "test", sources: testing::list(source), libraries: Vec<Text>.new(), links: Vec<Text>.new(), output: "program"
     }
     let request = toolchain::BuildRequest {
@@ -147,4 +149,18 @@ fn fingerprint_compiler(root: Text) -> Result<Text, Text> {
     let result = testing::invoke(move arguments, root)?
     testing::expect(toolchain::clean_result(result), "native linker-input fixture builds")?
     return Ok(move compiler)
+}
+
+fn subsystem_cache(root: Text) -> Result<void, Text> {
+    let source = testing::write_file(root, "subsystem.cwn", "fn main() -> u32 { 0 }")?
+    let target = toolchain::parse_target("x86_64-windows")?
+    let project = toolchain::source_project(source, target)?
+    var request = toolchain::BuildRequest {
+        compiler: source.clone(), project: move project, output: "program.exe", objects: Vec<Text>.new(), links: Vec<Text>.new(),
+        max_instances: 128, coverage: "", optimization: toolchain::optimization_options(), target: target
+    }
+    let console = toolchain::build_fingerprint(request)?
+    request.project.windows_subsystem = "windows"
+    let gui = toolchain::build_fingerprint(request)?
+    return testing::expect(std::text::equal(console, gui) == false, "subsystem changes invalidate the executable cache")
 }

@@ -8,7 +8,7 @@ module frontend {
         if options.links.length() != 0 {
             return Err("Windows external libraries require DLL export resolution")
         }
-        let bytes = pe::executable(object, pe::system_imports())?
+        let bytes = pe::executable_with_subsystem(object, pe::system_imports(), toolchain::windows_subsystem_id(options.windows_subsystem))?
         toolchain::write_bytes(options.output, bytes)?
         return Ok(0)
     }

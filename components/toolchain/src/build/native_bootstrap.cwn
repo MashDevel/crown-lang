@@ -9,7 +9,7 @@ module toolchain {
         let build = CompileRequest {
             compiler: request.compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(sources), libraries: Vec<Text>.new(), max_instances: 128, coverage: "", optimization: optimization_options(), target: host_target()
         }
-        compile_executable(build, Vec<Text>.new(), Vec<Text>.new())?
+        compile_executable(build, Vec<Text>.new(), Vec<Text>.new(), "console")?
         return Ok(move binary)
     }
 }

@@ -44,6 +44,7 @@ fn run() -> Result<void, Text> {
     let temporary = toolchain::temporary(toolchain::temporary_directory())?
     let root = toolchain::temporary_path(temporary)
     project_tests(root)?;
+    windows_subsystem_tests(root)?;
     source_tests(root)?;
     invalid_projects(root)?
     target_projects(root)?
@@ -87,4 +88,19 @@ fn link_name_tests(root: Text) -> Result<void, Text> {
         testing::error(toolchain::load_project(path, toolchain::host_target()))?
     }
     return Ok(())
+}
+
+fn windows_subsystem_tests(root: Text) -> Result<void, Text> {
+    let base = "[package]\nname='demo'\nsource='src'\n[target.windows]\n"
+    let target = toolchain::parse_target("x86_64-windows")?
+    let path = testing::write_file(root, "Crown.toml", base)?
+    let defaults = toolchain::load_project(path, target)?
+    testing::expect(std::text::equal(defaults.windows_subsystem, "console"), "console is the default")?
+    toolchain::write_text(path, std::text::joined(base, "subsystem='windows'"))?
+    let gui = toolchain::load_project(path, target)?
+    testing::expect(std::text::equal(gui.windows_subsystem, "windows"), "GUI manifest setting")?
+    toolchain::write_text(path, std::text::joined(base, "subsystem='invalid'"))?
+    testing::error(toolchain::load_project(path, target))?
+    toolchain::write_text(path, std::text::joined(base, "subsystem=2"))?
+    return testing::error(toolchain::load_project(path, target))
 }

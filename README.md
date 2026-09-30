@@ -204,6 +204,8 @@ libraries = ["m"]
 libraries = ["kernel32"]
 ```
 
+Windows executables default to the `console` subsystem. Set `[target.windows] subsystem = "windows"` for a graphical application that must not allocate a console window. `crown build` and `crown run` accept `--windows-subsystem console|windows` to override the manifest when targeting Windows. The subsystem is included in the build cache key.
+
 Unknown sections and keys are errors. Source paths may refer to shared sibling directories.
 
 Library and framework names accept ASCII letters, digits, `-`, `_`, `.`, and `+`. Names must be nonempty and cannot be `.` or `..`; paths and loader directives are rejected.

@@ -3,6 +3,7 @@ fn headers(architecture: object::Architecture, machine: u64) -> Result<void, Tex
     let bytes = pe::executable(object, Vec<pe::Import>.new())?
     header_identity(bytes, machine)?
     header_version(bytes, architecture)?
+    subsystem_headers(object)?
     return header_dimensions(bytes)
 }
 
@@ -139,4 +140,12 @@ fn main() -> u32 {
             1
         }
     }
+}
+
+fn subsystem_headers(object: object::CompilerObject) -> Result<void, Text> {
+    let gui = pe::executable_with_subsystem(object, Vec<pe::Import>.new(), 2)?
+    testing::expect(link_binary::number(gui, 220, 2)? == 2, "GUI subsystem does not allocate a console")?
+    testing::error(pe::executable_with_subsystem(object, Vec<pe::Import>.new(), 0))?
+    testing::error(pe::executable_with_subsystem(object, Vec<pe::Import>.new(), 65535))?
+    return Ok(())
 }

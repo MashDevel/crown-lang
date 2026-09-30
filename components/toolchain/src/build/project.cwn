@@ -27,7 +27,7 @@ module toolchain {
             compiler: request.compiler.clone(), assembly: binary.clone(), sources: std::text::clone_list(request.project.sources), libraries: std::text::clone_list(request.project.libraries), max_instances: request.max_instances, coverage: request.coverage.clone(), optimization: optimization_copy(request.optimization), target: request.target
         }
         let links = project_links(request)
-        compile_executable(build, request.objects, links)?
+        compile_executable(build, request.objects, links, request.project.windows_subsystem)?
         return Ok(())
     }
 
@@ -73,6 +73,7 @@ module toolchain {
         }
         var options = build_links(request)
         options.push(request.coverage.clone())
+        options.push(request.project.windows_subsystem.clone())
         optimization_arguments(options, request.optimization)
         options.push(target_name(request.target))
         if request.target.platform == Platform::Linux() {
